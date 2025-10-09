@@ -17,6 +17,8 @@ end
 (** Embeddings between OGPosets. *)
 module Embedding : sig
   type t
+  val dom : t -> poset
+  val cod : t -> poset
 end
 
 (** Constructors and modifications. *)

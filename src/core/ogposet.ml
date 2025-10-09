@@ -30,14 +30,8 @@ module Sub = struct
 
   let empty (_:poset) = { dims = IntSet.empty; cells = IntMap.empty }
 
-  let dims (s:t) = s.dims
-
   let lookup dim cells =
     try Some (IntMap.find dim cells) with Not_found -> None
-
-  let ensure_nonnegative ~dim ~pos =
-    if dim < 0 then invalid_arg "Sub: negative dimension"
-    else if pos < 0 then invalid_arg "Sub: negative position"
 
   let positions (s:t) ~dim =
     match lookup dim s.cells with
@@ -45,7 +39,6 @@ module Sub = struct
     | None -> IntSet.empty
 
   let add_position (s:t) ~dim ~pos =
-    ensure_nonnegative ~dim ~pos;
     let updated =
       match lookup dim s.cells with
       | None -> IntSet.singleton pos
@@ -65,26 +58,21 @@ module Sub = struct
       | None -> ()
     ) s.dims
 
-  let validate_bounds (g:poset) ~dim ~pos =
-    if dim < 0 || dim > g.max_dim then invalid_arg "Sub: dimension out of bounds";
-    if pos < 0 || pos >= g.size.(dim) then invalid_arg "Sub: position out of bounds"
-
   let of_list (g:poset) (els:elt list) : t =
     List.fold_left (fun acc e ->
-      validate_bounds g ~dim:e.dim ~pos:e.pos;
       add_position acc ~dim:e.dim ~pos:e.pos
     ) (empty g) els
 
   let of_dim_set (g:poset) ~dim (set:IntSet.t) : t =
     if IntSet.is_empty set then empty g
-    else (
-      IntSet.iter (fun pos -> validate_bounds g ~dim ~pos) set;
+    else
       { dims = IntSet.singleton dim; cells = IntMap.add dim set IntMap.empty }
-    )
 end
 
 module Embedding = struct
   type t = { dom : poset; cod : poset; map : int array array }
+  let dom e = e.dom
+  let cod e = e.cod
 end
 
 (* --- Helpers --- *)
@@ -119,7 +107,6 @@ let ensure_layer_capacity arr new_len =
   ) else arr
 
 let add0 (g:t) (m:int) : t * elt list =
-  if m < 0 then invalid_arg "add0: negative count";
   let g = extend_to_dim g 0 in
   let old = if g.max_dim < 0 then 0 else g.size.(0) in
   let size' = Array.copy g.size in
@@ -133,8 +120,6 @@ let add0 (g:t) (m:int) : t * elt list =
   g', elts
 
 let addN (g:t) ~(dim:int) ~(inputs:Sub.t list) ~(outputs:Sub.t list) : t * elt list =
-  if dim <= 0 then invalid_arg "addN: dim must be > 0";
-  if List.length inputs <> List.length outputs then invalid_arg "addN: length mismatch";
   let g = extend_to_dim g dim in
   let n_old = size_in g dim in
   let k = List.length inputs in
@@ -154,28 +139,16 @@ let addN (g:t) ~(dim:int) ~(inputs:Sub.t list) ~(outputs:Sub.t list) : t * elt l
     cooutputs'.(dim-1) <- ensure_layer_capacity cooutputs'.(dim-1) (size_in g (dim-1))
   );
   let allowed_dim = dim - 1 in
-  let validate_faces kind (sub:Sub.t) =
-    let dims = Sub.dims sub in
-    let invalid = ref false in
-    IntSet.iter (fun d -> if d <> allowed_dim then invalid := true) dims;
-    if !invalid then
-      invalid_arg ("addN: " ^ kind ^ " subset must lie entirely in dimension " ^ string_of_int allowed_dim);
-    let set = Sub.positions sub ~dim:allowed_dim in
-    IntSet.iter (fun j ->
-      if j < 0 || j >= size_in g allowed_dim then
-        invalid_arg ("addN: " ^ kind ^ " subset references out-of-range position")
-    ) set;
-    set
-  in
+  let faces_in_dim (sub:Sub.t) = Sub.positions sub ~dim:allowed_dim in
   List.iteri (fun i sub ->
-    let set = validate_faces "inputs" sub in
+    let set = faces_in_dim sub in
     inputs'.(dim).(n_old + i) <- set;
     IntSet.iter (fun j ->
       coinputs'.(allowed_dim).(j) <- IntSet.add (n_old + i) coinputs'.(allowed_dim).(j)
     ) set
   ) inputs;
   List.iteri (fun i sub ->
-    let set = validate_faces "outputs" sub in
+    let set = faces_in_dim sub in
     outputs'.(dim).(n_old + i) <- set;
     IntSet.iter (fun j ->
       cooutputs'.(allowed_dim).(j) <- IntSet.add (n_old + i) cooutputs'.(allowed_dim).(j)
@@ -207,7 +180,6 @@ let closure (g:t) (s:Sub.t) : Sub.t =
   if g.max_dim < 0 then s else
   let q = Array.init (dim_count g) (fun _ -> Queue.create ()) in
   Sub.iter s ~f:(fun ~dim ~pos ->
-    if dim < 0 || dim > g.max_dim then invalid_arg "closure: subset dimension out of bounds";
     Queue.add pos q.(dim)
   );
   let res = ref s in
@@ -233,11 +205,6 @@ let closure (g:t) (s:Sub.t) : Sub.t =
 (* --- Embed --- *)
 
 let embed (g:t) (s:Sub.t) : t * Embedding.t =
-  let s_cl = closure g s in
-  for n=0 to g.max_dim do
-    if IntSet.cardinal (Sub.positions s ~dim:n) <> IntSet.cardinal (Sub.positions s_cl ~dim:n)
-    then invalid_arg "embed: subset not closed"
-  done;
   let dims = dim_count g in
   let map = Array.init dims (fun n -> Array.make g.size.(n) (-1)) in
   let size' = Array.make dims 0 in
@@ -250,9 +217,7 @@ let embed (g:t) (s:Sub.t) : t * Embedding.t =
   let outputs' = Array.init dims (fun n -> if n=0 then [||] else Array.make size'.(n) IntSet.empty) in
   let remap_faces n set =
     IntSet.fold (fun j acc ->
-      let mapped = map.(n-1).(j) in
-      if mapped < 0 then invalid_arg "embed: subset not closed";
-      IntSet.add mapped acc
+      IntSet.add map.(n-1).(j) acc
     ) set IntSet.empty
   in
   for n=1 to g.max_dim do
@@ -283,7 +248,6 @@ let is_input_face g k i = if k < g.max_dim then IntSet.is_empty g.cooutputs.(k).
 let is_output_face g k i = if k < g.max_dim then IntSet.is_empty g.coinputs.(k).(i) else true
 
 let bd_in (g:t) (k:int) : Sub.t =
-  if k < 0 then invalid_arg "bd_in: negative dimension";
   if k > g.max_dim then Sub.empty g
   else
     let subset = ref (Sub.empty g) in
@@ -298,7 +262,6 @@ let bd_in (g:t) (k:int) : Sub.t =
     closure g !subset
 
 let bd_out (g:t) (k:int) : Sub.t =
-  if k < 0 then invalid_arg "bd_out: negative dimension";
   if k > g.max_dim then Sub.empty g
   else
     let subset = ref (Sub.empty g) in
@@ -315,7 +278,6 @@ let bd_out (g:t) (k:int) : Sub.t =
 (* --- Fast asymmetric pushout: attach complement of g(C) in B onto A --- *)
 
 let attach (f:Embedding.t) (g:Embedding.t) : t * Embedding.t * Embedding.t =
-  if (f : Embedding.t).dom != (g : Embedding.t).dom then invalid_arg "attach: embeddings must share domain";
   let a = f.cod and b = g.cod and c = f.dom in
   let size_a n = if n <= a.max_dim then a.size.(n) else 0 in
   let size_b n = if n <= b.max_dim then b.size.(n) else 0 in
@@ -350,7 +312,6 @@ let attach (f:Embedding.t) (g:Embedding.t) : t * Embedding.t * Embedding.t =
                 Sub.add_position acc ~dim:(n-1) ~pos:a_pos
               ) else (
                 let ppos = map_b_to_p.(n-1).(k) in
-                if ppos < 0 then invalid_arg "attach: lower-dim complement not yet added";
                 Sub.add_position acc ~dim:(n-1) ~pos:ppos
               )
             ) set (Sub.empty !p)
@@ -370,7 +331,7 @@ let attach (f:Embedding.t) (g:Embedding.t) : t * Embedding.t * Embedding.t =
     Array.init (size_b n) (fun j ->
       if j < size_b n && inv_g.(n).(j) >= 0 then
         let c = inv_g.(n).(j) in
-        if n <= a.max_dim then f.map.(n).(c) else invalid_arg "attach: dim mismatch"
+        f.map.(n).(c)
       else map_b_to_p.(n).(j)
     ))
   in
@@ -381,7 +342,6 @@ let attach (f:Embedding.t) (g:Embedding.t) : t * Embedding.t * Embedding.t =
 (* --- Heuristic pushout: choose cheaper direction --- *)
 
 let pushout (f:Embedding.t) (g:Embedding.t) : t * Embedding.t * Embedding.t =
-  if f.dom != g.dom then invalid_arg "pushout: embeddings must share domain";
   let a = f.cod and b = g.cod and c = f.dom in
   let size_total x =
     let s = ref 0 in
