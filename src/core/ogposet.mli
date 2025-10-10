@@ -13,8 +13,11 @@ type poset = t
 module Sub : sig
   type t
 
-  val empty : poset -> t
-  val of_list : poset -> elt list -> t
+  val empty : t
+  val of_list : elt list -> t
+  val of_dim : dim:int -> t -> t
+  val union : t -> t -> t
+  val intersection : t -> t -> t
 end
 
 (** Embeddings between OGPosets. *)
@@ -23,6 +26,7 @@ module Embedding : sig
 
   val dom : t -> poset
   val cod : t -> poset
+  val compose : t -> t -> t
 end
 
 (** Constructors and modifications. *)
@@ -47,8 +51,8 @@ val embed : t -> Sub.t -> t * Embedding.t
 val bd_in : t -> int -> Sub.t
 val bd_out : t -> int -> Sub.t
 
-(** Fast asymmetric pushout: attaches the complement of shared part. *)
-val attach : Embedding.t -> Embedding.t -> t * Embedding.t * Embedding.t
-
 (** Heuristic pushout: automatically choose the cheaper attachment direction. *)
 val pushout : Embedding.t -> Embedding.t -> t * Embedding.t * Embedding.t
+
+(** Coequaliser of two embeddings with common domain. *)
+val coequaliser : Embedding.t -> Embedding.t -> t * Embedding.t * Embedding.t

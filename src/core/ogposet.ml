@@ -26,49 +26,61 @@ module Sub = struct
 
   type t = { dims: IntSet.t; cells: IntSet.t IntMap.t }
 
-  let empty (_ : poset) = { dims= IntSet.empty; cells= IntMap.empty }
+  let empty = { dims= IntSet.empty; cells= IntMap.empty }
 
   let lookup dim cells =
-    try Some (IntMap.find dim cells) with Not_found -> None
+    try IntMap.find dim cells with Not_found -> IntSet.empty
 
-  let positions (s : t) ~dim =
-    match lookup dim s.cells with Some set -> set | None -> IntSet.empty
+  let positions (s : t) ~dim = lookup dim s.cells
 
   let add_position (s : t) ~dim ~pos =
-    let updated =
-      match lookup dim s.cells with
-      | None ->
-          IntSet.singleton pos
-      | Some set ->
-          IntSet.add pos set
-    in
+    let updated = IntSet.add pos (positions s ~dim) in
     { dims= IntSet.add dim s.dims; cells= IntMap.add dim updated s.cells }
 
-  let mem_position (s : t) ~dim ~pos =
-    match lookup dim s.cells with
-    | Some set ->
-        IntSet.mem pos set
-    | None ->
-        false
+  let mem_position (s : t) ~dim ~pos = IntSet.mem pos (positions s ~dim)
 
   let iter (s : t) ~f =
     IntSet.iter
-      (fun dim ->
-        match lookup dim s.cells with
-        | Some set ->
-            IntSet.iter (fun pos -> f ~dim ~pos) set
-        | None ->
-            ())
+      (fun dim -> IntSet.iter (fun pos -> f ~dim ~pos) (positions s ~dim))
       s.dims
 
-  let of_list (g : poset) (els : elt list) : t =
+  let of_list (els : elt list) : t =
     List.fold_left
       (fun acc e -> add_position acc ~dim:e.dim ~pos:e.pos)
-      (empty g) els
+      empty els
 
-  let of_dim_set (g : poset) ~dim (set : IntSet.t) : t =
-    if IntSet.is_empty set then empty g
+  let of_dim_set ~dim (set : IntSet.t) : t =
+    if IntSet.is_empty set then empty
     else { dims= IntSet.singleton dim; cells= IntMap.add dim set IntMap.empty }
+
+  let of_dim ~dim (s : t) : t =
+    let set = positions s ~dim in
+    if IntSet.is_empty set then empty
+    else { dims= IntSet.singleton dim; cells= IntMap.add dim set IntMap.empty }
+
+  let union (a : t) (b : t) : t =
+    let dims = IntSet.union a.dims b.dims in
+    let cells =
+      IntSet.fold
+        (fun dim acc ->
+          let merged = IntSet.union (positions a ~dim) (positions b ~dim) in
+          if IntSet.is_empty merged then acc else IntMap.add dim merged acc)
+        dims IntMap.empty
+    in
+    { dims; cells }
+
+  let intersection (a : t) (b : t) : t =
+    IntSet.fold
+      (fun dim acc ->
+        let inter = IntSet.inter (positions a ~dim) (positions b ~dim) in
+        if IntSet.is_empty inter then acc
+        else
+          {
+            dims= IntSet.add dim acc.dims;
+            cells= IntMap.add dim inter acc.cells;
+          })
+      (IntSet.inter a.dims b.dims)
+      empty
 end
 
 module Embedding = struct
@@ -76,6 +88,20 @@ module Embedding = struct
 
   let dom e = e.dom
   let cod e = e.cod
+
+  let compose (f : t) (g : t) : t =
+    let dims = Array.length f.map in
+    let map =
+      Array.init dims (fun n ->
+          let dom_len = Array.length f.map.(n) in
+          let arr = Array.make dom_len 0 in
+          for i = 0 to dom_len - 1 do
+            let mid = f.map.(n).(i) in
+            arr.(i) <- g.map.(n).(mid)
+          done
+          ; arr)
+    in
+    { dom= f.dom; cod= g.cod; map }
 end
 
 (* --- Helpers --- *)
@@ -201,23 +227,23 @@ let addN (g : t) ~(dim : int) ~(inputs : Sub.t list) ~(outputs : Sub.t list) :
 
 (* --- Accessors --- *)
 
-let get_faces (g : t) arr (e : elt) : Sub.t =
-  if e.dim = 0 then Sub.empty g
-  else Sub.of_dim_set g ~dim:(e.dim - 1) arr.(e.dim).(e.pos)
+let get_faces (_g : t) arr (e : elt) : Sub.t =
+  if e.dim = 0 then Sub.empty
+  else Sub.of_dim_set ~dim:(e.dim - 1) arr.(e.dim).(e.pos)
 
 let get_cofaces (g : t) arr (e : elt) : Sub.t =
   let next_dim = e.dim + 1 in
-  if next_dim > g.max_dim then Sub.empty g
-  else Sub.of_dim_set g ~dim:next_dim arr.(e.dim).(e.pos)
+  if next_dim > g.max_dim then Sub.empty
+  else Sub.of_dim_set ~dim:next_dim arr.(e.dim).(e.pos)
 
 let inputs g e = get_faces g g.inputs e
 let outputs g e = get_faces g g.outputs e
 
 let coinputs g e =
-  if e.dim >= g.max_dim then Sub.empty g else get_cofaces g g.coinputs e
+  if e.dim >= g.max_dim then Sub.empty else get_cofaces g g.coinputs e
 
 let cooutputs g e =
-  if e.dim >= g.max_dim then Sub.empty g else get_cofaces g g.cooutputs e
+  if e.dim >= g.max_dim then Sub.empty else get_cofaces g g.cooutputs e
 
 (* --- Closure (downward) --- *)
 
@@ -319,13 +345,12 @@ let is_input_face g k i =
 let is_output_face g k i =
   if k < g.max_dim then IntSet.is_empty g.coinputs.(k).(i) else true
 
-let bd_in (g : t) (k : int) : Sub.t =
-  if k > g.max_dim then Sub.empty g
+let boundary (g : t) (k : int) face_pred =
+  if k > g.max_dim then Sub.empty
   else
-    let subset = ref (Sub.empty g) in
+    let subset = ref Sub.empty in
     for i = 0 to g.size.(k) - 1 do
-      if is_input_face g k i then
-        subset := Sub.add_position !subset ~dim:k ~pos:i
+      if face_pred k i then subset := Sub.add_position !subset ~dim:k ~pos:i
     done
     ; for j = 0 to k - 1 do
         for i = 0 to g.size.(j) - 1 do
@@ -335,21 +360,8 @@ let bd_in (g : t) (k : int) : Sub.t =
       done
     ; closure g !subset
 
-let bd_out (g : t) (k : int) : Sub.t =
-  if k > g.max_dim then Sub.empty g
-  else
-    let subset = ref (Sub.empty g) in
-    for i = 0 to g.size.(k) - 1 do
-      if is_output_face g k i then
-        subset := Sub.add_position !subset ~dim:k ~pos:i
-    done
-    ; for j = 0 to k - 1 do
-        for i = 0 to g.size.(j) - 1 do
-          if not (has_any_coface g j i) then
-            subset := Sub.add_position !subset ~dim:j ~pos:i
-        done
-      done
-    ; closure g !subset
+let bd_in (g : t) (k : int) : Sub.t = boundary g k (is_input_face g)
+let bd_out (g : t) (k : int) : Sub.t = boundary g k (is_output_face g)
 
 (* --- Fast asymmetric pushout: attach complement of g(C) in B onto A --- *)
 
@@ -395,7 +407,7 @@ let attach (f : Embedding.t) (g : Embedding.t) : t * Embedding.t * Embedding.t =
                       else
                         let ppos = map_b_to_p.(n - 1).(k) in
                         Sub.add_position acc ~dim:(n - 1) ~pos:ppos)
-                    set (Sub.empty !p)
+                    set Sub.empty
                 in
                 in_subs := map_face b.inputs.(n).(j) :: !in_subs
                 ; out_subs := map_face b.outputs.(n).(j) :: !out_subs)
@@ -444,3 +456,114 @@ let pushout (f : Embedding.t) (g : Embedding.t) : t * Embedding.t * Embedding.t
   else
     let p, i_b, i_a = attach g f in
     (p, i_a, i_b)
+
+let coequaliser (f : Embedding.t) (g : Embedding.t) :
+    t * Embedding.t * Embedding.t =
+  let a = f.dom and b = f.cod in
+  let dims = b.max_dim + 1 in
+  let parents = Array.init dims (fun n -> Array.init b.size.(n) (fun i -> i)) in
+  let rec find parent i =
+    let p = parent.(i) in
+    if p = i then i
+    else
+      let root = find parent p in
+      parent.(i) <- root
+      ; root
+  in
+  let union parent x y =
+    let rx = find parent x in
+    let ry = find parent y in
+    if rx <> ry then parent.(rx) <- ry
+  in
+  for n = 0 to a.max_dim do
+    let parent = parents.(n) in
+    for i = 0 to a.size.(n) - 1 do
+      union parent f.map.(n).(i) g.map.(n).(i)
+    done
+  done
+  ; let class_map = Array.make dims [||] in
+    let new_size = Array.make dims 0 in
+    for n = 0 to dims - 1 do
+      let parent = parents.(n) in
+      let size_n = Array.length parent in
+      let mapping = Array.make size_n 0 in
+      let repr_index = Array.make size_n (-1) in
+      let next = ref 0 in
+      for i = 0 to size_n - 1 do
+        let root = find parent i in
+        let idx =
+          let existing = repr_index.(root) in
+          if existing >= 0 then existing
+          else
+            let v = !next in
+            incr next
+            ; repr_index.(root) <- v
+            ; v
+        in
+        mapping.(i) <- idx
+      done
+      ; class_map.(n) <- mapping
+      ; new_size.(n) <- !next
+    done
+    ; let inputs =
+        Array.init dims (fun n ->
+            if n = 0 then [||] else Array.make new_size.(n) IntSet.empty)
+      in
+      let outputs =
+        Array.init dims (fun n ->
+            if n = 0 then [||] else Array.make new_size.(n) IntSet.empty)
+      in
+      for n = 1 to b.max_dim do
+        for i = 0 to b.size.(n) - 1 do
+          let target = class_map.(n).(i) in
+          let mapped_inputs =
+            IntSet.fold
+              (fun j acc -> IntSet.add class_map.(n - 1).(j) acc)
+              b.inputs.(n).(i)
+              IntSet.empty
+          in
+          let mapped_outputs =
+            IntSet.fold
+              (fun j acc -> IntSet.add class_map.(n - 1).(j) acc)
+              b.outputs.(n).(i)
+              IntSet.empty
+          in
+          inputs.(n).(target) <- IntSet.union inputs.(n).(target) mapped_inputs
+          ; outputs.(n).(target) <-
+              IntSet.union outputs.(n).(target) mapped_outputs
+        done
+      done
+      ; let coinputs =
+          Array.init dims (fun n -> Array.make new_size.(n) IntSet.empty)
+        and cooutputs =
+          Array.init dims (fun n -> Array.make new_size.(n) IntSet.empty)
+        in
+        for n = 1 to b.max_dim do
+          for i = 0 to new_size.(n) - 1 do
+            IntSet.iter
+              (fun j ->
+                coinputs.(n - 1).(j) <- IntSet.add i coinputs.(n - 1).(j))
+              inputs.(n).(i)
+            ; IntSet.iter
+                (fun j ->
+                  cooutputs.(n - 1).(j) <- IntSet.add i cooutputs.(n - 1).(j))
+                outputs.(n).(i)
+          done
+        done
+        ; let q =
+            {
+              max_dim= b.max_dim;
+              size= new_size;
+              inputs;
+              outputs;
+              coinputs;
+              cooutputs;
+            }
+          in
+          let quotient_map =
+            Array.init dims (fun n -> Array.copy class_map.(n))
+          in
+          let quotient = Embedding.{ dom= b; cod= q; map= quotient_map } in
+          let f' = Embedding.compose f quotient in
+          let g' = Embedding.compose g quotient in
+          (q, f', g')
