@@ -70,6 +70,7 @@ val is_round : t -> bool
 (** [boundary sign at_dim X] is the embedding of the appropriate boundary of X
     into it *)
 val boundary : sign -> int -> t -> t * Embedding.t
+val traverse : t -> (int * intset) list -> t * Embedding.t
 
 (** {2 Pushouts} *)
 

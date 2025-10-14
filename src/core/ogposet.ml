@@ -351,6 +351,160 @@ let boundary (s : sign) (k : int) (g : t) : t * Embedding.t =
       let emb = Embedding.make ~dom:sub ~cod:g ~map:ed.forward ~inv:cod_inv in
       (sub, emb)
 
+let traverse (g : t) (initial_stack : (int * intset) list) : t * Embedding.t =
+  match initial_stack with
+  | [] ->
+      (empty, Embedding.empty g)
+  | _ ->
+      let dims = g.dim + 1 in
+      let sizes_g = sizes g in
+      (* Downward closure of the requested cells, one intset per dimension. *)
+      let max_dim =
+        List.fold_left
+          (fun acc (d, _) -> if d > acc then d else acc)
+          (-1) initial_stack
+      in
+      let dc = Array.make (max_dim + 1) IntSet.empty in
+      List.iter
+        (fun (d, cells) -> dc.(d) <- IntSet.union dc.(d) cells)
+        initial_stack
+      ; for d = max_dim downto 1 do
+          if d <= g.dim then (
+            let lower = ref dc.(d - 1) in
+            IntSet.iter
+              (fun cell ->
+                lower := IntSet.union !lower g.faces_in.(d).(cell)
+                ; lower := IntSet.union !lower g.faces_out.(d).(cell))
+              dc.(d)
+            ; dc.(d - 1) <- !lower)
+        done
+      ; let map_levels = max_dim + 1 in
+        let map_sizes =
+          Array.init map_levels (fun d -> IntSet.cardinal dc.(d))
+        in
+        let map = Array.init map_levels (fun d -> Array.make map_sizes.(d) (-1))
+        and next_idx = Array.make map_levels 0
+        and inv = Array.init dims (fun d -> Array.make sizes_g.(d) (-1)) in
+        let mark dim cell =
+          let idx = next_idx.(dim) in
+          map.(dim).(idx) <- cell
+          ; inv.(dim).(cell) <- idx
+          ; next_idx.(dim) <- idx + 1
+        in
+        let union_faces faces dim elements =
+          IntSet.fold
+            (fun cell acc -> IntSet.union acc faces.(dim).(cell))
+            elements IntSet.empty
+        in
+        let rec loop stack =
+          match stack with
+          | [] ->
+              ()
+          | (dim, focus) :: rest -> (
+              if IntSet.is_empty focus then loop rest
+              else if IntSet.for_all (fun p -> inv.(dim).(p) >= 0) focus then
+                loop rest
+              else if dim = 0 then (
+                IntSet.iter (fun p -> if inv.(0).(p) < 0 then mark 0 p) focus
+                ; loop rest)
+              else
+                let focus_in = union_faces g.faces_in dim focus
+                and focus_out = union_faces g.faces_out dim focus in
+                let focus_input = IntSet.diff focus_in focus_out in
+                if IntSet.exists (fun p -> inv.(dim - 1).(p) < 0) focus_input
+                then loop ((dim - 1, focus_input) :: stack)
+                else if IntSet.cardinal focus = 1 then (
+                  let q = IntSet.min_elt focus in
+                  mark dim q
+                  ; let outputs = g.faces_out.(dim).(q) in
+                    if IntSet.exists (fun p -> inv.(dim - 1).(p) < 0) outputs
+                    then loop ((dim - 1, outputs) :: rest)
+                    else loop rest)
+                else
+                  let candidate =
+                    IntSet.fold
+                      (fun x acc ->
+                        let cofaces = g.cofaces_in.(dim - 1).(x) in
+                        let unmarked =
+                          cofaces |> IntSet.inter focus
+                          |> IntSet.filter (fun q -> inv.(dim).(q) < 0)
+                        in
+                        if IntSet.is_empty unmarked then acc
+                        else
+                          let order = inv.(dim - 1).(x) in
+                          let q = IntSet.min_elt unmarked in
+                          match acc with
+                          | None ->
+                              Some (order, q)
+                          | Some (best_order, best_q) ->
+                              if order < best_order then Some (order, q)
+                              else if order = best_order && q < best_q then
+                                Some (order, q)
+                              else acc)
+                      focus_input None
+                  in
+                  match candidate with
+                  | Some (_, q) ->
+                      loop ((dim, IntSet.singleton q) :: stack)
+                  | None -> (
+                      (* Should not happen with well-formed inputs, but mark one
+                         element to ensure progress. *)
+                      let fallback =
+                        let exception Found of int in
+                        try
+                          IntSet.iter
+                            (fun q -> if inv.(dim).(q) < 0 then raise (Found q))
+                            focus
+                          ; None
+                        with Found q -> Some q
+                      in
+                      match fallback with
+                      | Some q ->
+                          mark dim q ; loop stack
+                      | None ->
+                          loop rest))
+        in
+        loop initial_stack
+        ; let ed =
+            { forward= map; inv_dom= Array.init map_levels (fun d -> inv.(d)) }
+          in
+          let build_adj adj shift =
+            let empty_set = IntSet.empty in
+            Array.init map_levels (fun j ->
+                let nj = Array.length ed.forward.(j) in
+                if (shift = -1 && j = 0) || (shift = 1 && j = map_levels - 1)
+                then Array.make nj empty_set
+                else
+                  Array.init nj (fun i ->
+                      let old = ed.forward.(j).(i) in
+                      let target_dim = j + shift in
+                      if shift = -1 then
+                        set_map
+                          (fun x -> ed.inv_dom.(target_dim).(x))
+                          adj.(j).(old)
+                      else
+                        set_filter_map
+                          (fun x ->
+                            let y = ed.inv_dom.(target_dim).(x) in
+                            if y < 0 then None else Some y)
+                          adj.(j).(old)))
+          in
+          let faces_in' = build_adj g.faces_in (-1)
+          and faces_out' = build_adj g.faces_out (-1)
+          and cofaces_in' = build_adj g.cofaces_in 1
+          and cofaces_out' = build_adj g.cofaces_out 1 in
+          let dom =
+            {
+              dim= max_dim;
+              faces_in= faces_in';
+              faces_out= faces_out';
+              cofaces_in= cofaces_in';
+              cofaces_out= cofaces_out';
+            }
+          in
+          let emb = Embedding.make ~dom ~cod:g ~map ~inv in
+          (dom, emb)
+
 type pushout = { tip: t; inl: Embedding.t; inr: Embedding.t }
 
 let attach (f : Embedding.t) (g : Embedding.t) : pushout =
