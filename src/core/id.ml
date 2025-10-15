@@ -12,6 +12,23 @@ let hash = Hashtbl.hash
 let to_int x = x
 let pp fmt x = Format.fprintf fmt "#%d" x
 
+type error = {
+  message: string;
+  notes: string list;
+}
+
+let error ?(notes = []) message = { message; notes }
+
+let pp_error fmt { message; notes } =
+  let open Format in
+  fprintf fmt "%s" message;
+  (match notes with
+  | [] -> ()
+  | _ ->
+      List.iter (fun note -> fprintf fmt "@.@[<2>note:@ %s@]" note) notes)
+
+type 'a checked = ('a, error) result
+
 module Name = struct
   type simple = string
   type t = string
@@ -25,22 +42,24 @@ module Name = struct
         false
 
   let check_simple s =
-    if String.length s = 0 then Error "simple name must not be empty"
+    if String.length s = 0 then
+      Error (error "name must not be empty")
     else if List.exists (String.equal s) reserved then
-      Error ("simple name is reserved: " ^ s)
+      Error (error ("name is reserved: " ^ s))
     else if String.for_all is_valid_char s then Ok s
-    else Error "simple name contains invalid characters"
+    else
+      Error (error "name contains invalid characters")
 
   let simple s = check_simple s
   let simple_to_string s = s
   let string_is_empty s = String.length s = 0
 
   let check_name s =
-    if String.length s = 0 then Error "name must not be empty"
+    if String.length s = 0 then Error (error "name must not be empty")
     else
       let parts = String.split_on_char '.' s in
       if List.exists string_is_empty parts then
-        Error "name must not contain empty segments"
+        Error (error "name must not contain empty segments")
       else
         let rec validate acc = function
           | [] ->
@@ -52,7 +71,9 @@ module Name = struct
               | Error _ as e ->
                   e)
         in
-        match validate [] parts with Ok _ -> Ok s | Error msg -> Error msg
+        match validate [] parts with
+        | Ok _ -> Ok s
+        | Error err -> Error err
 
   let make s = check_name s
   let to_string n = n
