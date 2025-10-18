@@ -16,3 +16,4 @@ val apply : t -> Diagram.t -> Diagram.t checked
 
 val cell : t -> Id.Tag.t -> Diagram.t checked
 val image : t -> Id.Tag.t -> Diagram.t checked
+val is_cellular : t -> bool
