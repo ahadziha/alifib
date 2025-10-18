@@ -1,9 +1,7 @@
 (** {1 Diagrams} *)
 
 module Paste_tree : sig
-  type t =
-    | Leaf of Id.Tag.t
-    | Node of int * t * t
+  type t = Leaf of Id.Tag.t | Node of int * t * t
 end
 
 (** {2 Core types} *)
@@ -23,6 +21,7 @@ val tree : t -> sign -> int -> Paste_tree.t
 
 (** {2 Error-handling} *)
 type error = Error.t
+
 type 'a checked = 'a Error.checked
 
 (** {2 Constructors} *)

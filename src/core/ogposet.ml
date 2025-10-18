@@ -223,7 +223,8 @@ let is_pure (g : t) : bool =
     aux 0
 
 let is_atom (g : t) : bool =
-  is_pure g &&
+  is_pure g
+  &&
   let sz = sizes g in
   let top = g.dim in
   if top < 0 then false else sz.(top) = 1
@@ -286,7 +287,6 @@ let is_round (g : t) : bool =
             ; step (j + 1))
       in
       step 0
-
 
 type embedding_data = {
   forward: int array array; (* boundary index -> original index in g *)
@@ -490,7 +490,7 @@ let traverse (g : t) (initial_stack : (int * intset) list) : t * Embedding.t =
                           loop rest))
         in
         loop initial_stack
-      ; let ed =
+        ; let ed =
             { forward= map; inv_dom= Array.init map_levels (fun d -> inv.(d)) }
           in
           let faces_in' =
@@ -527,19 +527,18 @@ let isomorphism_of (u : t) (v : t) : Embedding.t checked =
     else
       let sizes_u = sizes u and sizes_v = sizes v in
       if sizes_u <> sizes_v then failure "shapes do not match"
-      else if equal u v then (
+      else if equal u v then
         let map =
           Array.mapi (fun _ size -> Array.init size (fun idx -> idx)) sizes_u
         in
         let inv =
           Array.mapi (fun _ size -> Array.init size (fun idx -> idx)) sizes_v
         in
-        Ok (Embedding.make ~dom:u ~cod:v ~map ~inv))
+        Ok (Embedding.make ~dom:u ~cod:v ~map ~inv)
       else
         let stack_u = stack_extremal `Input u
         and stack_v = stack_extremal `Input v in
-        let u', e_u = traverse u stack_u
-        and v', e_v = traverse v stack_v in
+        let u', e_u = traverse u stack_u and v', e_v = traverse v stack_v in
         if not (equal u' v') then failure "canonical forms do not match"
         else
           let compose () =
@@ -564,11 +563,11 @@ let isomorphism_of (u : t) (v : t) : Embedding.t checked =
                     let row = Array.make len (-1) in
                     for idx = 0 to len - 1 do
                       let mid = inv_level.(idx) in
-                      if mid < 0 || mid >= Array.length map_level then (
-                        ok := false )
+                      if mid < 0 || mid >= Array.length map_level then
+                        ok := false
                       else row.(idx) <- map_level.(mid)
                     done
-                    ; result.(dim) <- row )
+                    ; result.(dim) <- row)
                 done
                 ; if !ok then Ok result
                   else failure "failed to compose isomorphism data"
@@ -576,8 +575,8 @@ let isomorphism_of (u : t) (v : t) : Embedding.t checked =
               match produce_rows inv_u map_v with
               | Error _ as e ->
                   e
-              | Ok map ->
-                  (match produce_rows inv_v map_u with
+              | Ok map -> (
+                  match produce_rows inv_v map_u with
                   | Error _ as e ->
                       e
                   | Ok inv ->

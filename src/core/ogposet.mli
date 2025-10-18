@@ -16,6 +16,7 @@ type intset
 
 (** {2 Error handling} *)
 type error = Error.t
+
 type 'a checked = 'a Error.checked
 
 (** Orientation: input, output, or both. *)

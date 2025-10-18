@@ -1,15 +1,20 @@
 module Paste_tree = struct
-  type t =
-    | Leaf of Id.Tag.t
-    | Node of int * t * t
+  type t = Leaf of Id.Tag.t | Node of int * t * t
 end
 
 type sign = [ `Input | `Output ]
 type data = { shape: Ogposet.t; labels: Id.Tag.t array array }
-type t = { shape: Ogposet.t; labels: Id.Tag.t array array; tree: sign -> int -> Paste_tree.t }
+
+type t = {
+  shape: Ogposet.t;
+  labels: Id.Tag.t array array;
+  tree: sign -> int -> Paste_tree.t;
+}
+
 type error = Error.t
 type 'a checked = 'a Error.checked
 
+let of_data shape labels tree = { shape; labels; tree }
 let shape d = d.shape
 let labels d = d.labels
 let dim d = Ogposet.dim d.shape
@@ -250,11 +255,9 @@ let paste n u v =
 
 let boundary (sign : sign) k d =
   let _, emb = Ogposet.boundary (sign :> Ogposet.sign) k d.shape in
-  let tree_fn s k' =
-    if k' < k then d.tree s k' else d.tree sign k
-  in
+  let tree_fn s k' = if k' < k then d.tree s k' else d.tree sign k in
   let pulled = pullback_data d emb in
-  { shape= pulled.shape; labels= pulled.labels; tree= tree_fn }
+  of_data pulled.shape pulled.labels tree_fn
 
 let label_set_of d =
   let table = Hashtbl.create 16 in
@@ -270,8 +273,7 @@ let label_set_of d =
 
 let equal u v =
   if u == v then true
-  else
-    Ogposet.equal u.shape v.shape && labels_equal u.labels v.labels
+  else Ogposet.equal u.shape v.shape && labels_equal u.labels v.labels
 
 let isomorphic u v =
   if equal u v then true
