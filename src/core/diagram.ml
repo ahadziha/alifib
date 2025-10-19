@@ -11,6 +11,10 @@ type t = {
   tree: sign -> int -> Paste_tree.t;
 }
 
+type cell_data =
+  | Zero
+  | Boundary of { boundary_in: t; boundary_out: t }
+
 type error = Error.t
 type 'a checked = 'a Error.checked
 
@@ -196,6 +200,12 @@ let cellN tag u v =
           else Paste_tree.Leaf tag
         in
         Ok { shape= shape_uv; labels= labels_uv; tree= tree_fn }
+
+let cell tag = function
+  | Zero ->
+      cell0 tag
+  | Boundary { boundary_in; boundary_out } ->
+      cellN tag boundary_in boundary_out
 
 let normal u =
   if is_normal u then u

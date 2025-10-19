@@ -3,9 +3,7 @@
 (** {2 Core types} *)
 type t
 
-type cell_data =
-  | Zero
-  | Boundary of { boundary_in: Diagram.t; boundary_out: Diagram.t }
+type cell_data = Diagram.cell_data
 
 (** {2 Error-handling} *)
 type 'a checked = 'a Error.checked

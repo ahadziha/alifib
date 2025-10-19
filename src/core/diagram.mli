@@ -13,6 +13,10 @@ type t = {
   tree: sign -> int -> Paste_tree.t;
 }
 
+type cell_data =
+  | Zero
+  | Boundary of { boundary_in: t; boundary_out: t }
+
 (** {2 Destructors} *)
 val shape : t -> Ogposet.t
 
@@ -26,9 +30,7 @@ type error = Error.t
 type 'a checked = 'a Error.checked
 
 (** {2 Constructors} *)
-val cell0 : Id.Tag.t -> t checked
-
-val cellN : Id.Tag.t -> t -> t -> t checked
+val cell : Id.Tag.t -> cell_data -> t checked
 val paste : int -> t -> t -> t checked
 
 (** {2 Basic utilities} *)

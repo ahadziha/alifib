@@ -12,10 +12,7 @@ end)
 
 type 'a checked = 'a Error.checked
 
-type cell_data =
-  | Zero
-  | Boundary of { boundary_in: Diagram.t; boundary_out: Diagram.t }
-
+type cell_data = Diagram.cell_data
 type entry = { dim: int; cell_data: cell_data; image: Diagram.t }
 type t = { table: entry TagTable.t; cellular: bool }
 
@@ -129,17 +126,17 @@ let extend f ~tag ~dim ~cell_data ~image =
     Error (Error.make "image is not round")
   else if dim = 0 then
     match cell_data with
-    | Zero ->
+    | Diagram.Zero ->
         let table = TagTable.copy f.table in
         TagTable.replace table tag (make_entry ~dim ~cell_data ~image)
         ; Ok { table; cellular= f.cellular }
-    | Boundary _ ->
+    | Diagram.Boundary _ ->
         assert false
   else
     match cell_data with
-    | Zero ->
+    | Diagram.Zero ->
         assert false
-    | Boundary { boundary_in; boundary_out } -> (
+    | Diagram.Boundary { boundary_in; boundary_out } -> (
         match apply f boundary_in with
         | Error _ as err ->
             err
