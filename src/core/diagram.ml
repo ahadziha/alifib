@@ -11,10 +11,7 @@ type t = {
   tree: sign -> int -> Paste_tree.t;
 }
 
-type cell_data =
-  | Zero
-  | Boundary of { boundary_in: t; boundary_out: t }
-
+type cell_data = Zero | Boundary of { boundary_in: t; boundary_out: t }
 type error = Error.t
 type 'a checked = 'a Error.checked
 
@@ -23,7 +20,14 @@ let shape d = d.shape
 let labels d = d.labels
 let dim d = Ogposet.dim d.shape
 let is_round d = Ogposet.is_round d.shape
-let is_cell d = Ogposet.is_atom d.shape
+
+let is_cell d =
+  match d.tree `Input (dim d) with
+  | Paste_tree.Leaf _ ->
+      true
+  | Paste_tree.Node _ ->
+      false
+
 let tree d = d.tree
 
 let cell0 tag =
