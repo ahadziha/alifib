@@ -11,10 +11,16 @@ module Located : sig
   type producer = { phase: phase; module_path: string option }
 
   module Span : sig
-    type t = { start: Lexing.position; stop: Lexing.position }
+    type t = Positions.span
 
-    val make : Lexing.position -> Lexing.position -> t
-    val point : Lexing.position -> t
+    val make : Positions.point -> Positions.point -> t
+    val point : Positions.point -> t
+    val of_lexing :
+      Positions.Source.t ->
+      Lexing.position ->
+      Lexing.position ->
+      t
+    val to_lexing : t -> Lexing.position * Lexing.position
   end
 
   type t = { error: error; span: Span.t; producer: producer }

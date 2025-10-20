@@ -22,15 +22,17 @@ module Located = struct
   type producer = { phase: phase; module_path: string option }
 
   module Span = struct
-    type t = { start: Lexing.position; stop: Lexing.position }
+    type t = Positions.span
 
-    let normalize start stop =
-      if stop.Lexing.pos_cnum < start.Lexing.pos_cnum then
-        { start= stop; stop= start }
-      else { start; stop }
+    let make start stop = Positions.make_span ~start ~stop
+    let point position = Positions.point_span position
 
-    let make start stop = normalize start stop
-    let point position = { start= position; stop= position }
+    let of_lexing source start stop =
+      Positions.span_of_lexing source start stop
+
+    let to_lexing span =
+      let open Positions in
+      to_lexing span.start, to_lexing span.stop
   end
 
   type t = { error: error; span: Span.t; producer: producer }
@@ -60,15 +62,10 @@ module Located = struct
     | None ->
         phase_to_string phase
     | Some path ->
-        phase_to_string phase ^ ":" ^ path
-
-  let column position = position.Lexing.pos_cnum - position.Lexing.pos_bol + 1
+      phase_to_string phase ^ ":" ^ path
 
   let span_to_string span =
-    let open Span in
-    let { start; stop } = span in
-    Format.asprintf "%d:%d-%d:%d" start.Lexing.pos_lnum (column start)
-      stop.Lexing.pos_lnum (column stop)
+    Format.asprintf "%a" Positions.pp_span span
 
   let pp fmt { producer; span; error } =
     let origin = origin_to_string producer in

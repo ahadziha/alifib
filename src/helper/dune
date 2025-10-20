@@ -1,4 +1,4 @@
 (library
  (name alifib_helper)
  (wrapped false)
- (modules error id))
+ (modules error id positions))

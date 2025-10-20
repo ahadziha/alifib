@@ -1,5 +1,5 @@
 (library
  (name alifib_language)
  (wrapped false)
- (modules positions)
+(modules diagnostics)
  (libraries alifib_helper alifib_core))

@@ -1,5 +1,5 @@
 module Source : sig
-  type t = Id.Module.t
+  type t
 
   val of_path : string -> t
   val virtual_ : string -> t
@@ -12,11 +12,11 @@ module Source : sig
 end
 
 type point = {
-  source: Source.t;
-  offset: int;
-  line: int;
-  column: int;
-  bol_offset: int;
+  source : Source.t;
+  offset : int;
+  line : int;
+  column : int;
+  bol_offset : int;
 }
 
 val make_point :
@@ -33,7 +33,7 @@ val pp_point : Format.formatter -> point -> unit
 val advance : point -> string -> point
 val with_source : point -> Source.t -> point
 
-type span = { start: point; stop: point }
+type span = { start : point; stop : point }
 
 val make_span : start:point -> stop:point -> span
 val point_span : point -> span
@@ -43,8 +43,7 @@ val length : span -> int
 val is_point : span -> bool
 val between : point -> point -> span option
 val pp_span : Format.formatter -> span -> unit
+
 val point_of_lexing : Source.t -> Lexing.position -> point
 val to_lexing : point -> Lexing.position
 val span_of_lexing : Source.t -> Lexing.position -> Lexing.position -> span
-val to_error_span : span -> Error.Located.Span.t
-val of_error_span : Error.Located.Span.t -> span
