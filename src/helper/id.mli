@@ -13,13 +13,14 @@ module Global : sig
 end
 
 module Local : sig
-  type simple
   type t
 
-  val simple : string -> simple checked
-  val simple_to_string : simple -> string
-  val make : string -> t checked
+  val make : string -> t
   val to_string : t -> string
+  val equal : t -> t -> bool
+  val compare : t -> t -> int
+  val hash : t -> int
+  val pp : Format.formatter -> t -> unit
 end
 
 module Module : sig

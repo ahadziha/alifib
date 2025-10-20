@@ -18,49 +18,14 @@ module Global = struct
 end
 
 module Local = struct
-  type simple = string
   type t = string
 
-  let reserved = [ "include"; "attach"; "Type"; "along" ]
-
-  let is_valid_char = function
-    | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' ->
-        true
-    | _ ->
-        false
-
-  let check_simple s =
-    if String.length s = 0 then Error (Error.make "name must not be empty")
-    else if List.exists (String.equal s) reserved then
-      Error (Error.make ("name is reserved: " ^ s))
-    else if String.for_all is_valid_char s then Ok s
-    else Error (Error.make "name contains invalid characters")
-
-  let simple s = check_simple s
-  let simple_to_string s = s
-  let string_is_empty s = String.length s = 0
-
-  let check_name s =
-    if String.length s = 0 then Error (Error.make "name must not be empty")
-    else
-      let parts = String.split_on_char '.' s in
-      if List.exists string_is_empty parts then
-        Error (Error.make "name must not contain empty segments")
-      else
-        let rec validate acc = function
-          | [] ->
-              Ok (List.rev acc)
-          | part :: rest -> (
-              match check_simple part with
-              | Ok p ->
-                  validate (p :: acc) rest
-              | Error _ as e ->
-                  e)
-        in
-        match validate [] parts with Ok _ -> Ok s | Error err -> Error err
-
-  let make s = check_name s
-  let to_string n = n
+  let make s = s
+  let to_string s = s
+  let equal = String.equal
+  let compare = String.compare
+  let hash = Hashtbl.hash
+  let pp fmt s = Format.fprintf fmt "%s" s
 end
 
 module Module = struct
@@ -80,7 +45,7 @@ module Tag = struct
   let equal a b =
     match (a, b) with
     | `Local x, `Local y ->
-        String.equal x y
+        Local.equal x y
     | `Global x, `Global y ->
         Global.equal x y
     | (`Local _ | `Global _), _ ->
@@ -89,7 +54,7 @@ module Tag = struct
   let compare a b =
     match (a, b) with
     | `Local x, `Local y ->
-        String.compare x y
+        Local.compare x y
     | `Global x, `Global y ->
         Global.compare x y
     | `Local _, `Global _ ->
