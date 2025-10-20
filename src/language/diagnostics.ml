@@ -1,63 +1,51 @@
 open Positions
 
-type severity =
-  [ `Error
-  | `Warning
-  | `Info
-  ]
-
+type severity = [ `Error | `Warning | `Info ]
 type producer = Error.Located.producer
 type phase = Error.Located.phase
-
-type message = { headline : string; details : string list }
+type message = { headline: string; details: string list }
 
 type t = {
-  severity : severity;
-  payload : Error.Located.t;
-  message : message;
-  code : string option;
+  severity: severity;
+  payload: Error.Located.t;
+  message: message;
+  code: string option;
 }
 
 type diagnostic = t
 
 let make ?(notes = []) ?(details = []) ?code severity producer span headline =
   let payload = Error.Located.make ~notes producer span headline in
-  { severity; payload; message = { headline; details }; code }
+  { severity; payload; message= { headline; details }; code }
 
 let of_error ?code ?(details = []) severity payload =
   {
     severity;
     payload;
-    message = { headline = payload.error.message; details };
+    message= { headline= payload.error.message; details };
     code;
   }
 
-let with_details details t =
-  { t with message = { t.message with details } }
-
-let add_detail detail t =
-  with_details (t.message.details @ [ detail ]) t
+let with_details details t = { t with message= { t.message with details } }
+let add_detail detail t = with_details (t.message.details @ [ detail ]) t
 
 let add_note note t =
   let error = t.payload.error in
   let updated_notes =
-    if List.exists (String.equal note) error.notes then
-      error.notes
-    else
-      error.notes @ [ note ]
+    if List.exists (String.equal note) error.notes then error.notes
+    else error.notes @ [ note ]
   in
-  let payload = { t.payload with error = { error with notes = updated_notes } } in
+  let payload = { t.payload with error= { error with notes= updated_notes } } in
   { t with payload }
 
 let map_error f t =
   let old_error = t.payload.error in
   let new_error = f old_error in
-  let payload = { t.payload with error = new_error } in
+  let payload = { t.payload with error= new_error } in
   let message =
     if String.equal t.message.headline old_error.message then
-      { t.message with headline = new_error.message }
-    else
-      t.message
+      { t.message with headline= new_error.message }
+    else t.message
   in
   { t with payload; message }
 
@@ -81,32 +69,39 @@ let pp_code fmt = function
       Format.fprintf fmt " [%s]" code
 
 let pp_message fmt { headline; details } =
-  Format.fprintf fmt "%s" headline ;
-  List.iter (fun detail -> Format.fprintf fmt "@,@[<2>%s@]" detail) details
+  Format.fprintf fmt "%s" headline
+  ; List.iter (fun detail -> Format.fprintf fmt "@,@[<2>%s@]" detail) details
 
 let phase_to_string : phase -> string = function
-  | `Lexer -> "lexer"
-  | `Parser -> "parser"
-  | `Driver -> "driver"
-  | `Interpreter -> "interpreter"
-  | `Other label -> label
+  | `Lexer ->
+      "lexer"
+  | `Parser ->
+      "parser"
+  | `Driver ->
+      "driver"
+  | `Interpreter ->
+      "interpreter"
+  | `Other label ->
+      label
 
 let producer_to_string { Error.Located.phase; module_path } =
   match module_path with
-  | None -> phase_to_string phase
-  | Some path -> phase_to_string phase ^ ":" ^ path
+  | None ->
+      phase_to_string phase
+  | Some path ->
+      phase_to_string phase ^ ":" ^ path
 
 let pp fmt ({ severity; payload; message; code } as diagnostic) =
   let open Format in
   let span_value = span diagnostic in
-  fprintf fmt "@[<v>%a%a: %a@,@[<2>origin:@ %s@]@,@[<2>span:@ %a@]"
-    pp_severity severity
-    pp_code code
-    pp_message message
+  fprintf fmt "@[<v>%a%a: %a@,@[<2>origin:@ %s@]@,@[<2>span:@ %a@]" pp_severity
+    severity pp_code code pp_message message
     (producer_to_string payload.producer)
-    pp_span span_value ;
-  List.iter (fun note -> fprintf fmt "@,@[<2>note:@ %s@]" note) payload.error.notes ;
-  fprintf fmt "@]"
+    pp_span span_value
+  ; List.iter
+      (fun note -> fprintf fmt "@,@[<2>note:@ %s@]" note)
+      payload.error.notes
+  ; fprintf fmt "@]"
 
 type report = t list
 
@@ -114,9 +109,7 @@ module Report = struct
   type t = report
 
   let empty = []
-
   let add diagnostic report = diagnostic :: report
-
   let append left right = left @ right
 
   let pp fmt report =

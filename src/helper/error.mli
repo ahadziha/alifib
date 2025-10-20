@@ -15,11 +15,10 @@ module Located : sig
 
     val make : Positions.point -> Positions.point -> t
     val point : Positions.point -> t
+
     val of_lexing :
-      Positions.Source.t ->
-      Lexing.position ->
-      Lexing.position ->
-      t
+      Positions.Source.t -> Lexing.position -> Lexing.position -> t
+
     val to_lexing : t -> Lexing.position * Lexing.position
   end
 

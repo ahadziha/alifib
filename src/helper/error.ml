@@ -26,13 +26,11 @@ module Located = struct
 
     let make start stop = Positions.make_span ~start ~stop
     let point position = Positions.point_span position
-
-    let of_lexing source start stop =
-      Positions.span_of_lexing source start stop
+    let of_lexing source start stop = Positions.span_of_lexing source start stop
 
     let to_lexing span =
       let open Positions in
-      to_lexing span.start, to_lexing span.stop
+      (to_lexing span.start, to_lexing span.stop)
   end
 
   type t = { error: error; span: Span.t; producer: producer }
@@ -62,10 +60,9 @@ module Located = struct
     | None ->
         phase_to_string phase
     | Some path ->
-      phase_to_string phase ^ ":" ^ path
+        phase_to_string phase ^ ":" ^ path
 
-  let span_to_string span =
-    Format.asprintf "%a" Positions.pp_span span
+  let span_to_string span = Format.asprintf "%a" Positions.pp_span span
 
   let pp fmt { producer; span; error } =
     let origin = origin_to_string producer in

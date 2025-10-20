@@ -1,21 +1,15 @@
 open Positions
 
-type severity =
-  [ `Error
-  | `Warning
-  | `Info
-  ]
-
+type severity = [ `Error | `Warning | `Info ]
 type producer = Error.Located.producer
 type phase = Error.Located.phase
-
-type message = { headline : string; details : string list }
+type message = { headline: string; details: string list }
 
 type t = {
-  severity : severity;
-  payload : Error.Located.t;
-  message : message;
-  code : string option;
+  severity: severity;
+  payload: Error.Located.t;
+  message: message;
+  code: string option;
 }
 
 type diagnostic = t
@@ -31,11 +25,8 @@ val make :
   t
 
 val of_error :
-  ?code:string ->
-  ?details:string list ->
-  severity ->
-  Error.Located.t ->
-  t
+  ?code:string -> ?details:string list -> severity -> Error.Located.t -> t
+
 val with_details : string list -> t -> t
 val add_detail : string -> t -> t
 val add_note : string -> t -> t
