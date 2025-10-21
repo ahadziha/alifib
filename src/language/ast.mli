@@ -1,29 +1,19 @@
 type span = Positions.span
-
-type 'a node = { node : 'a; span : span option }
+type 'a node = { node: 'a; span: span option }
 type 'a nonempty = 'a * 'a list
-
 type identifier = string node
 type nat = string node
 
-type program = { blocks : block node list }
-
-and block =
-  | Type_block of type_block
-  | Builder_block of local_block
-
-and type_block = { instructions : cpx_instr_type node list }
+type program = { blocks: block node list }
+and block = Type_block of type_block | Builder_block of local_block
+and type_block = { type_instructions: cpx_instr_type node list }
 
 and local_block = {
-  location : cpx_builder node;
-  instructions : cpx_instr_local node list;
+  location: cpx_builder node;
+  instructions: cpx_instr_local node list;
 }
 
-and cpx_builder = {
-  root : address node option;
-  extension : cpx_block;
-}
-
+and cpx_builder = { root: address node option; extension: cpx_block }
 and cpx_block = cpx_instr node list
 
 and cpx_instr_type =
@@ -44,59 +34,43 @@ and cpx_instr_local =
   | Morphism_namer_local of morphism_namer
   | Assert of assert_statement
 
-and generator_type = {
-  generator : generator node;
-  value : cpx_builder node;
-}
-
-and generator = {
-  name : identifier;
-  boundaries : boundaries option;
-}
-
-and boundaries = {
-  input : diagram node;
-  output : diagram node;
-}
+and generator_type = { generator: generator node; value: cpx_builder node }
+and generator = { name: identifier; boundaries: boundaries option }
+and boundaries = { input: diagram node; output: diagram node }
 
 and diagram_namer = {
-  name : identifier;
-  boundaries : boundaries option;
-  definition : diagram node;
+  diagram_name: identifier;
+  constraints: boundaries option;
+  diagram_def: diagram node;
 }
 
 and morphism_namer = {
-  name : identifier;
-  domain : address node;
-  definition : morphism node;
+  morphism_name: identifier;
+  domain: address node;
+  morphism_def: morphism node;
 }
 
-and include_statement = {
-  alias : identifier option;
-  address : address node;
-}
+and include_statement = { inclusion: identifier option; address: address node }
 
 and attach_statement = {
-  alias : identifier option;
-  address : address node;
-  along : morphism node option;
+  alias: identifier option;
+  attachment: address node;
+  along: morphism node option;
 }
 
-and assert_statement = {
-  left : diagram node;
-  right : diagram node;
+and assert_statement = { left: diagram node; right: diagram node }
+
+and diagram_concat = {
+  concat_head: address node;
+  concat_tail: address node list;
 }
 
 and diagram =
-  | Diagram_concat of {
-      head : address node;
-      tail : address node list;
-    }
+  | Diagram_concat of diagram_concat
   | Diagram_paste of {
-      base : diagram node;
-      dim : nat;
-      suffix_head : address node;
-      suffix_tail : address node list;
+      paste_base: diagram node;
+      paste_dim: nat;
+      paste_suffix: diagram_concat;
     }
 
 and diagram_simple =
@@ -107,32 +81,25 @@ and diagram_simple =
 and boundary_selector = In | Out
 
 and diagram_bd = {
-  base : diagram_simple node;
-  selectors : boundary_selector node list;
+  base: diagram_simple node;
+  selectors: boundary_selector node list;
 }
 
-and address = {
-  via : morphism node option;
-  target : diagram_bd node;
-}
-
-and morphism = {
-  head : morphism_expr node;
-  tail : morphism_expr node list;
-}
+and address = { prefix: morphism node option; target: diagram_bd node }
+and morphism = { head: morphism_expr node; tail: morphism_expr node list }
 
 and morphism_expr =
   | Morphism_builder of morphism_builder
   | Morphism_with_domain of {
-      builder : morphism_builder node;
-      domain : cpx_builder node;
+      builder: morphism_builder node;
+      domain: cpx_builder node;
     }
 
 and morphism_builder =
   | Morphism_simple of morphism_simple
   | Morphism_block of {
-      base : morphism_simple node option;
-      extension : morphism_block;
+      base: morphism_simple node option;
+      extension: morphism_block;
     }
 
 and morphism_block = morphism_instr node list
