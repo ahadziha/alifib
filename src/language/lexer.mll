@@ -91,10 +91,6 @@ rule token env = parse
       reset_newlines env;
       make_token env Of_shape lexbuf
     }
-  | ":=" {
-      reset_newlines env;
-      make_token env Definition lexbuf
-    }
   | "=>" {
       reset_newlines env;
       make_token env Maps_to lexbuf

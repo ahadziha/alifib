@@ -35,3 +35,4 @@ setup.log
 # Local OPAM switch
 _opam/
 dev_notes/
+src/language/parser.conflicts

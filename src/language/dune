@@ -2,7 +2,7 @@
 
 (menhir
  (modules parser)
- (flags --table))
+ (flags --table --explain))
 
 (library
  (name alifib_language)

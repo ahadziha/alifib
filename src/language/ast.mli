@@ -53,7 +53,7 @@ and morphism_namer = {
 and include_statement = { inclusion: identifier option; address: address node }
 
 and attach_statement = {
-  alias: identifier option;
+  attach_name: identifier;
   attachment: address node;
   along: morphism node option;
 }

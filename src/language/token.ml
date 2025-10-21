@@ -1,5 +1,15 @@
 type comma_origin = [ `Explicit | `From_newline ]
-type keyword = [ `Include | `Attach | `Along | `Assert | `In | `Out | `Type ]
+type keyword =
+  [ `Include
+  | `Attach
+  | `Along
+  | `Assert
+  | `In
+  | `Out
+  | `Type
+  | `Let
+  | `As
+  ]
 type trivia = Whitespace of string | Newline of string | Comment of string
 
 type kind =
@@ -21,7 +31,6 @@ type kind =
   | Maps_to
   | Arrow
   | Has_value
-  | Definition
   | Equal
   | Hole
   | Trivia of trivia
@@ -60,6 +69,10 @@ let keyword_of_string = function
       Some `Out
   | "Type" ->
       Some `Type
+  | "let" ->
+      Some `Let
+  | "as" ->
+      Some `As
   | _ ->
       None
 
