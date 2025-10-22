@@ -20,6 +20,18 @@ let spans_of_option_node = function
   | Some node -> spans_of_nodes [node]
   | None -> []
 
+let nonempty_of head tail = { Nonempty.head = head; tail }
+
+let nonempty_singleton x = Nonempty.singleton x
+
+let append_nonempty = Nonempty.append
+
+let spans_of_nonempty nonempty =
+  spans_of_nodes (Nonempty.to_list nonempty)
+
+let diagram_of_components components =
+  make_node (spans_of_nonempty components) (Diagram_concat components)
+
 let identifier_of_token token =
   match Token.kind token with
   | Token.Identifier name -> Ast.node ~span:(span_of_token token) name
@@ -39,8 +51,6 @@ let make_selector dot kw =
   in
   make_node [span_of_token dot; span_of_token kw] value
 
-let spans_of_diagram_concat concat =
-  spans_of_nodes (concat.concat_head :: concat.concat_tail)
 %}
 
 %token <Token.t> AT
@@ -243,13 +253,13 @@ diagram_namer:
     }
 
 morphism_namer:
-  | let_kw=KW_LET name_tok=IDENT of_shape=OF_SHAPE addr=address eq=EQUAL morph=morphism {
+  | let_kw=KW_LET name_tok=IDENT of_shape=OF_SHAPE loc=location eq=EQUAL morph=morphism {
       let name = identifier_of_token name_tok in
-      let record = { morphism_name = name; domain = addr; morphism_def = morph } in
+      let record = { morphism_name = name; domain = loc; morphism_def = morph } in
       let spans =
         let spans = span_of_token let_kw :: spans_of_nodes [name] in
         let spans = spans @ [span_of_token of_shape] in
-        let spans = spans @ spans_of_nodes [addr] in
+        let spans = spans @ spans_of_nodes [loc] in
         let spans = spans @ [span_of_token eq] in
         spans @ spans_of_nodes [morph]
       in
@@ -257,11 +267,11 @@ morphism_namer:
     }
 
 include_statement:
-  | kw=KW_INCLUDE addr=address as_part=include_alias_opt {
+  | kw=KW_INCLUDE loc=location as_part=include_alias_opt {
       let inclusion, alias_spans = as_part in
-      let record = { inclusion; address = addr } in
+      let record = { inclusion; include_location = loc } in
       let spans =
-        let spans = span_of_token kw :: spans_of_nodes [addr] in
+        let spans = span_of_token kw :: spans_of_nodes [loc] in
         spans @ alias_spans
       in
       (record, spans)
@@ -276,14 +286,14 @@ include_alias_opt:
     }
 
 attach_statement:
-  | kw=KW_ATTACH name_tok=IDENT of_shape=OF_SHAPE addr=address along=attach_along_opt {
-      let name = identifier_of_token name_tok in
+  | kw=KW_ATTACH name_tok=IDENT of_shape=OF_SHAPE loc=location along=attach_along_opt {
+      let attachment = identifier_of_token name_tok in
       let along, along_spans = along in
-      let record = { attach_name = name; attachment = addr; along } in
+      let record = { attachment; shape = loc; along } in
       let spans =
-        let spans = span_of_token kw :: spans_of_nodes [name] in
+        let spans = span_of_token kw :: spans_of_nodes [attachment] in
         let spans = spans @ [span_of_token of_shape] in
-        let spans = spans @ spans_of_nodes [addr] in
+        let spans = spans @ spans_of_nodes [loc] in
         spans @ along_spans
       in
       (record, spans)
@@ -320,51 +330,118 @@ cpx_builder:
     }
 
 cpx_builder_root_opt:
-  | addr=address { Some addr }
+  | loc=location { Some loc }
   | { None }
 
-diagram:
-  | concat=diagram_concat {
-      let spans = spans_of_diagram_concat concat in
-      make_node spans (Diagram_concat concat)
-    }
-  | base=diagram paste=PASTE count=NAT suffix=diagram_concat {
-      let dim = nat_of_token count in
-      let spans =
-        let spans = spans_of_nodes [base] in
-        let spans = spans @ [span_of_token paste] in
-        let spans = spans @ spans_of_nodes [dim] in
-        spans @ spans_of_diagram_concat suffix
+location:
+  | head_tok=IDENT tail=location_tail {
+      let head = identifier_of_token head_tok in
+      let locations =
+        List.fold_left
+          (fun acc (_, ident_node) -> append_nonempty acc ident_node)
+          (nonempty_singleton head)
+          tail
       in
-      make_node spans
-        (Diagram_paste
-           { paste_base = base; paste_dim = dim; paste_suffix = suffix })
+      let name_spans = spans_of_nodes (Nonempty.to_list locations) in
+      let dot_spans = List.map (fun (dot_token, _) -> span_of_token dot_token) tail in
+      let spans = name_spans @ dot_spans in
+      make_node spans locations
     }
 
-diagram_concat:
-  | head=address tail=diagram_concat_tail {
-      { concat_head = head; concat_tail = tail }
+location_tail:
+  | dot=DOT ident=IDENT tail=location_tail {
+      let ident_node = identifier_of_token ident in
+      (dot, ident_node) :: tail
     }
-
-diagram_concat_tail:
-  | addr=address tail=diagram_concat_tail { addr :: tail }
   | { [] }
 
-diagram_simple:
-  | name_tok=IDENT {
-      let name = identifier_of_token name_tok in
-      make_node (spans_of_nodes [name]) (Diagram_name name)
+diagram:
+  | component=diagram_component {
+      let concat = nonempty_singleton component in
+      diagram_of_components concat
     }
-  | lpar=LPAREN inner=diagram rpar=RPAREN {
+  | compound=diagram_compound { compound }
+
+diagram_compound:
+  | concat=diagram_concat_compound {
+      diagram_of_components concat
+    }
+  | paste=diagram_paste { paste }
+
+diagram_concat_compound:
+  | first=diagram_component second=diagram_component rest=diagram_component_list {
+      nonempty_of first (second :: rest)
+    }
+
+diagram_component_list:
+  | component=diagram_component rest=diagram_component_list { component :: rest }
+  | { [] }
+
+diagram_paste:
+  | base=diagram_paste_term first=diagram_paste_segment rest=diagram_paste_segment_list {
+      let base_diagram = diagram_of_components base in
+      let segments = first :: rest in
+      List.fold_left
+        (fun acc (paste_token, dim_token, suffix_components) ->
+          let dim = nat_of_token dim_token in
+          let spans =
+            let spans = spans_of_nodes [acc] in
+            let spans = spans @ [span_of_token paste_token] in
+            let spans = spans @ spans_of_nodes [dim] in
+            spans @ spans_of_nonempty suffix_components
+          in
+          make_node spans
+            (Diagram_paste
+               {
+                 paste_base = acc;
+                 paste_dim = dim;
+                 paste_suffix = suffix_components;
+               }))
+        base_diagram segments
+    }
+
+diagram_paste_term:
+  | component=diagram_component { nonempty_singleton component }
+  | concat=diagram_concat_compound { concat }
+
+diagram_paste_segment:
+  | paste=PASTE count=NAT term=diagram_paste_term { (paste, count, term) }
+
+diagram_paste_segment_list:
+  | segment=diagram_paste_segment rest=diagram_paste_segment_list { segment :: rest }
+  | { [] }
+
+diagram_component:
+  | prefix=diagram_prefix core=diagram_simple suffix=diagram_suffix_opt {
+      let morph, prefix_spans = prefix in
+      let suffix_nodes = suffix in
       let spans =
-        let spans = span_of_token lpar :: spans_of_nodes [inner] in
-        spans @ [span_of_token rpar]
+        prefix_spans @ spans_of_nodes [core] @ spans_of_nodes suffix_nodes
       in
-      make_node spans (Diagram_parens inner)
+      let record =
+        { prefix = Some morph; base = core; suffix = suffix_nodes }
+      in
+      make_node spans record
     }
-  | hole=HOLE {
-      make_node [span_of_token hole] Diagram_hole
+  | core=diagram_simple suffix=diagram_suffix_opt {
+      let suffix_nodes = suffix in
+      let spans = spans_of_nodes [core] @ spans_of_nodes suffix_nodes in
+      let record = { prefix = None; base = core; suffix = suffix_nodes } in
+      make_node spans record
     }
+
+diagram_prefix:
+  | morph=morphism dot=DOT {
+      let spans = spans_of_nodes [morph] @ [span_of_token dot] in
+      (morph, spans)
+    }
+
+diagram_suffix_opt:
+  | { [] }
+  | suffix=diagram_suffix { suffix }
+
+diagram_suffix:
+  | selector=diagram_selector rest=diagram_selector_list { selector :: rest }
 
 diagram_selector_list:
   | selector=diagram_selector rest=diagram_selector_list { selector :: rest }
@@ -376,51 +453,40 @@ diagram_selector:
       make_selector dot kw
     }
 
-diagram_bd:
-  | base=diagram_simple selectors=diagram_selector_list {
-      let record = { base; selectors } in
-      let spans =
-        let spans = spans_of_nodes [base] in
-        spans @ spans_of_nodes selectors
-      in
-      make_node spans record
+diagram_simple:
+  | name_tok=IDENT {
+      let name = identifier_of_token name_tok in
+      make_node (spans_of_nodes [name]) (Diagram_name name)
     }
-
-address:
-  | prefix=morphism dot=DOT target=diagram_bd {
-      let record = { prefix = Some prefix; target } in
+  | lpar=LPAREN inner=diagram_compound rpar=RPAREN {
       let spans =
-        let spans = spans_of_nodes [prefix] in
-        let spans = spans @ [span_of_token dot] in
-        spans @ spans_of_nodes [target]
+        let spans = span_of_token lpar :: spans_of_nodes [inner] in
+        spans @ [span_of_token rpar]
       in
-      make_node spans record
+      make_node spans (Diagram_parens inner)
     }
-  | target=diagram_bd {
-      let record = { prefix = None; target } in
-      make_node (spans_of_nodes [target]) record
+  | hole=HOLE {
+      make_node [span_of_token hole] Diagram_hole
     }
 
 morphism:
   | expr=morphism_expr {
-      let record = { head = expr; tail = [] } in
-      make_node (spans_of_nodes [expr]) record
+      let value = nonempty_singleton expr in
+      make_node (spans_of_nonempty value) value
     }
   | base=morphism dot=DOT expr=morphism_expr {
-      let base_record = base.node in
-      let record = { head = base_record.head; tail = base_record.tail @ [expr] } in
+      let updated = append_nonempty base.node expr in
       let spans =
         let spans = spans_of_nodes [base] in
         let spans = spans @ [span_of_token dot] in
         spans @ spans_of_nodes [expr]
       in
-      make_node spans record
+      make_node spans updated
     }
 
 morphism_expr:
   | builder=morphism_builder {
-      let record = Morphism_builder builder.node in
-      make_node (spans_of_nodes [builder]) record
+      make_node (spans_of_nodes [builder]) (Morphism_builder builder.node)
     }
   | lpar=LPAREN builder=morphism_builder of_shape=OF_SHAPE domain=cpx_builder rpar=RPAREN {
       let record =
@@ -434,6 +500,21 @@ morphism_expr:
       in
       make_node spans record
     }
+
+morphism_compound:
+  | first=morphism_expr dot=DOT second=morphism_expr rest=morphism_compound_tail {
+      let additional_exprs = List.map snd rest in
+      let exprs = nonempty_of first (second :: additional_exprs) in
+      let dot_spans =
+        span_of_token dot :: List.map (fun (dot_token, _) -> span_of_token dot_token) rest
+      in
+      let spans = spans_of_nonempty exprs @ dot_spans in
+      make_node spans exprs
+    }
+
+morphism_compound_tail:
+  | dot=DOT expr=morphism_expr rest=morphism_compound_tail { (dot, expr) :: rest }
+  | { [] }
 
 morphism_builder:
   | simple=morphism_simple {
@@ -492,7 +573,7 @@ morphism_simple:
       let name = identifier_of_token name_tok in
       make_node (spans_of_nodes [name]) (Morphism_name name)
     }
-  | lpar=LPAREN morph=morphism rpar=RPAREN {
+  | lpar=LPAREN morph=morphism_compound rpar=RPAREN {
       let spans =
         let spans = span_of_token lpar :: spans_of_nodes [morph] in
         spans @ [span_of_token rpar]

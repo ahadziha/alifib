@@ -103,10 +103,10 @@ let to_parser_token pretoken =
             Some (Parser.EQUAL token, startp, endp)
         | Token.Hole ->
             Some (Parser.HOLE token, startp, endp)
-        | Token.Trivia _ ->
-            None
-        | Token.Error _ ->
-            None
+       | Token.Trivia _ ->
+           None
+       | Token.Error _ ->
+           None
       end
   | Dot_selector (dot_token, kw_token) ->
       let startp, endp = positions_of_pair dot_token kw_token in

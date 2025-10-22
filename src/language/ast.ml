@@ -1,11 +1,29 @@
 type span = Positions.span
 type 'a node = { node: 'a; span: span option }
-type 'a nonempty = 'a * 'a list
+
+module Nonempty = struct
+  type 'a t = { head : 'a; tail : 'a list }
+
+  let singleton head = { head; tail = [] }
+
+  let append { head; tail } x = { head; tail = tail @ [x] }
+
+  let to_list { head; tail } = head :: tail
+
+  let map f { head; tail } = { head = f head; tail = List.map f tail }
+end
+
+type 'a nonempty = 'a Nonempty.t
 type identifier = string node
 type nat = string node
+type location = identifier nonempty
 
 type program = { blocks: block node list }
-and block = Type_block of type_block | Builder_block of local_block
+
+and block =
+  | Type_block of type_block
+  | Builder_block of local_block
+
 and type_block = { type_instructions: cpx_instr_type node list }
 
 and local_block = {
@@ -13,7 +31,11 @@ and local_block = {
   instructions: cpx_instr_local node list;
 }
 
-and cpx_builder = { root: address node option; extension: cpx_block }
+and cpx_builder = {
+  root: location node option;
+  extension: cpx_instr node list;
+}
+
 and cpx_block = cpx_instr node list
 
 and cpx_instr_type =
@@ -46,32 +68,36 @@ and diagram_namer = {
 
 and morphism_namer = {
   morphism_name: identifier;
-  domain: address node;
+  domain: location node;
   morphism_def: morphism node;
 }
 
-and include_statement = { inclusion: identifier option; address: address node }
+and include_statement = {
+  inclusion: identifier option;
+  include_location: location node;
+}
 
 and attach_statement = {
-  attach_name: identifier;
-  attachment: address node;
+  attachment: identifier;
+  shape: location node;
   along: morphism node option;
 }
 
 and assert_statement = { left: diagram node; right: diagram node }
 
-and diagram_concat = {
-  concat_head: address node;
-  concat_tail: address node list;
-}
-
 and diagram =
-  | Diagram_concat of diagram_concat
+  | Diagram_concat of diagram_component node nonempty
   | Diagram_paste of {
       paste_base: diagram node;
       paste_dim: nat;
-      paste_suffix: diagram_concat;
+      paste_suffix: diagram_component node nonempty;
     }
+
+and diagram_component = {
+  prefix: morphism node option;
+  base: diagram_simple node;
+  suffix: boundary_selector node list;
+}
 
 and diagram_simple =
   | Diagram_name of identifier
@@ -79,14 +105,7 @@ and diagram_simple =
   | Diagram_hole
 
 and boundary_selector = In | Out
-
-and diagram_bd = {
-  base: diagram_simple node;
-  selectors: boundary_selector node list;
-}
-
-and address = { prefix: morphism node option; target: diagram_bd node }
-and morphism = { head: morphism_expr node; tail: morphism_expr node list }
+and morphism = morphism_expr node nonempty
 
 and morphism_expr =
   | Morphism_builder of morphism_builder
