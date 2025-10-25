@@ -1,4 +1,5 @@
 type comma_origin = [ `Explicit | `From_newline ]
+
 type keyword =
   [ `Include
   | `Attach
@@ -9,8 +10,8 @@ type keyword =
   | `Type
   | `Let
   | `As
-  | `Map
-  ]
+  | `Map ]
+
 type trivia = Whitespace of string | Newline of string | Comment of string
 
 type kind =
