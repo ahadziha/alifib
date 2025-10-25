@@ -31,6 +31,8 @@ let to_parser_token token =
             Some (ATTACH token, startp, endp)
         | `Along ->
             Some (ALONG token, startp, endp)
+        | `Map ->
+            Some (MAP token, startp, endp)
         | `Assert ->
             Some (ASSERT token, startp, endp)
         | `In ->

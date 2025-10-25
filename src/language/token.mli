@@ -1,6 +1,16 @@
 type comma_origin = [ `Explicit | `From_newline ]
 type keyword =
-  [ `Include | `Attach | `Along | `Assert | `In | `Out | `Type | `Let | `As ]
+  [ `Include
+  | `Attach
+  | `Along
+  | `Assert
+  | `In
+  | `Out
+  | `Type
+  | `Let
+  | `As
+  | `Map
+  ]
 type trivia = Whitespace of string | Newline of string | Comment of string
 
 type kind =
