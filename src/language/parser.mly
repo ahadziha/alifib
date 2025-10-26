@@ -300,6 +300,13 @@ complex_named:
         ; complex_named_block = block_opt
         }
     }
+  | address=address {
+      let span = node_span address in
+      mk ?span
+        { complex_named_address = Some address
+        ; complex_named_block = None
+        }
+    }
 
 complex:
   | address_opt=address_opt lbrace=LBRACE block_opt=c_block_opt rbrace=RBRACE {
@@ -314,6 +321,13 @@ complex:
       mk ?span
         { complex_address = address_opt
         ; complex_block = block_opt
+        }
+    }
+  | address=address {
+      let span = node_span address in
+      mk ?span
+        { complex_address = Some address
+        ; complex_block = None
         }
     }
 

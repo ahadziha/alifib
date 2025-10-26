@@ -11,8 +11,7 @@ let positions_of_token token =
   (startp, endp)
 
 let to_parser_token token =
-  if Token.is_trivia token || Token.is_error token then
-    None
+  if Token.is_trivia token || Token.is_error token then None
   else
     let startp, endp = positions_of_token token in
     let open Parser in
@@ -42,7 +41,7 @@ let to_parser_token token =
         | `Let ->
             Some (LET token, startp, endp)
         | `As ->
-            Some (AS token, startp, endp) )
+            Some (AS token, startp, endp))
     | Token.Identifier _ ->
         Some (IDENT token, startp, endp)
     | Token.Nat _ ->
@@ -111,7 +110,35 @@ let parse stream =
   let base_diagnostics = Token_stream.diagnostics stream in
   let diagnostics = ref base_diagnostics in
   let raw_tokens = Array.to_list (Token_stream.tokens stream) in
-  let tokens = raw_tokens |> List.filter_map to_parser_token in
+  let tokens =
+    let is_comma token =
+      match Token.kind token with Token.Comma _ -> true | _ -> false
+    in
+    let drops_after token =
+      match Token.kind token with
+      | Token.At | Token.R_brace | Token.R_bracket | Token.Eof ->
+          true
+      | Token.Comma _ ->
+          true
+      | _ ->
+          false
+    in
+    let filter_commas tokens =
+      let rec aux acc = function
+        | comma :: (next :: _ as rest) when is_comma comma ->
+            if drops_after next then aux acc rest else aux (comma :: acc) rest
+        | token :: rest ->
+            aux (token :: acc) rest
+        | [] ->
+            List.rev acc
+      in
+      aux [] tokens
+    in
+    raw_tokens
+    |> List.filter (fun token -> not (Token.is_trivia token))
+    |> filter_commas
+    |> List.filter_map to_parser_token
+  in
   let start_pos = Lexing.dummy_pos in
   let checkpoint = Parser.Incremental.program start_pos in
   let ast =
