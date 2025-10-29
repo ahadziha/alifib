@@ -13,13 +13,6 @@ and block_desc =
       block_local_body: c_block_local option;
     }
 
-and complex_named = complex_named_desc node
-
-and complex_named_desc = {
-  complex_named_address: address option;
-  complex_named_block: c_block option;
-}
-
 and complex = complex_desc node
 
 and complex_desc = {
@@ -61,7 +54,7 @@ and generator_type = generator_type_desc node
 
 and generator_type_desc = {
   generator_type_generator: generator;
-  generator_type_definition: complex_named;
+  generator_type_definition: complex;
 }
 
 and generator = generator_desc node

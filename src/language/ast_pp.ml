@@ -55,14 +55,6 @@ and block fmt block =
         (pp_field "locals" (pp_option c_block_local))
         block_local_body
 
-and complex_named fmt complex_named =
-  let { complex_named_address; complex_named_block } = complex_named.value in
-  fprintf fmt "@[<v 2>(Complex_named@,%a@,%a)@]"
-    (pp_field "address" (pp_option address))
-    complex_named_address
-    (pp_field "block" (pp_option c_block))
-    complex_named_block
-
 and complex fmt complex =
   let { complex_address; complex_block } = complex.value in
   fprintf fmt "@[<v 2>(Complex@,%a@,%a)@]"
@@ -118,7 +110,7 @@ and generator_type fmt gt =
   fprintf fmt "@[<v 2>(Generator_type@,%a@,%a)@]"
     (pp_field "generator" generator)
     generator_type_generator
-    (pp_field "definition" complex_named)
+    (pp_field "definition" complex)
     generator_type_definition
 
 and generator fmt g =

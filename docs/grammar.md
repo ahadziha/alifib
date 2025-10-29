@@ -1,11 +1,10 @@
 <Program> ::= { <Block> }
 <Block> ::= "@" "Type" [ <CBlockType> ] | "@" <Complex> [ <CBlockLocal> ]
 
-<ComplexNamed> ::= <Address> | [ <Address> ] "{" [ <CBlock> ] "}"
 <Complex> ::= <Address> | [ <Address> ] "{" [ <CBlock> ] "}"
 
-<CBlockType> 	::= <CInstrType> { "," <CInstrType> }
-<CInstrType> 	::= <GeneratorType> | <DiagramNamer> | <MorphismNamer> | <IncludeStatement>
+<CBlockType> ::= <CInstrType> { "," <CInstrType> }
+<CInstrType> ::= <GeneratorType> | <DiagramNamer> | <MorphismNamer> | <IncludeStatement>
 
 <CBlock> ::= <CInstr> { "," <CInstr> }
 <CInstr> ::= <Generator> | <DNamer> | <MNamer> | <IncludeStatement> | <AttachStatement>
@@ -13,7 +12,7 @@
 <CBlockLocal> ::= <CInstrLocal> { "," <CInstrLocal> } 
 <CInstrLocal> ::= <DNamer> | <MNamer> | <AssertStatement>
 
-<GeneratorType> ::= <Generator> "<<=" <ComplexNamed>
+<GeneratorType> ::= <Generator> "<<=" <Complex>
 <Generator> ::= <Name> [ ":" <Boundaries> ]
 
 <Address> ::= <Name> { "." <Name> }

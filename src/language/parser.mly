@@ -247,7 +247,7 @@ c_instr_local:
     }
 
 generator_type:
-  | generator=generator has_value=HAS_VALUE definition=complex_named {
+  | generator=generator has_value=HAS_VALUE definition=complex {
       let span =
         merge_spans
           [ node_span generator
@@ -284,29 +284,6 @@ generator:
 generator_boundaries_opt:
   | { None }
   | colon=COLON boundaries=boundaries { Some (colon, boundaries) }
-
-complex_named:
-  | address_opt=address_opt lbrace=LBRACE block_opt=c_block_opt rbrace=RBRACE {
-      let span =
-        merge_spans
-          [ option_span address_opt
-          ; token_span lbrace
-          ; option_span block_opt
-          ; token_span rbrace
-          ]
-      in
-      mk ?span
-        { complex_named_address = address_opt
-        ; complex_named_block = block_opt
-        }
-    }
-  | address=address {
-      let span = node_span address in
-      mk ?span
-        { complex_named_address = Some address
-        ; complex_named_block = None
-        }
-    }
 
 complex:
   | address_opt=address_opt lbrace=LBRACE block_opt=c_block_opt rbrace=RBRACE {
