@@ -4,7 +4,7 @@
 <Complex> ::= <Address> | [ <Address> ] "{" [ <CBlock> ] "}"
 
 <CBlockType> ::= <CInstrType> { "," <CInstrType> }
-<CInstrType> ::= <GeneratorType> | <DiagramNamer> | <MorphismNamer> | <IncludeStatement>
+<CInstrType> ::= <GeneratorType> | <DNamer> | <MNamer> | <IncludeStatement>
 
 <CBlock> ::= <CInstr> { "," <CInstr> }
 <CInstr> ::= <Generator> | <DNamer> | <MNamer> | <IncludeStatement> | <AttachStatement>
