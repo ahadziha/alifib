@@ -13,13 +13,6 @@ and block_desc =
       block_local_body: c_block_local option;
     }
 
-and complex_named = complex_named_desc node
-
-and complex_named_desc = {
-  complex_named_address: address option;
-  complex_named_block: c_block option;
-}
-
 and complex = complex_desc node
 
 and complex_desc = {
@@ -61,7 +54,7 @@ and generator_type = generator_type_desc node
 
 and generator_type_desc = {
   generator_type_generator: generator;
-  generator_type_definition: complex_named;
+  generator_type_definition: complex;
 }
 
 and generator = generator_desc node
@@ -86,13 +79,13 @@ and m_comp_desc = M_comp_term of m_term | M_comp_name of name
 and m_term = m_term_desc node
 and m_term_desc = { m_term_ext: m_ext; m_term_target: complex }
 and m_ext = m_ext_desc node
-and m_ext_desc = { m_ext_prefix: morphism option; m_ext_block: m_block }
+and m_ext_desc = { m_ext_prefix: morphism option; m_ext_block: m_block option }
 and m_def = m_def_desc node
 and m_def_desc = M_def_morphism of morphism | M_def_ext of m_ext
 and m_block = m_block_desc node
 and m_block_desc = m_instr list
 and m_instr = m_instr_desc node
-and m_instr_desc = { m_instr_address: address; m_instr_pasting: pasting }
+and m_instr_desc = { m_instr_source: pasting; m_instr_target: pasting }
 and mnamer = mnamer_desc node
 
 and mnamer_desc = {

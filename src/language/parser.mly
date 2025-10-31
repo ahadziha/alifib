@@ -247,7 +247,7 @@ c_instr_local:
     }
 
 generator_type:
-  | generator=generator has_value=HAS_VALUE definition=complex_named {
+  | generator=generator has_value=HAS_VALUE definition=complex {
       let span =
         merge_spans
           [ node_span generator
@@ -284,29 +284,6 @@ generator:
 generator_boundaries_opt:
   | { None }
   | colon=COLON boundaries=boundaries { Some (colon, boundaries) }
-
-complex_named:
-  | address_opt=address_opt lbrace=LBRACE block_opt=c_block_opt rbrace=RBRACE {
-      let span =
-        merge_spans
-          [ option_span address_opt
-          ; token_span lbrace
-          ; option_span block_opt
-          ; token_span rbrace
-          ]
-      in
-      mk ?span
-        { complex_named_address = address_opt
-        ; complex_named_block = block_opt
-        }
-    }
-  | address=address {
-      let span = node_span address in
-      mk ?span
-        { complex_named_address = Some address
-        ; complex_named_block = None
-        }
-    }
 
 complex:
   | address_opt=address_opt lbrace=LBRACE block_opt=c_block_opt rbrace=RBRACE {
@@ -408,18 +385,18 @@ m_term:
     }
 
 m_ext:
-  | prefix_opt=morphism_opt lbracket=LBRACKET block=m_block rbracket=RBRACKET {
+  | prefix_opt=morphism_opt lbracket=LBRACKET block_opt=m_block_opt rbracket=RBRACKET {
       let span =
         merge_spans
           [ option_span prefix_opt
           ; token_span lbracket
-          ; node_span block
+          ; option_span block_opt
           ; token_span rbracket
           ]
       in
       mk ?span
         { m_ext_prefix = prefix_opt
-        ; m_ext_block = block
+        ; m_ext_block = block_opt
         }
     }
 
@@ -433,6 +410,10 @@ m_def:
       mk ?span (M_def_ext ext)
     }
 
+m_block_opt:
+  | { None }
+  | block=m_block { Some block }
+
 m_block:
   | item=m_instr tail=m_block_tail {
       let items = separated_nodes item tail in
@@ -445,17 +426,17 @@ m_block_tail:
   | { [] }
 
 m_instr:
-  | address=address maps=MAPS_TO pasting=pasting {
+  | source=pasting maps=MAPS_TO target=pasting {
       let span =
         merge_spans
-          [ node_span address
+          [ node_span source
           ; token_span maps
-          ; node_span pasting
+          ; node_span target
           ]
       in
       mk ?span
-        { m_instr_address = address
-        ; m_instr_pasting = pasting
+        { m_instr_source = source
+        ; m_instr_target = target
         }
     }
 

@@ -7,5 +7,5 @@
 (library
  (name alifib_language)
  (wrapped false)
- (modules ast parser parser_driver token lexer token_stream diagnostics)
+ (modules ast ast_pp parser parser_driver token lexer token_stream diagnostics)
  (libraries alifib_helper alifib_core menhirLib))

@@ -1,0 +1,4 @@
+(executable
+ (name main)
+ (modules main)
+ (libraries alifib_language alifib_helper alifib_core))
