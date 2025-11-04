@@ -14,6 +14,8 @@ type file_loader = {
   read_file: string -> (string, load_error) result;
 }
 
+type mode = Global | Local
+type namespace = { root: Id.Global.t; location: Complex.t }
 type status = [ `Ok | `Error ]
 type result = { context: context; diagnostics: Report.t; status: status }
 
@@ -90,6 +92,16 @@ let missing_module_diagnostic span relative =
   let message = Printf.sprintf "Could not find module `%s`" relative in
   Diagnostics.make `Error interpreter_producer span message
 
+let interpret_c_block_type ~loader:_ context c_block_type =
+  stub_node "c_block_type" context c_block_type
+
+let interpret_c_block_local ~loader:_ context (_ : namespace) c_block_local =
+  stub_node "c_block_local" context c_block_local
+
+let interpret_complex ~loader:_ context ~mode:_ complex =
+  let result = stub_node "complex" context complex in
+  ((None : namespace option), result)
+
 let rec interpret_program ~loader context program =
   let module_id = context.current_module in
   match State.find_module context.state module_id with
@@ -118,32 +130,42 @@ let rec interpret_program ~loader context program =
         | block :: rest ->
             let result = interpret_block ~loader acc_context block in
             let diagnostics = Report.append diagnostics result.diagnostics in
-            let status =
-              match (status, result.status) with
-              | `Error, _ | _, `Error ->
-                  `Error
-              | `Ok, `Ok ->
-                  `Ok
-            in
+            let status = result.status in
             if result.status = `Error then
               { context= result.context; diagnostics; status }
             else interpret_blocks result.context diagnostics status rest
       in
       interpret_blocks context Report.empty `Ok blocks
 
-and interpret_block ~loader:_ context block = stub_node "block" context block
-
-let interpret_complex ~loader:_ context complex =
-  stub_node "complex" context complex
-
-let interpret_c_block_type ~loader:_ context c_block_type =
-  stub_node "c_block_type" context c_block_type
+and interpret_block ~loader context block =
+  let open Lang_ast in
+  match block.value with
+  | Block_type { block_type_body= None } ->
+      empty_result context
+  | Block_type { block_type_body= Some c_block_type } ->
+      interpret_c_block_type ~loader context c_block_type
+  | Block_complex { block_complex_body; block_local_body } ->
+      let namespace_opt, complex_result =
+        interpret_complex ~loader context ~mode:Local block_complex_body
+      in
+      let context = complex_result.context in
+      let diagnostics = complex_result.diagnostics in
+      let status = complex_result.status in
+      match namespace_opt, block_local_body with
+      | Some namespace, Some local_block when status <> `Error ->
+          let local_result =
+            interpret_c_block_local ~loader context namespace local_block
+          in
+          {
+            context= local_result.context;
+            diagnostics= Report.append diagnostics local_result.diagnostics;
+            status= local_result.status;
+          }
+      | _ ->
+          { context; diagnostics; status }
 
 let interpret_c_block ~loader:_ context c_block =
   stub_node "c_block" context c_block
-
-let interpret_c_block_local ~loader:_ context c_block_local =
-  stub_node "c_block_local" context c_block_local
 
 let interpret_c_instr_type ~loader:_ context c_instr_type =
   stub_node "c_instr_type" context c_instr_type

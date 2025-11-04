@@ -12,6 +12,8 @@ type file_loader = {
   read_file: string -> (string, load_error) result;
 }
 
+type mode = Global | Local
+type namespace = { root: Id.Global.t; location: Complex.t }
 type status = [ `Ok | `Error ]
 
 type result = {
@@ -26,7 +28,13 @@ val combine : result -> result -> result
 val has_errors : result -> bool
 val interpret_program : loader:file_loader -> context -> Ast.program -> result
 val interpret_block : loader:file_loader -> context -> Ast.block -> result
-val interpret_complex : loader:file_loader -> context -> Ast.complex -> result
+
+val interpret_complex :
+  loader:file_loader ->
+  context ->
+  mode:mode ->
+  Ast.complex ->
+  namespace option * result
 
 val interpret_c_block_type :
   loader:file_loader -> context -> Ast.c_block_type -> result
@@ -34,7 +42,7 @@ val interpret_c_block_type :
 val interpret_c_block : loader:file_loader -> context -> Ast.c_block -> result
 
 val interpret_c_block_local :
-  loader:file_loader -> context -> Ast.c_block_local -> result
+  loader:file_loader -> context -> namespace -> Ast.c_block_local -> result
 
 val interpret_c_instr_type :
   loader:file_loader -> context -> Ast.c_instr_type -> result
