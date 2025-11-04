@@ -90,10 +90,48 @@ let missing_module_diagnostic span relative =
   let message = Printf.sprintf "Could not find module `%s`" relative in
   Diagnostics.make `Error interpreter_producer span message
 
-let interpret_program ~loader:_ context program =
-  stub_node "program" context program
+let rec interpret_program ~loader context program =
+  let module_id = context.current_module in
+  match State.find_module context.state module_id with
+  | Some _ ->
+      empty_result context
+  | None ->
+      let state = context.state in
+      let empty_type_id = Id.Global.fresh () in
+      let state =
+        State.add_type state ~id:empty_type_id ~data:Diagram.Zero
+          ~complex:Complex.empty
+      in
+      let empty_type_tag = Id.Tag.of_global empty_type_id in
+      let module_complex =
+        Complex.empty
+        |> Complex.add_generator ~name:(Id.Local.make "") ~dim:0
+             ~tag:empty_type_tag
+      in
+      let state = State.add_module state ~id:module_id module_complex in
+      let context = with_state context state in
+      let open Lang_ast in
+      let blocks = program.value.program_blocks in
+      let rec interpret_blocks acc_context diagnostics status = function
+        | [] ->
+            { context= acc_context; diagnostics; status }
+        | block :: rest ->
+            let result = interpret_block ~loader acc_context block in
+            let diagnostics = Report.append diagnostics result.diagnostics in
+            let status =
+              match (status, result.status) with
+              | `Error, _ | _, `Error ->
+                  `Error
+              | `Ok, `Ok ->
+                  `Ok
+            in
+            if result.status = `Error then
+              { context= result.context; diagnostics; status }
+            else interpret_blocks result.context diagnostics status rest
+      in
+      interpret_blocks context Report.empty `Ok blocks
 
-let interpret_block ~loader:_ context block = stub_node "block" context block
+and interpret_block ~loader:_ context block = stub_node "block" context block
 
 let interpret_complex ~loader:_ context complex =
   stub_node "complex" context complex
