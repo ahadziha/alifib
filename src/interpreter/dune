@@ -1,0 +1,5 @@
+(library
+ (name alifib_interpreter)
+ (wrapped false)
+ (modules interpreter)
+ (libraries alifib_core alifib_language))
