@@ -48,11 +48,6 @@ let combine left right =
 
 let has_errors { status; _ } = match status with `Error -> true | `Ok -> false
 
-let normalize_loader ({ search_paths; read_file } as loader) =
-  let normalized_paths = Path.normalize_search_paths search_paths in
-  if normalized_paths = search_paths then loader
-  else { search_paths= normalized_paths; read_file }
-
 let interpreter_producer =
   { Error.Located.phase= `Interpreter; module_path= Some "interpreter" }
 
@@ -75,30 +70,13 @@ let stub_node kind context (node : _ Lang_ast.node) =
   let span = Lang_ast.span_of_node node in
   add_diagnostic (empty_result context) (stub_diagnostic kind span)
 
-let name_to_string (name : Lang_ast.name) = Id.Local.to_string name.value
-
-let address_segments (address : Lang_ast.address) =
-  List.map name_to_string address.value
-
-let segments_to_relative segments =
-  match segments with
-  | [] ->
-      None
-  | segment :: rest ->
-      let base = List.fold_left Filename.concat segment rest in
-      Some (base ^ ".ali")
-
-let missing_module_diagnostic span relative =
-  let message = Printf.sprintf "Could not find module `%s`" relative in
-  Diagnostics.make `Error interpreter_producer span message
-
 let interpret_c_block_type ~loader:_ context c_block_type =
   stub_node "c_block_type" context c_block_type
 
-let interpret_c_block_local ~loader:_ context (_ : namespace) c_block_local =
+let interpret_c_block_local context (_ : namespace) c_block_local =
   stub_node "c_block_local" context c_block_local
 
-let interpret_complex ~loader:_ context ~mode:_ complex =
+let interpret_complex context ~mode:_ complex =
   let result = stub_node "complex" context complex in
   ((None : namespace option), result)
 
@@ -115,10 +93,23 @@ let rec interpret_program ~loader context program =
           ~complex:Complex.empty
       in
       let empty_type_tag = Id.Tag.of_global empty_type_id in
+      let empty_name = Id.Local.make "" in
+      let empty_diagram =
+        match Diagram.cell empty_type_tag Diagram.Zero with
+        | Ok diagram ->
+            diagram
+        | Error err ->
+            let message =
+              Format.asprintf "Failed to create zero cell: %a" Error.pp err
+            in
+            invalid_arg message
+      in
       let module_complex =
         Complex.empty
-        |> Complex.add_generator ~name:(Id.Local.make "") ~dim:0
-             ~tag:empty_type_tag
+        |> Complex.add_generator ~name:empty_name ~dim:0 ~tag:empty_type_tag
+      in
+      let module_complex =
+        Complex.add_diagram module_complex ~name:empty_name empty_diagram
       in
       let state = State.add_module state ~id:module_id module_complex in
       let context = with_state context state in
@@ -144,17 +135,17 @@ and interpret_block ~loader context block =
       empty_result context
   | Block_type { block_type_body= Some c_block_type } ->
       interpret_c_block_type ~loader context c_block_type
-  | Block_complex { block_complex_body; block_local_body } ->
+  | Block_complex { block_complex_body; block_local_body } -> (
       let namespace_opt, complex_result =
-        interpret_complex ~loader context ~mode:Local block_complex_body
+        interpret_complex context ~mode:Local block_complex_body
       in
       let context = complex_result.context in
       let diagnostics = complex_result.diagnostics in
       let status = complex_result.status in
-      match namespace_opt, block_local_body with
+      match (namespace_opt, block_local_body) with
       | Some namespace, Some local_block when status <> `Error ->
           let local_result =
-            interpret_c_block_local ~loader context namespace local_block
+            interpret_c_block_local context namespace local_block
           in
           {
             context= local_result.context;
@@ -162,126 +153,97 @@ and interpret_block ~loader context block =
             status= local_result.status;
           }
       | _ ->
-          { context; diagnostics; status }
+          { context; diagnostics; status })
 
-let interpret_c_block ~loader:_ context c_block =
+let interpret_c_block context ~location:_ c_block =
   stub_node "c_block" context c_block
 
 let interpret_c_instr_type ~loader:_ context c_instr_type =
   stub_node "c_instr_type" context c_instr_type
 
-let interpret_c_instr ~loader:_ context c_instr =
+let interpret_c_instr context ~location:_ c_instr =
   stub_node "c_instr" context c_instr
 
-let interpret_c_instr_local ~loader:_ context c_instr_local =
+let interpret_c_instr_local context c_instr_local =
   stub_node "c_instr_local" context c_instr_local
 
-let interpret_generator_type ~loader:_ context generator_type =
+let interpret_generator_type context generator_type =
   stub_node "generator_type" context generator_type
 
-let interpret_generator ~loader:_ context generator =
+let interpret_generator context ~location:_ generator =
   stub_node "generator" context generator
 
-let interpret_boundaries ~loader:_ context boundaries =
+let interpret_boundaries context ~location:_ boundaries =
   stub_node "boundaries" context boundaries
 
-let interpret_address ~loader:_ context address =
-  stub_node "address" context address
+let interpret_name context (name : Lang_ast.name) = (name.value, context)
+let interpret_nat context (nat : Lang_ast.nat) = (nat.value, context)
 
-let interpret_morphism ~loader:_ context morphism =
+let interpret_address context address =
+  let open Lang_ast in
+  let rec gather acc ctx = function
+    | [] ->
+        (List.rev acc, ctx)
+    | name :: rest ->
+        let value, ctx' = interpret_name ctx name in
+        gather (value :: acc) ctx' rest
+  in
+  gather [] context address.value
+
+let interpret_morphism context ~location:_ morphism =
   stub_node "morphism" context morphism
 
-let interpret_m_comp ~loader:_ context m_comp =
+let interpret_m_comp context ~location:_ m_comp =
   stub_node "m_comp" context m_comp
 
-let interpret_m_term ~loader:_ context m_term =
+let interpret_m_term context ~location:_ m_term =
   stub_node "m_term" context m_term
 
-let interpret_m_ext ~loader:_ context m_ext = stub_node "m_ext" context m_ext
-let interpret_m_def ~loader:_ context m_def = stub_node "m_def" context m_def
+let interpret_m_ext context ~location:_ m_ext = stub_node "m_ext" context m_ext
+let interpret_m_def context ~location:_ m_def = stub_node "m_def" context m_def
 
-let interpret_m_block ~loader:_ context m_block =
+let interpret_m_block context ~location:_ m_block =
   stub_node "m_block" context m_block
 
-let interpret_m_instr ~loader:_ context m_instr =
+let interpret_m_instr context ~location:_ m_instr =
   stub_node "m_instr" context m_instr
 
-let interpret_mnamer ~loader:_ context mnamer =
+let interpret_mnamer context ~location:_ mnamer =
   stub_node "mnamer" context mnamer
 
-let interpret_dnamer ~loader:_ context dnamer =
+let interpret_dnamer context ~location:_ dnamer =
   stub_node "dnamer" context dnamer
 
-let interpret_include ~loader context include_stmt =
-  let loader = normalize_loader loader in
-  let span = Lang_ast.span_of_node include_stmt in
-  let open Lang_ast in
-  let { value= include_desc; _ } = include_stmt in
-  let address = include_desc.include_address in
-  let segments = address_segments address in
-  match segments_to_relative segments with
-  | None ->
-      stub_node "include" context include_stmt
-  | Some relative ->
-      let rec attempt = function
-        | [] ->
-            add_diagnostic (empty_result context)
-              (missing_module_diagnostic span relative)
-        | directory :: rest -> (
-            let candidate = Filename.concat directory relative in
-            match loader.read_file candidate with
-            | Ok _contents -> (
-                let canonical = Path.canonicalize candidate in
-                let module_id = Id.Module.of_path canonical in
-                let state = context.state in
-                match State.find_module state module_id with
-                | Some _ ->
-                    empty_result context
-                | None ->
-                    stub_node "include" context include_stmt)
-            | Error `Not_found ->
-                attempt rest
-            | Error (`Io_error reason) ->
-                let message =
-                  Printf.sprintf "Failed to load module `%s`: %s" relative
-                    reason
-                in
-                let diagnostic =
-                  Diagnostics.make `Error interpreter_producer span message
-                in
-                add_diagnostic (empty_result context) diagnostic)
-      in
-      attempt loader.search_paths
+let interpret_include context include_stmt =
+  stub_node "include" context include_stmt
 
-let interpret_attach ~loader:_ context attach =
+let interpret_attach context ~location:_ attach =
   stub_node "attach" context attach
 
-let interpret_assert ~loader:_ context assert_stmt =
+let interpret_assert context ~location:_ assert_stmt =
   stub_node "assert" context assert_stmt
 
-let interpret_diagram ~loader:_ context diagram =
+let interpret_diagram context ~location:_ diagram =
   stub_node "diagram" context diagram
 
-let interpret_d_concat ~loader:_ context d_concat =
+let interpret_d_concat context ~location:_ d_concat =
   stub_node "d_concat" context d_concat
 
-let interpret_d_expr ~loader:_ context d_expr =
+let interpret_d_expr context ~location:_ d_expr =
   stub_node "d_expr" context d_expr
 
-let interpret_d_comp ~loader:_ context d_comp =
+let interpret_d_comp context ~location:_ d_comp =
   stub_node "d_comp" context d_comp
 
-let interpret_d_term ~loader:_ context d_term =
+let interpret_d_term context ~location:_ d_term =
   stub_node "d_term" context d_term
 
-let interpret_bd ~loader:_ context bd = stub_node "bd" context bd
+let interpret_bd context (bd : Lang_ast.bd) = (bd.value, context)
 
-let interpret_pasting ~loader:_ context pasting =
+let interpret_pasting context ~location:_ pasting =
   stub_node "pasting" context pasting
 
-let interpret_concat ~loader:_ context concat =
+let interpret_concat context ~location:_ concat =
   stub_node "concat" context concat
 
-let interpret_expr ~loader:_ context expr = stub_node "expr" context expr
-let interpret_name ~loader:_ context name = stub_node "name" context name
-let interpret_nat ~loader:_ context nat = stub_node "nat" context nat
+let interpret_expr context ~location:_ expr = stub_node "expr" context expr

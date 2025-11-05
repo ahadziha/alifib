@@ -61,9 +61,9 @@ let make_bd token =
   let span = token_span token in
   match Tk.kind token with
   | Tk.Keyword `In ->
-      mk ?span In
+      mk ?span (`Input : Diagram.sign)
   | Tk.Keyword `Out ->
-      mk ?span Out
+      mk ?span (`Output : Diagram.sign)
   | _ ->
       failwith "expected boundary keyword"
 

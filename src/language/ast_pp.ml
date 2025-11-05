@@ -19,7 +19,11 @@ let pp_name fmt name = fprintf fmt "%s" (Id.Local.to_string name.value)
 let pp_nat fmt nat = fprintf fmt "%d" nat.value
 
 let pp_bd fmt bd =
-  match bd.value with In -> fprintf fmt "in" | Out -> fprintf fmt "out"
+  match bd.value with
+  | `Input ->
+      fprintf fmt "in"
+  | `Output ->
+      fprintf fmt "out"
 
 let pp_address fmt address =
   let segments = address.value in

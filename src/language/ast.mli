@@ -1,6 +1,5 @@
 type span = Positions.span option
 type 'a node = { span: span; value: 'a }
-type bd_kind = In | Out
 
 type program = program_desc node
 and program_desc = { program_blocks: block list }
@@ -160,7 +159,7 @@ and d_term_desc =
     }
   | D_term_pair of { d_term_concat: d_concat; d_term_expr: d_expr }
 
-and bd = bd_kind node
+and bd = Diagram.sign node
 and pasting = pasting_desc node
 
 and pasting_desc =
