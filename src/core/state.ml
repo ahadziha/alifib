@@ -53,18 +53,25 @@ let pp fmt state =
   let render_list items =
     match items with [] -> "(none)" | _ -> String.concat ", " items
   in
-  let string_of_tag = function
-    | `Local name ->
-        Id.Local.to_string name
-    | `Global id ->
-        asprintf "%a" Id.Global.pp id
+  let string_or_empty name =
+    let s = Id.Local.to_string name in
+    if String.length s = 0 then "<empty>" else s
   in
   let pp_module fmt (module_id, module_complex) =
     fprintf fmt "@[<v>* Module %s" (Id.Module.to_string module_id)
     ; let generator_names = Complex.generator_names module_complex in
-      let string_or_empty name =
-        let s = Id.Local.to_string name in
-        if String.length s = 0 then "<empty>" else s
+      let string_of_domain = function
+        | Complex.Type global_id -> (
+            match
+              Complex.find_generator_by_tag module_complex
+                (Id.Tag.of_global global_id)
+            with
+            | Some domain_name ->
+                string_or_empty domain_name
+            | None ->
+                asprintf "%a" Id.Global.pp global_id)
+        | Complex.Module module_id ->
+            Id.Module.to_string module_id
       in
       let pp_type fmt generator_name =
         let type_label = string_or_empty generator_name in
@@ -104,15 +111,8 @@ let pp fmt state =
                                match
                                  Complex.find_morphism type_complex morph_name
                                with
-                               | Some { domain; _ } -> (
-                                   match
-                                     Complex.find_generator_by_tag
-                                       module_complex domain
-                                   with
-                                   | Some domain_name ->
-                                       string_or_empty domain_name
-                                   | None ->
-                                       string_of_tag domain)
+                               | Some { domain; _ } ->
+                                   string_of_domain domain
                                | None ->
                                    "?"
                              in

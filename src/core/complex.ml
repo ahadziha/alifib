@@ -22,7 +22,8 @@ module TagMap = Map.Make (TagOrd)
 module IntMap = Map.Make (IntOrd)
 
 type generator_entry = { tag: Id.Tag.t; dim: int }
-type morphism_entry = { morphism: Morphism.t; domain: Id.Tag.t }
+type morphism_domain = Type of Id.Global.t | Module of Id.Module.t
+type morphism_entry = { morphism: Morphism.t; domain: morphism_domain }
 type local_cell_entry = { data: Diagram.cell_data; dim: int }
 
 type generators = {

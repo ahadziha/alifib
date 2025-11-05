@@ -70,15 +70,224 @@ let stub_node kind context (node : _ Lang_ast.node) =
   let span = Lang_ast.span_of_node node in
   add_diagnostic (empty_result context) (stub_diagnostic kind span)
 
+let interpret_name context (name : Lang_ast.name) = (name.value, context)
+let interpret_nat context (nat : Lang_ast.nat) = (nat.value, context)
+
 let interpret_c_block_type ~loader:_ context c_block_type =
   stub_node "c_block_type" context c_block_type
 
 let interpret_c_block_local context (_ : namespace) c_block_local =
   stub_node "c_block_local" context c_block_local
 
-let interpret_complex context ~mode:_ complex =
-  let result = stub_node "complex" context complex in
-  ((None : namespace option), result)
+let interpret_c_block context ~mode:_ ~location:_ c_block =
+  (None, stub_node "c_block" context c_block)
+
+let rec interpret_complex context ~mode complex =
+  let open Lang_ast in
+  let string_or_empty name =
+    let raw = Id.Local.to_string name in
+    if String.length raw = 0 then "<empty>" else raw
+  in
+  let complex_span = Lang_ast.span_of_node complex in
+  let state = context.state in
+  let module_id = context.current_module in
+  match State.find_module state module_id with
+  | None ->
+      let message =
+        Format.asprintf "Module %s not found" (Id.Module.to_string module_id)
+      in
+      let diagnostic =
+        Diagnostics.make `Error interpreter_producer complex_span message
+      in
+      (None, add_diagnostic (empty_result context) diagnostic)
+  | Some module_space -> (
+      let empty_name = Id.Local.make "" in
+      let root_opt, root_result =
+        match complex.value.complex_address with
+        | None -> (
+            let base_result = empty_result context in
+            match Complex.find_generator module_space empty_name with
+            | None ->
+                let message =
+                  Printf.sprintf "Root generator %s not found"
+                    (string_or_empty empty_name)
+                in
+                let diagnostic =
+                  Diagnostics.make `Error interpreter_producer complex_span
+                    message
+                in
+                (None, add_diagnostic base_result diagnostic)
+            | Some { tag= `Global root; _ } ->
+                (Some root, base_result)
+            | Some { tag= `Local _; _ } ->
+                assert false)
+        | Some address ->
+            interpret_address context address
+      in
+      let context = root_result.context in
+      let state = context.state in
+      match root_opt with
+      | None ->
+          (None, root_result)
+      | Some root -> (
+          let type_span =
+            match complex.value.complex_address with
+            | None ->
+                complex_span
+            | Some address ->
+                Lang_ast.span_of_node address
+          in
+          match State.find_type state root with
+          | None ->
+              let message =
+                Format.asprintf "Type %a not found in global record"
+                  Id.Global.pp root
+              in
+              let diagnostic =
+                Diagnostics.make `Error interpreter_producer type_span message
+              in
+              (None, add_diagnostic root_result diagnostic)
+          | Some { complex= temporary_location; _ } -> (
+              match complex.value.complex_block with
+              | None ->
+                  let namespace = { root; location= temporary_location } in
+                  (Some namespace, root_result)
+              | Some block ->
+                  let location_opt, block_result =
+                    interpret_c_block context ~mode ~location:temporary_location
+                      block
+                  in
+                  let combined_result = combine root_result block_result in
+                  let namespace_opt =
+                    match location_opt with
+                    | Some location ->
+                        Some { root; location }
+                    | None ->
+                        None
+                  in
+                  (namespace_opt, combined_result))))
+
+and interpret_address context address =
+  let open Lang_ast in
+  let string_or_empty name =
+    let raw = Id.Local.to_string name in
+    if String.length raw = 0 then "<empty>" else raw
+  in
+  let rec gather ctx = function
+    | [] ->
+        ([], ctx)
+    | name :: rest ->
+        let value, ctx' = interpret_name ctx name in
+        let tail, ctx'' = gather ctx' rest in
+        ((name, value) :: tail, ctx'')
+  in
+  let pairs, context = gather context address.value in
+  let base_result = empty_result context in
+  let state = context.state in
+  let module_id = context.current_module in
+  let address_span = Lang_ast.span_of_node address in
+  let make_error span message =
+    let diagnostic =
+      Diagnostics.make `Error interpreter_producer span message
+    in
+    (None, add_diagnostic base_result diagnostic)
+  in
+  match State.find_module state module_id with
+  | None ->
+      let message =
+        Format.asprintf "Module %s not found" (Id.Module.to_string module_id)
+      in
+      make_error address_span message
+  | Some module_space -> (
+      let empty_name = Id.Local.make "" in
+      let default_root span =
+        match Complex.find_generator module_space empty_name with
+        | None ->
+            let message =
+              Printf.sprintf "Root generator %s not found"
+                (string_or_empty empty_name)
+            in
+            make_error span message
+        | Some { tag= `Global root; _ } ->
+            (Some root, base_result)
+        | Some { tag= `Local _; _ } ->
+            assert false
+      in
+      let rec split_last acc = function
+        | [] ->
+            None
+        | [ x ] ->
+            Some (List.rev acc, x)
+        | x :: xs ->
+            split_last (x :: acc) xs
+      in
+      match pairs with
+      | [] ->
+          default_root address_span
+      | _ -> (
+          match split_last [] pairs with
+          | None ->
+              default_root address_span
+          | Some (prefix, (last_node, last_name)) -> (
+              let rec traverse space = function
+                | [] ->
+                    Ok space
+                | (node, name) :: rest -> (
+                    match Complex.find_morphism space name with
+                    | None ->
+                        let message =
+                          Printf.sprintf "Map %s not found"
+                            (string_or_empty name)
+                        in
+                        Error (node, message)
+                    | Some { domain; _ } -> (
+                        match domain with
+                        | Complex.Module next_module_id -> (
+                            match State.find_module state next_module_id with
+                            | Some next_space ->
+                                traverse next_space rest
+                            | None ->
+                                let message =
+                                  Format.asprintf "Module %s not found"
+                                    (Id.Module.to_string next_module_id)
+                                in
+                                Error (node, message))
+                        | Complex.Type _ ->
+                            let message =
+                              Printf.sprintf "Domain of %s is not a module"
+                                (string_or_empty name)
+                            in
+                            Error (node, message)))
+              in
+              match traverse module_space prefix with
+              | Error (node, message) ->
+                  make_error (Lang_ast.span_of_node node) message
+              | Ok final_space -> (
+                  match Complex.find_diagram final_space last_name with
+                  | None ->
+                      let message =
+                        Printf.sprintf "Type %s not found"
+                          (string_or_empty last_name)
+                      in
+                      make_error (Lang_ast.span_of_node last_node) message
+                  | Some diagram -> (
+                      if not (Diagram.is_cell diagram) then
+                        let message =
+                          Printf.sprintf "%s is not a cell"
+                            (string_or_empty last_name)
+                        in
+                        make_error (Lang_ast.span_of_node last_node) message
+                      else
+                        let top_dim = Diagram.dim diagram in
+                        let labels = Diagram.labels diagram in
+                        assert (top_dim < Array.length labels)
+                        ; assert (Array.length labels.(top_dim) > 0)
+                        ; let top_tag = labels.(top_dim).(0) in
+                          match top_tag with
+                          | `Global root ->
+                              (Some root, base_result)
+                          | `Local _ ->
+                              assert false)))))
 
 let rec interpret_program ~loader context program =
   let module_id = context.current_module in
@@ -155,9 +364,6 @@ and interpret_block ~loader context block =
       | _ ->
           { context; diagnostics; status })
 
-let interpret_c_block context ~location:_ c_block =
-  stub_node "c_block" context c_block
-
 let interpret_c_instr_type ~loader:_ context c_instr_type =
   stub_node "c_instr_type" context c_instr_type
 
@@ -175,20 +381,6 @@ let interpret_generator context ~location:_ generator =
 
 let interpret_boundaries context ~location:_ boundaries =
   stub_node "boundaries" context boundaries
-
-let interpret_name context (name : Lang_ast.name) = (name.value, context)
-let interpret_nat context (nat : Lang_ast.nat) = (nat.value, context)
-
-let interpret_address context address =
-  let open Lang_ast in
-  let rec gather acc ctx = function
-    | [] ->
-        (List.rev acc, ctx)
-    | name :: rest ->
-        let value, ctx' = interpret_name ctx name in
-        gather (value :: acc) ctx' rest
-  in
-  gather [] context address.value
 
 let interpret_morphism context ~location:_ morphism =
   stub_node "morphism" context morphism
