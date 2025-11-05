@@ -33,7 +33,7 @@ val interpret_complex :
   context -> mode:mode -> Ast.complex -> namespace option * result
 
 val interpret_c_block_type :
-  loader:file_loader -> context -> Ast.c_block_type -> result
+  loader:file_loader -> context -> Ast.c_block_type -> Complex.t option * result
 
 val interpret_c_block :
   context ->
@@ -43,13 +43,21 @@ val interpret_c_block :
   Complex.t option * result
 
 val interpret_c_block_local :
-  context -> namespace -> Ast.c_block_local -> result
+  context -> namespace -> Ast.c_block_local -> Complex.t option * result
 
 val interpret_c_instr_type :
-  loader:file_loader -> context -> Ast.c_instr_type -> result
+  loader:file_loader -> context -> Ast.c_instr_type -> Complex.t option * result
 
-val interpret_c_instr : context -> location:Complex.t -> Ast.c_instr -> result
-val interpret_c_instr_local : context -> Ast.c_instr_local -> result
+val interpret_c_instr :
+  context ->
+  mode:mode ->
+  location:Complex.t ->
+  Ast.c_instr ->
+  Complex.t option * result
+
+val interpret_c_instr_local :
+  context -> namespace -> Ast.c_instr_local -> Complex.t option * result
+
 val interpret_generator_type : context -> Ast.generator_type -> result
 
 val interpret_generator :

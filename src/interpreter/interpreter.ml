@@ -73,14 +73,83 @@ let stub_node kind context (node : _ Lang_ast.node) =
 let interpret_name context (name : Lang_ast.name) = (name.value, context)
 let interpret_nat context (nat : Lang_ast.nat) = (nat.value, context)
 
-let interpret_c_block_type ~loader:_ context c_block_type =
-  stub_node "c_block_type" context c_block_type
+let interpret_c_instr_type ~loader:_ context c_instr_type =
+  (None, stub_node "c_instr_type" context c_instr_type)
 
-let interpret_c_block_local context (_ : namespace) c_block_local =
-  stub_node "c_block_local" context c_block_local
+let interpret_c_instr context ~mode:_ ~location:_ c_instr =
+  (None, stub_node "c_instr" context c_instr)
 
-let interpret_c_block context ~mode:_ ~location:_ c_block =
-  (None, stub_node "c_block" context c_block)
+let interpret_c_instr_local context _namespace c_instr_local =
+  (None, stub_node "c_instr_local" context c_instr_local)
+
+let interpret_c_block_type ~loader context
+    (c_block_type : Lang_ast.c_block_type) =
+  let instrs = c_block_type.value in
+  let rec loop acc_location acc_result = function
+    | [] ->
+        (acc_location, acc_result)
+    | instr :: rest ->
+        let ctx = acc_result.context in
+        let location_opt, instr_result =
+          interpret_c_instr_type ~loader ctx instr
+        in
+        let combined = combine acc_result instr_result in
+        let acc_location =
+          match location_opt with Some loc -> Some loc | None -> acc_location
+        in
+        if has_errors instr_result then (acc_location, combined)
+        else loop acc_location combined rest
+  in
+  loop None (empty_result context) instrs
+
+let interpret_c_block_local context namespace
+    (c_block_local : Lang_ast.c_block_local) =
+  let instrs = c_block_local.value in
+  let rec loop current_namespace acc_location acc_result = function
+    | [] ->
+        (acc_location, acc_result)
+    | instr :: rest ->
+        let ctx = acc_result.context in
+        let location_opt, instr_result =
+          interpret_c_instr_local ctx current_namespace instr
+        in
+        let combined = combine acc_result instr_result in
+        let acc_location =
+          match location_opt with Some loc -> Some loc | None -> acc_location
+        in
+        let next_namespace =
+          match location_opt with
+          | Some loc ->
+              { current_namespace with location= loc }
+          | None ->
+              current_namespace
+        in
+        if has_errors instr_result then (acc_location, combined)
+        else loop next_namespace acc_location combined rest
+  in
+  loop namespace None (empty_result context) instrs
+
+let interpret_c_block context ~mode ~location (c_block : Lang_ast.c_block) =
+  let instrs = c_block.value in
+  let rec loop current_location acc_location acc_result = function
+    | [] ->
+        (acc_location, acc_result)
+    | instr :: rest ->
+        let ctx = acc_result.context in
+        let location_opt, instr_result =
+          interpret_c_instr ctx ~mode ~location:current_location instr
+        in
+        let combined = combine acc_result instr_result in
+        let acc_location =
+          match location_opt with Some loc -> Some loc | None -> acc_location
+        in
+        let next_location =
+          match location_opt with Some loc -> loc | None -> current_location
+        in
+        if has_errors instr_result then (acc_location, combined)
+        else loop next_location acc_location combined rest
+  in
+  loop location None (empty_result context) instrs
 
 let rec interpret_complex context ~mode complex =
   let open Lang_ast in
@@ -343,7 +412,8 @@ and interpret_block ~loader context block =
   | Block_type { block_type_body= None } ->
       empty_result context
   | Block_type { block_type_body= Some c_block_type } ->
-      interpret_c_block_type ~loader context c_block_type
+      let _, result = interpret_c_block_type ~loader context c_block_type in
+      result
   | Block_complex { block_complex_body; block_local_body } -> (
       let namespace_opt, complex_result =
         interpret_complex context ~mode:Local block_complex_body
@@ -353,7 +423,7 @@ and interpret_block ~loader context block =
       let status = complex_result.status in
       match (namespace_opt, block_local_body) with
       | Some namespace, Some local_block when status <> `Error ->
-          let local_result =
+          let _, local_result =
             interpret_c_block_local context namespace local_block
           in
           {
@@ -363,15 +433,6 @@ and interpret_block ~loader context block =
           }
       | _ ->
           { context; diagnostics; status })
-
-let interpret_c_instr_type ~loader:_ context c_instr_type =
-  stub_node "c_instr_type" context c_instr_type
-
-let interpret_c_instr context ~location:_ c_instr =
-  stub_node "c_instr" context c_instr
-
-let interpret_c_instr_local context c_instr_local =
-  stub_node "c_instr_local" context c_instr_local
 
 let interpret_generator_type context generator_type =
   stub_node "generator_type" context generator_type
