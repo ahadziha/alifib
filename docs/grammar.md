@@ -4,7 +4,7 @@
 <Complex> ::= <Address> | [ <Address> ] "{" [ <CBlock> ] "}"
 
 <CBlockType> ::= <CInstrType> { "," <CInstrType> }
-<CInstrType> ::= <GeneratorType> | <DNamer> | <MNamer> | <IncludeStatement>
+<CInstrType> ::= <GeneratorType> | <DNamer> | <MNamer> | <IncludeModule>
 
 <CBlock> ::= <CInstr> { "," <CInstr> }
 <CInstr> ::= <Generator> | <DNamer> | <MNamer> | <IncludeStatement> | <AttachStatement>
@@ -42,6 +42,7 @@
 <Boundaries> ::= <Diagram> "->" <Diagram>
 
 <IncludeStatement> ::= "include" <Address> [ "as" <Name> ]
+<IncludeModule> ::= "include" <Name> [ "as" <Name> ]
 <AttachStatement> ::= "attach" <Name> "::" <Address> [ "along" <MDef> ]
 <AssertStatement> ::= "assert" <Pasting> "=" <Pasting>
 

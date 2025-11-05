@@ -77,6 +77,7 @@ val interpret_m_instr : context -> location:Complex.t -> Ast.m_instr -> result
 val interpret_mnamer : context -> location:Complex.t -> Ast.mnamer -> result
 val interpret_dnamer : context -> location:Complex.t -> Ast.dnamer -> result
 val interpret_include : context -> Ast.include_statement -> result
+val interpret_include_module : context -> Ast.include_module -> result
 
 val interpret_attach :
   context -> location:Complex.t -> Ast.attach_statement -> result

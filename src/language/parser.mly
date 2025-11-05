@@ -205,9 +205,9 @@ c_instr_type:
       let span = mnamer.span in
       mk ?span (C_instr_type_mnamer mnamer)
     }
-  | include_stmt=include_statement {
-      let span = include_stmt.span in
-      mk ?span (C_instr_type_include include_stmt)
+  | include_mod=include_module {
+      let span = include_mod.span in
+      mk ?span (C_instr_type_include_module include_mod)
     }
 
 c_instr:
@@ -707,6 +707,30 @@ include_statement:
       mk ?span
         { include_address = address
         ; include_alias = alias
+        }
+    }
+
+include_module:
+  | include_kw=INCLUDE module_name=name alias_opt=include_alias_opt {
+      let alias, spans =
+        match alias_opt with
+        | None -> (None, [])
+        | Some (as_kw, alias) ->
+            ( Some alias
+            , [ token_span as_kw
+              ; node_span alias
+              ] )
+      in
+      let span =
+        merge_spans
+          ( [ token_span include_kw
+            ; node_span module_name
+            ]
+          @ spans )
+      in
+      mk ?span
+        { include_module_name = module_name
+        ; include_module_alias = alias
         }
     }
 

@@ -470,6 +470,9 @@ let interpret_dnamer context ~location:_ dnamer =
 let interpret_include context include_stmt =
   stub_node "include" context include_stmt
 
+let interpret_include_module context include_mod =
+  stub_node "include_module" context include_mod
+
 let interpret_attach context ~location:_ attach =
   stub_node "attach" context attach
 

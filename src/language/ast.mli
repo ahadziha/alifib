@@ -31,7 +31,7 @@ and c_instr_type_desc =
   | C_instr_type_generator of generator_type
   | C_instr_type_dnamer of dnamer
   | C_instr_type_mnamer of mnamer
-  | C_instr_type_include of include_statement
+  | C_instr_type_include_module of include_module
 
 and c_instr = c_instr_desc node
 
@@ -106,6 +106,13 @@ and include_statement = include_statement_desc node
 and include_statement_desc = {
   include_address: address;
   include_alias: name option;
+}
+
+and include_module = include_module_desc node
+
+and include_module_desc = {
+  include_module_name: name;
+  include_module_alias: name option;
 }
 
 and attach_statement = attach_statement_desc node

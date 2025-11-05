@@ -69,8 +69,8 @@ and c_instr_type fmt instr =
       fprintf fmt "@[<v 2>(Diagram_namer@ %a)@]" dnamer dn
   | C_instr_type_mnamer mn ->
       fprintf fmt "@[<v 2>(Morphism_namer@ %a)@]" mnamer mn
-  | C_instr_type_include inc ->
-      fprintf fmt "@[<v 2>(Include@ %a)@]" include_statement inc
+  | C_instr_type_include_module inc ->
+      fprintf fmt "@[<v 2>(Include_module@ %a)@]" include_module inc
 
 and c_instr fmt instr =
   match instr.value with
@@ -180,6 +180,13 @@ and dnamer fmt dnamer =
     dnamer_name
     (pp_field "boundaries" (pp_option boundaries))
     dnamer_boundaries (pp_field "body" diagram) dnamer_body
+
+and include_module fmt include_mod =
+  let { include_module_name; include_module_alias } = include_mod.value in
+  fprintf fmt "@[<v 2>(Include_module@,%a@,%a)@]" (pp_field "name" pp_name)
+    include_module_name
+    (pp_field "alias" (pp_option pp_name))
+    include_module_alias
 
 and include_statement fmt include_stmt =
   let { include_address; include_alias } = include_stmt.value in
