@@ -70,6 +70,11 @@ let stub_node kind context (node : _ Lang_ast.node) =
   let span = Lang_ast.span_of_node node in
   add_diagnostic (empty_result context) (stub_diagnostic kind span)
 
+let report_has_errors (report : Diagnostics.report) =
+  List.exists
+    (fun (diag : Diagnostics.t) -> diag.Diagnostics.severity = `Error)
+    report
+
 let interpret_name (name : Lang_ast.name) = name.value
 let interpret_nat (nat : Lang_ast.nat) = nat.value
 
@@ -82,15 +87,65 @@ let interpret_dnamer context ~location:_ dnamer =
 let interpret_mnamer context ~location:_ mnamer =
   (None, stub_node "mnamer" context mnamer)
 
-let interpret_c_instr_type ~loader:_ context
+let interpret_include_module (include_mod : Lang_ast.include_module) =
+  let include_desc = include_mod.value in
+  let name = interpret_name include_desc.include_module_name in
+  let alias =
+    match include_desc.include_module_alias with
+    | Some alias_node ->
+        interpret_name alias_node
+    | None ->
+        name
+  in
+  (name, alias)
+
+let identity_morphism context domain =
+  let entries =
+    Complex.generator_names domain
+    |> List.map (fun name ->
+           let generator_entry =
+             match Complex.find_generator domain name with
+             | Some entry ->
+                 entry
+             | None ->
+                 assert false
+           in
+           let tag = generator_entry.tag in
+           let dim = generator_entry.dim in
+           let cell_data =
+             match tag with
+             | `Global global_id -> (
+                 match State.find_cell context.state global_id with
+                 | Some data ->
+                     data
+                 | None ->
+                     assert false)
+             | `Local local_name -> (
+                 match Complex.find_local_cell domain local_name with
+                 | Some { data; _ } ->
+                     data
+                 | None ->
+                     assert false)
+           in
+           let image =
+             match Complex.classifier domain name with
+             | Some classifier ->
+                 classifier
+             | None ->
+                 assert false
+           in
+           (tag, dim, cell_data, image))
+  in
+  Morphism.of_entries entries ~cellular:true
+
+let interpret_program_ref :
+    (loader:file_loader -> context -> Ast.program -> result) ref =
+  ref (fun ~loader:_ _ _ ->
+      failwith "interpret_program called before initialization")
+
+let interpret_c_instr_type ~loader context
     (c_instr_type : Lang_ast.c_instr_type) =
   let open Lang_ast in
-  let make_stub kind node =
-    let span = span_of_node node in
-    let diagnostic = stub_diagnostic kind span in
-    let result = add_diagnostic (empty_result context) diagnostic in
-    (None, result)
-  in
   match c_instr_type.value with
   | C_instr_type_generator generator_type -> (
       let generator_output, generator_result =
@@ -287,8 +342,196 @@ let interpret_c_instr_type ~loader:_ context
                       { mnamer_result with context= context_updated }
                     in
                     (Some updated_location, updated_result))))
-  | C_instr_type_include_module include_module ->
-      make_stub "c_instr_type.include_module" include_module
+  | C_instr_type_include_module include_module -> (
+      let include_desc = include_module.value in
+      let name_node = include_desc.include_module_name in
+      let alias_node_opt = include_desc.include_module_alias in
+      let name, alias = interpret_include_module include_module in
+      let name_span = span_of_node name_node in
+      let alias_span =
+        match alias_node_opt with
+        | Some alias_node ->
+            span_of_node alias_node
+        | None ->
+            name_span
+      in
+      let module_span = span_of_node include_module in
+      let module_id = context.current_module in
+      let alias_str = Id.Local.to_string alias in
+      let name_str = Id.Local.to_string name in
+      match State.find_module context.state module_id with
+      | None ->
+          let message =
+            Format.asprintf "Module %s not found in module record"
+              (Id.Module.to_string module_id)
+          in
+          let diagnostic =
+            Diagnostics.make `Error interpreter_producer module_span message
+          in
+          (None, add_diagnostic (empty_result context) diagnostic)
+      | Some location -> (
+          if Complex.name_in_use location alias then
+            let message =
+              Format.asprintf "Map name already in use: %s" alias_str
+            in
+            let diagnostic =
+              Diagnostics.make `Error interpreter_producer alias_span message
+            in
+            (None, add_diagnostic (empty_result context) diagnostic)
+          else
+            let filename = name_str ^ ".ali" in
+            let read_module () =
+              if Filename.is_relative filename then
+                let rec loop = function
+                  | [] ->
+                      Error `Not_found
+                  | dir :: rest -> (
+                      let candidate = Filename.concat dir filename in
+                      let canonical = Path.canonicalize candidate in
+                      match loader.read_file canonical with
+                      | Ok contents ->
+                          Ok (canonical, contents)
+                      | Error `Not_found ->
+                          loop rest
+                      | Error (`Io_error reason) ->
+                          Error (`Io_error (canonical, reason)))
+                in
+                loop loader.search_paths
+              else
+                let canonical = Path.canonicalize filename in
+                match loader.read_file canonical with
+                | Ok contents ->
+                    Ok (canonical, contents)
+                | Error `Not_found ->
+                    Error `Not_found
+                | Error (`Io_error reason) ->
+                    Error (`Io_error (canonical, reason))
+            in
+            match read_module () with
+            | Error `Not_found ->
+                let message =
+                  Format.asprintf "Module file %s not found in search paths"
+                    filename
+                in
+                let diagnostic =
+                  Diagnostics.make `Error interpreter_producer name_span message
+                in
+                (None, add_diagnostic (empty_result context) diagnostic)
+            | Error (`Io_error (path, reason)) ->
+                let message =
+                  Format.asprintf "Failed to load %s: %s" path reason
+                in
+                let diagnostic =
+                  Diagnostics.make `Error interpreter_producer name_span message
+                in
+                (None, add_diagnostic (empty_result context) diagnostic)
+            | Ok (canonical_path, contents) ->
+                let module_dir =
+                  canonical_path |> Filename.dirname |> Path.canonicalize
+                in
+                let loader_paths =
+                  Path.normalize_search_paths (module_dir :: loader.search_paths)
+                in
+                let loader_for_module =
+                  { loader with search_paths= loader_paths }
+                in
+                let source = Positions.Source.of_path canonical_path in
+                let stream = Token_stream.create ~source contents in
+                let program, parse_diagnostics = Parser_driver.parse stream in
+                if report_has_errors parse_diagnostics then
+                  let parse_result =
+                    List.fold_left add_diagnostic (empty_result context)
+                      parse_diagnostics
+                  in
+                  (None, parse_result)
+                else
+                  let included_module_id = Id.Module.of_path canonical_path in
+                  let include_context =
+                    make_context ~module_id:included_module_id
+                      ~state:context.state
+                  in
+                  let include_result =
+                    !interpret_program_ref ~loader:loader_for_module
+                      include_context program
+                  in
+                  let restored_context =
+                    make_context ~module_id ~state:include_result.context.state
+                  in
+                  let include_result =
+                    {
+                      include_result with
+                      context= restored_context;
+                      diagnostics=
+                        Report.append parse_diagnostics
+                          include_result.diagnostics;
+                    }
+                  in
+                  if has_errors include_result then (None, include_result)
+                  else
+                    let updated_state = include_result.context.state in
+                    let module_location =
+                      match
+                        State.find_module updated_state included_module_id
+                      with
+                      | Some loc ->
+                          loc
+                      | None ->
+                          assert false
+                    in
+                    let alias_prefix = alias_str in
+                    let extend_generators acc gen_name =
+                      let gen_entry =
+                        match
+                          Complex.find_generator module_location gen_name
+                        with
+                        | Some entry ->
+                            entry
+                        | None ->
+                            assert false
+                      in
+                      if
+                        Option.is_some
+                          (Complex.find_generator_by_tag acc gen_entry.tag)
+                      then acc
+                      else
+                        let classifier =
+                          match Complex.classifier module_location gen_name with
+                          | Some diagram ->
+                              diagram
+                          | None ->
+                              assert false
+                        in
+                        let gen_name_str = Id.Local.to_string gen_name in
+                        let combined_name =
+                          if String.equal alias_prefix "" then gen_name_str
+                          else if String.equal gen_name_str "" then alias_prefix
+                          else alias_prefix ^ "." ^ gen_name_str
+                        in
+                        let new_name = Id.Local.make combined_name in
+                        Complex.add_generator acc ~name:new_name ~classifier
+                    in
+                    let location_with_generators =
+                      List.fold_left extend_generators location
+                        (Complex.generator_names module_location)
+                    in
+                    let inclusion =
+                      identity_morphism include_result.context module_location
+                    in
+                    let final_location =
+                      Complex.add_morphism location_with_generators ~name:alias
+                        ~domain:(Complex.Module included_module_id) inclusion
+                    in
+                    let final_state =
+                      State.add_module include_result.context.state
+                        ~id:module_id final_location
+                    in
+                    let final_context =
+                      with_state include_result.context final_state
+                    in
+                    let final_result =
+                      { include_result with context= final_context }
+                    in
+                    (Some final_location, final_result)))
 
 let interpret_c_instr context ~mode:_ ~location:_ c_instr =
   (None, stub_node "c_instr" context c_instr)
@@ -856,18 +1099,6 @@ let interpret_m_instr context ~location:_ m_instr =
 let interpret_include context include_stmt =
   stub_node "include" context include_stmt
 
-let interpret_include_module (include_mod : Lang_ast.include_module) =
-  let include_desc = include_mod.value in
-  let name = interpret_name include_desc.include_module_name in
-  let alias =
-    match include_desc.include_module_alias with
-    | Some alias_node ->
-        interpret_name alias_node
-    | None ->
-        name
-  in
-  (name, alias)
-
 let interpret_attach context ~location:_ attach =
   stub_node "attach" context attach
 
@@ -898,3 +1129,4 @@ let interpret_concat context ~location:_ concat =
   stub_node "concat" context concat
 
 let interpret_expr context ~location:_ expr = stub_node "expr" context expr
+let () = interpret_program_ref := interpret_program

@@ -31,6 +31,18 @@ let init () =
   let table = TagTable.create 1 in
   Ok { table; cellular= true; by_dim= IntMap.empty }
 
+let of_entries entries ~cellular =
+  let table = TagTable.create (List.length entries) in
+  let by_dim =
+    List.fold_left
+      (fun acc (tag, dim, cell_data, image) ->
+        TagTable.replace table tag (make_entry ~dim ~cell_data ~image)
+        ; let existing = dim_bucket acc dim in
+          IntMap.add dim (tag :: existing) acc)
+      IntMap.empty entries
+  in
+  { table; cellular; by_dim }
+
 let domain_of_definition m =
   TagTable.fold (fun tag _ acc -> tag :: acc) m.table []
 

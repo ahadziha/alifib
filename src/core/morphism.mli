@@ -19,6 +19,9 @@ val extend :
   image:Diagram.t ->
   t checked
 
+val of_entries :
+  (Id.Tag.t * int * cell_data * Diagram.t) list -> cellular:bool -> t
+
 (** {2 Basic utilities} *)
 val compose : t -> t -> t
 
