@@ -82,6 +82,188 @@ let interpret_c_instr context ~mode:_ ~location:_ c_instr =
 let interpret_c_instr_local context _namespace c_instr_local =
   (None, stub_node "c_instr_local" context c_instr_local)
 
+let rec smart_extend context morphism ~domain ~codomain ~tag ~dim ~diagram =
+  let error msg = Error.make msg in
+  if Morphism.is_defined_at morphism tag then
+    match Morphism.image morphism tag with
+    | Error err ->
+        Error err
+    | Ok current_image ->
+        if Diagram.isomorphic current_image diagram then Ok morphism
+        else Error (error "The same generator is mapped to multiple diagrams")
+  else
+    let cell_data =
+      match tag with
+      | `Global global_id -> (
+          match State.find_cell context.state global_id with
+          | Some data ->
+              data
+          | None ->
+              assert false)
+      | `Local name -> (
+          match Complex.find_local_cell domain name with
+          | Some { data; _ } ->
+              data
+          | None ->
+              assert false)
+    in
+    let missing_tags =
+      match cell_data with
+      | Diagram.Zero ->
+          []
+      | Diagram.Boundary { boundary_in; boundary_out } ->
+          let collect boundary sign acc =
+            let top_dim = Diagram.dim boundary in
+            let labels = Diagram.labels boundary in
+            assert (top_dim >= 0 && top_dim < Array.length labels)
+            ; let row = labels.(top_dim) in
+              let len = Array.length row in
+              let rec aux idx acc =
+                if idx = len then acc
+                else
+                  let acc =
+                    let candidate = row.(idx) in
+                    if Morphism.is_defined_at morphism candidate then acc
+                    else (candidate, sign) :: acc
+                  in
+                  aux (idx + 1) acc
+              in
+              aux 0 acc
+          in
+          let acc = collect boundary_in `Input [] in
+          collect boundary_out `Output acc
+    in
+    let rec extend_missing partial pending =
+      match pending with
+      | [] ->
+          Morphism.extend partial ~tag ~dim ~cell_data ~image:diagram
+      | (focus, sign) :: rest -> (
+          if Morphism.is_defined_at partial focus then
+            extend_missing partial rest
+          else
+            let dim_minus_one = dim - 1 in
+            let boundary_sources =
+              match (cell_data, sign) with
+              | Diagram.Boundary { boundary_in; _ }, `Input ->
+                  Ok (boundary_in, Diagram.boundary `Input dim_minus_one diagram)
+              | Diagram.Boundary { boundary_out; _ }, `Output ->
+                  Ok
+                    ( boundary_out,
+                      Diagram.boundary `Output dim_minus_one diagram )
+              | Diagram.Zero, _ ->
+                  assert false
+            in
+            match boundary_sources with
+            | Error _ as err ->
+                err
+            | Ok (boundary_diag, target_boundary) -> (
+                if Diagram.is_cell boundary_diag then
+                  match
+                    smart_extend context partial ~domain ~codomain ~tag:focus
+                      ~dim:dim_minus_one ~diagram:target_boundary
+                  with
+                  | Error _ as err ->
+                      err
+                  | Ok updated ->
+                      extend_missing updated rest
+                else
+                  match
+                    Ogposet.isomorphism_of
+                      (Diagram.shape boundary_diag)
+                      (Diagram.shape target_boundary)
+                  with
+                  | Error _ ->
+                      Error
+                        (error "Failed to extend map (more information needed)")
+                  | Ok embedding -> (
+                      let top_dim = Diagram.dim boundary_diag in
+                      let boundary_labels = Diagram.labels boundary_diag in
+                      let target_labels = Diagram.labels target_boundary in
+                      let map = Ogposet.Embedding.map embedding in
+                      assert (top_dim >= 0)
+                      ; assert (top_dim < Array.length boundary_labels)
+                      ; assert (top_dim < Array.length target_labels)
+                      ; assert (top_dim < Array.length map)
+                      ; let map_row = map.(top_dim) in
+                        let boundary_row = boundary_labels.(top_dim) in
+                        let target_row = target_labels.(top_dim) in
+                        assert (Array.length map_row = Array.length boundary_row)
+                        ; let determine_image () =
+                            let image_ref = ref None in
+                            let ok = ref true in
+                            let len = Array.length boundary_row in
+                            let idx = ref 0 in
+                            while !ok && !idx < len do
+                              (if Id.Tag.equal boundary_row.(!idx) focus then
+                                 let mapped_idx =
+                                   if !idx < Array.length map_row then
+                                     map_row.(!idx)
+                                   else -1
+                                 in
+                                 if
+                                   mapped_idx < 0
+                                   || mapped_idx >= Array.length target_row
+                                 then ok := false
+                                 else
+                                   let mapped_tag = target_row.(mapped_idx) in
+                                   match !image_ref with
+                                   | None ->
+                                       image_ref := Some mapped_tag
+                                   | Some existing ->
+                                       if not (Id.Tag.equal existing mapped_tag)
+                                       then ok := false)
+                              ; incr idx
+                            done
+                            ; if not !ok then
+                                Error
+                                  (error
+                                     "The same generator is mapped to multiple \
+                                      diagrams")
+                              else
+                                match !image_ref with
+                                | None ->
+                                    Error
+                                      (error
+                                         "Failed to extend map (more \
+                                          information needed)")
+                                | Some mapped ->
+                                    Ok mapped
+                          in
+                          match determine_image () with
+                          | Error _ as err ->
+                              err
+                          | Ok image_focus -> (
+                              let generator_name =
+                                match
+                                  Complex.find_generator_by_tag codomain
+                                    image_focus
+                                with
+                                | Some name ->
+                                    name
+                                | None ->
+                                    assert false
+                              in
+                              let d_focus =
+                                match
+                                  Complex.classifier codomain generator_name
+                                with
+                                | Some diagram ->
+                                    diagram
+                                | None ->
+                                    assert false
+                              in
+                              match
+                                smart_extend context partial ~domain ~codomain
+                                  ~tag:focus ~dim:dim_minus_one ~diagram:d_focus
+                              with
+                              | Error _ as err ->
+                                  err
+                              | Ok updated ->
+                                  extend_missing updated rest))))
+    in
+    extend_missing morphism missing_tags
+[@@warning "-32"]
+
 let interpret_c_block_type ~loader context
     (c_block_type : Lang_ast.c_block_type) =
   let instrs = c_block_type.value in
