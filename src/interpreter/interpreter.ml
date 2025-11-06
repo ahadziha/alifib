@@ -75,33 +75,6 @@ let report_has_errors (report : Diagnostics.report) =
     (fun (diag : Diagnostics.t) -> diag.Diagnostics.severity = `Error)
     report
 
-let interpret_name (name : Lang_ast.name) = name.value
-let interpret_nat (nat : Lang_ast.nat) = nat.value
-
-let interpret_generator_type context generator_type =
-  (None, stub_node "generator_type" context generator_type)
-
-let interpret_dnamer context ~location:_ dnamer =
-  (None, stub_node "dnamer" context dnamer)
-
-let interpret_mnamer context ~location:_ mnamer =
-  (None, stub_node "mnamer" context mnamer)
-
-let interpret_include_module (include_mod : Lang_ast.include_module) =
-  let include_desc = include_mod.value in
-  let name = interpret_name include_desc.include_module_name in
-  let alias =
-    match include_desc.include_module_alias with
-    | Some alias_node ->
-        interpret_name alias_node
-    | None ->
-        name
-  in
-  (name, alias)
-
-let interpret_generator context ~location:_ generator =
-  (None, stub_node "generator" context generator)
-
 let identity_morphism context domain =
   let entries =
     Complex.generator_names domain
@@ -140,111 +113,6 @@ let identity_morphism context domain =
            (tag, dim, cell_data, image))
   in
   Morphism.of_entries entries ~cellular:true
-
-let interpret_c_instr context ~mode ~location c_instr =
-  let open Lang_ast in
-  match c_instr.value with
-  | C_instr_generator generator -> (
-      let generator_output, generator_result =
-        interpret_generator context ~location generator
-      in
-      let context_after = generator_result.context in
-      match generator_output with
-      | None ->
-          (None, generator_result)
-      | Some (name, boundaries) -> (
-          if Complex.name_in_use location name then
-            let name_span =
-              let generator_desc = generator.value in
-              Lang_ast.span_of_node generator_desc.generator_name
-            in
-            let message =
-              Format.asprintf "Generator name already in use: %s"
-                (Id.Local.to_string name)
-            in
-            let diagnostic =
-              Diagnostics.make `Error interpreter_producer name_span message
-            in
-            (None, add_diagnostic generator_result diagnostic)
-          else
-            let boundaries_span =
-              let generator_desc = generator.value in
-              match generator_desc.generator_boundaries with
-              | Some boundaries_node ->
-                  Lang_ast.span_of_node boundaries_node
-              | None ->
-                  Lang_ast.span_of_node generator
-            in
-            let dim =
-              match boundaries with
-              | Diagram.Zero ->
-                  0
-              | Diagram.Boundary { boundary_in; _ } ->
-                  Diagram.dim boundary_in + 1
-            in
-            let tag, new_id_opt =
-              match mode with
-              | Global ->
-                  let new_id = Id.Global.fresh () in
-                  (Id.Tag.of_global new_id, Some new_id)
-              | Local ->
-                  (Id.Tag.of_local name, None)
-            in
-            match Diagram.cell tag boundaries with
-            | Error err ->
-                let message =
-                  Format.asprintf "Failed to create generator cell: %a" Error.pp
-                    err
-                in
-                let diagnostic =
-                  Diagnostics.make `Error interpreter_producer boundaries_span
-                    message
-                in
-                (None, add_diagnostic generator_result diagnostic)
-            | Ok classifier ->
-                let location_with_generator =
-                  Complex.add_generator location ~name ~classifier
-                in
-                let location_with_diagram =
-                  Complex.add_diagram location_with_generator ~name classifier
-                in
-                let location_final =
-                  match mode with
-                  | Local ->
-                      Complex.add_local_cell location_with_diagram ~name ~dim
-                        boundaries
-                  | Global ->
-                      location_with_diagram
-                in
-                let state_after =
-                  match (mode, new_id_opt) with
-                  | Global, Some new_id ->
-                      let state_with_cell =
-                        State.add_cell context_after.state ~id:new_id ~dim
-                          boundaries
-                      in
-                      let module_id = context_after.current_module in
-                      State.add_module state_with_cell ~id:module_id
-                        location_final
-                  | _ ->
-                      context_after.state
-                in
-                let context_updated = with_state context_after state_after in
-                let updated_result =
-                  { generator_result with context= context_updated }
-                in
-                (Some location_final, updated_result)))
-  | C_instr_dnamer dnamer ->
-      (None, stub_node "c_instr.dnamer" context dnamer)
-  | C_instr_mnamer mnamer ->
-      (None, stub_node "c_instr.mnamer" context mnamer)
-  | C_instr_include include_stmt ->
-      (None, stub_node "c_instr.include" context include_stmt)
-  | C_instr_attach attach_stmt ->
-      (None, stub_node "c_instr.attach" context attach_stmt)
-
-let interpret_c_instr_local context _namespace c_instr_local =
-  (None, stub_node "c_instr_local" context c_instr_local)
 
 let rec smart_extend context morphism ~domain ~codomain ~tag ~dim ~diagram =
   let error msg = Error.make msg in
@@ -428,54 +296,9 @@ let rec smart_extend context morphism ~domain ~codomain ~tag ~dim ~diagram =
     extend_missing morphism missing_tags
 [@@warning "-32"]
 
-let interpret_c_block_local context namespace
-    (c_block_local : Lang_ast.c_block_local) =
-  let instrs = c_block_local.value in
-  let rec loop current_namespace acc_location acc_result = function
-    | [] ->
-        (acc_location, acc_result)
-    | instr :: rest ->
-        let ctx = acc_result.context in
-        let location_opt, instr_result =
-          interpret_c_instr_local ctx current_namespace instr
-        in
-        let combined = combine acc_result instr_result in
-        let acc_location =
-          match location_opt with Some loc -> Some loc | None -> acc_location
-        in
-        let next_namespace =
-          match location_opt with
-          | Some loc ->
-              { current_namespace with location= loc }
-          | None ->
-              current_namespace
-        in
-        if has_errors instr_result then (acc_location, combined)
-        else loop next_namespace acc_location combined rest
-  in
-  loop namespace None (empty_result context) instrs
-
-let interpret_c_block context ~mode ~location (c_block : Lang_ast.c_block) =
-  let instrs = c_block.value in
-  let rec loop current_location acc_location acc_result = function
-    | [] ->
-        (acc_location, acc_result)
-    | instr :: rest ->
-        let ctx = acc_result.context in
-        let location_opt, instr_result =
-          interpret_c_instr ctx ~mode ~location:current_location instr
-        in
-        let combined = combine acc_result instr_result in
-        let acc_location =
-          match location_opt with Some loc -> Some loc | None -> acc_location
-        in
-        let next_location =
-          match location_opt with Some loc -> loc | None -> current_location
-        in
-        if has_errors instr_result then (acc_location, combined)
-        else loop next_location acc_location combined rest
-  in
-  loop location None (empty_result context) instrs
+let interpret_name (name : Lang_ast.name) = name.value
+let interpret_nat (nat : Lang_ast.nat) = nat.value
+let interpret_bd (bd : Lang_ast.bd) = bd.value
 
 let interpret_address context address =
   let open Lang_ast in
@@ -598,6 +421,234 @@ let interpret_address context address =
                           | `Local _ ->
                               assert false)))))
 
+let interpret_include context include_stmt =
+  (None, stub_node "include" context include_stmt)
+
+let interpret_include_module (include_mod : Lang_ast.include_module) =
+  let include_desc = include_mod.value in
+  let name = interpret_name include_desc.include_module_name in
+  let alias =
+    match include_desc.include_module_alias with
+    | Some alias_node ->
+        interpret_name alias_node
+    | None ->
+        name
+  in
+  (name, alias)
+
+let interpret_morphism context ~location:_ morphism =
+  stub_node "morphism" context morphism
+
+let interpret_m_comp context ~location:_ m_comp =
+  stub_node "m_comp" context m_comp
+
+let interpret_m_term context ~location:_ m_term =
+  stub_node "m_term" context m_term
+
+let interpret_m_ext context ~location:_ m_ext = stub_node "m_ext" context m_ext
+let interpret_m_def context ~location:_ m_def = stub_node "m_def" context m_def
+
+let interpret_m_block context ~location:_ m_block =
+  stub_node "m_block" context m_block
+
+let interpret_m_instr context ~location:_ m_instr =
+  stub_node "m_instr" context m_instr
+
+let interpret_diagram context ~location:_ diagram =
+  stub_node "diagram" context diagram
+
+let interpret_d_concat context ~location:_ d_concat =
+  stub_node "d_concat" context d_concat
+
+let interpret_d_expr context ~location:_ d_expr =
+  stub_node "d_expr" context d_expr
+
+let interpret_d_comp context ~location:_ d_comp =
+  stub_node "d_comp" context d_comp
+
+let interpret_d_term context ~location:_ d_term =
+  stub_node "d_term" context d_term
+
+let interpret_pasting context ~location:_ pasting =
+  stub_node "pasting" context pasting
+
+let interpret_concat context ~location:_ concat =
+  stub_node "concat" context concat
+
+let interpret_expr context ~location:_ expr = stub_node "expr" context expr
+
+let interpret_boundaries context ~location:_ boundaries =
+  stub_node "boundaries" context boundaries
+
+let interpret_dnamer context ~location:_ dnamer =
+  (None, stub_node "dnamer" context dnamer)
+
+let interpret_mnamer context ~location:_ mnamer =
+  (None, stub_node "mnamer" context mnamer)
+
+let interpret_generator context ~location:_ generator =
+  (None, stub_node "generator" context generator)
+
+let interpret_attach context ~location:_ attach =
+  (None, stub_node "attach" context attach)
+
+let interpret_assert context ~location:_ assert_stmt =
+  stub_node "assert" context assert_stmt
+
+let interpret_c_instr_local context _namespace c_instr_local =
+  (None, stub_node "c_instr_local" context c_instr_local)
+
+let interpret_c_block_local context namespace
+    (c_block_local : Lang_ast.c_block_local) =
+  let instrs = c_block_local.value in
+  let rec loop current_namespace acc_location acc_result = function
+    | [] ->
+        (acc_location, acc_result)
+    | instr :: rest ->
+        let ctx = acc_result.context in
+        let location_opt, instr_result =
+          interpret_c_instr_local ctx current_namespace instr
+        in
+        let combined = combine acc_result instr_result in
+        let acc_location =
+          match location_opt with Some loc -> Some loc | None -> acc_location
+        in
+        let next_namespace =
+          match location_opt with
+          | Some loc ->
+              { current_namespace with location= loc }
+          | None ->
+              current_namespace
+        in
+        if has_errors instr_result then (acc_location, combined)
+        else loop next_namespace acc_location combined rest
+  in
+  loop namespace None (empty_result context) instrs
+
+let interpret_c_instr context ~mode ~location c_instr =
+  let open Lang_ast in
+  match c_instr.value with
+  | C_instr_generator generator -> (
+      let generator_output, generator_result =
+        interpret_generator context ~location generator
+      in
+      let context_after = generator_result.context in
+      match generator_output with
+      | None ->
+          (None, generator_result)
+      | Some (name, boundaries) -> (
+          if Complex.name_in_use location name then
+            let name_span =
+              let generator_desc = generator.value in
+              Lang_ast.span_of_node generator_desc.generator_name
+            in
+            let message =
+              Format.asprintf "Generator name already in use: %s"
+                (Id.Local.to_string name)
+            in
+            let diagnostic =
+              Diagnostics.make `Error interpreter_producer name_span message
+            in
+            (None, add_diagnostic generator_result diagnostic)
+          else
+            let boundaries_span =
+              let generator_desc = generator.value in
+              match generator_desc.generator_boundaries with
+              | Some boundaries_node ->
+                  Lang_ast.span_of_node boundaries_node
+              | None ->
+                  Lang_ast.span_of_node generator
+            in
+            let dim =
+              match boundaries with
+              | Diagram.Zero ->
+                  0
+              | Diagram.Boundary { boundary_in; _ } ->
+                  Diagram.dim boundary_in + 1
+            in
+            let tag, new_id_opt =
+              match mode with
+              | Global ->
+                  let new_id = Id.Global.fresh () in
+                  (Id.Tag.of_global new_id, Some new_id)
+              | Local ->
+                  (Id.Tag.of_local name, None)
+            in
+            match Diagram.cell tag boundaries with
+            | Error err ->
+                let message =
+                  Format.asprintf "Failed to create generator cell: %a" Error.pp
+                    err
+                in
+                let diagnostic =
+                  Diagnostics.make `Error interpreter_producer boundaries_span
+                    message
+                in
+                (None, add_diagnostic generator_result diagnostic)
+            | Ok classifier ->
+                let location_with_generator =
+                  Complex.add_generator location ~name ~classifier
+                in
+                let location_with_diagram =
+                  Complex.add_diagram location_with_generator ~name classifier
+                in
+                let location_final =
+                  match mode with
+                  | Local ->
+                      Complex.add_local_cell location_with_diagram ~name ~dim
+                        boundaries
+                  | Global ->
+                      location_with_diagram
+                in
+                let state_after =
+                  match (mode, new_id_opt) with
+                  | Global, Some new_id ->
+                      let state_with_cell =
+                        State.add_cell context_after.state ~id:new_id ~dim
+                          boundaries
+                      in
+                      let module_id = context_after.current_module in
+                      State.add_module state_with_cell ~id:module_id
+                        location_final
+                  | _ ->
+                      context_after.state
+                in
+                let context_updated = with_state context_after state_after in
+                let updated_result =
+                  { generator_result with context= context_updated }
+                in
+                (Some location_final, updated_result)))
+  | C_instr_dnamer dnamer ->
+      (None, stub_node "c_instr.dnamer" context dnamer)
+  | C_instr_mnamer mnamer ->
+      (None, stub_node "c_instr.mnamer" context mnamer)
+  | C_instr_include include_stmt ->
+      (None, stub_node "c_instr.include" context include_stmt)
+  | C_instr_attach attach_stmt ->
+      (None, stub_node "c_instr.attach" context attach_stmt)
+
+let interpret_c_block context ~mode ~location (c_block : Lang_ast.c_block) =
+  let instrs = c_block.value in
+  let rec loop current_location acc_location acc_result = function
+    | [] ->
+        (acc_location, acc_result)
+    | instr :: rest ->
+        let ctx = acc_result.context in
+        let location_opt, instr_result =
+          interpret_c_instr ctx ~mode ~location:current_location instr
+        in
+        let combined = combine acc_result instr_result in
+        let acc_location =
+          match location_opt with Some loc -> Some loc | None -> acc_location
+        in
+        let next_location =
+          match location_opt with Some loc -> loc | None -> current_location
+        in
+        if has_errors instr_result then (acc_location, combined)
+        else loop next_location acc_location combined rest
+  in
+  loop location None (empty_result context) instrs
+
 let interpret_complex context ~mode complex =
   let open Lang_ast in
   let string_or_empty name =
@@ -682,6 +733,9 @@ let interpret_complex context ~mode complex =
                         None
                   in
                   (namespace_opt, combined_result))))
+
+let interpret_generator_type context generator_type =
+  (None, stub_node "generator_type" context generator_type)
 
 let rec interpret_program ~loader context program =
   let module_id = context.current_module in
@@ -1168,58 +1222,3 @@ and interpret_c_block_type ~loader context
         else loop acc_location combined rest
   in
   loop None (empty_result context) instrs
-
-let interpret_boundaries context ~location:_ boundaries =
-  stub_node "boundaries" context boundaries
-
-let interpret_morphism context ~location:_ morphism =
-  stub_node "morphism" context morphism
-
-let interpret_m_comp context ~location:_ m_comp =
-  stub_node "m_comp" context m_comp
-
-let interpret_m_term context ~location:_ m_term =
-  stub_node "m_term" context m_term
-
-let interpret_m_ext context ~location:_ m_ext = stub_node "m_ext" context m_ext
-let interpret_m_def context ~location:_ m_def = stub_node "m_def" context m_def
-
-let interpret_m_block context ~location:_ m_block =
-  stub_node "m_block" context m_block
-
-let interpret_m_instr context ~location:_ m_instr =
-  stub_node "m_instr" context m_instr
-
-let interpret_include context include_stmt =
-  (None, stub_node "include" context include_stmt)
-
-let interpret_attach context ~location:_ attach =
-  (None, stub_node "attach" context attach)
-
-let interpret_assert context ~location:_ assert_stmt =
-  stub_node "assert" context assert_stmt
-
-let interpret_diagram context ~location:_ diagram =
-  stub_node "diagram" context diagram
-
-let interpret_d_concat context ~location:_ d_concat =
-  stub_node "d_concat" context d_concat
-
-let interpret_d_expr context ~location:_ d_expr =
-  stub_node "d_expr" context d_expr
-
-let interpret_d_comp context ~location:_ d_comp =
-  stub_node "d_comp" context d_comp
-
-let interpret_d_term context ~location:_ d_term =
-  stub_node "d_term" context d_term
-
-let interpret_bd (bd : Lang_ast.bd) = bd.value
-
-let interpret_pasting context ~location:_ pasting =
-  stub_node "pasting" context pasting
-
-let interpret_concat context ~location:_ concat =
-  stub_node "concat" context concat
-
-let interpret_expr context ~location:_ expr = stub_node "expr" context expr
