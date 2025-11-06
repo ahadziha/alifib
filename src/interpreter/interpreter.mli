@@ -58,7 +58,10 @@ val interpret_c_instr :
 val interpret_c_instr_local :
   context -> namespace -> Ast.c_instr_local -> Complex.t option * result
 
-val interpret_generator_type : context -> Ast.generator_type -> result
+val interpret_generator_type :
+  context ->
+  Ast.generator_type ->
+  (Id.Local.t * Diagram.cell_data * Complex.t) option * result
 
 val interpret_generator :
   context -> location:Complex.t -> Ast.generator -> result
@@ -74,10 +77,21 @@ val interpret_m_ext : context -> location:Complex.t -> Ast.m_ext -> result
 val interpret_m_def : context -> location:Complex.t -> Ast.m_def -> result
 val interpret_m_block : context -> location:Complex.t -> Ast.m_block -> result
 val interpret_m_instr : context -> location:Complex.t -> Ast.m_instr -> result
-val interpret_mnamer : context -> location:Complex.t -> Ast.mnamer -> result
-val interpret_dnamer : context -> location:Complex.t -> Ast.dnamer -> result
+
+val interpret_mnamer :
+  context ->
+  location:Complex.t ->
+  Ast.mnamer ->
+  (Id.Local.t * Morphism.t * Complex.morphism_domain) option * result
+
+val interpret_dnamer :
+  context ->
+  location:Complex.t ->
+  Ast.dnamer ->
+  (Id.Local.t * Diagram.t) option * result
+
 val interpret_include : context -> Ast.include_statement -> result
-val interpret_include_module : context -> Ast.include_module -> result
+val interpret_include_module : Ast.include_module -> Id.Local.t * Id.Local.t
 
 val interpret_attach :
   context -> location:Complex.t -> Ast.attach_statement -> result
@@ -90,9 +104,9 @@ val interpret_d_concat : context -> location:Complex.t -> Ast.d_concat -> result
 val interpret_d_expr : context -> location:Complex.t -> Ast.d_expr -> result
 val interpret_d_comp : context -> location:Complex.t -> Ast.d_comp -> result
 val interpret_d_term : context -> location:Complex.t -> Ast.d_term -> result
-val interpret_bd : context -> Ast.bd -> Diagram.sign * context
+val interpret_bd : Ast.bd -> Diagram.sign
 val interpret_pasting : context -> location:Complex.t -> Ast.pasting -> result
 val interpret_concat : context -> location:Complex.t -> Ast.concat -> result
 val interpret_expr : context -> location:Complex.t -> Ast.expr -> result
-val interpret_name : context -> Ast.name -> Id.Local.t * context
-val interpret_nat : context -> Ast.nat -> int * context
+val interpret_name : Ast.name -> Id.Local.t
+val interpret_nat : Ast.nat -> int

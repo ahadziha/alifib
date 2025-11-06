@@ -70,11 +70,225 @@ let stub_node kind context (node : _ Lang_ast.node) =
   let span = Lang_ast.span_of_node node in
   add_diagnostic (empty_result context) (stub_diagnostic kind span)
 
-let interpret_name context (name : Lang_ast.name) = (name.value, context)
-let interpret_nat context (nat : Lang_ast.nat) = (nat.value, context)
+let interpret_name (name : Lang_ast.name) = name.value
+let interpret_nat (nat : Lang_ast.nat) = nat.value
 
-let interpret_c_instr_type ~loader:_ context c_instr_type =
-  (None, stub_node "c_instr_type" context c_instr_type)
+let interpret_generator_type context generator_type =
+  (None, stub_node "generator_type" context generator_type)
+
+let interpret_dnamer context ~location:_ dnamer =
+  (None, stub_node "dnamer" context dnamer)
+
+let interpret_mnamer context ~location:_ mnamer =
+  (None, stub_node "mnamer" context mnamer)
+
+let interpret_c_instr_type ~loader:_ context
+    (c_instr_type : Lang_ast.c_instr_type) =
+  let open Lang_ast in
+  let make_stub kind node =
+    let span = span_of_node node in
+    let diagnostic = stub_diagnostic kind span in
+    let result = add_diagnostic (empty_result context) diagnostic in
+    (None, result)
+  in
+  match c_instr_type.value with
+  | C_instr_type_generator generator_type -> (
+      let generator_output, generator_result =
+        interpret_generator_type context generator_type
+      in
+      let generator_desc = generator_type.value in
+      let generator_node = generator_desc.generator_type_generator in
+      let generator_name_node = generator_node.value.generator_name in
+      let definition_node = generator_desc.generator_type_definition in
+      let module_span = span_of_node generator_type in
+      let name_span = span_of_node generator_name_node in
+      let definition_span = span_of_node definition_node in
+      let context_after = generator_result.context in
+      let module_id = context_after.current_module in
+      match generator_output with
+      | None ->
+          (None, generator_result)
+      | Some (name, boundaries, complex) -> (
+          match State.find_module context_after.state module_id with
+          | None ->
+              let message =
+                Format.asprintf "Module %s not found in module record"
+                  (Id.Module.to_string module_id)
+              in
+              let diagnostic =
+                Diagnostics.make `Error interpreter_producer module_span message
+              in
+              (None, add_diagnostic generator_result diagnostic)
+          | Some location -> (
+              if Complex.name_in_use location name then
+                let message =
+                  Format.asprintf "Generator name already in use: %s"
+                    (Id.Local.to_string name)
+                in
+                let diagnostic =
+                  Diagnostics.make `Error interpreter_producer name_span message
+                in
+                (None, add_diagnostic generator_result diagnostic)
+              else
+                let new_id = Id.Global.fresh () in
+                let tag = Id.Tag.of_global new_id in
+                match Diagram.cell tag boundaries with
+                | Error err ->
+                    let message =
+                      Format.asprintf "Failed to create generator cell: %a"
+                        Error.pp err
+                    in
+                    let diagnostic =
+                      Diagnostics.make `Error interpreter_producer
+                        definition_span message
+                    in
+                    (None, add_diagnostic generator_result diagnostic)
+                | Ok classifier_diagram ->
+                    let location_with_generator =
+                      Complex.add_generator location ~name
+                        ~classifier:classifier_diagram
+                    in
+                    let updated_location =
+                      Complex.add_diagram location_with_generator ~name
+                        classifier_diagram
+                    in
+                    let state =
+                      State.add_type context_after.state ~id:new_id
+                        ~data:boundaries ~complex
+                    in
+                    let state =
+                      State.add_module state ~id:module_id updated_location
+                    in
+                    let context_updated = with_state context_after state in
+                    let updated_result =
+                      { generator_result with context= context_updated }
+                    in
+                    (Some updated_location, updated_result))))
+  | C_instr_type_dnamer dnamer -> (
+      let module_span = span_of_node dnamer in
+      let module_id = context.current_module in
+      let name_span =
+        let dnamer_desc = dnamer.value in
+        span_of_node dnamer_desc.dnamer_name
+      in
+      match State.find_module context.state module_id with
+      | None ->
+          let message =
+            Format.asprintf "Module %s not found in module record"
+              (Id.Module.to_string module_id)
+          in
+          let diagnostic =
+            Diagnostics.make `Error interpreter_producer module_span message
+          in
+          (None, add_diagnostic (empty_result context) diagnostic)
+      | Some location -> (
+          let dnamer_output, dnamer_result =
+            interpret_dnamer context ~location dnamer
+          in
+          let context_after = dnamer_result.context in
+          match dnamer_output with
+          | None ->
+              (None, dnamer_result)
+          | Some (name, diagram) -> (
+              match State.find_module context_after.state module_id with
+              | None ->
+                  let message =
+                    Format.asprintf "Module %s not found in module record"
+                      (Id.Module.to_string module_id)
+                  in
+                  let diagnostic =
+                    Diagnostics.make `Error interpreter_producer module_span
+                      message
+                  in
+                  (None, add_diagnostic dnamer_result diagnostic)
+              | Some current_location ->
+                  if Complex.name_in_use current_location name then
+                    let message =
+                      Format.asprintf "Diagram name already in use: %s"
+                        (Id.Local.to_string name)
+                    in
+                    let diagnostic =
+                      Diagnostics.make `Error interpreter_producer name_span
+                        message
+                    in
+                    (None, add_diagnostic dnamer_result diagnostic)
+                  else
+                    let updated_location =
+                      Complex.add_diagram current_location ~name diagram
+                    in
+                    let state =
+                      State.add_module context_after.state ~id:module_id
+                        updated_location
+                    in
+                    let context_updated = with_state context_after state in
+                    let updated_result =
+                      { dnamer_result with context= context_updated }
+                    in
+                    (Some updated_location, updated_result))))
+  | C_instr_type_mnamer mnamer -> (
+      let module_span = span_of_node mnamer in
+      let module_id = context.current_module in
+      let name_span =
+        let mnamer_desc = mnamer.value in
+        span_of_node mnamer_desc.mnamer_name
+      in
+      match State.find_module context.state module_id with
+      | None ->
+          let message =
+            Format.asprintf "Module %s not found in module record"
+              (Id.Module.to_string module_id)
+          in
+          let diagnostic =
+            Diagnostics.make `Error interpreter_producer module_span message
+          in
+          (None, add_diagnostic (empty_result context) diagnostic)
+      | Some location -> (
+          let mnamer_output, mnamer_result =
+            interpret_mnamer context ~location mnamer
+          in
+          let context_after = mnamer_result.context in
+          match mnamer_output with
+          | None ->
+              (None, mnamer_result)
+          | Some (name, morphism, domain) -> (
+              match State.find_module context_after.state module_id with
+              | None ->
+                  let message =
+                    Format.asprintf "Module %s not found in module record"
+                      (Id.Module.to_string module_id)
+                  in
+                  let diagnostic =
+                    Diagnostics.make `Error interpreter_producer module_span
+                      message
+                  in
+                  (None, add_diagnostic mnamer_result diagnostic)
+              | Some current_location ->
+                  if Complex.name_in_use current_location name then
+                    let message =
+                      Format.asprintf "Map name already in use: %s"
+                        (Id.Local.to_string name)
+                    in
+                    let diagnostic =
+                      Diagnostics.make `Error interpreter_producer name_span
+                        message
+                    in
+                    (None, add_diagnostic mnamer_result diagnostic)
+                  else
+                    let updated_location =
+                      Complex.add_morphism current_location ~name ~domain
+                        morphism
+                    in
+                    let state =
+                      State.add_module context_after.state ~id:module_id
+                        updated_location
+                    in
+                    let context_updated = with_state context_after state in
+                    let updated_result =
+                      { mnamer_result with context= context_updated }
+                    in
+                    (Some updated_location, updated_result))))
+  | C_instr_type_include_module include_module ->
+      make_stub "c_instr_type.include_module" include_module
 
 let interpret_c_instr context ~mode:_ ~location:_ c_instr =
   (None, stub_node "c_instr" context c_instr)
@@ -424,15 +638,14 @@ and interpret_address context address =
     let raw = Id.Local.to_string name in
     if String.length raw = 0 then "<empty>" else raw
   in
-  let rec gather ctx = function
+  let rec gather = function
     | [] ->
-        ([], ctx)
+        []
     | name :: rest ->
-        let value, ctx' = interpret_name ctx name in
-        let tail, ctx'' = gather ctx' rest in
-        ((name, value) :: tail, ctx'')
+        let value = interpret_name name in
+        (name, value) :: gather rest
   in
-  let pairs, context = gather context address.value in
+  let pairs = gather address.value in
   let base_result = empty_result context in
   let state = context.state in
   let module_id = context.current_module in
@@ -616,9 +829,6 @@ and interpret_block ~loader context block =
       | _ ->
           { context; diagnostics; status })
 
-let interpret_generator_type context generator_type =
-  stub_node "generator_type" context generator_type
-
 let interpret_generator context ~location:_ generator =
   stub_node "generator" context generator
 
@@ -643,17 +853,20 @@ let interpret_m_block context ~location:_ m_block =
 let interpret_m_instr context ~location:_ m_instr =
   stub_node "m_instr" context m_instr
 
-let interpret_mnamer context ~location:_ mnamer =
-  stub_node "mnamer" context mnamer
-
-let interpret_dnamer context ~location:_ dnamer =
-  stub_node "dnamer" context dnamer
-
 let interpret_include context include_stmt =
   stub_node "include" context include_stmt
 
-let interpret_include_module context include_mod =
-  stub_node "include_module" context include_mod
+let interpret_include_module (include_mod : Lang_ast.include_module) =
+  let include_desc = include_mod.value in
+  let name = interpret_name include_desc.include_module_name in
+  let alias =
+    match include_desc.include_module_alias with
+    | Some alias_node ->
+        interpret_name alias_node
+    | None ->
+        name
+  in
+  (name, alias)
 
 let interpret_attach context ~location:_ attach =
   stub_node "attach" context attach
@@ -676,7 +889,7 @@ let interpret_d_comp context ~location:_ d_comp =
 let interpret_d_term context ~location:_ d_term =
   stub_node "d_term" context d_term
 
-let interpret_bd context (bd : Lang_ast.bd) = (bd.value, context)
+let interpret_bd (bd : Lang_ast.bd) = bd.value
 
 let interpret_pasting context ~location:_ pasting =
   stub_node "pasting" context pasting
