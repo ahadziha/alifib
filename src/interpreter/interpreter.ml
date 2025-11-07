@@ -477,52 +477,190 @@ let interpret_include_module (include_mod : Lang_ast.include_module) =
   in
   (name, alias)
 
-let interpret_morphism context ~location:_ morphism =
-  (None, stub_node "morphism" context morphism)
+let rec interpret_morphism context ~location morphism =
+  let open Lang_ast in
+  match morphism.Lang_ast.value with
+  | Morphism_single m_comp ->
+      interpret_m_comp context ~location m_comp
+  | Morphism_concat { morphism_left; morphism_right } -> (
+      let left_output, left_result =
+        interpret_morphism context ~location morphism_left
+      in
+      match left_output with
+      | None ->
+          (None, left_result)
+      | Some left_component -> (
+          let right_output, right_result =
+            interpret_m_comp left_result.context ~location:left_component.source
+              morphism_right
+          in
+          let combined_result = combine left_result right_result in
+          match right_output with
+          | None ->
+              (None, combined_result)
+          | Some right_component ->
+              let composed =
+                Morphism.compose left_component.morphism
+                  right_component.morphism
+              in
+              ( Some { morphism= composed; source= right_component.source },
+                combined_result )))
 
-let interpret_m_comp context ~location:_ m_comp =
-  (None, stub_node "m_comp" context m_comp)
+and interpret_m_comp context ~location m_comp =
+  let open Lang_ast in
+  match m_comp.value with
+  | M_comp_term m_term ->
+      interpret_m_term context ~location m_term
+  | M_comp_name name_node -> (
+      let name = interpret_name name_node in
+      let base_result = empty_result context in
+      match Complex.find_morphism location name with
+      | None ->
+          let span = Lang_ast.span_of_node name_node in
+          let message =
+            Format.asprintf "Map not found: %s" (Id.Local.to_string name)
+          in
+          let diagnostic =
+            Diagnostics.make `Error interpreter_producer span message
+          in
+          (None, add_diagnostic base_result diagnostic)
+      | Some entry ->
+          let source =
+            match entry.domain with
+            | Complex.Type id -> (
+                match State.find_type context.state id with
+                | Some { complex; _ } ->
+                    complex
+                | None ->
+                    assert false)
+            | Complex.Module module_id -> (
+                match State.find_module context.state module_id with
+                | Some complex ->
+                    complex
+                | None ->
+                    assert false)
+          in
+          (Some { morphism= entry.morphism; source }, base_result))
 
-let interpret_m_term context ~location:_ m_term =
-  (None, stub_node "m_term" context m_term)
+and interpret_m_term context ~location m_term =
+  let Lang_ast.{ value= m_term_desc; _ } = m_term in
+  let target_complex = m_term_desc.m_term_target in
+  let namespace_opt, complex_result =
+    interpret_complex context ~mode:Local target_complex
+  in
+  match namespace_opt with
+  | None ->
+      (None, complex_result)
+  | Some namespace -> (
+      let source = namespace.location in
+      let ext_node = m_term_desc.m_term_ext in
+      let ext_output, ext_result =
+        interpret_m_ext complex_result.context ~location ~source ext_node
+      in
+      let combined_result = combine complex_result ext_result in
+      match ext_output with
+      | None ->
+          (None, combined_result)
+      | Some morphism ->
+          (Some { morphism; source }, combined_result))
 
-let interpret_m_ext context ~location:_ ~source:_ m_ext =
-  (None, stub_node "m_ext" context m_ext)
+and interpret_m_ext context ~location ~source m_ext =
+  let open Lang_ast in
+  let span = Lang_ast.span_of_node m_ext in
+  let m_ext_desc = m_ext.value in
+  let prefix_opt, block_opt =
+    (m_ext_desc.m_ext_prefix, m_ext_desc.m_ext_block)
+  in
+  let component_opt, prefix_result =
+    match prefix_opt with
+    | None -> (
+        match Morphism.init () with
+        | Ok morphism ->
+            (Some { morphism; source }, empty_result context)
+        | Error _ ->
+            assert false)
+    | Some morphism_node ->
+        interpret_morphism context ~location morphism_node
+  in
+  match component_opt with
+  | None ->
+      (None, prefix_result)
+  | Some { morphism; source= morphism_source } -> (
+      let ensure_source result =
+        if morphism_source == source then Ok result
+        else
+          let tags = Morphism.domain_of_definition morphism in
+          let cell_data_compatible lhs rhs =
+            match (lhs, rhs) with
+            | Diagram.Zero, Diagram.Zero ->
+                true
+            | ( Diagram.Boundary { boundary_in= in_lhs; boundary_out= out_lhs },
+                Diagram.Boundary { boundary_in= in_rhs; boundary_out= out_rhs }
+              ) ->
+                Diagram.isomorphic in_lhs in_rhs
+                && Diagram.isomorphic out_lhs out_rhs
+            | _ ->
+                false
+          in
+          let rec validate_tags = function
+            | [] ->
+                Ok ()
+            | tag :: rest -> (
+                if Option.is_none (Complex.find_generator_by_tag source tag)
+                then Error "Map defined outside of the specified domain"
+                else
+                  let check_local =
+                    match tag with
+                    | `Local local_name -> (
+                        match
+                          ( Complex.find_local_cell source local_name,
+                            Morphism.cell_data morphism tag )
+                        with
+                        | Some { data= source_data; _ }, Ok morphism_data ->
+                            if cell_data_compatible source_data morphism_data
+                            then Ok ()
+                            else
+                              Error
+                                "Local cell mismatch between map and complex"
+                        | _ ->
+                            Error "Local cell mismatch between map and complex")
+                    | `Global _ ->
+                        Ok ()
+                  in
+                  match check_local with
+                  | Ok () ->
+                      validate_tags rest
+                  | Error _ as err ->
+                      err)
+          in
+          match validate_tags tags with
+          | Ok () ->
+              Ok result
+          | Error message ->
+              let diagnostic =
+                Diagnostics.make `Error interpreter_producer span message
+              in
+              Error (add_diagnostic result diagnostic)
+      in
+      match ensure_source prefix_result with
+      | Error result_with_error ->
+          (None, result_with_error)
+      | Ok validated_result -> (
+          match block_opt with
+          | None ->
+              (Some morphism, validated_result)
+          | Some block_node ->
+              let block_output, block_result =
+                interpret_m_block validated_result.context ~location ~source
+                  ~morphism block_node
+              in
+              let combined_result = combine validated_result block_result in
+              (block_output, combined_result)))
 
-let interpret_m_def context ~location:_ ~source:_ m_def =
-  (None, stub_node "m_def" context m_def)
-
-let interpret_m_block context ~location:_ ~source:_ m_block =
-  (None, stub_node "m_block" context m_block)
-
-let interpret_m_instr context ~location:_ ~source:_ m_instr =
-  (None, stub_node "m_instr" context m_instr)
-
-let interpret_diagram context ~location:_ diagram =
+and interpret_diagram context ~location:_ diagram =
   (None, stub_node "diagram" context diagram)
 
-let interpret_d_concat context ~location:_ d_concat =
-  (None, stub_node "d_concat" context d_concat)
-
-let interpret_d_expr context ~location:_ d_expr =
-  (None, stub_node "d_expr" context d_expr)
-
-let interpret_d_comp context ~location:_ d_comp =
-  (None, stub_node "d_comp" context d_comp)
-
-let interpret_d_term context ~location:_ d_term =
-  (None, stub_node "d_term" context d_term)
-
-let interpret_pasting context ~location:_ pasting =
-  (None, stub_node "pasting" context pasting)
-
-let interpret_concat context ~location:_ concat =
-  (None, stub_node "concat" context concat)
-
-let interpret_expr context ~location:_ expr =
-  (None, stub_node "expr" context expr)
-
-let interpret_boundaries context ~location boundaries =
+and interpret_boundaries context ~location boundaries =
   let open Lang_ast in
   let { value= boundaries_desc; _ } = boundaries in
   let source_node = boundaries_desc.boundaries_source in
@@ -545,7 +683,7 @@ let interpret_boundaries context ~location boundaries =
           ( Some (Diagram.Boundary { boundary_in; boundary_out }),
             combined_result ))
 
-let interpret_dnamer context ~location dnamer =
+and interpret_dnamer context ~location dnamer =
   let open Lang_ast in
   let dnamer_desc = dnamer.value in
   let diagram_opt, diagram_result =
@@ -604,7 +742,10 @@ let interpret_dnamer context ~location dnamer =
                       then boundary_error `Output
                       else (Some (name, diagram), combined_result))))
 
-let interpret_mnamer context ~location mnamer =
+and interpret_m_def context ~location:_ ~source:_ m_def =
+  (None, stub_node "m_def" context m_def)
+
+and interpret_mnamer context ~location mnamer =
   let open Lang_ast in
   let mnamer_desc = mnamer.value in
   let address_node = mnamer_desc.mnamer_address in
@@ -630,7 +771,7 @@ let interpret_mnamer context ~location mnamer =
               let name = interpret_name mnamer_desc.mnamer_name in
               (Some (name, morphism, Complex.Type id), m_def_result)))
 
-let interpret_generator context ~location generator =
+and interpret_generator context ~location generator =
   let open Lang_ast in
   let generator_desc = generator.value in
   let name_node = generator_desc.generator_name in
@@ -648,7 +789,7 @@ let interpret_generator context ~location generator =
   | None ->
       (Some (name, Diagram.Zero), empty_result context)
 
-let interpret_attach context ~location attach =
+and interpret_attach context ~location attach =
   let open Lang_ast in
   let attach_desc = attach.value in
   let address_node = attach_desc.attach_address in
@@ -684,7 +825,10 @@ let interpret_attach context ~location attach =
           | Some morphism ->
               (Some (name, morphism, Complex.Type id), m_def_result)))
 
-let interpret_assert context ~location assert_stmt =
+and interpret_pasting context ~location:_ pasting =
+  (None, stub_node "pasting" context pasting)
+
+and interpret_assert context ~location assert_stmt =
   let Lang_ast.{ value= assert_desc; _ } = assert_stmt in
   let Lang_ast.{ assert_left= left_pasting; assert_right= right_pasting } =
     assert_desc
@@ -731,7 +875,7 @@ let interpret_assert context ~location assert_stmt =
               in
               (None, add_diagnostic combined_result diagnostic)))
 
-let interpret_c_instr_local context namespace c_instr_local =
+and interpret_c_instr_local context namespace c_instr_local =
   let { root; location } = namespace in
   let root_location =
     match State.find_type context.state root with
@@ -900,7 +1044,7 @@ let interpret_c_instr_local context namespace c_instr_local =
                 in
                 (None, add_diagnostic assert_result diagnostic)))
 
-let interpret_c_block_local context namespace
+and interpret_c_block_local context namespace
     (c_block_local : Lang_ast.c_block_local) =
   let instrs = c_block_local.value in
   let rec loop current_namespace acc_location acc_result = function
@@ -927,7 +1071,7 @@ let interpret_c_block_local context namespace
   in
   loop namespace None (empty_result context) instrs
 
-let interpret_c_instr context ~mode ~location c_instr =
+and interpret_c_instr context ~mode ~location c_instr =
   let open Lang_ast in
   match c_instr.value with
   | C_instr_generator generator -> (
@@ -1377,7 +1521,7 @@ let interpret_c_instr context ~mode ~location c_instr =
             in
             attach_resolution)
 
-let interpret_c_block context ~mode ~location (c_block : Lang_ast.c_block) =
+and interpret_c_block context ~mode ~location (c_block : Lang_ast.c_block) =
   let instrs = c_block.value in
   let rec loop current_location acc_location acc_result = function
     | [] ->
@@ -1399,7 +1543,7 @@ let interpret_c_block context ~mode ~location (c_block : Lang_ast.c_block) =
   in
   loop location None (empty_result context) instrs
 
-let interpret_complex context ~mode complex =
+and interpret_complex context ~mode complex =
   let open Lang_ast in
   let string_or_empty name =
     let raw = Id.Local.to_string name in
@@ -1483,6 +1627,30 @@ let interpret_complex context ~mode complex =
                         None
                   in
                   (namespace_opt, combined_result))))
+
+and interpret_m_block context ~location:_ ~source:_ ~morphism:_ m_block =
+  (None, stub_node "m_block" context m_block)
+
+and interpret_m_instr context ~location:_ ~source:_ ~morphism:_ m_instr =
+  (None, stub_node "m_instr" context m_instr)
+
+let interpret_d_concat context ~location:_ d_concat =
+  (None, stub_node "d_concat" context d_concat)
+
+let interpret_d_expr context ~location:_ d_expr =
+  (None, stub_node "d_expr" context d_expr)
+
+let interpret_d_comp context ~location:_ d_comp =
+  (None, stub_node "d_comp" context d_comp)
+
+let interpret_d_term context ~location:_ d_term =
+  (None, stub_node "d_term" context d_term)
+
+let interpret_concat context ~location:_ concat =
+  (None, stub_node "concat" context concat)
+
+let interpret_expr context ~location:_ expr =
+  (None, stub_node "expr" context expr)
 
 let interpret_generator_type context generator_type =
   let open Lang_ast in

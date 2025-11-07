@@ -120,6 +120,7 @@ val interpret_m_block :
   context ->
   location:Complex.t ->
   source:Complex.t ->
+  morphism:Morphism.t ->
   Ast.m_block ->
   Morphism.t option * result
 
@@ -127,6 +128,7 @@ val interpret_m_instr :
   context ->
   location:Complex.t ->
   source:Complex.t ->
+  morphism:Morphism.t ->
   Ast.m_instr ->
   Morphism.t option * result
 
