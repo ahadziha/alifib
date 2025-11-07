@@ -15,10 +15,9 @@ type file_loader = {
 type mode = Global | Local
 type namespace = { root: Id.Global.t; location: Complex.t }
 type status = [ `Ok | `Error ]
-
-type term =
-  | M_term of { morphism: Morphism.t; source: Complex.t }
-  | D_term of Diagram.t
+type morphism_component = { morphism: Morphism.t; source: Complex.t }
+type term = M_term of morphism_component | D_term of Diagram.t
+type component = Term of term | Hole | Bd of Diagram.sign
 
 type term_pair =
   | M_term_pair of { fst: Morphism.t; snd: Morphism.t; source: Complex.t }
@@ -78,16 +77,42 @@ val interpret_generator :
   (Id.Local.t * Diagram.cell_data) option * result
 
 val interpret_boundaries :
-  context -> location:Complex.t -> Ast.boundaries -> result
+  context ->
+  location:Complex.t ->
+  Ast.boundaries ->
+  Diagram.cell_data option * result
 
 val interpret_address : context -> Ast.address -> Id.Global.t option * result
-val interpret_morphism : context -> location:Complex.t -> Ast.morphism -> result
-val interpret_m_comp : context -> location:Complex.t -> Ast.m_comp -> result
-val interpret_m_term : context -> location:Complex.t -> Ast.m_term -> result
-val interpret_m_ext : context -> location:Complex.t -> Ast.m_ext -> result
-val interpret_m_def : context -> location:Complex.t -> Ast.m_def -> result
-val interpret_m_block : context -> location:Complex.t -> Ast.m_block -> result
-val interpret_m_instr : context -> location:Complex.t -> Ast.m_instr -> result
+
+val interpret_morphism :
+  context ->
+  location:Complex.t ->
+  Ast.morphism ->
+  morphism_component option * result
+
+val interpret_m_comp :
+  context ->
+  location:Complex.t ->
+  Ast.m_comp ->
+  morphism_component option * result
+
+val interpret_m_term :
+  context ->
+  location:Complex.t ->
+  Ast.m_term ->
+  morphism_component option * result
+
+val interpret_m_ext :
+  context -> location:Complex.t -> Ast.m_ext -> Morphism.t option * result
+
+val interpret_m_def :
+  context -> location:Complex.t -> Ast.m_def -> Morphism.t option * result
+
+val interpret_m_block :
+  context -> location:Complex.t -> Ast.m_block -> Morphism.t option * result
+
+val interpret_m_instr :
+  context -> location:Complex.t -> Ast.m_instr -> Morphism.t option * result
 
 val interpret_mnamer :
   context ->
@@ -118,22 +143,31 @@ val interpret_assert :
   Ast.assert_statement ->
   term_pair option * result
 
-val interpret_diagram : context -> location:Complex.t -> Ast.diagram -> result
-val interpret_d_concat : context -> location:Complex.t -> Ast.d_concat -> result
-val interpret_d_expr : context -> location:Complex.t -> Ast.d_expr -> result
-val interpret_d_comp : context -> location:Complex.t -> Ast.d_comp -> result
-val interpret_d_term : context -> location:Complex.t -> Ast.d_term -> result
+val interpret_diagram :
+  context -> location:Complex.t -> Ast.diagram -> Diagram.t option * result
+
+val interpret_d_concat :
+  context -> location:Complex.t -> Ast.d_concat -> Diagram.t option * result
+
+val interpret_d_expr :
+  context -> location:Complex.t -> Ast.d_expr -> term option * result
+
+val interpret_d_comp :
+  context -> location:Complex.t -> Ast.d_comp -> component option * result
+
+val interpret_d_term :
+  context -> location:Complex.t -> Ast.d_term -> Diagram.t option * result
+
 val interpret_bd : Ast.bd -> Diagram.sign
+
 val interpret_pasting :
-  context ->
-  location:Complex.t ->
-  Ast.pasting ->
-  term option * result
+  context -> location:Complex.t -> Ast.pasting -> term option * result
 
 val interpret_concat :
   context -> location:Complex.t -> Ast.concat -> term option * result
 
 val interpret_expr :
   context -> location:Complex.t -> Ast.expr -> term option * result
+
 val interpret_name : Ast.name -> Id.Local.t
 val interpret_nat : Ast.nat -> int

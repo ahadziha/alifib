@@ -17,10 +17,9 @@ type file_loader = {
 type mode = Global | Local
 type namespace = { root: Id.Global.t; location: Complex.t }
 type status = [ `Ok | `Error ]
-
-type term =
-  | M_term of { morphism: Morphism.t; source: Complex.t }
-  | D_term of Diagram.t
+type morphism_component = { morphism: Morphism.t; source: Complex.t }
+type term = M_term of morphism_component | D_term of Diagram.t
+type component = Term of term | Hole | Bd of Diagram.sign
 
 type term_pair =
   | M_term_pair of { fst: Morphism.t; snd: Morphism.t; source: Complex.t }
@@ -446,37 +445,40 @@ let interpret_include_module (include_mod : Lang_ast.include_module) =
   (name, alias)
 
 let interpret_morphism context ~location:_ morphism =
-  stub_node "morphism" context morphism
+  (None, stub_node "morphism" context morphism)
 
 let interpret_m_comp context ~location:_ m_comp =
-  stub_node "m_comp" context m_comp
+  (None, stub_node "m_comp" context m_comp)
 
 let interpret_m_term context ~location:_ m_term =
-  stub_node "m_term" context m_term
+  (None, stub_node "m_term" context m_term)
 
-let interpret_m_ext context ~location:_ m_ext = stub_node "m_ext" context m_ext
-let interpret_m_def context ~location:_ m_def = stub_node "m_def" context m_def
+let interpret_m_ext context ~location:_ m_ext =
+  (None, stub_node "m_ext" context m_ext)
+
+let interpret_m_def context ~location:_ m_def =
+  (None, stub_node "m_def" context m_def)
 
 let interpret_m_block context ~location:_ m_block =
-  stub_node "m_block" context m_block
+  (None, stub_node "m_block" context m_block)
 
 let interpret_m_instr context ~location:_ m_instr =
-  stub_node "m_instr" context m_instr
+  (None, stub_node "m_instr" context m_instr)
 
 let interpret_diagram context ~location:_ diagram =
-  stub_node "diagram" context diagram
+  (None, stub_node "diagram" context diagram)
 
 let interpret_d_concat context ~location:_ d_concat =
-  stub_node "d_concat" context d_concat
+  (None, stub_node "d_concat" context d_concat)
 
 let interpret_d_expr context ~location:_ d_expr =
-  stub_node "d_expr" context d_expr
+  (None, stub_node "d_expr" context d_expr)
 
 let interpret_d_comp context ~location:_ d_comp =
-  stub_node "d_comp" context d_comp
+  (None, stub_node "d_comp" context d_comp)
 
 let interpret_d_term context ~location:_ d_term =
-  stub_node "d_term" context d_term
+  (None, stub_node "d_term" context d_term)
 
 let interpret_pasting context ~location:_ pasting =
   (None, stub_node "pasting" context pasting)
@@ -488,7 +490,7 @@ let interpret_expr context ~location:_ expr =
   (None, stub_node "expr" context expr)
 
 let interpret_boundaries context ~location:_ boundaries =
-  stub_node "boundaries" context boundaries
+  (None, stub_node "boundaries" context boundaries)
 
 let interpret_dnamer context ~location:_ dnamer =
   (None, stub_node "dnamer" context dnamer)
@@ -496,8 +498,23 @@ let interpret_dnamer context ~location:_ dnamer =
 let interpret_mnamer context ~location:_ mnamer =
   (None, stub_node "mnamer" context mnamer)
 
-let interpret_generator context ~location:_ generator =
-  (None, stub_node "generator" context generator)
+let interpret_generator context ~location generator =
+  let open Lang_ast in
+  let generator_desc = generator.value in
+  let name_node = generator_desc.generator_name in
+  let name = interpret_name name_node in
+  match generator_desc.generator_boundaries with
+  | Some boundaries_node -> (
+      let boundaries_output, boundaries_result =
+        interpret_boundaries context ~location boundaries_node
+      in
+      match boundaries_output with
+      | None ->
+          (None, boundaries_result)
+      | Some boundaries ->
+          (Some (name, boundaries), boundaries_result))
+  | None ->
+      (Some (name, Diagram.Zero), empty_result context)
 
 let interpret_attach context ~location:_ attach =
   (None, stub_node "attach" context attach)
@@ -1259,7 +1276,56 @@ let interpret_complex context ~mode complex =
                   (namespace_opt, combined_result))))
 
 let interpret_generator_type context generator_type =
-  (None, stub_node "generator_type" context generator_type)
+  let open Lang_ast in
+  let generator_desc = generator_type.value in
+  let generator_node = generator_desc.generator_type_generator in
+  let definition_node = generator_desc.generator_type_definition in
+  let generator_name_node = generator_node.value.generator_name in
+  let name_span = span_of_node generator_name_node in
+  let module_location =
+    let module_id = context.current_module in
+    match State.find_module context.state module_id with
+    | Some location ->
+        location
+    | None ->
+        Complex.empty
+  in
+  let generator_output, generator_result =
+    interpret_generator context ~location:module_location generator_node
+  in
+  match generator_output with
+  | None ->
+      (None, generator_result)
+  | Some (name, boundaries) -> (
+      match boundaries with
+      | Diagram.Boundary _ ->
+          let span = span_of_node generator_node in
+          let diagnostic =
+            Diagnostics.make `Error interpreter_producer span
+              "Higher cells in modules are not implemented yet."
+          in
+          (None, add_diagnostic generator_result diagnostic)
+      | Diagram.Zero -> (
+          let namespace_opt, complex_result =
+            interpret_complex generator_result.context ~mode:Global
+              definition_node
+          in
+          let combined_result = combine generator_result complex_result in
+          match namespace_opt with
+          | None ->
+              (None, combined_result)
+          | Some namespace ->
+              let complex = namespace.location in
+              if Complex.name_in_use complex name then
+                let message =
+                  Format.asprintf "Map name already in use: %s"
+                    (Id.Local.to_string name)
+                in
+                let diagnostic =
+                  Diagnostics.make `Error interpreter_producer name_span message
+                in
+                (None, add_diagnostic combined_result diagnostic)
+              else (Some (name, boundaries, complex), combined_result)))
 
 let rec interpret_program ~loader context program =
   let module_id = context.current_module in
@@ -1380,6 +1446,11 @@ and interpret_c_instr_type ~loader context
                 (None, add_diagnostic generator_result diagnostic)
               else
                 let new_id = Id.Global.fresh () in
+                let identity = identity_morphism context_after complex in
+                let complex_with_identity =
+                  Complex.add_morphism complex ~name
+                    ~domain:(Complex.Type new_id) identity
+                in
                 let tag = Id.Tag.of_global new_id in
                 match Diagram.cell tag boundaries with
                 | Error err ->
@@ -1403,7 +1474,7 @@ and interpret_c_instr_type ~loader context
                     in
                     let state =
                       State.add_type context_after.state ~id:new_id
-                        ~data:boundaries ~complex
+                        ~data:boundaries ~complex:complex_with_identity
                     in
                     let state =
                       State.add_module state ~id:module_id updated_location
