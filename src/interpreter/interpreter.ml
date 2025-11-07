@@ -477,6 +477,52 @@ let interpret_include_module (include_mod : Lang_ast.include_module) =
   in
   (name, alias)
 
+let validate_as_source morphism source =
+  let tags = Morphism.domain_of_definition morphism in
+  let cell_data_compatible lhs rhs =
+    match (lhs, rhs) with
+    | Diagram.Zero, Diagram.Zero ->
+        true
+    | ( Diagram.Boundary { boundary_in= in_lhs; boundary_out= out_lhs },
+        Diagram.Boundary { boundary_in= in_rhs; boundary_out= out_rhs } ) ->
+        Diagram.isomorphic in_lhs in_rhs && Diagram.isomorphic out_lhs out_rhs
+    | _ ->
+        false
+  in
+  let rec validate_tags = function
+    | [] ->
+        Ok ()
+    | tag :: rest -> (
+        if Option.is_none (Complex.find_generator_by_tag source tag) then
+          Error "Map defined outside of the specified domain"
+        else
+          let check_local =
+            match tag with
+            | `Local local_name -> (
+                match
+                  ( Complex.find_local_cell source local_name,
+                    Morphism.cell_data morphism tag )
+                with
+                | Some { data= source_data; _ }, Ok morphism_data ->
+                    if cell_data_compatible source_data morphism_data then Ok ()
+                    else Error "Local cell mismatch between map and complex"
+                | _ ->
+                    Error "Local cell mismatch between map and complex")
+            | `Global _ ->
+                Ok ()
+          in
+          match check_local with
+          | Ok () ->
+              validate_tags rest
+          | Error _ as err ->
+              err)
+  in
+  match validate_tags tags with
+  | Ok () ->
+      Ok ()
+  | Error message ->
+      Error message
+
 let rec interpret_morphism context ~location morphism =
   let open Lang_ast in
   match morphism.Lang_ast.value with
@@ -589,51 +635,7 @@ and interpret_m_ext context ~location ~source m_ext =
       let ensure_source result =
         if morphism_source == source then Ok result
         else
-          let tags = Morphism.domain_of_definition morphism in
-          let cell_data_compatible lhs rhs =
-            match (lhs, rhs) with
-            | Diagram.Zero, Diagram.Zero ->
-                true
-            | ( Diagram.Boundary { boundary_in= in_lhs; boundary_out= out_lhs },
-                Diagram.Boundary { boundary_in= in_rhs; boundary_out= out_rhs }
-              ) ->
-                Diagram.isomorphic in_lhs in_rhs
-                && Diagram.isomorphic out_lhs out_rhs
-            | _ ->
-                false
-          in
-          let rec validate_tags = function
-            | [] ->
-                Ok ()
-            | tag :: rest -> (
-                if Option.is_none (Complex.find_generator_by_tag source tag)
-                then Error "Map defined outside of the specified domain"
-                else
-                  let check_local =
-                    match tag with
-                    | `Local local_name -> (
-                        match
-                          ( Complex.find_local_cell source local_name,
-                            Morphism.cell_data morphism tag )
-                        with
-                        | Some { data= source_data; _ }, Ok morphism_data ->
-                            if cell_data_compatible source_data morphism_data
-                            then Ok ()
-                            else
-                              Error
-                                "Local cell mismatch between map and complex"
-                        | _ ->
-                            Error "Local cell mismatch between map and complex")
-                    | `Global _ ->
-                        Ok ()
-                  in
-                  match check_local with
-                  | Ok () ->
-                      validate_tags rest
-                  | Error _ as err ->
-                      err)
-          in
-          match validate_tags tags with
+          match validate_as_source morphism source with
           | Ok () ->
               Ok result
           | Error message ->
@@ -742,8 +744,30 @@ and interpret_dnamer context ~location dnamer =
                       then boundary_error `Output
                       else (Some (name, diagram), combined_result))))
 
-and interpret_m_def context ~location:_ ~source:_ m_def =
-  (None, stub_node "m_def" context m_def)
+and interpret_m_def context ~location ~source m_def =
+  let open Lang_ast in
+  match m_def.value with
+  | M_def_morphism morph_node -> (
+      let morph_output, morph_result =
+        interpret_morphism context ~location morph_node
+      in
+      match morph_output with
+      | None ->
+          (None, morph_result)
+      | Some { morphism; source= morph_source } -> (
+          if morph_source == source then (Some morphism, morph_result)
+          else
+            match validate_as_source morphism source with
+            | Ok () ->
+                (Some morphism, morph_result)
+            | Error message ->
+                let span = Lang_ast.span_of_node m_def in
+                let diagnostic =
+                  Diagnostics.make `Error interpreter_producer span message
+                in
+                (None, add_diagnostic morph_result diagnostic)))
+  | M_def_ext ext_node ->
+      interpret_m_ext context ~location ~source ext_node
 
 and interpret_mnamer context ~location mnamer =
   let open Lang_ast in
@@ -1628,11 +1652,162 @@ and interpret_complex context ~mode complex =
                   in
                   (namespace_opt, combined_result))))
 
-and interpret_m_block context ~location:_ ~source:_ ~morphism:_ m_block =
-  (None, stub_node "m_block" context m_block)
+and interpret_m_block context ~location ~source ~morphism m_block =
+  let open Lang_ast in
+  let instrs = m_block.value in
+  let rec interpret_instrs latest_context latest_morphism acc_result = function
+    | [] ->
+        (Some latest_morphism, { acc_result with context= latest_context })
+    | instr :: rest -> (
+        let instr_output, instr_result =
+          interpret_m_instr latest_context ~location ~source
+            ~morphism:latest_morphism instr
+        in
+        let combined_result = combine acc_result instr_result in
+        match instr_output with
+        | None ->
+            (None, combined_result)
+        | Some updated_morphism ->
+            if has_errors instr_result then
+              (Some updated_morphism, combined_result)
+            else
+              interpret_instrs instr_result.context updated_morphism
+                combined_result rest)
+  in
+  interpret_instrs context morphism (empty_result context) instrs
 
-and interpret_m_instr context ~location:_ ~source:_ ~morphism:_ m_instr =
-  (None, stub_node "m_instr" context m_instr)
+and interpret_m_instr context ~location ~source ~morphism m_instr =
+  let open Lang_ast in
+  let span = Lang_ast.span_of_node m_instr in
+  let instr_desc = m_instr.value in
+  let interpret_assign term_left term_right combined_result target_location =
+    let context_after = combined_result.context in
+    match (term_left, term_right) with
+    | D_term d_left, D_term d_right -> (
+        if not (Diagram.is_cell d_left) then
+          let message =
+            "The left-hand side of an assignment must be a cell or a cellular \
+             map"
+          in
+          let diagnostic =
+            Diagnostics.make `Error interpreter_producer span message
+          in
+          (None, add_diagnostic combined_result diagnostic)
+        else
+          let dim = Diagram.dim d_left in
+          let labels = Diagram.labels d_left in
+          let tag = labels.(dim).(0) in
+          match
+            smart_extend context_after morphism ~source ~target:target_location
+              ~tag ~dim ~diagram:d_right
+          with
+          | Ok extended ->
+              (Some extended, combined_result)
+          | Error err ->
+              let message = err.Error.message in
+              let diagnostic =
+                Diagnostics.make `Error interpreter_producer span message
+              in
+              (None, add_diagnostic combined_result diagnostic))
+    | ( M_term { morphism= m_left; source= src_left },
+        M_term { morphism= m_right; source= src_right } ) -> (
+        if src_left != src_right then
+          let message = "Not a well-formed assignment" in
+          let diagnostic =
+            Diagnostics.make `Error interpreter_producer span message
+          in
+          (None, add_diagnostic combined_result diagnostic)
+        else if not (Morphism.is_cellular m_left) then
+          let message =
+            "The left-hand side of an assignment must be a cell or a cellular \
+             map"
+          in
+          let diagnostic =
+            Diagnostics.make `Error interpreter_producer span message
+          in
+          (None, add_diagnostic combined_result diagnostic)
+        else
+          let generators =
+            Complex.generator_names src_left
+            |> List.filter_map (fun name ->
+                   match Complex.find_generator src_left name with
+                   | Some entry ->
+                       Some (entry.dim, entry.tag, name)
+                   | None ->
+                       None)
+            |> List.sort (fun (dim_a, _, _) (dim_b, _, _) ->
+                   Int.compare dim_a dim_b)
+          in
+          let rec assign extended_morphism = function
+            | [] ->
+                Ok extended_morphism
+            | (dim, tag, name) :: rest ->
+                let defined_left = Morphism.is_defined_at m_left tag in
+                let defined_right = Morphism.is_defined_at m_right tag in
+                if defined_left && defined_right then
+                  match Morphism.image m_right tag with
+                  | Error err ->
+                      Error err
+                  | Ok image -> (
+                      match
+                        smart_extend context_after extended_morphism ~source
+                          ~target:target_location ~tag ~dim ~diagram:image
+                      with
+                      | Ok updated ->
+                          assign updated rest
+                      | Error err ->
+                          Error err)
+                else if defined_left && not defined_right then
+                  let message =
+                    Format.asprintf
+                      "%s is in the domain of definition of the first map, but \
+                       not the second map"
+                      (Id.Local.to_string name)
+                  in
+                  Error (Error.make message)
+                else if defined_right && not defined_left then
+                  let message =
+                    Format.asprintf
+                      "%s is in the domain of definition of the second map, \
+                       but not the first map"
+                      (Id.Local.to_string name)
+                  in
+                  Error (Error.make message)
+                else assign extended_morphism rest
+          in
+          match assign morphism generators with
+          | Ok updated ->
+              (Some updated, combined_result)
+          | Error err ->
+              let message = err.Error.message in
+              let diagnostic =
+                Diagnostics.make `Error interpreter_producer span message
+              in
+              (None, add_diagnostic combined_result diagnostic))
+    | _ ->
+        let message = "Not a well-formed assignment" in
+        let diagnostic =
+          Diagnostics.make `Error interpreter_producer span message
+        in
+        (None, add_diagnostic combined_result diagnostic)
+  in
+  let { m_instr_source= left; m_instr_target= right } = instr_desc in
+  let left_term_opt, left_result =
+    interpret_pasting context ~location:source left
+  in
+  match left_term_opt with
+  | None ->
+      (None, left_result)
+  | Some term_left -> (
+      let right_term_opt, right_result =
+        interpret_pasting left_result.context ~location right
+      in
+      let combined_result = combine left_result right_result in
+      match right_term_opt with
+      | None ->
+          (None, combined_result)
+      | Some term_right ->
+          interpret_assign term_left term_right combined_result location)
 
 let interpret_d_concat context ~location:_ d_concat =
   (None, stub_node "d_concat" context d_concat)
