@@ -1563,7 +1563,7 @@ and interpret_c_instr context ~mode ~location c_instr =
                   match (mode, new_id_opt) with
                   | Global, Some new_id ->
                       State.add_cell context_after.state ~id:new_id ~dim
-                          boundaries                      
+                        boundaries
                   | _ ->
                       context_after.state
                 in
@@ -1699,12 +1699,8 @@ and interpret_c_instr context ~mode ~location c_instr =
                             else alias_prefix ^ "." ^ gen_suffix
                           in
                           let combined_name = Id.Local.make combined in
-                          let acc_with_generator =
-                            Complex.add_generator acc ~name:combined_name
-                              ~classifier
-                          in
-                          Complex.add_diagram acc_with_generator
-                            ~name:combined_name classifier)
+                          Complex.add_generator acc ~name:combined_name
+                            ~classifier)
                       location
                       (Complex.generator_names subtype)
                   in
@@ -1882,12 +1878,8 @@ and interpret_c_instr context ~mode ~location c_instr =
                                 assert false
                           in
                           let loc_with_generator =
-                            let loc_with_gen =
-                              Complex.add_generator loc_with_cells
-                                ~name:image_name ~classifier:image_classifier
-                            in
-                            Complex.add_diagram loc_with_gen ~name:image_name
-                              image_classifier
+                            Complex.add_generator loc_with_cells
+                              ~name:image_name ~classifier:image_classifier
                           in
                           let new_entry =
                             (gen_tag, gen_dim, gen_cell_data, image_classifier)

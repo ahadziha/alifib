@@ -1,13 +1,23 @@
 module Report = Diagnostics.Report
 module I = Parser.MenhirInterpreter
+module Pos = Positions
+
+type parser_token = {
+  menhir: Parser.token;
+  original: Token.t option;
+  startp: Lexing.position;
+  endp: Lexing.position;
+}
+
+exception Parse_error of parser_token option
 
 let parser_producer =
   { Error.Located.phase= `Parser; module_path= Some "language.parser" }
 
 let positions_of_token token =
   let span = Token.span token in
-  let startp = Positions.to_lexing span.start in
-  let endp = Positions.to_lexing span.stop in
+  let startp = Pos.to_lexing span.start in
+  let endp = Pos.to_lexing span.stop in
   (startp, endp)
 
 let to_parser_token token =
@@ -15,96 +25,189 @@ let to_parser_token token =
   else
     let startp, endp = positions_of_token token in
     let open Parser in
+    let make menhir = Some { menhir; original= Some token; startp; endp } in
     match Token.kind token with
     | Token.Eof ->
-        Some (EOF, startp, endp)
+        Some { menhir= EOF; original= Some token; startp; endp }
     | Token.At ->
-        Some (AT token, startp, endp)
+        make (AT token)
     | Token.Keyword kw -> (
         match kw with
         | `Type ->
-            Some (TYPE token, startp, endp)
+            make (TYPE token)
         | `Include ->
-            Some (INCLUDE token, startp, endp)
+            make (INCLUDE token)
         | `Attach ->
-            Some (ATTACH token, startp, endp)
+            make (ATTACH token)
         | `Along ->
-            Some (ALONG token, startp, endp)
+            make (ALONG token)
         | `Map ->
-            Some (MAP token, startp, endp)
+            make (MAP token)
         | `Assert ->
-            Some (ASSERT token, startp, endp)
+            make (ASSERT token)
         | `In ->
-            Some (IN token, startp, endp)
+            make (IN token)
         | `Out ->
-            Some (OUT token, startp, endp)
+            make (OUT token)
         | `Let ->
-            Some (LET token, startp, endp)
+            make (LET token)
         | `As ->
-            Some (AS token, startp, endp))
+            make (AS token))
     | Token.Identifier _ ->
-        Some (IDENT token, startp, endp)
+        make (IDENT token)
     | Token.Nat _ ->
-        Some (NAT token, startp, endp)
+        make (NAT token)
     | Token.L_brace ->
-        Some (LBRACE token, startp, endp)
+        make (LBRACE token)
     | Token.R_brace ->
-        Some (RBRACE token, startp, endp)
+        make (RBRACE token)
     | Token.L_bracket ->
-        Some (LBRACKET token, startp, endp)
+        make (LBRACKET token)
     | Token.R_bracket ->
-        Some (RBRACKET token, startp, endp)
+        make (RBRACKET token)
     | Token.L_paren ->
-        Some (LPAREN token, startp, endp)
+        make (LPAREN token)
     | Token.R_paren ->
-        Some (RPAREN token, startp, endp)
+        make (RPAREN token)
     | Token.Comma _ ->
-        Some (COMMA token, startp, endp)
+        make (COMMA token)
     | Token.Dot ->
-        Some (DOT token, startp, endp)
+        make (DOT token)
     | Token.Paste ->
-        Some (PASTE token, startp, endp)
+        make (PASTE token)
     | Token.Colon ->
-        Some (COLON token, startp, endp)
+        make (COLON token)
     | Token.Of_shape ->
-        Some (OF_SHAPE token, startp, endp)
+        make (OF_SHAPE token)
     | Token.Maps_to ->
-        Some (MAPS_TO token, startp, endp)
+        make (MAPS_TO token)
     | Token.Arrow ->
-        Some (ARROW token, startp, endp)
+        make (ARROW token)
     | Token.Has_value ->
-        Some (HAS_VALUE token, startp, endp)
+        make (HAS_VALUE token)
     | Token.Equal ->
-        Some (EQUAL token, startp, endp)
+        make (EQUAL token)
     | Token.Hole ->
-        Some (HOLE token, startp, endp)
+        make (HOLE token)
     | Token.Trivia _ | Token.Error _ ->
         None
 
-let add_parse_error diagnostics message =
-  let span = Positions.point_span Positions.unknown_point in
+let add_parse_error diagnostics span message =
   let diag = Diagnostics.make `Error parser_producer span message in
   Report.add diag diagnostics
 
-let rec loop checkpoint tokens =
+let describe_keyword = function
+  | `Include ->
+      "'include'"
+  | `Attach ->
+      "'attach'"
+  | `Along ->
+      "'along'"
+  | `Assert ->
+      "'assert'"
+  | `In ->
+      "'in'"
+  | `Out ->
+      "'out'"
+  | `Type ->
+      "'Type'"
+  | `Let ->
+      "'let'"
+  | `As ->
+      "'as'"
+  | `Map ->
+      "'map'"
+
+let describe_token token =
+  match Token.kind token with
+  | Token.Keyword kw ->
+      Printf.sprintf "keyword %s" (describe_keyword kw)
+  | Token.Identifier ident ->
+      Printf.sprintf "identifier %S" ident
+  | Token.Nat digits ->
+      Printf.sprintf "number %s" digits
+  | Token.At ->
+      "'@'"
+  | Token.L_brace ->
+      "'{'"
+  | Token.R_brace ->
+      "'}'"
+  | Token.L_bracket ->
+      "'['"
+  | Token.R_bracket ->
+      "']'"
+  | Token.L_paren ->
+      "'('"
+  | Token.R_paren ->
+      "')'"
+  | Token.Comma _ ->
+      "','"
+  | Token.Dot ->
+      "'.'"
+  | Token.Paste ->
+      "'#'"
+  | Token.Colon ->
+      "':'"
+  | Token.Of_shape ->
+      "'::'"
+  | Token.Maps_to ->
+      "'=>'"
+  | Token.Arrow ->
+      "'->'"
+  | Token.Has_value ->
+      "'<<='"
+  | Token.Equal ->
+      "'='"
+  | Token.Hole ->
+      "'?'"
+  | Token.Eof ->
+      "end of file"
+  | Token.Trivia _ ->
+      "trivia"
+  | Token.Error message ->
+      Printf.sprintf "error token %S" message
+
+let span_of_parser_error source = function
+  | Some { original= Some token; _ } ->
+      Token.span token
+  | Some { original= None; startp; endp; _ } ->
+      let start = Pos.point_of_lexing source startp in
+      let stop = Pos.point_of_lexing source endp in
+      Pos.make_span ~start ~stop
+  | None ->
+      Pos.point_span Pos.unknown_point
+
+let message_of_parser_error = function
+  | Some { original= Some token; _ } -> (
+      match Token.kind token with
+      | Token.Eof ->
+          "unexpected end of file"
+      | _ ->
+          Printf.sprintf "unexpected %s" (describe_token token))
+  | _ ->
+      "unexpected parser error"
+
+let rec loop checkpoint tokens last =
   match checkpoint with
   | I.InputNeeded _ -> (
       match tokens with
-      | (token, startp, endp) :: rest ->
-          let checkpoint = I.offer checkpoint (token, startp, endp) in
-          loop checkpoint rest
+      | item :: rest ->
+          let checkpoint =
+            I.offer checkpoint (item.menhir, item.startp, item.endp)
+          in
+          loop checkpoint rest (Some item)
       | [] ->
           let pos = Lexing.dummy_pos in
           let checkpoint = I.offer checkpoint (Parser.EOF, pos, pos) in
-          loop checkpoint [])
+          loop checkpoint [] last)
   | I.Shifting _ | I.AboutToReduce _ ->
-      loop (I.resume checkpoint) tokens
+      loop (I.resume checkpoint) tokens last
   | I.Accepted ast ->
       ast
   | I.HandlingError _ ->
-      failwith "unexpected parser error"
+      raise (Parse_error last)
   | I.Rejected ->
-      failwith "input rejected"
+      raise (Parse_error last)
 
 let parse stream =
   let base_diagnostics = Token_stream.diagnostics stream in
@@ -141,10 +244,17 @@ let parse stream =
   in
   let start_pos = Lexing.dummy_pos in
   let checkpoint = Parser.Incremental.program start_pos in
+  let source = Token_stream.source stream in
   let ast =
-    try loop checkpoint tokens
-    with Failure message ->
-      diagnostics := add_parse_error !diagnostics message
-      ; Ast.empty
+    try loop checkpoint tokens None with
+    | Parse_error offending ->
+        let span = span_of_parser_error source offending in
+        let message = message_of_parser_error offending in
+        diagnostics := add_parse_error !diagnostics span message
+        ; Ast.empty
+    | Failure message ->
+        let span = Pos.point_span Pos.unknown_point in
+        diagnostics := add_parse_error !diagnostics span message
+        ; Ast.empty
   in
   (ast, !diagnostics)
