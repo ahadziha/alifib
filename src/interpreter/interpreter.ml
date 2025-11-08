@@ -92,8 +92,12 @@ let identity_morphism context domain =
                  match State.find_cell context.state global_id with
                  | Some { data; _ } ->
                      data
-                 | None ->
-                     assert false)
+                 | None -> (
+                     match State.find_type context.state global_id with
+                     | Some { data; _ } ->
+                         data
+                     | None ->
+                         assert false))
              | `Local local_name -> (
                  match Complex.find_local_cell domain local_name with
                  | Some { data; _ } ->
@@ -128,8 +132,12 @@ let rec smart_extend context morphism ~source ~target ~tag ~dim ~diagram =
           match State.find_cell context.state global_id with
           | Some { data; _ } ->
               data
-          | None ->
-              assert false)
+          | None -> (
+              match State.find_type context.state global_id with
+              | Some { data; _ } ->
+                  data
+              | None ->
+                  assert false))
       | `Local name -> (
           match Complex.find_local_cell source name with
           | Some { data; _ } ->
