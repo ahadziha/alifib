@@ -184,8 +184,5 @@ val interpret_pasting :
 val interpret_concat :
   context -> location:Complex.t -> Ast.concat -> term option * result
 
-val interpret_expr :
-  context -> location:Complex.t -> Ast.expr -> term option * result
-
 val interpret_name : Ast.name -> Id.Local.t
 val interpret_nat : Ast.nat -> int

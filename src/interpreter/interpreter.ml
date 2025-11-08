@@ -68,16 +68,6 @@ module Lang_ast = struct
   let span_of_node (node : _ node) = span_or_unknown node.span
 end
 
-let stub_message kind =
-  Printf.sprintf "Interpreter stub not implemented for %s" kind
-
-let stub_diagnostic kind span =
-  Diagnostics.make `Error interpreter_producer span (stub_message kind)
-
-let stub_node kind context (node : _ Lang_ast.node) =
-  let span = Lang_ast.span_of_node node in
-  add_diagnostic (empty_result context) (stub_diagnostic kind span)
-
 let report_has_errors (report : Diagnostics.report) =
   List.exists
     (fun (diag : Diagnostics.t) -> diag.Diagnostics.severity = `Error)
@@ -184,12 +174,18 @@ let rec smart_extend context morphism ~source ~target ~tag ~dim ~diagram =
             let dim_minus_one = dim - 1 in
             let boundary_sources =
               match (cell_data, sign) with
-              | Diagram.Boundary { boundary_in; _ }, `Input ->
-                  Ok (boundary_in, Diagram.boundary `Input dim_minus_one diagram)
-              | Diagram.Boundary { boundary_out; _ }, `Output ->
-                  Ok
-                    ( boundary_out,
-                      Diagram.boundary `Output dim_minus_one diagram )
+              | Diagram.Boundary { boundary_in; _ }, `Input -> (
+                  match Diagram.boundary `Input dim_minus_one diagram with
+                  | Error _ as err ->
+                      err
+                  | Ok boundary ->
+                      Ok (boundary_in, boundary))
+              | Diagram.Boundary { boundary_out; _ }, `Output -> (
+                  match Diagram.boundary `Output dim_minus_one diagram with
+                  | Error _ as err ->
+                      err
+                  | Ok boundary ->
+                      Ok (boundary_out, boundary))
               | Diagram.Zero, _ ->
                   assert false
             in
@@ -659,8 +655,332 @@ and interpret_m_ext context ~location ~source m_ext =
               let combined_result = combine validated_result block_result in
               (block_output, combined_result)))
 
-and interpret_diagram context ~location:_ diagram =
-  (None, stub_node "diagram" context diagram)
+and interpret_diagram context ~location diagram =
+  let open Lang_ast in
+  match diagram.value with
+  | Diagram_single concat_node ->
+      interpret_d_concat context ~location concat_node
+  | Diagram_paste { diagram_left; diagram_nat; diagram_right } ->
+      interpret_diagram_paste_case context ~location
+        ~span:(Lang_ast.span_of_node diagram)
+        ~diagram_left ~diagram_nat ~diagram_right
+
+and interpret_diagram_paste_case context ~location ~span ~diagram_left
+    ~diagram_nat ~diagram_right =
+  let right_opt, right_result =
+    interpret_d_concat context ~location diagram_right
+  in
+  match right_opt with
+  | None ->
+      (None, right_result)
+  | Some d_right -> (
+      let left_opt, left_result =
+        interpret_diagram right_result.context ~location diagram_left
+      in
+      let combined_result = combine right_result left_result in
+      match left_opt with
+      | None ->
+          (None, combined_result)
+      | Some d_left -> (
+          let k = interpret_nat diagram_nat in
+          match Diagram.paste k d_left d_right with
+          | Ok diagram ->
+              (Some diagram, combined_result)
+          | Error err ->
+              let message =
+                Format.asprintf "Failed to paste diagrams: %a" Error.pp err
+              in
+              let diagnostic =
+                Diagnostics.make `Error interpreter_producer span message
+              in
+              (None, add_diagnostic combined_result diagnostic)))
+
+and interpret_d_concat context ~location d_concat =
+  let open Lang_ast in
+  match d_concat.value with
+  | D_concat_single expr_node -> (
+      let term_opt, expr_result =
+        interpret_d_expr context ~location expr_node
+      in
+      match term_opt with
+      | None ->
+          (None, expr_result)
+      | Some term -> (
+          match term with
+          | M_term _ ->
+              let span = Lang_ast.span_of_node expr_node in
+              let diagnostic =
+                Diagnostics.make `Error interpreter_producer span
+                  "Not a diagram"
+              in
+              (None, add_diagnostic expr_result diagnostic)
+          | D_term diagram ->
+              (Some diagram, expr_result)))
+  | D_concat_concat { d_concat_left; d_concat_right } ->
+      interpret_concat_concat_case context ~location
+        ~span:(Lang_ast.span_of_node d_concat)
+        ~left_concat:d_concat_left ~right_expr:d_concat_right
+
+and interpret_concat_concat_case context ~location ~span ~left_concat
+    ~right_expr =
+  let term_opt, right_result = interpret_d_expr context ~location right_expr in
+  match term_opt with
+  | None ->
+      (None, right_result)
+  | Some term -> (
+      match term with
+      | M_term _ ->
+          let diagnostic =
+            Diagnostics.make `Error interpreter_producer span "Not a diagram"
+          in
+          (None, add_diagnostic right_result diagnostic)
+      | D_term d_right -> (
+          let left_opt, left_result =
+            interpret_d_concat right_result.context ~location left_concat
+          in
+          let combined_result = combine right_result left_result in
+          match left_opt with
+          | None ->
+              (None, combined_result)
+          | Some d_left -> (
+              let k = min (Diagram.dim d_left) (Diagram.dim d_right) - 1 in
+              match Diagram.paste k d_left d_right with
+              | Ok diagram ->
+                  (Some diagram, combined_result)
+              | Error err ->
+                  let message =
+                    Format.asprintf "Failed to paste diagrams: %a" Error.pp err
+                  in
+                  let diagnostic =
+                    Diagnostics.make `Error interpreter_producer span message
+                  in
+                  (None, add_diagnostic combined_result diagnostic))))
+
+and interpret_d_expr context ~location d_expr =
+  let open Lang_ast in
+  match d_expr.value with
+  | D_expr_single d_comp -> (
+      let component_opt, component_result =
+        interpret_d_comp context ~location d_comp
+      in
+      match component_opt with
+      | None ->
+          (None, component_result)
+      | Some component -> (
+          match component with
+          | Hole | Bd _ ->
+              let span = Lang_ast.span_of_node d_comp in
+              let diagnostic =
+                Diagnostics.make `Error interpreter_producer span
+                  "Not a diagram or map"
+              in
+              (None, add_diagnostic component_result diagnostic)
+          | Term term ->
+              (Some term, component_result)))
+  | D_expr_dot { d_expr_left; d_expr_right } -> (
+      let left_opt, left_result =
+        interpret_d_expr context ~location d_expr_left
+      in
+      match left_opt with
+      | None ->
+          (None, left_result)
+      | Some term_left -> (
+          match term_left with
+          | D_term diagram -> (
+              let component_opt, component_result =
+                interpret_d_comp left_result.context ~location d_expr_right
+              in
+              let combined_result = combine left_result component_result in
+              match component_opt with
+              | None ->
+                  (None, combined_result)
+              | Some component -> (
+                  match component with
+                  | Term _ | Hole ->
+                      let span = Lang_ast.span_of_node d_expr_right in
+                      let diagnostic =
+                        Diagnostics.make `Error interpreter_producer span
+                          "Not a well-formed diagram"
+                      in
+                      (None, add_diagnostic combined_result diagnostic)
+                  | Bd sign -> (
+                      let k = Diagram.dim diagram - 1 in
+                      match Diagram.boundary sign k diagram with
+                      | Error err ->
+                          let span = Lang_ast.span_of_node d_expr_right in
+                          let diagnostic =
+                            Diagnostics.make `Error interpreter_producer span
+                              err.Error.message
+                          in
+                          (None, add_diagnostic combined_result diagnostic)
+                      | Ok d_boundary ->
+                          (Some (D_term d_boundary), combined_result))))
+          | M_term { morphism= m_left; source= c_left } -> (
+              let component_opt, component_result =
+                interpret_d_comp left_result.context ~location:c_left
+                  d_expr_right
+              in
+              let combined_result = combine left_result component_result in
+              match component_opt with
+              | None ->
+                  (None, combined_result)
+              | Some component -> (
+                  match component with
+                  | Hole | Bd _ ->
+                      let span = Lang_ast.span_of_node d_expr_right in
+                      let diagnostic =
+                        Diagnostics.make `Error interpreter_producer span
+                          "Not a diagram or map"
+                      in
+                      (None, add_diagnostic combined_result diagnostic)
+                  | Term term_right -> (
+                      match term_right with
+                      | D_term diagram -> (
+                          match Morphism.apply m_left diagram with
+                          | Error err ->
+                              let span = Lang_ast.span_of_node d_expr_right in
+                              let diagnostic =
+                                Diagnostics.make `Error interpreter_producer
+                                  span err.Error.message
+                              in
+                              (None, add_diagnostic combined_result diagnostic)
+                          | Ok d_image ->
+                              (Some (D_term d_image), combined_result))
+                      | M_term { morphism= m_right; source= c_right } ->
+                          let morphism = Morphism.compose m_left m_right in
+                          ( Some (M_term { morphism; source= c_right }),
+                            combined_result ))))))
+
+and interpret_d_comp context ~location d_comp =
+  let open Lang_ast in
+  match d_comp.value with
+  | D_comp_mterm m_term -> (
+      let component_opt, component_result =
+        interpret_m_term context ~location m_term
+      in
+      match component_opt with
+      | None ->
+          (None, component_result)
+      | Some { morphism; source } ->
+          (Some (Term (M_term { morphism; source })), component_result))
+  | D_comp_dterm d_term -> (
+      let diagram_opt, diagram_result =
+        interpret_d_term context ~location d_term
+      in
+      match diagram_opt with
+      | None ->
+          (None, diagram_result)
+      | Some diagram ->
+          (Some (Term (D_term diagram)), diagram_result))
+  | D_comp_name name_node -> (
+      let name = interpret_name name_node in
+      let span = Lang_ast.span_of_node name_node in
+      let base_result = empty_result context in
+      let name_str = Id.Local.to_string name in
+      match Complex.find_diagram location name with
+      | Some diagram ->
+          (Some (Term (D_term diagram)), base_result)
+      | None -> (
+          match Complex.find_morphism location name with
+          | Some entry ->
+              let source =
+                match entry.domain with
+                | Complex.Type id -> (
+                    match State.find_type context.state id with
+                    | Some { complex; _ } ->
+                        complex
+                    | None ->
+                        assert false)
+                | Complex.Module module_id -> (
+                    match State.find_module context.state module_id with
+                    | Some complex ->
+                        complex
+                    | None ->
+                        assert false)
+              in
+              ( Some (Term (M_term { morphism= entry.morphism; source })),
+                base_result )
+          | None ->
+              let message = Format.asprintf "Name `%s` not found" name_str in
+              let diagnostic =
+                Diagnostics.make `Error interpreter_producer span message
+              in
+              (None, add_diagnostic base_result diagnostic)))
+  | D_comp_bd bd_node ->
+      let sign = interpret_bd bd_node in
+      (Some (Bd sign), empty_result context)
+  | D_comp_hole ->
+      (Some Hole, empty_result context)
+
+and interpret_d_term context ~location d_term =
+  let open Lang_ast in
+  match d_term.value with
+  | D_term_indexed { d_term_diagram; d_term_nat; d_term_tail } ->
+      interpret_diagram_paste_case context ~location
+        ~span:(Lang_ast.span_of_node d_term)
+        ~diagram_left:d_term_diagram ~diagram_nat:d_term_nat
+        ~diagram_right:d_term_tail
+  | D_term_pair { d_term_concat; d_term_expr } ->
+      interpret_concat_concat_case context ~location
+        ~span:(Lang_ast.span_of_node d_term)
+        ~left_concat:d_term_concat ~right_expr:d_term_expr
+
+and interpret_concat context ~location concat =
+  let open Lang_ast in
+  match concat.value with
+  | Concat_single d_expr ->
+      interpret_d_expr context ~location d_expr
+  | Concat_concat { concat_left; concat_right } -> (
+      let right_term_opt, right_result =
+        interpret_d_expr context ~location concat_right
+      in
+      match right_term_opt with
+      | None ->
+          (None, right_result)
+      | Some term_right -> (
+          match term_right with
+          | M_term _ ->
+              let span = Lang_ast.span_of_node concat_right in
+              let diagnostic =
+                Diagnostics.make `Error interpreter_producer span
+                  "Not a diagram"
+              in
+              (None, add_diagnostic right_result diagnostic)
+          | D_term d_right -> (
+              let left_term_opt, left_result =
+                interpret_concat right_result.context ~location concat_left
+              in
+              let combined_result = combine right_result left_result in
+              match left_term_opt with
+              | None ->
+                  (None, combined_result)
+              | Some term_left -> (
+                  match term_left with
+                  | M_term _ ->
+                      let span = Lang_ast.span_of_node concat_left in
+                      let diagnostic =
+                        Diagnostics.make `Error interpreter_producer span
+                          "Not a diagram"
+                      in
+                      (None, add_diagnostic combined_result diagnostic)
+                  | D_term d_left -> (
+                      let k =
+                        min (Diagram.dim d_left) (Diagram.dim d_right) - 1
+                      in
+                      match Diagram.paste k d_left d_right with
+                      | Ok diagram ->
+                          (Some (D_term diagram), combined_result)
+                      | Error err ->
+                          let span = Lang_ast.span_of_node concat in
+                          let message =
+                            Format.asprintf "Failed to paste diagrams: %a"
+                              Error.pp err
+                          in
+                          let diagnostic =
+                            Diagnostics.make `Error interpreter_producer span
+                              message
+                          in
+                          (None, add_diagnostic combined_result diagnostic))))))
 
 and interpret_boundaries context ~location boundaries =
   let open Lang_ast in
@@ -712,7 +1032,7 @@ and interpret_dnamer context ~location dnamer =
               match boundaries with
               | Diagram.Zero ->
                   assert false
-              | Diagram.Boundary { boundary_in; boundary_out } ->
+              | Diagram.Boundary { boundary_in; boundary_out } -> (
                   let boundary_span = Lang_ast.span_of_node boundaries_node in
                   let boundary_idx = Diagram.dim diagram - 1 in
                   let boundary_error kind =
@@ -729,20 +1049,31 @@ and interpret_dnamer context ~location dnamer =
                     in
                     (None, add_diagnostic combined_result diagnostic)
                   in
-                  if boundary_idx < 0 then boundary_error `Input
-                  else
-                    let input_boundary =
-                      Diagram.boundary_normal `Input boundary_idx diagram
+                  let handle_boundary_error err =
+                    let diagnostic =
+                      Diagnostics.make `Error interpreter_producer boundary_span
+                        err.Error.message
                     in
-                    if not (Diagram.isomorphic input_boundary boundary_in) then
-                      boundary_error `Input
-                    else
-                      let output_boundary =
-                        Diagram.boundary_normal `Output boundary_idx diagram
-                      in
-                      if not (Diagram.isomorphic output_boundary boundary_out)
-                      then boundary_error `Output
-                      else (Some (name, diagram), combined_result))))
+                    (None, add_diagnostic combined_result diagnostic)
+                  in
+                  match Diagram.boundary_normal `Input boundary_idx diagram with
+                  | Error err ->
+                      handle_boundary_error err
+                  | Ok input_boundary -> (
+                      if not (Diagram.isomorphic input_boundary boundary_in)
+                      then boundary_error `Input
+                      else
+                        match
+                          Diagram.boundary_normal `Output boundary_idx diagram
+                        with
+                        | Error err ->
+                            handle_boundary_error err
+                        | Ok output_boundary ->
+                            if
+                              not
+                                (Diagram.isomorphic output_boundary boundary_out)
+                            then boundary_error `Output
+                            else (Some (name, diagram), combined_result))))))
 
 and interpret_m_def context ~location ~source m_def =
   let open Lang_ast in
@@ -849,8 +1180,63 @@ and interpret_attach context ~location attach =
           | Some morphism ->
               (Some (name, morphism, Complex.Type id), m_def_result)))
 
-and interpret_pasting context ~location:_ pasting =
-  (None, stub_node "pasting" context pasting)
+and interpret_pasting context ~location pasting =
+  let open Lang_ast in
+  match pasting.value with
+  | Pasting_single concat_node ->
+      interpret_concat context ~location concat_node
+  | Pasting_paste { pasting_left; pasting_nat; pasting_right } ->
+      interpret_pasting_paste_case context ~location ~pasting_node:pasting
+        pasting_left pasting_right pasting_nat
+
+and interpret_pasting_paste_case context ~location ~pasting_node pasting_left
+    pasting_right pasting_nat =
+  let span_right = Lang_ast.span_of_node pasting_right in
+  let span_left = Lang_ast.span_of_node pasting_left in
+  let span_paste = Lang_ast.span_of_node pasting_node in
+  let error_not_diagram result span =
+    let diagnostic =
+      Diagnostics.make `Error interpreter_producer span "Not a diagram"
+    in
+    (None, add_diagnostic result diagnostic)
+  in
+  let right_term_opt, right_result =
+    interpret_concat context ~location pasting_right
+  in
+  match right_term_opt with
+  | None ->
+      (None, right_result)
+  | Some term_right -> (
+      match term_right with
+      | M_term _ ->
+          error_not_diagram right_result span_right
+      | D_term d_right -> (
+          let left_term_opt, left_result =
+            interpret_pasting right_result.context ~location pasting_left
+          in
+          let combined_result = combine right_result left_result in
+          match left_term_opt with
+          | None ->
+              (None, combined_result)
+          | Some term_left -> (
+              match term_left with
+              | M_term _ ->
+                  error_not_diagram combined_result span_left
+              | D_term d_left -> (
+                  let k = interpret_nat pasting_nat in
+                  match Diagram.paste k d_left d_right with
+                  | Ok diagram ->
+                      (Some (D_term diagram), combined_result)
+                  | Error err ->
+                      let message =
+                        Format.asprintf "Failed to paste diagrams: %a" Error.pp
+                          err
+                      in
+                      let diagnostic =
+                        Diagnostics.make `Error interpreter_producer span_paste
+                          message
+                      in
+                      (None, add_diagnostic combined_result diagnostic)))))
 
 and interpret_assert context ~location assert_stmt =
   let Lang_ast.{ value= assert_desc; _ } = assert_stmt in
@@ -998,69 +1384,72 @@ and interpret_c_instr_local context namespace c_instr_local =
               let fst = record.fst in
               let snd = record.snd in
               let source = record.source in
-              let generators =
-                Complex.generator_names source
-                |> List.filter_map (fun gen_name ->
-                       match Complex.find_generator source gen_name with
-                       | Some entry ->
-                           Some (entry.dim, gen_name, entry.tag)
-                       | None ->
-                           None)
-                |> List.sort (fun (dim_a, _, _) (dim_b, _, _) ->
-                       Int.compare dim_a dim_b)
-              in
-              let rec check_generators = function
-                | [] ->
-                    None
-                | (_, gen_name, tag) :: rest ->
-                    let in_first = Morphism.is_defined_at fst tag in
-                    let in_second = Morphism.is_defined_at snd tag in
-                    let name_str = Id.Local.to_string gen_name in
-                    if in_first && not in_second then
-                      Some
-                        (Format.asprintf
-                           "%s is in the domain of definition of the first \
-                            map, but not the second map"
-                           name_str)
-                    else if in_second && not in_first then
-                      Some
-                        (Format.asprintf
-                           "%s is in the domain of definition of the second \
-                            map, but not the first map"
-                           name_str)
-                    else if in_first then
-                      let image_first =
-                        match Morphism.image fst tag with
-                        | Ok diagram ->
-                            diagram
-                        | Error _ ->
-                            assert false
-                      in
-                      let image_second =
-                        match Morphism.image snd tag with
-                        | Ok diagram ->
-                            diagram
-                        | Error _ ->
-                            assert false
-                      in
-                      if Diagram.isomorphic image_first image_second then
-                        check_generators rest
-                      else
-                        Some (Format.asprintf "The maps differ on %s" name_str)
-                    else check_generators rest
-              in
-              match check_generators generators with
-              | None ->
-                  (None, assert_result)
-              | Some message ->
-                  let diagnostic =
-                    Diagnostics.make `Error interpreter_producer span message
-                  in
-                  (None, add_diagnostic assert_result diagnostic))
+              if fst == snd then (Some location, assert_result)
+              else
+                let generators =
+                  Complex.generator_names source
+                  |> List.filter_map (fun gen_name ->
+                         match Complex.find_generator source gen_name with
+                         | Some entry ->
+                             Some (entry.dim, gen_name, entry.tag)
+                         | None ->
+                             None)
+                  |> List.sort (fun (dim_a, _, _) (dim_b, _, _) ->
+                         Int.compare dim_a dim_b)
+                in
+                let rec check_generators = function
+                  | [] ->
+                      None
+                  | (_, gen_name, tag) :: rest ->
+                      let in_first = Morphism.is_defined_at fst tag in
+                      let in_second = Morphism.is_defined_at snd tag in
+                      let name_str = Id.Local.to_string gen_name in
+                      if in_first && not in_second then
+                        Some
+                          (Format.asprintf
+                             "%s is in the domain of definition of the first \
+                              map, but not the second map"
+                             name_str)
+                      else if in_second && not in_first then
+                        Some
+                          (Format.asprintf
+                             "%s is in the domain of definition of the second \
+                              map, but not the first map"
+                             name_str)
+                      else if in_first then
+                        let image_first =
+                          match Morphism.image fst tag with
+                          | Ok diagram ->
+                              diagram
+                          | Error _ ->
+                              assert false
+                        in
+                        let image_second =
+                          match Morphism.image snd tag with
+                          | Ok diagram ->
+                              diagram
+                          | Error _ ->
+                              assert false
+                        in
+                        if Diagram.isomorphic image_first image_second then
+                          check_generators rest
+                        else
+                          Some
+                            (Format.asprintf "The maps differ on %s" name_str)
+                      else check_generators rest
+                in
+                match check_generators generators with
+                | None ->
+                    (Some location, assert_result)
+                | Some message ->
+                    let diagnostic =
+                      Diagnostics.make `Error interpreter_producer span message
+                    in
+                    (None, add_diagnostic assert_result diagnostic))
           | D_term_pair record ->
               let fst = record.fst in
               let snd = record.snd in
-              if Diagram.isomorphic fst snd then (None, assert_result)
+              if Diagram.isomorphic fst snd then (Some location, assert_result)
               else
                 let message = "The diagrams are not equal" in
                 let diagnostic =
@@ -1815,24 +2204,6 @@ and interpret_m_instr context ~location ~source ~morphism m_instr =
           (None, combined_result)
       | Some term_right ->
           interpret_assign term_left term_right combined_result location)
-
-let interpret_d_concat context ~location:_ d_concat =
-  (None, stub_node "d_concat" context d_concat)
-
-let interpret_d_expr context ~location:_ d_expr =
-  (None, stub_node "d_expr" context d_expr)
-
-let interpret_d_comp context ~location:_ d_comp =
-  (None, stub_node "d_comp" context d_comp)
-
-let interpret_d_term context ~location:_ d_term =
-  (None, stub_node "d_term" context d_term)
-
-let interpret_concat context ~location:_ concat =
-  (None, stub_node "concat" context concat)
-
-let interpret_expr context ~location:_ expr =
-  (None, stub_node "expr" context expr)
 
 let interpret_generator_type context generator_type =
   let open Lang_ast in

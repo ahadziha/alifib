@@ -633,11 +633,11 @@ pasting:
     }
 
 concat:
-  | expr=expr {
-      let span = expr.span in
-      mk ?span (Concat_single expr)
+  | dexpr=d_expr {
+      let span = dexpr.span in
+      mk ?span (Concat_single dexpr)
     }
-  | left=concat right=expr {
+  | left=concat right=d_expr {
       let span =
         merge_spans
           [ node_span left
@@ -648,26 +648,6 @@ concat:
         (Concat_concat
            { concat_left = left
            ; concat_right = right
-           })
-    }
-
-expr:
-  | comp=d_comp {
-      let span = comp.span in
-      mk ?span (Expr_single comp)
-    }
-  | left=expr dot=DOT right=d_comp {
-      let span =
-        merge_spans
-          [ node_span left
-          ; token_span dot
-          ; node_span right
-          ]
-      in
-      mk ?span
-        (Expr_dot
-           { expr_left = left
-           ; expr_right = right
            })
     }
 

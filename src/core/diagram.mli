@@ -50,8 +50,8 @@ val pastability :
 val pastable : int -> t -> t -> bool
 val normal : t -> t
 val is_normal : t -> bool
-val boundary : sign -> int -> t -> t
-val boundary_normal : sign -> int -> t -> t
+val boundary : sign -> int -> t -> t checked
+val boundary_normal : sign -> int -> t -> t checked
 val is_cell : t -> bool
 val label_set_of : t -> (Id.Tag.t * int) list
 

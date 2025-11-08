@@ -181,31 +181,38 @@ let extend f ~tag ~dim ~cell_data ~image =
             match apply f boundary_out with
             | Error _ as err ->
                 err
-            | Ok mapped_out ->
+            | Ok mapped_out -> (
                 let boundary_idx = dim - 1 in
-                let expected_input =
-                  Diagram.boundary_normal `Input boundary_idx image
-                in
-                let mapped_input = Diagram.normal mapped_in in
-                if not (Diagram.equal mapped_input expected_input) then
-                  Error (Error.make "input boundaries do not match")
-                else
-                  let expected_output =
-                    Diagram.boundary_normal `Output boundary_idx image
-                  in
-                  let mapped_output = Diagram.normal mapped_out in
-                  if not (Diagram.equal mapped_output expected_output) then
-                    Error (Error.make "output boundaries do not match")
-                  else
-                    let table = TagTable.copy f.table in
-                    TagTable.replace table tag
-                      (make_entry ~dim ~cell_data ~image)
-                    ; let cellular = f.cellular && Diagram.is_cell image in
-                      let by_dim =
-                        let existing = dim_bucket f.by_dim dim in
-                        IntMap.add dim (tag :: existing) f.by_dim
-                      in
-                      Ok { table; cellular; by_dim }))
+                match Diagram.boundary_normal `Input boundary_idx image with
+                | Error _ as err ->
+                    err
+                | Ok expected_input -> (
+                    let mapped_input = Diagram.normal mapped_in in
+                    if not (Diagram.equal mapped_input expected_input) then
+                      Error (Error.make "input boundaries do not match")
+                    else
+                      match
+                        Diagram.boundary_normal `Output boundary_idx image
+                      with
+                      | Error _ as err ->
+                          err
+                      | Ok expected_output ->
+                          let mapped_output = Diagram.normal mapped_out in
+                          if not (Diagram.equal mapped_output expected_output)
+                          then
+                            Error (Error.make "output boundaries do not match")
+                          else
+                            let table = TagTable.copy f.table in
+                            TagTable.replace table tag
+                              (make_entry ~dim ~cell_data ~image)
+                            ; let cellular =
+                                f.cellular && Diagram.is_cell image
+                              in
+                              let by_dim =
+                                let existing = dim_bucket f.by_dim dim in
+                                IntMap.add dim (tag :: existing) f.by_dim
+                              in
+                              Ok { table; cellular; by_dim }))))
 
 let compose g f =
   let initial =

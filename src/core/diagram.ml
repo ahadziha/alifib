@@ -266,18 +266,22 @@ let paste n u v =
         Ok { shape= shape_uv; labels= labels_uv; tree= tree_fn }
 
 let boundary (sign : sign) k d =
-  let _, emb = Ogposet.boundary (sign :> Ogposet.sign) k d.shape in
-  let tree_fn s k' = if k' < k then d.tree s k' else d.tree sign k in
-  let pulled = pullback_data d emb in
-  of_data pulled.shape pulled.labels tree_fn
+  if k < 0 then Error (Error.make "Negative-dimensional boundary not allowed")
+  else
+    let _, emb = Ogposet.boundary (sign :> Ogposet.sign) k d.shape in
+    let tree_fn s k' = if k' < k then d.tree s k' else d.tree sign k in
+    let pulled = pullback_data d emb in
+    Ok (of_data pulled.shape pulled.labels tree_fn)
 
 let boundary_normal (sign : sign) k d =
-  let shape_norm, emb =
-    Ogposet.boundary_traverse (sign :> Ogposet.sign) k d.shape
-  in
-  let tree_fn s k' = if k' < k then d.tree s k' else d.tree sign k in
-  let pulled = pullback_data d emb in
-  of_data shape_norm pulled.labels tree_fn
+  if k < 0 then Error (Error.make "Negative-dimensional boundary not allowed")
+  else
+    let shape_norm, emb =
+      Ogposet.boundary_traverse (sign :> Ogposet.sign) k d.shape
+    in
+    let tree_fn s k' = if k' < k then d.tree s k' else d.tree sign k in
+    let pulled = pullback_data d emb in
+    Ok (of_data shape_norm pulled.labels tree_fn)
 
 let label_set_of d =
   let table = Hashtbl.create 16 in

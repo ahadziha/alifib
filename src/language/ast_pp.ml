@@ -274,19 +274,10 @@ and pasting fmt p =
 and concat fmt c =
   match c.value with
   | Concat_single e ->
-      fprintf fmt "@[<v 2>(Concat_single@ %a)@]" expr e
+      fprintf fmt "@[<v 2>(Concat_single@ %a)@]" d_expr e
   | Concat_concat { concat_left; concat_right } ->
       fprintf fmt "@[<v 2>(Concat_concat@,%a@,%a)@]" (pp_field "left" concat)
-        concat_left (pp_field "right" expr) concat_right
-
-and expr fmt e =
-  let open Ast in
-  match e.value with
-  | Expr_single comp ->
-      fprintf fmt "@[<v 2>(Expr_single@ %a)@]" d_comp comp
-  | Expr_dot { expr_left; expr_right } ->
-      fprintf fmt "@[<v 2>(Expr_dot@,%a@,%a)@]" (pp_field "left" expr) expr_left
-        (pp_field "right" d_comp) expr_right
+        concat_left (pp_field "right" d_expr) concat_right
 
 let program = pp_program
 let to_string program = asprintf "%a" pp_program program

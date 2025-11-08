@@ -35,8 +35,7 @@
 <Bd> ::= "in" | "out"
 
 <Pasting> ::= <Concat> | <Pasting> "#" <Nat> <Concat>
-<Concat> ::= <Expr> | <Concat> <Expr>
-<Expr> ::= <DComp> | <Expr> "." <DComp>
+<Concat> ::= <DExpr> | <Concat> <DExpr>
 
 <DNamer> ::= "let" <Name> [ ":" <Boundaries> ] "=" <Diagram>
 <Boundaries> ::= <Diagram> "->" <Diagram>

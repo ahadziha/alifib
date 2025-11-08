@@ -180,14 +180,8 @@ and pasting_desc =
 and concat = concat_desc node
 
 and concat_desc =
-  | Concat_single of expr
-  | Concat_concat of { concat_left: concat; concat_right: expr }
-
-and expr = expr_desc node
-
-and expr_desc =
-  | Expr_single of d_comp
-  | Expr_dot of { expr_left: expr; expr_right: d_comp }
+  | Concat_single of d_expr
+  | Concat_concat of { concat_left: concat; concat_right: d_expr }
 
 and name = Id.Local.t node
 and nat = int node
