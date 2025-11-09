@@ -103,11 +103,11 @@ let pp fmt state =
         in
         let pp_type fmt generator_name =
           let type_label = string_or_empty generator_name in
-          let print_details cells diagrams morphisms =
-            fprintf fmt
-              "@[<v 2>Type %s@,- Cells: %s@,- Diagrams: %s@,- Morphisms: %s@]"
-              type_label (render_list cells) (render_list diagrams)
-              (render_list morphisms)
+        let print_details cells diagrams morphisms =
+          fprintf fmt
+            "@[<v 2>Type %s@,- Cells: %s@,- Diagrams: %s@,- Maps: %s@]"
+            type_label (render_list cells) (render_list diagrams)
+            (render_list morphisms)
           in
           match Complex.find_generator module_complex generator_name with
           | None ->

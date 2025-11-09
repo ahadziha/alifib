@@ -75,19 +75,19 @@ let run_interpreter input_path output_path =
   let result = Session.run ~path:input_path () in
   let open Session in
   let { diagnostics; context; status } = result in
-  if diagnostics <> [] then eprintf "%a@." Diagnostics.Report.pp diagnostics
-  ; let state = Interpreter.context_state context in
-    let rendered = Format.asprintf "%a" State.pp state in
-    print_or_write ?output:output_path rendered
-    ; let has_diag_error = has_error diagnostics in
-      let exit_needed =
-        match status with
-        | Success ->
-            has_diag_error
-        | Load_error | Parser_error | Interpreter_error ->
-            true
-      in
-      if exit_needed then exit 1
+  let state = Interpreter.context_state context in
+  let rendered = Format.asprintf "%a" State.pp state in
+  print_or_write ?output:output_path rendered
+  ; if diagnostics <> [] then eprintf "%a@." Diagnostics.Report.pp diagnostics
+  ; let has_diag_error = has_error diagnostics in
+    let exit_needed =
+      match status with
+      | Success ->
+          has_diag_error
+      | Load_error | Parser_error | Interpreter_error ->
+          true
+    in
+    if exit_needed then exit 1
 
 let () =
   let input_path, output_path, mode = parse_args () in
