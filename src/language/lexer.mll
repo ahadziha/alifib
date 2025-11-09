@@ -75,6 +75,7 @@ rule token env = parse
       newline_token
     }
   | "(*" {
+      reset_newlines env;
       let start_pos = Lexing.lexeme_start_p lexbuf in
       let buffer = Buffer.create 32 in
       comment env buffer start_pos lexbuf
