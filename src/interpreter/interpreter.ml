@@ -43,16 +43,16 @@ let add_diagnostic result diagnostic =
     status;
   }
 
-let combine left right =
-  let diagnostics = Report.append left.diagnostics right.diagnostics in
+let combine ~previous ~next =
+  let diagnostics = Report.append previous.diagnostics next.diagnostics in
   let status =
-    match (left.status, right.status) with
+    match (previous.status, next.status) with
     | `Error, _ | _, `Error ->
         `Error
     | `Ok, `Ok ->
         `Ok
   in
-  { context= right.context; diagnostics; status }
+  { context= next.context; diagnostics; status }
 
 let has_errors { status; _ } = match status with `Error -> true | `Ok -> false
 
@@ -306,7 +306,6 @@ let rec smart_extend context morphism ~source ~target ~tag ~dim ~diagram =
                                   extend_missing updated rest))))
     in
     extend_missing morphism missing_tags
-[@@warning "-32"]
 
 let interpret_name (name : Lang_ast.name) = name.value
 let interpret_nat (nat : Lang_ast.nat) = nat.value
@@ -544,7 +543,9 @@ let rec interpret_morphism context ~location morphism =
             interpret_m_comp left_result.context ~location:left_component.source
               morphism_right
           in
-          let combined_result = combine left_result right_result in
+          let combined_result =
+            combine ~previous:left_result ~next:right_result
+          in
           match right_output with
           | None ->
               (None, combined_result)
@@ -607,7 +608,7 @@ and interpret_m_term context ~location m_term =
       let ext_output, ext_result =
         interpret_m_ext complex_result.context ~location ~source ext_node
       in
-      let combined_result = combine complex_result ext_result in
+      let combined_result = combine ~previous:complex_result ~next:ext_result in
       match ext_output with
       | None ->
           (None, combined_result)
@@ -660,7 +661,9 @@ and interpret_m_ext context ~location ~source m_ext =
                 interpret_m_block validated_result.context ~location ~source
                   ~morphism block_node
               in
-              let combined_result = combine validated_result block_result in
+              let combined_result =
+                combine ~previous:validated_result ~next:block_result
+              in
               (block_output, combined_result)))
 
 and interpret_diagram context ~location diagram =
@@ -685,7 +688,7 @@ and interpret_diagram_paste_case context ~location ~span ~diagram_left
       let left_opt, left_result =
         interpret_diagram right_result.context ~location diagram_left
       in
-      let combined_result = combine right_result left_result in
+      let combined_result = combine ~previous:right_result ~next:left_result in
       match left_opt with
       | None ->
           (None, combined_result)
@@ -746,7 +749,9 @@ and interpret_concat_concat_case context ~location ~span ~left_concat
           let left_opt, left_result =
             interpret_d_concat right_result.context ~location left_concat
           in
-          let combined_result = combine right_result left_result in
+          let combined_result =
+            combine ~previous:right_result ~next:left_result
+          in
           match left_opt with
           | None ->
               (None, combined_result)
@@ -798,7 +803,9 @@ and interpret_d_expr context ~location d_expr =
               let component_opt, component_result =
                 interpret_d_comp left_result.context ~location d_expr_right
               in
-              let combined_result = combine left_result component_result in
+              let combined_result =
+                combine ~previous:left_result ~next:component_result
+              in
               match component_opt with
               | None ->
                   (None, combined_result)
@@ -828,7 +835,9 @@ and interpret_d_expr context ~location d_expr =
                 interpret_d_comp left_result.context ~location:c_left
                   d_expr_right
               in
-              let combined_result = combine left_result component_result in
+              let combined_result =
+                combine ~previous:left_result ~next:component_result
+              in
               match component_opt with
               | None ->
                   (None, combined_result)
@@ -958,7 +967,9 @@ and interpret_concat context ~location concat =
               let left_term_opt, left_result =
                 interpret_concat right_result.context ~location concat_left
               in
-              let combined_result = combine right_result left_result in
+              let combined_result =
+                combine ~previous:right_result ~next:left_result
+              in
               match left_term_opt with
               | None ->
                   (None, combined_result)
@@ -1005,7 +1016,9 @@ and interpret_boundaries context ~location boundaries =
       let boundary_out_opt, target_result =
         interpret_diagram source_result.context ~location target_node
       in
-      let combined_result = combine source_result target_result in
+      let combined_result =
+        combine ~previous:source_result ~next:target_result
+      in
       match boundary_out_opt with
       | None ->
           (None, combined_result)
@@ -1032,7 +1045,9 @@ and interpret_dnamer context ~location dnamer =
           let boundaries_opt, boundaries_result =
             interpret_boundaries context_after ~location boundaries_node
           in
-          let combined_result = combine diagram_result boundaries_result in
+          let combined_result =
+            combine ~previous:diagram_result ~next:boundaries_result
+          in
           match boundaries_opt with
           | None ->
               (None, combined_result)
@@ -1222,7 +1237,9 @@ and interpret_pasting_paste_case context ~location ~pasting_node pasting_left
           let left_term_opt, left_result =
             interpret_pasting right_result.context ~location pasting_left
           in
-          let combined_result = combine right_result left_result in
+          let combined_result =
+            combine ~previous:right_result ~next:left_result
+          in
           match left_term_opt with
           | None ->
               (None, combined_result)
@@ -1261,7 +1278,7 @@ and interpret_assert context ~location assert_stmt =
       let right_term_opt, right_result =
         interpret_pasting left_result.context ~location right_pasting
       in
-      let combined_result = combine left_result right_result in
+      let combined_result = combine ~previous:left_result ~next:right_result in
       match right_term_opt with
       | None ->
           (None, combined_result)
@@ -1497,7 +1514,7 @@ and interpret_c_block_local context namespace
         let location_opt, instr_result =
           interpret_c_instr_local ctx current_namespace instr
         in
-        let combined = combine acc_result instr_result in
+        let combined = combine ~previous:acc_result ~next:instr_result in
         let acc_location =
           match location_opt with Some loc -> Some loc | None -> acc_location
         in
@@ -1591,7 +1608,7 @@ and interpret_c_instr context ~mode ~location c_instr =
                 let state_after =
                   match (mode, new_id_opt) with
                   | Global, Some new_id ->
-                      State.add_cell context_after.state ~id:new_id ~dim
+                      State.set_cell context_after.state ~id:new_id ~dim
                         boundaries
                   | _ ->
                       context_after.state
@@ -1888,7 +1905,7 @@ and interpret_c_instr context ~mode ~location c_instr =
                             | Global ->
                                 let image_id = Id.Global.fresh () in
                                 let state' =
-                                  State.add_cell state ~id:image_id ~dim:gen_dim
+                                  State.set_cell state ~id:image_id ~dim:gen_dim
                                     image_cell_data
                                 in
                                 (Id.Tag.of_global image_id, state', loc)
@@ -1951,7 +1968,7 @@ and interpret_c_block context ~mode ~location (c_block : Lang_ast.c_block) =
         let location_opt, instr_result =
           interpret_c_instr ctx ~mode ~location:current_location instr
         in
-        let combined = combine acc_result instr_result in
+        let combined = combine ~previous:acc_result ~next:instr_result in
         let acc_location =
           match location_opt with Some loc -> Some loc | None -> acc_location
         in
@@ -2038,7 +2055,9 @@ and interpret_complex context ~mode complex =
                     interpret_c_block context ~mode ~location:temporary_location
                       block
                   in
-                  let combined_result = combine root_result block_result in
+                  let combined_result =
+                    combine ~previous:root_result ~next:block_result
+                  in
                   let namespace_opt =
                     match location_opt with
                     | Some location ->
@@ -2059,7 +2078,7 @@ and interpret_m_block context ~location ~source ~morphism m_block =
           interpret_m_instr latest_context ~location ~source
             ~morphism:latest_morphism instr
         in
-        let combined_result = combine acc_result instr_result in
+        let combined_result = combine ~previous:acc_result ~next:instr_result in
         match instr_output with
         | None ->
             (None, combined_result)
@@ -2205,7 +2224,7 @@ and interpret_m_instr context ~location ~source ~morphism m_instr =
       let right_term_opt, right_result =
         interpret_pasting left_result.context ~location right
       in
-      let combined_result = combine left_result right_result in
+      let combined_result = combine ~previous:left_result ~next:right_result in
       match right_term_opt with
       | None ->
           (None, combined_result)
@@ -2247,7 +2266,9 @@ let interpret_generator_type context generator_type =
             interpret_complex generator_result.context ~mode:Global
               definition_node
           in
-          let combined_result = combine generator_result complex_result in
+          let combined_result =
+            combine ~previous:generator_result ~next:complex_result
+          in
           match namespace_opt with
           | None ->
               (None, combined_result)
@@ -2273,7 +2294,7 @@ let rec interpret_program ~loader context program =
       let state = context.state in
       let empty_type_id = Id.Global.fresh () in
       let state =
-        State.add_type state ~id:empty_type_id ~data:Diagram.Zero
+        State.set_type state ~id:empty_type_id ~data:Diagram.Zero
           ~complex:Complex.empty
       in
       let empty_type_tag = Id.Tag.of_global empty_type_id in
@@ -2295,7 +2316,7 @@ let rec interpret_program ~loader context program =
       let module_complex =
         Complex.add_diagram module_complex ~name:empty_name empty_diagram
       in
-      let state = State.add_module state ~id:module_id module_complex in
+      let state = State.set_module state ~id:module_id module_complex in
       let context = with_state context state in
       let open Lang_ast in
       let blocks = program.value.program_blocks in
@@ -2410,11 +2431,11 @@ and interpret_c_instr_type ~loader context
                         classifier_diagram
                     in
                     let state =
-                      State.add_type context_after.state ~id:new_id
+                      State.set_type context_after.state ~id:new_id
                         ~data:boundaries ~complex:complex_with_identity
                     in
                     let state =
-                      State.add_module state ~id:module_id updated_location
+                      State.set_module state ~id:module_id updated_location
                     in
                     let context_updated = with_state context_after state in
                     let updated_result =
@@ -2474,7 +2495,7 @@ and interpret_c_instr_type ~loader context
                       Complex.add_diagram current_location ~name diagram
                     in
                     let state =
-                      State.add_module context_after.state ~id:module_id
+                      State.set_module context_after.state ~id:module_id
                         updated_location
                     in
                     let context_updated = with_state context_after state in
@@ -2536,7 +2557,7 @@ and interpret_c_instr_type ~loader context
                         morphism
                     in
                     let state =
-                      State.add_module context_after.state ~id:module_id
+                      State.set_module context_after.state ~id:module_id
                         updated_location
                     in
                     let context_updated = with_state context_after state in
@@ -2729,7 +2750,7 @@ and interpret_c_instr_type ~loader context
                         ~domain:(Complex.Module included_module_id) inclusion
                     in
                     let final_state =
-                      State.add_module include_result.context.state
+                      State.set_module include_result.context.state
                         ~id:module_id final_location
                     in
                     let final_context =
@@ -2751,7 +2772,7 @@ and interpret_c_block_type ~loader context
         let location_opt, instr_result =
           interpret_c_instr_type ~loader ctx instr
         in
-        let combined = combine acc_result instr_result in
+        let combined = combine ~previous:acc_result ~next:instr_result in
         let acc_location =
           match location_opt with Some loc -> Some loc | None -> acc_location
         in

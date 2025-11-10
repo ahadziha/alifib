@@ -39,7 +39,7 @@ let empty =
     modules= ModuleMap.empty;
   }
 
-let add_cell state ~id ~dim data =
+let set_cell state ~id ~dim data =
   let by_id = GlobalMap.add id { data; dim } state.cells.by_id in
   let by_dim =
     IntMap.update dim
@@ -50,7 +50,7 @@ let add_cell state ~id ~dim data =
   in
   { state with cells= { by_id; by_dim } }
 
-let add_type state ~id ~data ~complex =
+let set_type state ~id ~data ~complex =
   { state with types= GlobalMap.add id { data; complex } state.types }
 
 let update_type_complex state ~id complex =
@@ -63,7 +63,7 @@ let update_type_complex state ~id complex =
   in
   { state with types }
 
-let add_module state ~id complex =
+let set_module state ~id complex =
   { state with modules= ModuleMap.add id complex state.modules }
 
 let find_cell state id = GlobalMap.find_opt id state.cells.by_id
@@ -103,11 +103,11 @@ let pp fmt state =
         in
         let pp_type fmt generator_name =
           let type_label = string_or_empty generator_name in
-        let print_details cells diagrams morphisms =
-          fprintf fmt
-            "@[<v 2>Type %s@,- Cells: %s@,- Diagrams: %s@,- Maps: %s@]"
-            type_label (render_list cells) (render_list diagrams)
-            (render_list morphisms)
+          let print_details cells diagrams morphisms =
+            fprintf fmt
+              "@[<v 2>Type %s@,- Cells: %s@,- Diagrams: %s@,- Maps: %s@]"
+              type_label (render_list cells) (render_list diagrams)
+              (render_list morphisms)
           in
           match Complex.find_generator module_complex generator_name with
           | None ->

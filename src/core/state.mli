@@ -10,13 +10,13 @@ type cell_entry = { data: Diagram.cell_data; dim: int }
 val empty : t
 
 (** {2 Mutators} *)
-val add_cell : t -> id:Id.Global.t -> dim:int -> Diagram.cell_data -> t
+val set_cell : t -> id:Id.Global.t -> dim:int -> Diagram.cell_data -> t
 
-val add_type :
+val set_type :
   t -> id:Id.Global.t -> data:Diagram.cell_data -> complex:Complex.t -> t
 
 val update_type_complex : t -> id:Id.Global.t -> Complex.t -> t
-val add_module : t -> id:Id.Module.t -> Complex.t -> t
+val set_module : t -> id:Id.Module.t -> Complex.t -> t
 
 (** {2 Lookups} *)
 val find_cell : t -> Id.Global.t -> cell_entry option

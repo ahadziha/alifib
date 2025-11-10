@@ -35,5 +35,4 @@ setup.log
 # Local OPAM switch
 _opam/
 dev_notes/
-examples/
 scripts/

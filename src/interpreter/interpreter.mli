@@ -31,7 +31,7 @@ type result = {
 
 val empty_result : context -> result
 val add_diagnostic : result -> Diagnostics.diagnostic -> result
-val combine : result -> result -> result
+val combine : previous:result -> next:result -> result
 val has_errors : result -> bool
 val interpret_program : loader:file_loader -> context -> Ast.program -> result
 val interpret_block : loader:file_loader -> context -> Ast.block -> result
