@@ -40,14 +40,24 @@ Comp <<= {
     dom => fst.cod
   ]
 
-  let comp :: Mor = [
-    dom => fst.dom,
-    cod => snd.cod,
-    mor => fst.mor snd.mor,
-    l_unit.dir => (fst.l_unit.dir #0 snd.l_unit.inv) (fst.r_unit.dir snd.mor),
-    l_unit.inv => (fst.l_unit.inv #0 snd.l_unit.inv) (fst.dom.id fst.r_unit.dir snd.mor),
-    r_unit.dir => (fst.mor #0 (snd.r_unit.dir snd.l_unit.inv)) (fst.r_unit.dir snd.mor),
-    r_unit.inv => (fst.mor #0 (snd.r_unit.inv (snd.l_unit.inv snd.cod.id))) 
+  let mor = fst.mor snd.mor,
+  let dom :: Ob = fst.dom,
+  let cod :: Ob = snd.cod,
+  let l_unit :: Eq = [
+    dir => (fst.l_unit.dir #0 snd.l_unit.inv) (fst.r_unit.dir snd.mor),
+    inv => (fst.l_unit.inv #0 snd.l_unit.inv) (fst.dom.id fst.r_unit.dir snd.mor)
+  ],
+  let r_unit :: Eq = [    
+    dir => (fst.mor #0 (snd.r_unit.dir snd.l_unit.inv)) (fst.r_unit.dir snd.mor),
+    inv => (fst.mor #0 (snd.r_unit.inv (snd.l_unit.inv snd.cod.id))) 
       (fst.r_unit.dir snd.mor snd.cod.id)
+  ]
+
+  let comp :: Mor = [
+    dom => dom,
+    cod => cod,
+    mor => mor,
+    l_unit => l_unit,
+    r_unit => r_unit
   ]
 }
