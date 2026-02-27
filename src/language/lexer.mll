@@ -48,20 +48,7 @@ rule token env = parse
       let span = span_of_lexeme env lexbuf in
       Token.make (Token.Trivia (Token.Whitespace (Lexing.lexeme lexbuf))) span
     }
-  | "\r\n" {
-      let lexeme = Lexing.lexeme lexbuf in
-      record_newlines lexbuf lexeme;
-      bump_newlines env;
-      let span = span_of_lexeme env lexbuf in
-      let newline_token = Token.make (Token.Trivia (Token.Newline lexeme)) span in
-      if env.newline_run >= 2 then (
-        let comma = Token.make (Token.Comma `From_newline) span in
-        enqueue env comma;
-        reset_newlines env
-      );
-      newline_token
-    }
-  | "\n" {
+  | "\n" | "\r\n" {
       let lexeme = Lexing.lexeme lexbuf in
       record_newlines lexbuf lexeme;
       bump_newlines env;
@@ -113,22 +100,7 @@ rule token env = parse
       let span = span_of_lexeme env lexbuf in
       make_error env span "numbers following '#' must not have leading zeros"
     }
-  | "#0" {
-      reset_newlines env;
-      let start_point =
-        Pos.point_of_lexing env.source (Lexing.lexeme_start_p lexbuf)
-      in
-      let after_hash = Pos.advance start_point "#" in
-      let end_point =
-        Pos.point_of_lexing env.source (Lexing.lexeme_end_p lexbuf)
-      in
-      let hash_span = Pos.make_span ~start:start_point ~stop:after_hash in
-      let nat_span = Pos.make_span ~start:after_hash ~stop:end_point in
-      let nat_token = Token.make (Nat "0") nat_span in
-      enqueue env nat_token;
-      Token.make Paste hash_span
-    }
-  | ("#" ['1'-'9']['0'-'9']*) as lexeme {
+  | ("#0" | "#" ['1'-'9']['0'-'9']*) as lexeme {
       reset_newlines env;
       let start_point =
         Pos.point_of_lexing env.source (Lexing.lexeme_start_p lexbuf)
