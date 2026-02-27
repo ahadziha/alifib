@@ -1,0 +1,25 @@
+{
+  "name": "alifib",
+  "displayName": "Alifib",
+  "description": "Alifib syntax highlighting",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.109.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [{
+      "id": "alifib",
+      "aliases": ["Alifib", "alifib"],
+      "extensions": [".ali"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "alifib",
+      "scopeName": "source.alifib",
+      "path": "./syntaxes/alifib.tmLanguage.json"
+    }]
+  }
+}

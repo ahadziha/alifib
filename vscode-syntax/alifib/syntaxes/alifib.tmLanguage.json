@@ -1,0 +1,81 @@
+{
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+	"name": "alifib",
+	"scopeName": "source.alifib",
+	"patterns": [
+    { "include": "#comments" },
+    { "include": "#keywords" },
+    { "include": "#blockHeader" },
+    { "include": "#numbers" },
+    { "include": "#operators" },
+    { "include": "#names" }
+  ],
+	
+	"repository": {
+		"blockHeader": {
+      "patterns": [
+        {
+          "name": "keyword.control.block.alifib",
+          "match": "@"
+        }
+      ]
+    },
+
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.block.alifib",
+          "begin": "\\(\\*",
+          "end": "\\*\\)",
+          "patterns": [
+            { "include": "#comments" }
+          ]
+        }
+      ]
+    },
+
+		"keywords": {
+      "patterns": [
+        {
+          "name": "keyword.alifib",
+          "match": "\\b(let|include|attach|assert|as|along)\\b"
+        },
+        {
+          "name": "keyword.other.alifib",
+          "match": "\\b(Type|in|out|map)\\b"
+        }
+      ]
+    },
+
+		"operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.alifib",
+          "match": "<<=|::|->|=>|=|#"
+        },
+        {
+          "name": "punctuation.separator.alifib",
+          "match": "[.,:]"
+        }
+      ]
+    },
+
+    "names": {
+      "patterns": [
+        {
+          "name": "entity.name.alifib",
+          "match": "\\b[A-Za-z0-9_]+\\b"
+        }
+      ]
+    },
+
+		"numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.alifib",
+          "match": "\\b(0|[1-9][0-9]*)\\b"
+        }
+      ]
+    }
+	}
+}
