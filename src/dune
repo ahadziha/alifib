@@ -1,4 +1,5 @@
 (executable
  (name main)
+ (public_name alifib)
  (modules main)
  (libraries alifib_language alifib_helper alifib_core alifib_interpreter))
