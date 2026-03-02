@@ -42,7 +42,7 @@
 -- * an attach statement
 
 <CBlock> ::= <CInstr> { "," <CInstr> }
-<CInstr> ::= <NameWithBoundary> | <LetDiag> | <LetMor> | <IncludeStmt> | <AttachStmt>
+<CInstr> ::= <NameWithBoundary> | <LetDiag> | <LetMor> | <AttachStmt> | <IncludeStmt>  
 <IncludeStmt> ::= "include" <Address> [ "as" <Name> ]
 <AttachStmt> ::= "attach" <Name> "::" <Address> [ "along" <MDef> ]
 
