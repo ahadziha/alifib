@@ -1,0 +1,21 @@
+@Type
+Ob <<= {
+  pt,
+  ob : pt -> pt
+},
+
+Magma <<= { 
+  attach Ob :: Ob,
+  m : Ob.ob Ob.ob -> Ob.ob
+}
+
+Comagma <<= {
+  attach Ob :: Ob,
+  c : Ob.ob -> Ob.ob Ob.ob
+}
+
+FrobeniusMagma <<= {
+  attach Ob :: Ob,
+  attach Magma :: Magma along [ Ob => Ob ],
+  attach Comagma :: Comagma along [ Ob => Ob ]
+}

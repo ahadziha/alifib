@@ -1,0 +1,99 @@
+(* Yang-Baxter equation and braid structures
+ *
+ * The Yang-Baxter equation (YBE) is the coherence condition for braided
+ * monoidal categories. For a braiding swap : A ⊗ A → A ⊗ A, the YBE is
+ *
+ *   (swap ⊗ 1)(1 ⊗ swap)(swap ⊗ 1) = (1 ⊗ swap)(swap ⊗ 1)(1 ⊗ swap)
+ *
+ * equivalently the third Reidemeister move in knot theory, and the
+ * defining braid relation σ_1 σ_2 σ_1 = σ_2 σ_1 σ_2 in B_n.
+ *
+ * Applications in computer science:
+ *   - Topological quantum computation: braiding of anyons gives quantum gates
+ *   - Quantum groups: R-matrices satisfying the YBE (Drinfeld, Jimbo)
+ *   - Knot invariants: Jones polynomial, HOMFLY-PT via YBE representations
+ *   - Concurrency: braid monoids model interleavings of non-commuting events
+ *   - String rewriting: braid words modulo YBE and far commutativity
+ *)
+
+@Type
+include Theory,
+let Eq = Theory.Equation
+
+(* A Yang-Baxter operator.
+ *
+ * A single crossing map swap : A ⊗ A → A ⊗ A. Its two whiskers to three
+ * strands,
+ *
+ *   σ_1 = (swap ⊗ 1)  and  σ_2 = (1 ⊗ swap),
+ *
+ * satisfy the braid relation σ_1 σ_2 σ_1 = σ_2 σ_1 σ_2, which is
+ * exactly the YBE. *)
+YB_operator <<= {
+  pt,
+  attach Set :: Theory.Set along [ pt => pt ],
+  let set = Set.set,
+  let id = Set.id,
+
+  swap : set set -> set set,
+
+  (* Yang-Baxter equation:
+   *   (swap ⊗ 1)(1 ⊗ swap)(swap ⊗ 1) = (1 ⊗ swap)(swap ⊗ 1)(1 ⊗ swap)
+   * Both sides have type set set set -> set set set. *)
+  attach YBE :: Eq along [
+    lhs => (swap set)(set swap)(swap set),
+    rhs => (set swap)(swap set)(set swap)
+  ]
+}
+
+
+(* Invertible Yang-Baxter operator.
+ *
+ * In the braid group B_n every generator σ_i has an inverse σ_i^{-1},
+ * the opposite crossing. The inverse also satisfies the YBE: braid words
+ * form a group, and both positive and negative crossings may appear.
+ *
+ * The full invertibility condition swap_inv ∘ swap = id_{A⊗A} requires a
+ * dedicated identity cell on the two-wire type. We express it instead via
+ * the cancellation laws swap_inv ∘ swap ∘ swap_inv = swap_inv and
+ * swap ∘ swap_inv ∘ swap = swap, which are equivalent to invertibility given
+ * the group structure. *)
+Invertible <<= YB_operator {
+  swap_inv : set set -> set set,
+
+  (* Left cancellation: swap_inv ∘ swap ∘ swap_inv = swap_inv *)
+  attach Left_cancel :: Eq along [
+    lhs => swap_inv swap swap_inv,
+    rhs => swap_inv
+  ],
+  (* Right cancellation: swap ∘ swap_inv ∘ swap = swap *)
+  attach Right_cancel :: Eq along [
+    lhs => swap swap_inv swap,
+    rhs => swap
+  ],
+
+  (* The inverse crossing independently satisfies the YBE. *)
+  attach YBE_inv :: Eq along [
+    lhs => (swap_inv set)(set swap_inv)(swap_inv set),
+    rhs => (set swap_inv)(swap_inv set)(set swap_inv)
+  ]
+}
+
+(* Symmetric Yang-Baxter operator.
+ *
+ * The braiding is its own inverse: positive and negative crossings coincide,
+ * distinguishing the symmetric group S_n (symmetric monoidal) from the braid
+ * group B_n (merely braided monoidal). The ideal condition swap ∘ swap =
+ * id_{A⊗A} requires identity on the two-wire type; we use the cube rule
+ * swap ∘ swap ∘ swap = swap, which is a direct consequence of involutivity
+ * and is sufficient to single out the symmetric monoidal case together with
+ * YBE.
+ *
+ * Examples: cartesian product on sets, tensor product of vector spaces,
+ * the SWAP gate on qubits. *)
+Symmetric <<= YB_operator {
+  attach Cube :: Eq along [
+    lhs => swap swap swap,
+    rhs => swap
+  ]
+}

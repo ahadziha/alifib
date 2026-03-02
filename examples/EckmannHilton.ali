@@ -1,0 +1,81 @@
+(* Eckmann-Hilton argument
+ *
+ * If a set carries two monoid structures sharing the same unit and satisfying
+ * the interchange law
+ *
+ *   mul1(mul2(a, b), mul2(c, d)) = mul2(mul1(a, c), mul1(b, d))
+ *
+ * then the two operations are equal and both are commutative.
+ *
+ * In string diagram notation the interchange law reads
+ *
+ *   (mul2 o mul2) ; mul1  =  swap_23 ; (mul1 o mul1) ; mul2
+ *
+ * where swap_23 exchanges positions 2 and 3 of four wires (the middle-four
+ * interchange). This requires a 4-wire operation, which the directed complex
+ * framework does not support via single whiskering. We axiomatise the
+ * conclusion of the argument directly instead.
+ *
+ * Applications:
+ *   - pi_n(X, x) is abelian for n >= 2 (horizontal vs vertical path concat)
+ *   - In HoTT: identity types of 1-types carry abelian group structure
+ *   - Delooping: BG of an abelian group admits a double delooping
+ *   - The interchange law is the defining axiom of double categories
+ *)
+
+@Type
+include Theory,
+include Semigroup,
+let Eq = Theory.Equation
+
+(* Two monoids on the same carrier with the same unit.
+ * Semigroup.Semigroup already contains unit laws for the id cell, so it is
+ * effectively a monoid. Two copies sharing the same Set share the same unit. *)
+Two_monoids <<= {
+  pt,
+  attach Set :: Theory.Set along [ pt => pt ],
+  attach M1 :: Semigroup.Semigroup along [ Set => Set ],
+  attach M2 :: Semigroup.Semigroup along [ Set => Set ],
+  let set = Set.set,
+  let id  = Set.id,
+  let mul1 = M1.merge,
+  let mul2 = M2.merge
+}
+
+(* Eckmann-Hilton conclusion.
+ *
+ * The Eckmann-Hilton argument derives, from the interchange law + shared unit:
+ *   (a) the operations coincide: mul1 = mul2
+ *   (b) the coincident operation is commutative: mul o swap = mul
+ *
+ * We axiomatise these consequences. The directed 3-cell Ops_eq witnesses the
+ * rewrite mul1 -> mul2; Commute witnesses commutativity via a braiding swap. *)
+EH_object <<= Two_monoids {
+  attach Ops_eq :: Eq along [
+    lhs => mul1,
+    rhs => mul2
+  ],
+  swap : set set -> set set,
+  attach Commute1 :: Eq along [
+    lhs => swap mul1,
+    rhs => mul1
+  ],
+  attach Commute2 :: Eq along [
+    lhs => swap mul2,
+    rhs => mul2
+  ]
+}
+
+(* Eckmann-Hilton with braiding.
+ *
+ * An EH_object whose commutativity witness satisfies the Yang-Baxter equation.
+ * This is the natural ambient structure: in the homotopical interpretation,
+ * the commutativity witness for pi_2 itself satisfies a coherence condition,
+ * and the YBE is that coherence. Symmetric monoidal categories are the
+ * canonical example. *)
+EH_braided <<= EH_object {
+  attach YBE :: Eq along [
+    lhs => (swap set)(set swap)(swap set),
+    rhs => (set swap)(swap set)(set swap)
+  ]
+}

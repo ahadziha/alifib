@@ -73,3 +73,64 @@
   fail.
 
 - Equality is decidable for both diagrams and maps
+
+- `[ F => G ]` is valid where `F` and `G` are maps with the same domain. This
+  expands to `forall x : dom(F). F.x => G.x`.
+
+- `.` is always composition.
+
+  Example: `C.x` is always a composition of maps. 
+  - If we are `@C` the `C` is the identity map. 
+  - If we have attached `C` then `C` is the inclusion map. 
+
+  Example: `C.x.in` is the composition
+  `(C --inc--> D) o (shape(x) -x-> C) o (d^{-} shape(x) --inc--> shape(x))`
+
+  Dots are always used like this:
+  `(prefix (= map).("simple" diagram).(suffix (e.g. boundaries))`
+
+  Another example: if I have
+  ```
+  @E  ... F :: D ..
+  @D  ... G :: C ..
+  ```
+  then I have
+  ```
+  @E  ... F.G :: C
+  ```
+  At `E` we have `F : D -> E`. Then the dot makes us enter the namespace of `D`,
+  where we can find `G`. We could have also named `G` as `F` with `F.F` being
+  perfectly valid!
+
+- A diagram is a map whose domain is a molecule. In the implementation it's
+  slightly different though! A map is implemented as a table that maps
+  generators (or rather, ids of generators) to diagrams. A diagram is
+  implemented as an ogposet plus a labelling in ids, plus some information about
+  how it was built. The only way to interact with maps is to compose them. When
+  you have diagrams you can paste them, or apply a map to them, or take their
+  boundary. A diagram is a map whose domain is implicit (a molecule).
+
+- Ideally we'd like
+  - Gray products
+  - `attach` for modules. For example, in `Module.ali`:
+    ```
+    @Type
+    X <<= { x, a : x -> x }
+    Y <<= X { m : a a -> a }
+    ```
+    While in `Test.ali`:
+    ```
+      @Type
+      A <<= { x, b : x -> x, let a = b b },
+      attach F :: Module along [ X => A ]
+    ```
+    This will _automatically_ add `F.Y` which should be `A { m : a a -> a }`
+  -  `@Type` is also a complex so eventually we should have
+      ```
+      @Type
+        A <<= { ...},
+        B <<= { ...},
+        F : A -> B <<= { ... }
+      ```
+      where one should think of `F` as the collage of a profunctor. Rewriting-wise
+      these should be something like partial, nondeterministic transducers.

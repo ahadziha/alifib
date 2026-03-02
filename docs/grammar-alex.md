@@ -57,23 +57,25 @@
 <LetDiag> ::= "let" <Name> [ ":" <Boundary> ] "=" <Diagram>
 <AssertStmt> ::= "assert" <Pasting> "=" <Pasting>
 
+-- A boundary is easy
+<Boundary> ::= <Diagram> "->" <Diagram>
+
 -- a diagram is either
 -- * a concatenation of expressions
 -- * a diagram composed along a dimension with a concatenation of expressions
+-- ... a Component is something which can be part of a dotted expression
 <Diagram> ::= <DConcat> | <Diagram> "#" <Nat> <DConcat>
 <DConcat> ::= <DExpr> | <DConcat> <DExpr>
-<DExpr> ::= <DComp> | <DExpr> "." <DComp>
-<DComp> ::= <MTerm> | <DTerm> | <Name> | <Bd> | "?"
-<DTerm> ::= "(" <Diagram> "#" <Nat> <DConcat> ")" | "(" <DConcat> <DExpr> ")"
+<DExpr> ::= <DComponent> | <DExpr> "." <DComponent>
+<DComponent> ::= <MTerm> | <DParens> | <Name> | <Bd> | "?"
+<DParens> ::= "(" <Diagram> ")"
 <Bd> ::= "in" | "out"
 
+-- A pasting is either a diagram or a map
 <Pasting> ::= <Concat> | <Pasting> "#" <Nat> <Concat>
 <Concat> ::= <DExpr> | <Concat> <DExpr>
 
-<Boundary> ::= <Diagram> "->" <Diagram>
-
-
--- a morphism is either
+-- a morphism (= map, but OCaml...) is either
 -- * 
 <Morphism> ::= <MComp> | <Morphism> "." <MComp>
 <MComp> ::= <MTerm> | <Name>
