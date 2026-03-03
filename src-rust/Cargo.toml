@@ -13,3 +13,7 @@ ariadne = "0.4"
 
 [profile.release]
 opt-level = 3
+
+[profile.release-debug]
+inherits = "release"
+debug = true

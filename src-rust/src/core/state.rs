@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use crate::helper::{GlobalId, ModuleId};
 use super::complex::Complex;
 use super::diagram::CellData;
@@ -6,7 +7,7 @@ use super::diagram::CellData;
 #[derive(Debug, Clone)]
 pub struct TypeEntry {
     pub data: CellData,
-    pub complex: Complex,
+    pub complex: Arc<Complex>,
 }
 
 #[derive(Debug, Clone)]
@@ -21,7 +22,7 @@ pub struct State {
     pub cells: BTreeMap<GlobalId, CellEntry>,
     pub cells_by_dim: BTreeMap<usize, Vec<GlobalId>>,
     pub types: BTreeMap<GlobalId, TypeEntry>,
-    pub modules: BTreeMap<ModuleId, Complex>,
+    pub modules: BTreeMap<ModuleId, Arc<Complex>>,
 }
 
 impl State {
@@ -35,20 +36,26 @@ impl State {
         self
     }
 
+    /// Mutate the state in place. Use via `Arc::make_mut` to avoid cloning.
+    pub fn set_cell_mut(&mut self, id: GlobalId, dim: usize, data: CellData) {
+        self.cells_by_dim.entry(dim).or_default().push(id);
+        self.cells.insert(id, CellEntry { data, dim });
+    }
+
     pub fn set_type(mut self, id: GlobalId, data: CellData, complex: Complex) -> Self {
-        self.types.insert(id, TypeEntry { data, complex });
+        self.types.insert(id, TypeEntry { data, complex: Arc::new(complex) });
         self
     }
 
     pub fn update_type_complex(mut self, id: GlobalId, complex: Complex) -> Self {
         if let Some(entry) = self.types.get_mut(&id) {
-            entry.complex = complex;
+            entry.complex = Arc::new(complex);
         }
         self
     }
 
     pub fn set_module(mut self, id: ModuleId, complex: Complex) -> Self {
-        self.modules.insert(id, complex);
+        self.modules.insert(id, Arc::new(complex));
         self
     }
 
@@ -61,7 +68,12 @@ impl State {
     }
 
     pub fn find_module(&self, id: &str) -> Option<&Complex> {
-        self.modules.get(id)
+        self.modules.get(id).map(|arc| &**arc)
+    }
+
+    /// Returns a cloned Arc so callers can cheaply share the module complex.
+    pub fn find_module_arc(&self, id: &str) -> Option<Arc<Complex>> {
+        self.modules.get(id).map(Arc::clone)
     }
 
     /// Pretty-print the state in a human-readable format.
@@ -94,7 +106,8 @@ impl State {
             }).collect::<Vec<_>>().join(", ")
         };
 
-        let mut module_entries: Vec<(&ModuleId, &Complex)> = self.modules.iter().collect();
+        let mut module_entries: Vec<(&ModuleId, &Complex)> =
+            self.modules.iter().map(|(id, arc)| (id, &**arc)).collect();
         module_entries.sort_by_key(|(id, _)| id.as_str());
 
         let mut entries_str: Vec<String> = Vec::new();
@@ -115,6 +128,7 @@ impl State {
                 }
             };
 
+            let mut type_entries: Vec<String> = Vec::new();
             for gen_name in &generator_names {
                 let type_label = empty_or(gen_name);
                 let details = match module_complex.find_generator(gen_name) {
@@ -128,7 +142,7 @@ impl State {
                                 match self.find_type(*gid) {
                                     None => ("(not found)".into(), "(not found)".into(), "(not found)".into()),
                                     Some(type_entry) => {
-                                        let cells = render_cells_by_dim(&type_entry.complex);
+                                        let cells = render_cells_by_dim(&*type_entry.complex);
                                         let diagrams = render_list(
                                             type_entry.complex.diagram_names().into_iter()
                                                 .map(|n| empty_or(&n)).collect()
@@ -149,11 +163,12 @@ impl State {
                         }
                     }
                 };
-                module_str.push_str(&format!(
-                    "  Type {}\n  - Cells: {}\n  - Diagrams: {}\n  - Maps: {}\n",
+                type_entries.push(format!(
+                    "Type {}\n  - Cells: {}\n  - Diagrams: {}\n  - Maps: {}\n",
                     type_label, details.0, details.1, details.2
                 ));
             }
+            module_str.push_str(&type_entries.join("\n"));
             entries_str.push(module_str);
         }
         out.push_str(&entries_str.join("\n"));

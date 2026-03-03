@@ -89,9 +89,18 @@ impl Morphism {
         self.table.values().any(|e| e.image.has_local_labels())
     }
 
+    /// Insert an entry directly without boundary validation. Used for incremental
+    /// construction where boundaries have already been verified by other means.
+    pub fn insert_raw(&mut self, tag: Tag, dim: usize, cell_data: CellData, image: Diagram) {
+        self.cellular = self.cellular && image.is_cell();
+        self.by_dim.entry(dim).or_default().push(tag.clone());
+        self.table.insert(tag, Entry { dim, cell_data, image });
+    }
+
     /// Extend the morphism with a new entry, checking boundary compatibility.
+    /// Consumes `f` to avoid an unnecessary clone.
     pub fn extend(
-        f: &Morphism,
+        f: Morphism,
         tag: Tag,
         dim: usize,
         cell_data: CellData,
@@ -110,7 +119,7 @@ impl Morphism {
         if dim == 0 {
             match &cell_data {
                 CellData::Zero => {
-                    let mut new_m = f.clone();
+                    let mut new_m = f;
                     new_m.table.insert(tag.clone(), Entry { dim, cell_data, image });
                     new_m.by_dim.entry(dim).or_default().push(tag);
                     Ok(new_m)
@@ -121,8 +130,8 @@ impl Morphism {
             match &cell_data {
                 CellData::Zero => panic!("n-cell must have boundaries"),
                 CellData::Boundary { boundary_in, boundary_out } => {
-                    let mapped_in = Morphism::apply(f, boundary_in)?;
-                    let mapped_out = Morphism::apply(f, boundary_out)?;
+                    let mapped_in = Morphism::apply(&f, boundary_in)?;
+                    let mapped_out = Morphism::apply(&f, boundary_out)?;
 
                     let boundary_idx = dim - 1;
                     let expected_input = Diagram::boundary_normal(Sign::Input, boundary_idx, &image)?;
@@ -138,7 +147,7 @@ impl Morphism {
                     }
 
                     let cellular = f.cellular && image.is_cell();
-                    let mut new_m = f.clone();
+                    let mut new_m = f;
                     new_m.table.insert(tag.clone(), Entry { dim, cell_data, image });
                     new_m.by_dim.entry(dim).or_default().push(tag);
                     new_m.cellular = cellular;

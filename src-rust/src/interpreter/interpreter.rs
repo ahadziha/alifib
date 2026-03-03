@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use crate::helper::{error::Error, GlobalId, LocalId, ModuleId, Tag};
 use crate::helper::positions::Span;
 use crate::core::{
@@ -14,19 +15,27 @@ use crate::language::{
 
 // ---- Context ----
 
+/// `state` is wrapped in `Arc` so that `Context::clone()` is O(1).
+/// All the immutable read operations (find_cell, find_type, etc.) deref transparently.
+/// To mutate state, clone the inner value: `(*context.state).clone().set_cell(...)`.
 #[derive(Debug, Clone)]
 pub struct Context {
     pub current_module: ModuleId,
-    pub state: State,
+    pub state: Arc<State>,
 }
 
 impl Context {
     pub fn new(module_id: ModuleId, state: State) -> Self {
-        Self { current_module: module_id, state }
+        Self { current_module: module_id, state: Arc::new(state) }
+    }
+
+    /// Create a context that shares the same Arc<State> as `other`.
+    pub fn new_sharing_state(module_id: ModuleId, other: &Context) -> Self {
+        Self { current_module: module_id, state: Arc::clone(&other.state) }
     }
 
     pub fn with_state(&self, state: State) -> Self {
-        Self { current_module: self.current_module.clone(), state }
+        Self { current_module: self.current_module.clone(), state: Arc::new(state) }
     }
 }
 
@@ -111,7 +120,7 @@ pub struct Namespace {
 #[derive(Debug, Clone)]
 pub struct MorphismComponent {
     pub morphism: Morphism,
-    pub source: Complex,
+    pub source: Arc<Complex>,
 }
 
 #[derive(Debug, Clone)]
@@ -129,7 +138,7 @@ pub enum Component {
 
 #[derive(Debug, Clone)]
 pub enum TermPair {
-    MTermPair { fst: Morphism, snd: Morphism, source: Complex },
+    MTermPair { fst: Morphism, snd: Morphism, source: Arc<Complex> },
     DTermPair { fst: Diagram, snd: Diagram },
 }
 
@@ -189,7 +198,7 @@ pub fn interpret_program(
         let mut module_complex = Complex::empty();
         module_complex = module_complex.add_generator(empty_name.clone(), empty_diagram.clone());
         module_complex = module_complex.add_diagram(empty_name, empty_diagram);
-        let new_state = context.state.clone()
+        let new_state = (*context.state).clone()
             .set_type(empty_id, CellData::Zero, Complex::empty())
             .set_module(module_id.clone(), module_complex);
         context.with_state(new_state)
@@ -271,7 +280,7 @@ fn interpret_c_instr_type(
                     let module_id2 = &ctx_after.current_module;
                     let mut current_loc = ctx_after.state.find_module(module_id2).cloned().unwrap_or_default();
                     current_loc = current_loc.add_diagram(name, diagram);
-                    let new_state = ctx_after.state.clone().set_module(module_id2.clone(), current_loc.clone());
+                    let new_state = (*ctx_after.state).clone().set_module(module_id2.clone(), current_loc.clone());
                     let mut r = result;
                     r.context = r.context.with_state(new_state);
                     (Some(current_loc), r)
@@ -290,7 +299,7 @@ fn interpret_c_instr_type(
                     let module_id2 = &ctx_after.current_module;
                     let mut current_loc = ctx_after.state.find_module(module_id2).cloned().unwrap_or_default();
                     current_loc = current_loc.add_morphism(name, domain, morphism);
-                    let new_state = ctx_after.state.clone().set_module(module_id2.clone(), current_loc.clone());
+                    let new_state = (*ctx_after.state).clone().set_module(module_id2.clone(), current_loc.clone());
                     let mut r = result;
                     r.context = r.context.with_state(new_state);
                     (Some(current_loc), r)
@@ -403,7 +412,7 @@ fn interpret_generator_type(
     // Update global state:
     //   - Register the type entry for new_id with the definition complex
     //   - Update the module complex
-    let new_state = context_after.state.clone()
+    let new_state = (*context_after.state).clone()
         .set_type(new_id, CellData::Zero, definition_with_identity)
         .set_module(module_id2.clone(), updated_module.clone());
     result.context = result.context.with_state(new_state);
@@ -494,7 +503,7 @@ fn interpret_include_module_instr(
 
     // Interpret the included module with a fresh module_id
     let included_module_id: ModuleId = canonical_path.clone();
-    let include_context = Context::new(included_module_id.clone(), context.state.clone());
+    let include_context = Context::new_sharing_state(included_module_id.clone(), context);
     let include_result = interpret_program(&loader_for_module, include_context, &program);
 
     // Restore back to original module_id, carry over state
@@ -507,7 +516,7 @@ fn interpret_include_module_instr(
         return (None, result);
     }
 
-    let updated_state = include_result.context.state.clone();
+    let updated_state = &*include_result.context.state;  // &State borrow, avoids clone
 
     // Get the included module's complex
     let included_location = match updated_state.find_module(&included_module_id) {
@@ -560,7 +569,7 @@ fn interpret_include_module_instr(
     );
 
     // Update state
-    let final_state = updated_state.set_module(module_id, final_location.clone());
+    let final_state = updated_state.clone().set_module(module_id, final_location.clone());
     result.context = result.context.with_state(final_state);
 
     (Some(final_location), result)
@@ -599,22 +608,20 @@ fn interpret_c_block_local(
 ) -> (Option<Complex>, InterpResult) {
     let mut current_ns = namespace.clone();
     let mut acc_result = InterpResult::ok(context.clone());
-    let mut any_location: Option<Complex> = None;
 
     for instr in &block.value {
         let ctx = acc_result.context.clone();
         let (loc_opt, instr_result) = interpret_c_instr_local(&ctx, &current_ns, instr);
         acc_result = InterpResult::combine(acc_result, instr_result);
         if let Some(new_loc) = loc_opt {
-            current_ns = Namespace { root: current_ns.root, location: new_loc.clone() };
-            any_location = Some(new_loc);
+            current_ns = Namespace { root: current_ns.root, location: new_loc };  // no clone
         }
         if acc_result.has_errors() {
             break;
         }
     }
 
-    (any_location, acc_result)
+    (Some(current_ns.location), acc_result)
 }
 
 fn interpret_c_instr_local(
@@ -649,10 +656,10 @@ fn interpret_c_instr_local(
                     let new_location = location.clone().add_diagram(name.clone(), diagram.clone());
                     // Update root type complex
                     let root_complex = match context_after.state.find_type(root) {
-                        Some(te) => te.complex.clone().add_diagram(name, diagram),
+                        Some(te) => (*te.complex).clone().add_diagram(name, diagram),
                         None => return (None, result),
                     };
-                    let new_state = context_after.state.update_type_complex(root, root_complex);
+                    let new_state = (*context_after.state).clone().update_type_complex(root, root_complex);
                     let mut r = result;
                     r.context = r.context.with_state(new_state);
                     (Some(new_location), r)
@@ -681,10 +688,10 @@ fn interpret_c_instr_local(
                     }
                     let new_location = location.clone().add_morphism(name.clone(), domain.clone(), morphism.clone());
                     let root_complex = match context_after.state.find_type(root) {
-                        Some(te) => te.complex.clone().add_morphism(name, domain, morphism),
+                        Some(te) => (*te.complex).clone().add_morphism(name, domain, morphism),
                         None => return (None, result),
                     };
-                    let new_state = context_after.state.update_type_complex(root, root_complex);
+                    let new_state = (*context_after.state).clone().update_type_complex(root, root_complex);
                     let mut r = result;
                     r.context = r.context.with_state(new_state);
                     (Some(new_location), r)
@@ -820,7 +827,7 @@ fn interpret_complex(
         Some(te) => te.clone(),
     };
 
-    let initial_location = type_entry.complex.clone();
+    let initial_location = (*type_entry.complex).clone();
 
     match &complex.value.block {
         None => {
@@ -845,102 +852,121 @@ fn interpret_c_block(
     initial_location: &Complex,
     block: &CBlock,
 ) -> (Option<Complex>, InterpResult) {
-    let mut current_location = initial_location.clone();
-    let mut acc_result = InterpResult::ok(context.clone());
-    let mut any_location: Option<Complex> = None;
+    // Pass both context and location by value so:
+    //  - Arc::make_mut can mutate State in-place (from iteration 2+, refcount=1)
+    //  - Complex::add_* methods don't need a prior clone (location is owned)
+    let mut current_location: Complex = initial_location.clone();
+    let mut current_context: Context = context.clone();
+    let mut acc_report = Report::empty();
+    let mut acc_status = Status::Ok;
 
     for instr in &block.value {
-        let ctx = acc_result.context.clone();
-        let (loc_opt, instr_result) = interpret_c_instr(&ctx, mode, &current_location, instr);
-        acc_result = InterpResult::combine(acc_result, instr_result);
-        if let Some(new_loc) = loc_opt {
-            current_location = new_loc.clone();
-            any_location = Some(new_loc);
-        }
-        if acc_result.has_errors() {
-            continue; // keep processing
+        let (new_location, instr_result) =
+            interpret_c_instr(current_context, mode, current_location, instr);
+        current_location = new_location;
+        current_context = instr_result.context;
+        acc_report.append(instr_result.report);
+        if instr_result.status == Status::Error {
+            acc_status = Status::Error;
         }
     }
 
-    (any_location.or(Some(current_location)), acc_result)
+    let acc_result = InterpResult { context: current_context, report: acc_report, status: acc_status };
+    (Some(current_location), acc_result)
 }
 
 fn interpret_c_instr(
-    context: &Context,
+    context: Context,
     mode: Mode,
-    location: &Complex,
+    location: Complex,
     instr: &CInstr,
-) -> (Option<Complex>, InterpResult) {
+) -> (Complex, InterpResult) {
     match &instr.value {
         CInstrDesc::Generator(gen) => {
+            // Move both context and location into interpret_generator_instr so it can:
+            //  - use Arc::make_mut for in-place State mutation
+            //  - call add_generator/add_diagram without a prior clone of location
             interpret_generator_instr(context, mode, location, gen)
         }
         CInstrDesc::Dnamer(dnamer) => {
-            let (out, result) = interpret_dnamer(context, location, dnamer);
+            let (out, result) = interpret_dnamer(&context, &location, dnamer);
             match out {
-                None => (None, result),
+                None => (location, result),
                 Some((name, diagram)) => {
                     if location.name_in_use(&name) {
                         let span = span_or(dnamer.value.name.span.as_ref());
                         let mut r = result;
                         r.add_error(make_error_diag(span, format!("Diagram name already in use: {}", name)));
-                        return (None, r);
+                        return (location, r);
                     }
-                    let new_location = location.clone().add_diagram(name, diagram);
-                    (Some(new_location), result)
+                    // Consume owned location — no clone needed.
+                    let new_location = location.add_diagram(name, diagram);
+                    (new_location, result)
                 }
             }
         }
         CInstrDesc::Mnamer(mnamer) => {
-            let (out, result) = interpret_mnamer(context, location, mnamer);
+            let (out, result) = interpret_mnamer(&context, &location, mnamer);
             match out {
-                None => (None, result),
+                None => (location, result),
                 Some((name, morphism, domain)) => {
                     if location.name_in_use(&name) {
                         let span = span_or(mnamer.value.name.span.as_ref());
                         let mut r = result;
                         r.add_error(make_error_diag(span, format!("Map name already in use: {}", name)));
-                        return (None, r);
+                        return (location, r);
                     }
-                    let new_location = location.clone().add_morphism(name, domain, morphism);
-                    (Some(new_location), result)
+                    // Consume owned location — no clone needed.
+                    let new_location = location.add_morphism(name, domain, morphism);
+                    (new_location, result)
                 }
             }
         }
         CInstrDesc::Include(include_stmt) => {
-            interpret_include_instr(context, mode, location, include_stmt)
+            let (loc_opt, result) = interpret_include_instr(&context, mode, &location, include_stmt);
+            // Return updated location if successful, otherwise original (no clone either way).
+            (loc_opt.unwrap_or(location), result)
         }
         CInstrDesc::Attach(attach_stmt) => {
-            interpret_attach_instr(context, mode, location, attach_stmt)
+            let (loc_opt, result) = interpret_attach_instr(&context, mode, &location, attach_stmt);
+            (loc_opt.unwrap_or(location), result)
         }
     }
 }
 
 fn interpret_generator_instr(
-    context: &Context,
+    context: Context,
     mode: Mode,
-    location: &Complex,
+    location: Complex,
     gen: &Generator,
-) -> (Option<Complex>, InterpResult) {
+) -> (Complex, InterpResult) {
     let name = gen.value.name.value.clone();
     let name_span = span_or(gen.value.name.span.as_ref());
 
     if location.name_in_use(&name) {
-        let mut result = InterpResult::ok(context.clone());
+        let mut result = InterpResult::ok(context);
         result.add_error(make_error_diag(name_span, format!("Generator name already in use: {}", name)));
-        return (None, result);
+        return (location, result);
     }
 
+    // Borrow context for boundary interpretation, then drop it so that
+    // result.context.state has Arc refcount=1, enabling in-place mutation below.
     let (boundaries, mut result) = match &gen.value.boundaries {
-        None => (CellData::Zero, InterpResult::ok(context.clone())),
+        None => {
+            // Move context directly into the result (no extra Arc clone).
+            (CellData::Zero, InterpResult::ok(context))
+        }
         Some(bounds) => {
-            let (bopt, r) = interpret_boundaries(context, location, bounds);
+            let (bopt, r) = interpret_boundaries(&context, &location, bounds);
+            // Drop the original context so the Arc refcount falls to 1 in r.context.
+            drop(context);
             match bopt {
-                None => return (None, r),
+                None => return (location, r),
                 Some(b) => (b, r),
             }
         }
     };
+    // `context` is no longer accessible (moved or dropped above).
 
     let dim = match &boundaries {
         CellData::Zero => 0,
@@ -968,11 +994,13 @@ fn interpret_generator_instr(
         Err(e) => {
             result.add_error(make_error_diag(bounds_span,
                 format!("Failed to create generator cell: {}", e)));
-            return (None, result);
+            return (location, result);
         }
     };
 
-    let mut new_location = location.clone()
+    // Consume owned location — add_generator/add_diagram take self by value,
+    // so no clone is needed.
+    let mut new_location = location
         .add_generator(name.clone(), classifier.clone())
         .add_diagram(name.clone(), classifier.clone());
 
@@ -981,11 +1009,12 @@ fn interpret_generator_instr(
     }
 
     if let (Mode::Global, Some(id)) = (mode, new_id_opt) {
-        let new_state = result.context.state.clone().set_cell(id, dim, boundaries);
-        result.context = result.context.with_state(new_state);
+        // Use Arc::make_mut for in-place mutation when the Arc is unique (refcount=1),
+        // which is the case from the second generator onward in a block.
+        Arc::make_mut(&mut result.context.state).set_cell_mut(id, dim, boundaries);
     }
 
-    (Some(new_location), result)
+    (new_location, result)
 }
 
 fn interpret_include_instr(
@@ -1017,7 +1046,7 @@ fn interpret_include_instr(
                 format!("Type {} not found in global record", id)));
             return (None, r);
         }
-        Some(te) => te.complex.clone(),
+        Some(te) => (*te.complex).clone(),
     };
 
     // Copy generators from subtype into current location with name prefix
@@ -1084,7 +1113,7 @@ fn interpret_attach_instr(
                 format!("Type {} not found in global record", attachment_id)));
             return (None, r);
         }
-        Some(te) => te.complex.clone(),
+        Some(te) => (*te.complex).clone(),
     };
 
     let mut generators: Vec<(usize, LocalId, Tag)> = attachment.generator_names()
@@ -1094,16 +1123,8 @@ fn interpret_attach_instr(
     generators.sort_by_key(|(dim, _, _)| *dim);
 
     let mut current_location = location.clone();
-    let mut current_state = context_after.state.clone();
-    let mut entries: Vec<(Tag, usize, CellData, Diagram)> =
-        morphism.domain().into_iter().filter_map(|tag| {
-            let e = morphism.image(&tag).ok()?;
-            let dim = morphism.dim_of(&tag).ok()?;
-            let cd = morphism.cell_data(&tag).ok()?;
-            Some((tag, dim, cd.clone(), e.clone()))
-        }).collect();
-    let mut cellular = morphism.is_cellular();
-    let mut current_morphism = Morphism::of_entries(entries.clone(), cellular);
+    let mut current_state = (*context_after.state).clone();
+    let mut current_morphism = morphism.clone();
 
     for (gen_dim, gen_name, gen_tag) in &generators {
         if current_morphism.is_defined_at(gen_tag) {
@@ -1141,17 +1162,14 @@ fn interpret_attach_instr(
             else if gen_name_str.is_empty() { base_name.to_owned() }
             else { format!("{}.{}", base_name, gen_name_str) };
 
-        let (image_tag, new_loc) = match mode {
+        // Compute image_tag without cloning current_location.
+        let image_tag = match mode {
             Mode::Global => {
                 let image_id = GlobalId::fresh();
                 current_state = current_state.set_cell(image_id, *gen_dim, image_cell_data.clone());
-                (Tag::Global(image_id), current_location.clone())
+                Tag::Global(image_id)
             }
-            Mode::Local => {
-                let loc = current_location.clone()
-                    .add_local_cell(combined.clone(), *gen_dim, image_cell_data.clone());
-                (Tag::Local(combined.clone()), loc)
-            }
+            Mode::Local => Tag::Local(combined.clone()),
         };
 
         let image_classifier = match Diagram::cell(image_tag.clone(), &image_cell_data) {
@@ -1159,10 +1177,15 @@ fn interpret_attach_instr(
             Err(_) => continue,
         };
 
-        current_location = new_loc.add_generator(combined.clone(), image_classifier.clone());
+        // Update current_location in-place (no clone) using owned value.
+        current_location = match mode {
+            Mode::Global => current_location.add_generator(combined.clone(), image_classifier.clone()),
+            Mode::Local => current_location
+                .add_local_cell(combined.clone(), *gen_dim, image_cell_data.clone())
+                .add_generator(combined.clone(), image_classifier.clone()),
+        };
 
-        entries.push((gen_tag.clone(), *gen_dim, gen_cell_data, image_classifier));
-        current_morphism = Morphism::of_entries(entries.clone(), cellular);
+        current_morphism.insert_raw(gen_tag.clone(), *gen_dim, gen_cell_data, image_classifier);
     }
 
     let final_location = current_location.add_morphism(name, domain, current_morphism);
@@ -1354,7 +1377,7 @@ fn interpret_attach(
         }
         Some(m_def) => {
             let source = match context_after.state.find_type(id) {
-                Some(te) => te.complex.clone(),
+                Some(te) => (*te.complex).clone(),
                 None => {
                     let span = span_or(attach_stmt.span.as_ref());
                     let mut r = addr_result;
@@ -1407,7 +1430,7 @@ fn interpret_morphism(
                 None => (None, left_result),
                 Some(left_comp) => {
                     let (right_opt, right_result) = interpret_m_comp(
-                        &left_result.context, &left_comp.source, right
+                        &left_result.context, &*left_comp.source, right
                     );
                     let combined = InterpResult::combine(left_result, right_result);
                     match right_opt {
@@ -1444,7 +1467,7 @@ fn interpret_m_comp(
                     let source = match &entry.domain {
                         MorphismDomain::Type(id) => {
                             match context.state.find_type(*id) {
-                                Some(te) => te.complex.clone(),
+                                Some(te) => Arc::clone(&te.complex),
                                 None => return {
                                     let mut r = base_result;
                                     r.add_error(make_error_diag(span, format!("Type {} not found", id)));
@@ -1453,8 +1476,8 @@ fn interpret_m_comp(
                             }
                         }
                         MorphismDomain::Module(mid) => {
-                            match context.state.find_module(mid) {
-                                Some(m) => m.clone(),
+                            match context.state.find_module_arc(mid) {
+                                Some(m) => m,
                                 None => return {
                                     let mut r = base_result;
                                     r.add_error(make_error_diag(span, format!("Module `{}` not found", mid)));
@@ -1480,15 +1503,16 @@ fn interpret_m_term(
     match ns_opt {
         None => (None, complex_result),
         Some(namespace) => {
-            let source = namespace.location;
+            let source_complex = namespace.location;
             let ext_node = &m_term.value.ext;
             let (ext_opt, ext_result) = interpret_m_ext(
-                &complex_result.context, location, &source, ext_node
+                &complex_result.context, location, &source_complex, ext_node
             );
             let combined = InterpResult::combine(complex_result, ext_result);
             match ext_opt {
                 None => (None, combined),
                 Some(morphism) => {
+                    let source = Arc::new(source_complex);
                     (Some(MorphismComponent { morphism, source }), combined)
                 }
             }
@@ -1509,7 +1533,7 @@ fn interpret_m_ext(
         None => {
             (Some(MorphismComponent {
                 morphism: Morphism::init().unwrap(),
-                source: source.clone(),
+                source: Arc::new(source.clone()),
             }), InterpResult::ok(context.clone()))
         }
         Some(morph_node) => interpret_morphism(context, location, morph_node),
@@ -1526,7 +1550,7 @@ fn interpret_m_ext(
                 None => (Some(morphism), prefix_result),
                 Some(block_node) => {
                     let (block_opt, block_result) = interpret_m_block(
-                        &prefix_result.context, location, source, &morphism, block_node
+                        &prefix_result.context, location, source, morphism, block_node
                     );
                     let combined = InterpResult::combine(prefix_result, block_result);
                     (block_opt, combined)
@@ -1540,15 +1564,15 @@ fn interpret_m_block(
     context: &Context,
     location: &Complex,
     source: &Complex,
-    initial_morphism: &Morphism,
+    initial_morphism: Morphism,
     m_block: &MBlock,
 ) -> (Option<Morphism>, InterpResult) {
-    let mut current_morphism = initial_morphism.clone();
+    let mut current_morphism = initial_morphism;
     let mut acc_result = InterpResult::ok(context.clone());
 
     for instr in &m_block.value {
         let ctx = acc_result.context.clone();
-        let (m_opt, instr_result) = interpret_m_instr(&ctx, location, source, &current_morphism, instr);
+        let (m_opt, instr_result) = interpret_m_instr(&ctx, location, source, current_morphism, instr);
         acc_result = InterpResult::combine(acc_result, instr_result);
         match m_opt {
             None => return (None, acc_result),
@@ -1565,7 +1589,7 @@ fn interpret_m_instr(
     context: &Context,
     location: &Complex,
     source: &Complex,
-    morphism: &Morphism,
+    morphism: Morphism,
     m_instr: &MInstr,
 ) -> (Option<Morphism>, InterpResult) {
     let span = span_or(m_instr.span.as_ref());
@@ -1585,7 +1609,7 @@ fn interpret_m_instr(
                             // Use smart_extend to map left -> right
                             match smart_extend(
                                 &combined.context,
-                                morphism,
+                                morphism,  // moved (owned)
                                 source,
                                 location,
                                 &left_diag,
@@ -1618,7 +1642,7 @@ fn interpret_m_instr(
                             generators.sort_by_key(|(dim, _, _)| *dim);
 
                             let ctx_after = combined.context.clone();
-                            let mut extended_morphism = morphism.clone();
+                            let mut extended_morphism = morphism;
                             let mut r = combined;
 
                             for (dim, gen_name, tag) in &generators {
@@ -1661,7 +1685,7 @@ fn interpret_m_instr(
                                         };
                                         match smart_extend(
                                             &ctx_after,
-                                            &extended_morphism,
+                                            extended_morphism,
                                             source,
                                             location,
                                             &left_cell_diag,
@@ -1724,7 +1748,7 @@ fn interpret_m_instr(
 /// recursively extending for boundary cells as needed.
 fn smart_extend(
     context: &Context,
-    morphism: &Morphism,
+    morphism: Morphism,
     source: &Complex,
     target: &Complex,
     source_diag: &Diagram,
@@ -1743,7 +1767,7 @@ fn smart_extend(
     if morphism.is_defined_at(&tag) {
         let current = morphism.image(&tag)?;
         if Diagram::isomorphic(current, target_diag) {
-            return Ok(morphism.clone());
+            return Ok(morphism);
         } else {
             return Err(Error::new("The same generator is mapped to multiple diagrams"));
         }
@@ -1773,7 +1797,7 @@ fn smart_extend(
         }
     };
 
-    let mut current = morphism.clone();
+    let mut current = morphism;
 
     // Recursively extend for missing boundary tags
     for (focus, sign) in &missing {
@@ -1798,7 +1822,7 @@ fn smart_extend(
 
         if source_boundary.is_cell() {
             let sub_source = &source_boundary;
-            current = smart_extend(context, &current, source, target, sub_source, &target_boundary, span.clone())?;
+            current = smart_extend(context, current, source, target, sub_source, &target_boundary, span.clone())?;
         } else {
             // Try to determine the image by isomorphism
             match crate::core::ogposet::isomorphism_of(&source_boundary.shape, &target_boundary.shape) {
@@ -1859,14 +1883,14 @@ fn smart_extend(
                         None => continue,
                     };
 
-                    current = smart_extend(context, &current, source, target, &focus_source, &d_focus, span.clone())?;
+                    current = smart_extend(context, current, source, target, &focus_source, &d_focus, span.clone())?;
                 }
             }
         }
     }
 
     // Extend with the main tag
-    Morphism::extend(&current, tag, dim, cell_data, target_diag.clone())
+    Morphism::extend(current, tag, dim, cell_data, target_diag.clone())
 }
 
 fn get_cell_data(context: &Context, source: &Complex, tag: &Tag) -> Option<CellData> {
@@ -2043,7 +2067,7 @@ fn interpret_d_expr(
                 Some(Term::MTerm(mc)) => {
                     // apply morphism to right operand
                     let (comp_opt, comp_result) = interpret_d_comp(
-                        &left_result.context, &mc.source, right
+                        &left_result.context, &*mc.source, right
                     );
                     let combined = InterpResult::combine(left_result, comp_result);
                     match comp_opt {
@@ -2104,15 +2128,15 @@ fn interpret_d_comp(
             if let Some(entry) = location.find_morphism(name) {
                 let source = match &entry.domain {
                     MorphismDomain::Type(id) => match context.state.find_type(*id) {
-                        Some(te) => te.complex.clone(),
+                        Some(te) => Arc::clone(&te.complex),
                         None => {
                             let mut r = base_result;
                             r.add_error(make_error_diag(span, format!("Type {} not found", id)));
                             return (None, r);
                         }
                     },
-                    MorphismDomain::Module(mid) => match context.state.find_module(mid) {
-                        Some(m) => m.clone(),
+                    MorphismDomain::Module(mid) => match context.state.find_module_arc(mid) {
+                        Some(m) => m,
                         None => {
                             let mut r = base_result;
                             r.add_error(make_error_diag(span, format!("Module `{}` not found", mid)));
@@ -2398,7 +2422,7 @@ fn interpret_mnamer(
                         format!("Type {} not found", id)));
                     return (None, r);
                 }
-                Some(te) => te.complex.clone(),
+                Some(te) => (*te.complex).clone(),
             };
             let (m_opt, m_result) = interpret_m_def(&context_after, location, &source, &mnamer.value.definition);
             let combined = InterpResult::combine(addr_result, m_result);
