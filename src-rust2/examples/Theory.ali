@@ -1,0 +1,52 @@
+(* Helper for monoidal theories *)
+
+@Type
+
+(* Equation between functions *)
+Equation <<= {
+  pt,
+  dom: pt -> pt,
+  cod: pt -> pt,
+  lhs: dom -> cod,
+  rhs: dom -> cod,
+  dir: lhs -> rhs,
+  inv: rhs -> lhs
+};
+
+(* Set with an attached identity function *)
+Set <<= {
+  pt,
+  set: pt -> pt,
+  id: set -> set,
+  attach Id_id :: Equation along [
+    lhs => id id,
+    rhs => id
+  ]
+};
+
+(* Function between Sets *)
+Function <<= {
+  pt,
+  attach Dom :: Set along [ pt => pt ],
+  attach Cod :: Set along [ pt => pt ],
+  let dom = Dom.set,
+  let cod = Cod.set,
+  fun: dom -> cod,
+  attach Id_fun :: Equation along [
+    lhs => Dom.id fun,
+    rhs => fun
+  ],
+  attach Fun_id :: Equation along [
+    lhs => fun Cod.id,
+    rhs => fun
+  ]
+}
+
+@Set
+def Id :: Function = [
+  Dom => Set,
+  Cod => Set,
+  fun => id,
+  Id_fun => Id_id,
+  Fun_id => Id_id
+]

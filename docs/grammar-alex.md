@@ -77,24 +77,26 @@
 <AssertStmt> ::= "assert" <Diagram> "=" <Diagram>
 
 -- a diagram is either
--- * a concatenation of expressions
--- * a diagram composed along a dimension with a concatenation of expressions
--- ... a Component is something which can be part of a dotted expression
-<Diagram> ::= <DConcat> | <Diagram> "#" <Nat> <DConcat>
-<DConcat> ::= <DExpr> | <DConcat> <DExpr>
+-- * a concatenation of explicit pastings
+-- * each of which is a concatenation of implicit pastings
+-- * each part of which is a dotted series of components
+-- * which are either names, boundaries (+ or -), (diagrams), or holes
+<Diagram> ::= <DPrincipal> | <Diagram> "#" <Nat> <DPrincipal>
+<DPrincipal> ::= <DExpr> | <DPrincipal> <DExpr>
 <DExpr> ::= <DComponent> | <DExpr> "." <DComponent>
-<DComponent> ::= <PMAnonymous> | "(" <Diagram> ")" | <Name> | <Bd> | "?"
+<DComponent> ::= <Name> | <Bd> | "(" <Diagram> ")" | "?"
 <Bd> ::= "in" | "out"
 
 -- A _partial map_ is either
 -- * a name of a previously defined partial map, or
--- * a _system_
+-- * a system
 
-<PMap> ::= <Name> | <PMSystem> 
+<PMap> ::= <PMapBasic> [ "." <PMap> ]
+<PMapBasic> ::= <Name> | <PMSystem> 
 
--- A _system_ is given by a non-empty sequence of clauses.
+-- A _system_ is given by a non-empty sequence of defining clauses.
 -- It potentially extends another partial map.
 
 <PMSystem> ::= [ <PMap> ] "[" [ <PMapClauses> ] "]"
-<PMapClauses> ::= <PMapClause> { "," <PMapClauses> }
+<PMapClauses> ::= <PMapClause> { "," <PMapClause> }
 <PMapClause> ::= <Diagram> "=>" <Diagram>

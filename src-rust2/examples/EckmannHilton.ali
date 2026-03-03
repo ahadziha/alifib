@@ -1,0 +1,39 @@
+(* Eckmann-Hilton argument *)
+
+@Type
+include Theory;
+include Semigroup;
+let Eq = Theory.Equation;
+
+(* Two monoids on the same carrier with the same unit. *)
+Two_monoids <<= {
+  pt,
+  attach Set :: Theory.Set along [ pt => pt ],
+  attach M1 :: Semigroup.Semigroup along [ Set => Set ],
+  attach M2 :: Semigroup.Semigroup along [ Set => Set ],
+  let set = Set.set,
+  let id  = Set.id,
+  let mul1 = M1.merge,
+  let mul2 = M2.merge
+};
+
+(* Eckmann-Hilton conclusion. *)
+EH_conclusion <<= Two_monoids {
+  attach Ops_eq :: Eq along [
+    lhs => mul1,
+    rhs => mul2
+  ],
+  swap : set set -> set set,
+  attach Commute :: Eq along [
+    lhs => swap mul1,
+    rhs => mul1
+  ]
+};
+
+(* Eckmann-Hilton with braiding. *)
+EH_braided <<= EH_conclusion {
+  attach YBE :: Eq along [
+    lhs => (swap set)(set swap)(swap set),
+    rhs => (set swap)(swap set)(set swap)
+  ]
+}
