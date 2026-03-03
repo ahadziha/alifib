@@ -3,6 +3,10 @@ mod helper;
 mod interpreter;
 mod language;
 
+use mimalloc::MiMalloc;
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
+
 use interpreter::session::{Loader, SessionStatus, run as session_run};
 use language::{
     ast_pp::program_to_string,

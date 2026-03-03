@@ -278,16 +278,16 @@ impl Diagram {
                     let inr_inv_d = &inr.inv[d];
                     cofaces_in.push((0..n).map(|idx| {
                         if inl_inv_d.get(idx).copied().unwrap_or(ogposet::NO_PREIMAGE) != ogposet::NO_PREIMAGE {
-                            std::collections::BTreeSet::from([0])
+                            vec![0usize]
                         } else {
-                            crate::core::ogposet::IntSet::new()
+                            vec![]
                         }
                     }).collect());
                     cofaces_out.push((0..n).map(|idx| {
                         if inr_inv_d.get(idx).copied().unwrap_or(ogposet::NO_PREIMAGE) != ogposet::NO_PREIMAGE {
-                            std::collections::BTreeSet::from([0])
+                            vec![0usize]
                         } else {
-                            crate::core::ogposet::IntSet::new()
+                            vec![]
                         }
                     }).collect());
                 }
@@ -295,12 +295,12 @@ impl Diagram {
                 // dim == d+1: single new cell
                 let inl_map_d = &inl.map[d];
                 let inr_map_d = &inr.map[d];
-                let faces_in_set: crate::core::ogposet::IntSet = inl_map_d.iter().copied().collect();
-                let faces_out_set: crate::core::ogposet::IntSet = inr_map_d.iter().copied().collect();
+                let faces_in_set = crate::core::ogposet::collect_sorted(inl_map_d.iter().copied());
+                let faces_out_set = crate::core::ogposet::collect_sorted(inr_map_d.iter().copied());
                 faces_in.push(vec![faces_in_set]);
                 faces_out.push(vec![faces_out_set]);
-                cofaces_in.push(vec![crate::core::ogposet::IntSet::new()]);
-                cofaces_out.push(vec![crate::core::ogposet::IntSet::new()]);
+                cofaces_in.push(vec![vec![]]);
+                cofaces_out.push(vec![vec![]]);
             }
         }
 

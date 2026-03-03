@@ -10,6 +10,7 @@ path = "src/main.rs"
 [dependencies]
 chumsky = "0.9"
 ariadne = "0.4"
+mimalloc = { version = "0.1", default-features = false }
 
 [profile.release]
 opt-level = 3
