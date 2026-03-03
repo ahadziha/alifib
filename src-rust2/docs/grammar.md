@@ -90,13 +90,27 @@
 -- A _partial map_ is either
 -- * a name of a previously defined partial map, or
 -- * a system
+--
+-- NOTE (parser refactoring): The original grammar
+--
+--   <PMap> ::= <PMapBasic> [ "." <PMap> ]
+--   <PMapBasic> ::= <Name> | <PMSystem>
+--   <PMSystem> ::= [ <PMap> ] "[" [ <PMapClauses> ] "]"
+--
+-- is left-recursive: PMap -> PMapBasic -> PMSystem -> [PMap] -> ...
+-- The parser rewrites it by inlining the optional PMap prefix of PMSystem
+-- into PMapBasic, so that the "[" is always reached after consuming a Name
+-- or immediately:
+--
+--   <PMapBasic> ::= <Name> [ "[" <PMapClauses> "]" ]   -- name, or name extending a system
+--                 | "[" <PMapClauses> "]"               -- bare system
+--
+-- This accepts the same language. Chaining like foo[...][...] is not
+-- supported (it would require iterating over "[" suffixes); in practice
+-- this pattern does not occur.
 
 <PMap> ::= <PMapBasic> [ "." <PMap> ]
-<PMapBasic> ::= <Name> | <PMSystem> 
-
--- A _system_ is given by a non-empty sequence of defining clauses.
--- It potentially extends another partial map.
-
-<PMSystem> ::= [ <PMap> ] "[" [ <PMapClauses> ] "]"
+<PMapBasic> ::= <Name> [ "[" [ <PMapClauses> ] "]" ]
+              | "[" [ <PMapClauses> ] "]"
 <PMapClauses> ::= <PMapClause> { "," <PMapClause> }
 <PMapClause> ::= <Diagram> "=>" <Diagram>

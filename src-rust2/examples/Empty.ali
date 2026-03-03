@@ -1,0 +1,6 @@
+@Type
+C <<= { c };
+D <<= C;
+E <<= { e, def f :: C = [ c => e ] }
+@E
+def g :: D = f
