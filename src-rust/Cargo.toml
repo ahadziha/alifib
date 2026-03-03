@@ -1,0 +1,15 @@
+[package]
+name = "alifib"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "alifib"
+path = "src/main.rs"
+
+[dependencies]
+chumsky = "0.9"
+ariadne = "0.4"
+
+[profile.release]
+opt-level = 3
