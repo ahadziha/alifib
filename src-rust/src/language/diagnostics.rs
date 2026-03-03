@@ -4,16 +4,12 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
     Error,
-    Warning,
-    Info,
 }
 
 impl fmt::Display for Severity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Error   => write!(f, "error"),
-            Self::Warning => write!(f, "warning"),
-            Self::Info    => write!(f, "info"),
+            Self::Error => write!(f, "error"),
         }
     }
 }
@@ -47,21 +43,6 @@ impl Diagnostic {
 
     pub fn error(producer: Producer, span: Span, message: impl Into<String>) -> Self {
         Self::new(Severity::Error, producer, span, message)
-    }
-
-    pub fn with_note(mut self, note: impl Into<String>) -> Self {
-        self.error.notes.push(note.into());
-        self
-    }
-
-    pub fn with_detail(mut self, detail: impl Into<String>) -> Self {
-        self.details.push(detail.into());
-        self
-    }
-
-    pub fn with_code(mut self, code: impl Into<String>) -> Self {
-        self.code = Some(code.into());
-        self
     }
 
     pub fn is_error(&self) -> bool {
@@ -105,10 +86,6 @@ impl Report {
         self.0.append(&mut other.0);
     }
 
-    pub fn diagnostics(&self) -> &[Diagnostic] {
-        &self.0
-    }
-
     pub fn has_errors(&self) -> bool {
         self.0.iter().any(|d| d.is_error())
     }
@@ -129,11 +106,6 @@ impl fmt::Display for Report {
         }
         Ok(())
     }
-}
-
-/// Create an interpreter-phase producer for a given module.
-pub fn interpreter_producer(module_path: Option<String>) -> Producer {
-    Producer { phase: Phase::Interpreter, module_path }
 }
 
 pub fn parser_producer() -> Producer {

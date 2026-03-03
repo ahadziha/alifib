@@ -4,13 +4,6 @@ use super::token::{CommaOrigin, Keyword, Token};
 pub type LexError = Simple<char>;
 pub type Spanned<T> = (T, std::ops::Range<usize>);
 
-/// Lex the input string into a sequence of (Token, span) pairs.
-/// Whitespace and comments are skipped, but newlines produce implicit commas
-/// in positions where the grammar allows them.
-pub fn lex(src: &str) -> (Vec<Spanned<Token>>, Vec<LexError>) {
-    lex_with_implicit_commas(src)
-}
-
 /// Scan the source text and inject implicit comma tokens wherever a newline
 /// appears between two tokens that could be separated by a comma.
 pub fn lex_with_implicit_commas(src: &str) -> (Vec<Spanned<Token>>, Vec<LexError>) {

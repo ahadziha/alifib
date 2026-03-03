@@ -1,64 +1,80 @@
--- the basic identifiers are made of alphanumeric characters
+-- The basic identifiers are made of alphanumeric characters
 
 <Nat> ::= 0 | [1-9][0-9]*
 <Name> ::= [A-Za-z0-9_][A-Za-z0-9_]*
 
--- addresses name complexes
--- they are dot-qualified series of identifiers
+-- Addresses name complexes. They are dot-qualified series of identifiers.
 
 <Address> ::= <Name> { "." <Name> }
 
--- a program is a series of blocks
+-- A boundary is of the form (diagram) -> (diagram), to be defined later.
+-- Sometimes names come with boundaries.
+
+<Boundary> ::= <Diagram> "->" <Diagram>
+<NameWithBoundary> ::= <Name> [ ":" <Boundary> ]
+
+-- We will often make use of local definitions of _diagrams_ and _maps.
+
+<LetDiag> ::= "let" <Name> [ ":" <Boundary> ] "=" <Diagram>
+<DefPMap> ::= "def" <Name> "::" <Address> "=" <PMap>
+
+-- A program is a (potentially empty) series of blocks
+
 <Program> ::= { <Block> }
 
--- a block is either 
--- * a declaration of a type block, followed by an optional type block body
--- * a declaration of a complex block, followed by an optional local block body
+-- A block is either 
+-- * A _type block_, followed by a body (optionally)
+-- * A _local block_ (at a complex), followed by its body
+
 <Block> ::= "@" "Type" [ <TypeBlock> ] | "@" <Complex> [ <LocalBlock> ]
 
--- a type block is a series of type instructions, i.e.
--- * a generator instruction, assigning a complex to a name
+-- A _type block_ is a series of type instructions:
+
+<TypeBlock> ::= <TypeInst> { ";" <TypeInst> }
+
+-- A _type instruction_ adds global complexes. It can be:
+-- * a generator instruction, declaring a name (optionally with a boundary) to stand for a complex
 -- * a local definition of a diagram
--- * a local definition of a morphism of diagrams
+-- * a local definition of a map
 -- * an inclusion of a module
 
-<TypeBlock> ::= <TypeInst> { "," <TypeInst> }
-<TypeInst> ::= <Generator> | <LetDiag> | <LetMor> | <IncludeModule>
+<TypeInst> ::= <Generator> | <LetDiag> | <DefPMap> | <IncludeModule>
 <Generator> ::= <NameWithBoundary> "<<=" <Complex>
-<NameWithBoundary> ::= <Name> [ ":" <Boundary> ]
 <IncludeModule> ::= "include" <Name> [ "as" <Name> ]
 
--- a complex is either
+-- A _complex_ is either
 -- * just an address (naming an existing complex)
--- * optionally an address, followed by a complex block
+-- * optionally an address, followed by a _complex block_
 
-<Complex> ::= <Address> | [ <Address> ] "{" [ <CBlock> ] "}"
+<Complex> ::= <Address> | [ <Address> ] "{" [ <ComplexBlock> ] "}"
 
--- a complex block is a series of complex instructions, i.e.
--- * a name with a boundary
--- * a local definition of a diagram
--- * a local definition of a morphism
--- * an include statement
--- * an attach statement
+-- A _complex block_ defines a new complex.
+-- It consists of a series of is a series of complex instructions:
 
-<CBlock> ::= <CInstr> { "," <CInstr> }
-<CInstr> ::= <NameWithBoundary> | <LetDiag> | <LetMor> | <AttachStmt> | <IncludeStmt>  
+<ComplexBlock> ::= <CInstr> { "," <CInstr> }
+
+-- A _complex instruction_ alters a block. It can be either:
+-- * A name with a boundary
+-- * A local definition of a diagram
+-- * A local definition of a Map
+-- * An attach statement (attaching a copy of a previously existing block)
+-- * An include statement (making another complex a subcomplex of this one)
+
+<CInstr> ::= <NameWithBoundary> | <LetDiag> | <DefPMap> | <AttachStmt> | <IncludeStmt>  
 <IncludeStmt> ::= "include" <Address> [ "as" <Name> ]
-<AttachStmt> ::= "attach" <Name> "::" <Address> [ "along" <MDef> ]
+<AttachStmt> ::= "attach" <Name> "::" <Address> [ "along" <PMap> ]
 
--- a local block is a series of local instructions
--- a local instruction is either
+-- A _local block_ is a series of local instructions
+
+<LocalBlock> ::= <LocalInst> { ";" <LocalInst> } 
+
+-- A _local instruction_ is either
 -- * a local definition of a diagram
--- * a local definition of a morphism
+-- * a local definition of a partial map
 -- * an assertion that two pastings are equal
 
-<LocalBlock> ::= <LocalInst> { "," <LocalInst> } 
-<LocalInst> ::= <LetDiag> | <LetMor> | <AssertStmt>
-<LetDiag> ::= "let" <Name> [ ":" <Boundary> ] "=" <Diagram>
-<AssertStmt> ::= "assert" <Pasting> "=" <Pasting>
-
--- A boundary is easy
-<Boundary> ::= <Diagram> "->" <Diagram>
+<LocalInst> ::= <LetDiag> | <DefPMap> | <AssertStmt>
+<AssertStmt> ::= "assert" <Diagram> "=" <Diagram>
 
 -- a diagram is either
 -- * a concatenation of expressions
@@ -67,23 +83,18 @@
 <Diagram> ::= <DConcat> | <Diagram> "#" <Nat> <DConcat>
 <DConcat> ::= <DExpr> | <DConcat> <DExpr>
 <DExpr> ::= <DComponent> | <DExpr> "." <DComponent>
-<DComponent> ::= <MTerm> | <DParens> | <Name> | <Bd> | "?"
-<DParens> ::= "(" <Diagram> ")"
+<DComponent> ::= <PMAnonymous> | "(" <Diagram> ")" | <Name> | <Bd> | "?"
 <Bd> ::= "in" | "out"
 
--- A pasting is either a diagram or a map
-<Pasting> ::= <Concat> | <Pasting> "#" <Nat> <Concat>
-<Concat> ::= <DExpr> | <Concat> <DExpr>
+-- A _partial map_ is either
+-- * a name of a previously defined partial map, or
+-- * a _system_
 
--- a morphism (= map, but OCaml...) is either
--- * 
-<Morphism> ::= <MComp> | <Morphism> "." <MComp>
-<MComp> ::= <MTerm> | <Name>
-<MTerm> ::= "(" "map" <MExt> "::" <Complex> ")"
-<MExt> ::= [ <Morphism> ] "[" [ <MBlock> ] "]"
-<MBlock> ::= <MInstr> { "," <MInstr> }
-<MInstr> ::= <Pasting> "=>" <Pasting>
+<PMap> ::= <Name> | <PMSystem> 
 
-<LetMor> ::= "let" <Name> "::" <Address> "=" <MDef>
-<MDef> ::= <Morphism> | <MExt>
+-- A _system_ is given by a non-empty sequence of clauses.
+-- It potentially extends another partial map.
 
+<PMSystem> ::= [ <PMap> ] "[" [ <PMapClauses> ] "]"
+<PMapClauses> ::= <PMapClause> { "," <PMapClauses> }
+<PMapClause> ::= <Diagram> "=>" <Diagram>

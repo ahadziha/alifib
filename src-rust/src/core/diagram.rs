@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use crate::helper::{Checked, Error, Tag};
 use super::ogposet::{self, Embedding, Ogposet, Sign as OgSign};
 
@@ -76,19 +75,6 @@ impl Diagram {
         }
     }
 
-    /// Collect all labels with their multiplicities.
-    pub fn label_set(&self) -> Vec<(Tag, usize)> {
-        let mut counts: HashMap<Tag, usize> = HashMap::new();
-        for level in &self.labels {
-            for tag in level {
-                *counts.entry(tag.clone()).or_insert(0) += 1;
-            }
-        }
-        let mut result: Vec<(Tag, usize)> = counts.into_iter().collect();
-        result.sort_by(|(a, _), (b, _)| a.cmp(b));
-        result
-    }
-
     pub fn has_local_labels(&self) -> bool {
         self.labels.iter().any(|level| level.iter().any(|t| t.is_local()))
     }
@@ -107,19 +93,6 @@ impl Diagram {
                 let pulled = pullback_labels(v, &iso);
                 labels_equal(&u.labels, &pulled)
             }
-        }
-    }
-
-    pub fn isomorphism_of(u: &Diagram, v: &Diagram) -> Checked<Embedding> {
-        if Diagram::equal(u, v) {
-            return Ok(Embedding::id(u.shape.clone()));
-        }
-        let iso = ogposet::isomorphism_of(&u.shape, &v.shape)?;
-        let pulled = pullback_labels(v, &iso);
-        if labels_equal(&u.labels, &pulled) {
-            Ok(iso)
-        } else {
-            Err(Error::new("labels do not match"))
         }
     }
 
@@ -178,10 +151,6 @@ impl Diagram {
         Ok((bd_u, e_u, e_v))
     }
 
-    pub fn parallel(u: &Diagram, v: &Diagram) -> bool {
-        Diagram::parallelism(u, v).is_ok()
-    }
-
     /// Check whether u and v can be pasted at level k.
     pub fn pastability(k: usize, u: &Diagram, v: &Diagram) -> Checked<(Ogposet, Embedding, Embedding)> {
         let dim_u = if u.shape.dim < 0 { 0 } else { u.shape.dim as usize };
@@ -197,10 +166,6 @@ impl Diagram {
             return Err(Error::new("boundaries do not match"));
         }
         Ok((out_u, e_u, e_v))
-    }
-
-    pub fn pastable(k: usize, u: &Diagram, v: &Diagram) -> bool {
-        Diagram::pastability(k, u, v).is_ok()
     }
 
     /// Paste u and v at level k.
@@ -318,7 +283,7 @@ impl Diagram {
                 base_labels[dim][target] = Some(v.labels[dim][idx].clone());
             }
         }
-        let mut labels_bd: Vec<Vec<Tag>> = base_labels.into_iter().map(|level| {
+        let labels_bd: Vec<Vec<Tag>> = base_labels.into_iter().map(|level| {
             level.into_iter().map(|opt| opt.unwrap()).collect()
         }).collect();
         let mut labels_uv: Vec<Vec<Tag>> = labels_bd;

@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 use crate::helper::{error::Error, GlobalId, LocalId, ModuleId, Tag};
 use crate::helper::positions::Span;
@@ -10,7 +9,7 @@ use crate::core::{
 };
 use crate::language::{
     ast::*,
-    diagnostics::{self, Diagnostic, Report, Severity},
+    diagnostics::{Diagnostic, Report},
 };
 
 // ---- Context ----
@@ -46,8 +45,6 @@ pub enum LoadError {
     NotFound,
     IoError(String),
 }
-
-pub type ReadFileFn = Box<dyn Fn(&str) -> Result<String, LoadError>>;
 
 #[derive(Clone)]
 pub struct FileLoader {
@@ -576,7 +573,7 @@ fn interpret_include_module_instr(
 }
 
 fn interpret_block_complex(
-    loader: &FileLoader,
+    _loader: &FileLoader,
     context: Context,
     complex: &Node<ComplexDesc>,
     local: Option<&CBlockLocal>,
@@ -720,10 +717,10 @@ fn interpret_c_instr_local(
 }
 
 fn check_assert(
-    context: &Context,
-    location: &Complex,
+    _context: &Context,
+    _location: &Complex,
     pair: &TermPair,
-    span: Span,
+    _span: Span,
 ) -> Result<(), String> {
     match pair {
         TermPair::DTermPair { fst, snd } => {
@@ -1019,7 +1016,7 @@ fn interpret_generator_instr(
 
 fn interpret_include_instr(
     context: &Context,
-    mode: Mode,
+    _mode: Mode,
     location: &Complex,
     include_stmt: &IncludeStatement,
 ) -> (Option<Complex>, InterpResult) {
@@ -1526,7 +1523,7 @@ fn interpret_m_ext(
     source: &Complex,
     m_ext: &MExt,
 ) -> (Option<Morphism>, InterpResult) {
-    let span = span_or(m_ext.span.as_ref());
+    let _span = span_or(m_ext.span.as_ref());
 
     // Parse prefix morphism
     let (morph_opt, prefix_result) = match &m_ext.value.prefix {
@@ -1645,7 +1642,7 @@ fn interpret_m_instr(
                             let mut extended_morphism = morphism;
                             let mut r = combined;
 
-                            for (dim, gen_name, tag) in &generators {
+                            for (_dim, gen_name, tag) in &generators {
                                 let defined_left = left_mc.morphism.is_defined_at(tag);
                                 let defined_right = right_mc.morphism.is_defined_at(tag);
 

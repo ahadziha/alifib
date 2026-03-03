@@ -13,7 +13,6 @@ pub struct TypeEntry {
 #[derive(Debug, Clone)]
 pub struct CellEntry {
     pub data: CellData,
-    pub dim: usize,
 }
 
 /// The global interpreter state.
@@ -32,14 +31,14 @@ impl State {
 
     pub fn set_cell(mut self, id: GlobalId, dim: usize, data: CellData) -> Self {
         self.cells_by_dim.entry(dim).or_default().push(id);
-        self.cells.insert(id, CellEntry { data, dim });
+        self.cells.insert(id, CellEntry { data });
         self
     }
 
     /// Mutate the state in place. Use via `Arc::make_mut` to avoid cloning.
     pub fn set_cell_mut(&mut self, id: GlobalId, dim: usize, data: CellData) {
         self.cells_by_dim.entry(dim).or_default().push(id);
-        self.cells.insert(id, CellEntry { data, dim });
+        self.cells.insert(id, CellEntry { data });
     }
 
     pub fn set_type(mut self, id: GlobalId, data: CellData, complex: Complex) -> Self {

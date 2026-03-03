@@ -25,7 +25,6 @@ pub struct MorphismEntry {
 #[derive(Debug, Clone)]
 pub struct LocalCellEntry {
     pub data: CellData,
-    pub dim: usize,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -136,7 +135,7 @@ impl Complex {
 
     pub fn add_local_cell(mut self, name: LocalId, dim: usize, data: CellData) -> Self {
         self.local_cells.by_dim.entry(dim).or_default().insert(name.clone());
-        self.local_cells.by_id.insert(name, LocalCellEntry { data, dim });
+        self.local_cells.by_id.insert(name, LocalCellEntry { data });
         self
     }
 
@@ -144,23 +143,9 @@ impl Complex {
         self.local_cells.by_id.get(name)
     }
 
-    pub fn local_cell_dim(&self, name: &str) -> Option<usize> {
-        self.local_cells.by_id.get(name).map(|e| e.dim)
-    }
-
-    pub fn local_cells_in_dim(&self, dim: usize) -> Vec<LocalId> {
-        self.local_cells.by_dim.get(&dim)
-            .map(|s| s.iter().cloned().collect())
-            .unwrap_or_default()
-    }
-
     // ---- Name management ----
 
     pub fn name_in_use(&self, name: &str) -> bool {
         self.used_names.contains(name)
-    }
-
-    pub fn used_names(&self) -> Vec<LocalId> {
-        self.used_names.iter().cloned().collect()
     }
 }

@@ -235,11 +235,6 @@ pub enum ConcatDesc {
     Concat { left: Box<Concat>, right: DExpr },
 }
 
-/// Utility: get a span from a Node if available.
-pub fn span_of<T>(node: &Node<T>) -> Option<&Span> {
-    node.span.as_ref()
-}
-
 /// Empty program
 pub fn empty_program() -> Program {
     Node::new(ProgramDesc { blocks: vec![] })

@@ -311,12 +311,6 @@ impl Ogposet {
         (0..n).all(|k| self.maximal(k).is_empty())
     }
 
-    /// True if pure and has exactly one top-dimensional cell.
-    pub fn is_atom(&self) -> bool {
-        if self.dim < 0 { return false; }
-        self.is_pure() && self.faces_in[self.dim as usize].len() == 1
-    }
-
     /// The ogposet is "round": input and output interiors at each dimension are disjoint.
     pub fn is_round(&self) -> bool {
         if self.dim <= 0 { return true; }
@@ -394,22 +388,6 @@ impl Embedding {
         Self { dom: Ogposet::empty(), cod, map: vec![], inv }
     }
 
-    pub fn compose(f: &Embedding, g: &Embedding) -> Embedding {
-        let map: Vec<Vec<usize>> = f.map.iter().enumerate().map(|(d, level)| {
-            level.iter().map(|&mid| g.map[d][mid]).collect()
-        }).collect();
-
-        let inv: Vec<Vec<usize>> = g.inv.iter().enumerate().map(|(d, g_inv_level)| {
-            g_inv_level.iter().map(|&mid| {
-                if mid == NO_PREIMAGE { return NO_PREIMAGE; }
-                if d >= f.inv.len() { return NO_PREIMAGE; }
-                let f_inv_level = &f.inv[d];
-                if mid >= f_inv_level.len() { NO_PREIMAGE } else { f_inv_level[mid] }
-            }).collect()
-        }).collect();
-
-        Embedding::make(f.dom.clone(), g.cod.clone(), map, inv)
-    }
 }
 
 // ---- Internal helpers ----
@@ -464,7 +442,7 @@ pub fn boundary(sign: Sign, k: usize, g: &Ogposet) -> (Ogposet, Embedding) {
     let mut inv_dom:  Vec<Vec<usize>> = (0..dims_b).map(|d| vec![NO_PREIMAGE; sizes_g[d]]).collect();
     let mut next_idx: Vec<usize>      = vec![0; dims_b];
 
-    let mut insert_f = |j: usize, old: usize,
+    let insert_f = |j: usize, old: usize,
                         acc: &mut Vec<Vec<usize>>,
                         inv_dom: &mut Vec<Vec<usize>>,
                         next_idx: &mut Vec<usize>| {
@@ -800,15 +778,6 @@ pub fn isomorphism_of(u: &Ogposet, v: &Ogposet) -> Checked<Embedding> {
     let inv = produce_rows(&e_v.inv, &e_u.map)?;
 
     Ok(Embedding::make(u.clone(), v.clone(), map, inv))
-}
-
-pub fn isomorphic(u: &Ogposet, v: &Ogposet) -> bool {
-    if u.dim != v.dim { return false; }
-    if u.sizes() != v.sizes() { return false; }
-    if Ogposet::equal(u, v) { return true; }
-    let (u_norm, _) = normalisation(u);
-    let (v_norm, _) = normalisation(v);
-    Ogposet::equal(&u_norm, &v_norm)
 }
 
 pub struct Pushout {

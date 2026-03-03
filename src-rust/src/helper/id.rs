@@ -11,9 +11,6 @@ impl GlobalId {
         Self(GLOBAL_COUNTER.fetch_add(1, Ordering::SeqCst))
     }
 
-    pub fn as_usize(self) -> usize {
-        self.0
-    }
 }
 
 impl std::fmt::Display for GlobalId {
@@ -36,21 +33,10 @@ pub enum Tag {
 }
 
 impl Tag {
-    pub fn of_local(name: impl Into<LocalId>) -> Self {
-        Self::Local(name.into())
-    }
-
-    pub fn of_global(id: GlobalId) -> Self {
-        Self::Global(id)
-    }
-
     pub fn is_local(&self) -> bool {
         matches!(self, Self::Local(_))
     }
 
-    pub fn is_global(&self) -> bool {
-        matches!(self, Self::Global(_))
-    }
 }
 
 impl PartialOrd for Tag {

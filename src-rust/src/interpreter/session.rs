@@ -1,11 +1,11 @@
 use crate::helper::path;
 use crate::core::state::State;
 use crate::language::{
-    diagnostics::{self, Diagnostic, Report, Severity},
+    diagnostics::{self, Diagnostic, Report},
     lexer::lex_with_implicit_commas,
     parser::parse,
 };
-use super::interpreter::{Context, FileLoader, InterpResult, LoadError, Status, interpret_program};
+use super::interpreter::{Context, FileLoader, LoadError, Status, interpret_program};
 
 // ---- Session status ----
 
@@ -76,23 +76,6 @@ impl Loader {
             .chain(extra_search_paths)
             .collect();
         Self::make(combined, read_file)
-    }
-
-    pub fn with_search_paths(mut self, paths: Vec<String>) -> Self {
-        self.inner.search_paths = path::normalize_search_paths(paths);
-        self
-    }
-
-    pub fn prepend_search_paths(mut self, paths: Vec<String>) -> Self {
-        let combined = paths.into_iter().chain(self.inner.search_paths).collect();
-        self.inner.search_paths = path::normalize_search_paths(combined);
-        self
-    }
-
-    pub fn append_search_paths(mut self, paths: Vec<String>) -> Self {
-        let combined: Vec<_> = self.inner.search_paths.into_iter().chain(paths).collect();
-        self.inner.search_paths = path::normalize_search_paths(combined);
-        self
     }
 
     pub fn file_loader(&self) -> &FileLoader {

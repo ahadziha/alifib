@@ -11,10 +11,6 @@ impl Error {
         Self { message: message.into(), notes: vec![] }
     }
 
-    pub fn with_notes(message: impl Into<String>, notes: Vec<String>) -> Self {
-        Self { message: message.into(), notes }
-    }
-
     pub fn with_note(mut self, note: impl Into<String>) -> Self {
         self.notes.push(note.into());
         self
@@ -35,7 +31,6 @@ pub type Checked<T> = Result<T, Error>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
-    Lexer,
     Parser,
     Driver,
     Interpreter,
@@ -44,7 +39,6 @@ pub enum Phase {
 impl Phase {
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::Lexer => "lexer",
             Self::Parser => "parser",
             Self::Driver => "driver",
             Self::Interpreter => "interpreter",

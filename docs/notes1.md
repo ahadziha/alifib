@@ -13,22 +13,22 @@
   a module itself is a complex whose cells are (small) complexes
   a complex is a "purely syntactic" cell complex
 
-- In a block `@X { ... }` any local definitions _will_ be added to `X`, but
-  _only_ if, when unfolded, they use _just_ generators of `X`, no local
-  generators found in `{ ... }`
+- [THIS IS BAD DON'T DO IT] In a block `@X { ... }` any local definitions _will_
+  be added to `X`, but _only_ if, when unfolded, they use _just_ generators of
+  `X`, no local generators found in `{ ... }`
 
 - In a module, complex cells are subcomplexes of the 'global' complex.
 
-- Named generators = name + reference to global cell
+- Named generators `X <<= ...` assign a complex to a name. Reassigning to a name
+  that's taken is illegal.
 
 - In local blocks, local defns do NOT get added to the global complex
 
 - An `include` statement in a complex block genuinely makes the complex a
   subcomplex of the current one.
 
-- Reassigning to a name that's taken is illegal.
 
-- Include shares, attach copies. For example
+- `include` shares, `attach` copies. For example
   ```
   @Type
   C <<= { c },
@@ -39,17 +39,17 @@
   ```
   is perfectly fine, but
   ```
-    @Type
-    C <<= { c },
-    D <<= { attach E :: C },
-    E <<= { e, let f :: C = [ c => e ] } 
-    @E
-    let g :: D = f
+  @Type
+  C <<= { c },
+  D <<= { attach E :: C },
+  E <<= { e, let f :: C = [ c => e ] } 
+  @E
+  let g :: D = f
   ```
   fails.
 
-- `D <<= { include C as E }` includes the generators of `C` but qualified as
-  `E`, wheras `D <<= C` does the same thing but without qualification
+- `D <<= { include C as E }` includes the generators of `C` but qualified by
+  `E`, whereas `D <<= C` does the same thing but without qualification
 
 - The main reason for `include` in a complex block is that it allows definition
   of a maps by extension: define it on the subcomplex first, then extend it to
@@ -134,3 +134,15 @@
       ```
       where one should think of `F` as the collage of a profunctor. Rewriting-wise
       these should be something like partial, nondeterministic transducers.
+
+- Implementation notes
+  - For every generator of a named complex there's a global unique id.
+  - There's a table (global unique ids) -> (molecule + labelling in ids). In fact
+    the only thing that matters is the boundaries.
+  - Every named complex is an isomorphism (named generators) <-> (unique ids).
+  - The domain of a map is a list of ids.
+  - Diagrams are stored as they are constructed. So for example interchange is
+    NOT strict equality. To check equality you need to traverse to normalize.
+    When stored there's a flag that records whether something has been
+    normalized before. Rewalt normalized every time and it was a huge
+    bottleneck.

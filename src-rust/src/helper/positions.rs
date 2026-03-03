@@ -2,10 +2,6 @@ use std::fmt;
 
 pub type Source = String;
 
-pub fn virtual_source(name: &str) -> Source {
-    format!("<{}>", name)
-}
-
 pub fn unknown_source() -> Source {
     "<unknown>".to_owned()
 }
@@ -36,30 +32,6 @@ impl Point {
         }
     }
 
-    /// Advance through the given text, updating line/column/offset
-    pub fn advance(&self, text: &str) -> Self {
-        let mut line = self.line;
-        let mut column = self.column;
-        let mut bol_offset = self.bol_offset;
-        let mut offset = self.offset;
-        for ch in text.chars() {
-            offset += ch.len_utf8();
-            if ch == '\n' {
-                line += 1;
-                column = 1;
-                bol_offset = offset;
-            } else {
-                column += 1;
-            }
-        }
-        Self {
-            source: self.source.clone(),
-            offset,
-            line,
-            column,
-            bol_offset,
-        }
-    }
 }
 
 impl PartialOrd for Point {
@@ -100,12 +72,6 @@ impl Span {
 
     pub fn unknown() -> Self {
         Self::point(Point::unknown())
-    }
-
-    pub fn merge(&self, other: &Span) -> Self {
-        let start = if self.start <= other.start { self.start.clone() } else { other.start.clone() };
-        let stop = if self.stop >= other.stop { self.stop.clone() } else { other.stop.clone() };
-        Self { start, stop }
     }
 
     pub fn length(&self) -> usize {

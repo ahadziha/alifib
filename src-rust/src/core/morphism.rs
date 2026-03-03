@@ -4,7 +4,6 @@ use super::diagram::{CellData, Diagram, PasteTree, Sign};
 
 #[derive(Debug, Clone)]
 pub struct Entry {
-    pub dim: usize,
     pub cell_data: CellData,
     pub image: Diagram,
 }
@@ -32,7 +31,7 @@ impl Morphism {
         let mut table = HashMap::with_capacity(entries.len());
         let mut by_dim: BTreeMap<usize, Vec<Tag>> = BTreeMap::new();
         for (tag, dim, cell_data, image) in entries {
-            table.insert(tag.clone(), Entry { dim, cell_data, image });
+            table.insert(tag.clone(), Entry { cell_data, image });
             by_dim.entry(dim).or_default().push(tag);
         }
         Morphism { table, by_dim, cellular }
@@ -42,42 +41,10 @@ impl Morphism {
         self.table.contains_key(tag)
     }
 
-    pub fn cell_data(&self, tag: &Tag) -> Checked<&CellData> {
-        self.table.get(tag)
-            .map(|e| &e.cell_data)
-            .ok_or_else(|| Error::new("not in the domain of definition"))
-    }
-
-    pub fn dim_of(&self, tag: &Tag) -> Checked<usize> {
-        self.table.get(tag)
-            .map(|e| e.dim)
-            .ok_or_else(|| Error::new("not in the domain of definition"))
-    }
-
     pub fn image(&self, tag: &Tag) -> Checked<&Diagram> {
         self.table.get(tag)
             .map(|e| &e.image)
             .ok_or_else(|| Error::new("not in the domain of definition"))
-    }
-
-    pub fn is_cellular(&self) -> bool {
-        self.cellular
-    }
-
-    pub fn domain(&self) -> Vec<Tag> {
-        self.table.keys().cloned().collect()
-    }
-
-    /// Return tags at a given dimension, in insertion order.
-    pub fn domain_in_dim(&self, dim: usize) -> Vec<Tag> {
-        match self.by_dim.get(&dim) {
-            Some(tags) => tags.iter().rev().cloned().collect(),
-            None => vec![],
-        }
-    }
-
-    pub fn dimensions(&self) -> Vec<usize> {
-        self.by_dim.keys().copied().collect()
     }
 
     /// Return all (dim, tags) pairs, tags in insertion order.
@@ -94,7 +61,7 @@ impl Morphism {
     pub fn insert_raw(&mut self, tag: Tag, dim: usize, cell_data: CellData, image: Diagram) {
         self.cellular = self.cellular && image.is_cell();
         self.by_dim.entry(dim).or_default().push(tag.clone());
-        self.table.insert(tag, Entry { dim, cell_data, image });
+        self.table.insert(tag, Entry { cell_data, image });
     }
 
     /// Extend the morphism with a new entry, checking boundary compatibility.
@@ -120,7 +87,7 @@ impl Morphism {
             match &cell_data {
                 CellData::Zero => {
                     let mut new_m = f;
-                    new_m.table.insert(tag.clone(), Entry { dim, cell_data, image });
+                    new_m.table.insert(tag.clone(), Entry { cell_data, image });
                     new_m.by_dim.entry(dim).or_default().push(tag);
                     Ok(new_m)
                 }
@@ -148,7 +115,7 @@ impl Morphism {
 
                     let cellular = f.cellular && image.is_cell();
                     let mut new_m = f;
-                    new_m.table.insert(tag.clone(), Entry { dim, cell_data, image });
+                    new_m.table.insert(tag.clone(), Entry { cell_data, image });
                     new_m.by_dim.entry(dim).or_default().push(tag);
                     new_m.cellular = cellular;
                     Ok(new_m)
@@ -216,7 +183,6 @@ impl Morphism {
                 };
                 cellular = cellular && image_gf.is_cell();
                 table.insert(tag.clone(), Entry {
-                    dim,
                     cell_data: f_entry.cell_data.clone(),
                     image: image_gf,
                 });

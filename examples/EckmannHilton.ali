@@ -12,9 +12,32 @@
  *   (mul2 o mul2) ; mul1  =  swap_23 ; (mul1 o mul1) ; mul2
  *
  * where swap_23 exchanges positions 2 and 3 of four wires (the middle-four
- * interchange). This requires a 4-wire operation, which the directed complex
- * framework does not support via single whiskering. We axiomatise the
- * conclusion of the argument directly instead.
+ * interchange).
+ *
+ * WHY THE PROOF CANNOT BE CARRIED OUT HERE:
+ *
+ * The LHS (mul2 o mul2) ; mul1 requires parallel composition of two non-thin
+ * 2-cells: (mul2 mul2) must be a round molecule of type set^4 -> set^2.
+ * In the directed complex framework this fails because the source boundaries
+ * of the two copies of mul2 do not paste into a round shape. Concretely, the
+ * test expression (mul2 mul2) mul1 is rejected with
+ * "Failed to paste diagrams: shapes of boundaries do not match".
+ *
+ * As a result, the interchange cannot be stated as an axiom and Ops_eq
+ * cannot be constructed as a derived 3-cell. EH_conclusion below axiomatises
+ * the consequences of the argument that the proof would establish.
+ *
+ * What the proof would look like (schematically, in the style of the argument):
+ *
+ *   mul1
+ *     ->^[M1.Right_id_merge.inv x M1.Left_id_merge.inv]
+ *   mul1 ((mul2 (set id)) x (mul2 (id set)))    [insert mul2-units, 4 wires]
+ *     ->^[interchange]
+ *   mul2 ((mul1 (set id)) x (mul1 (id set)))    [interchange, 4 wires]
+ *     ->^[M2.Right_id_merge.dir x M2.Left_id_merge.dir]
+ *   mul2                                         [cancel mul1-units]
+ *
+ * All three steps involve 4-wire intermediate terms.
  *
  * Applications:
  *   - pi_n(X, x) is abelian for n >= 2 (horizontal vs vertical path concat)
@@ -44,36 +67,36 @@ Two_monoids <<= {
 
 (* Eckmann-Hilton conclusion.
  *
- * The Eckmann-Hilton argument derives, from the interchange law + shared unit:
- *   (a) the operations coincide: mul1 = mul2
- *   (b) the coincident operation is commutative: mul o swap = mul
+ * The EH argument derives, from Two_monoids + the interchange law:
+ *   (a) the operations coincide: mul1 = mul2      [axiomatised as Ops_eq]
+ *   (b) the coincident operation is commutative   [axiomatised as Commute]
  *
- * We axiomatise these consequences. The directed 3-cell Ops_eq witnesses the
- * rewrite mul1 -> mul2; Commute witnesses commutativity via a braiding swap. *)
-EH_object <<= Two_monoids {
+ * Ops_eq is a directed 3-cell witnessing the rewrite mul1 -> mul2.
+ * Commute witnesses commutativity via a braiding swap.
+ *
+ * Note: commutativity of mul2 (swap mul2 = mul2) is NOT separately
+ * axiomatised here. Given Ops_eq and Commute it would follow by composing:
+ *   swap mul2 ->^[Ops_eq.inv] swap mul1 ->^[Commute.dir] mul1 ->^[Ops_eq.dir] mul2
+ * provided the system supports whiskering of 3-cells by 2-cells. *)
+EH_conclusion <<= Two_monoids {
   attach Ops_eq :: Eq along [
     lhs => mul1,
     rhs => mul2
   ],
   swap : set set -> set set,
-  attach Commute1 :: Eq along [
+  attach Commute :: Eq along [
     lhs => swap mul1,
     rhs => mul1
-  ],
-  attach Commute2 :: Eq along [
-    lhs => swap mul2,
-    rhs => mul2
   ]
 }
 
 (* Eckmann-Hilton with braiding.
  *
- * An EH_object whose commutativity witness satisfies the Yang-Baxter equation.
- * This is the natural ambient structure: in the homotopical interpretation,
- * the commutativity witness for pi_2 itself satisfies a coherence condition,
- * and the YBE is that coherence. Symmetric monoidal categories are the
- * canonical example. *)
-EH_braided <<= EH_object {
+ * An EH_conclusion whose commutativity witness satisfies the Yang-Baxter
+ * equation. In the homotopical interpretation, the commutativity witness for
+ * pi_2 itself satisfies a coherence condition, and the YBE is that coherence.
+ * Symmetric monoidal categories are the canonical example. *)
+EH_braided <<= EH_conclusion {
   attach YBE :: Eq along [
     lhs => (swap set)(set swap)(swap set),
     rhs => (set swap)(swap set)(set swap)
