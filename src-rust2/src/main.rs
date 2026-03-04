@@ -1,5 +1,6 @@
 mod aux;
 mod core;
+mod interpreter;
 mod language;
 
 use std::fs;
@@ -85,13 +86,32 @@ fn run_ast(input: &str, output: Option<&str>) -> bool {
 }
 
 fn run_interpreter(input: &str, output: Option<&str>) -> bool {
-    let _program = match read_and_parse(input) {
-        Ok(p) => p,
-        Err(()) => return false,
-    };
-    // TODO: interpret program
-    let _ = output;
-    eprintln!("Interpreter not yet implemented");
+    use interpreter::interpreter::{Loader, SessionStatus, run};
+
+    let loader = Loader::default(vec![]);
+    let result = run(&loader, input);
+
+    match result.status {
+        SessionStatus::LoadError => {
+            eprintln!("error: could not load `{}`", input);
+            return false;
+        }
+        SessionStatus::ParserError => {
+            language::report_errors(&result.errors, &result.source, &result.filename);
+            return false;
+        }
+        SessionStatus::InterpreterError => {
+            language::report_errors(&result.errors, &result.source, &result.filename);
+            return false;
+        }
+        SessionStatus::Success => {}
+    }
+
+    let text = result.context.state.display();
+    if let Err(msg) = write_output(output, &text) {
+        eprintln!("error: {}", msg);
+        return false;
+    }
     true
 }
 
