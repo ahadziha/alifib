@@ -1,5 +1,7 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use super::path;
+use crate::language::{self, Program, Error as LangError};
 
 #[derive(Debug, Clone)]
 pub enum LoadError {
@@ -82,4 +84,125 @@ impl Loader {
     pub fn file_loader(&self) -> &FileLoader {
         &self.inner
     }
+}
+
+// ---------------------------------------------------------------------------
+// Pre-resolution of module includes
+// ---------------------------------------------------------------------------
+
+pub struct ResolvedModule {
+    pub source: String,
+    pub program: Program,
+}
+
+pub struct ModuleStore {
+    modules: HashMap<String, ResolvedModule>,
+    resolutions: HashMap<(String, String), String>,
+}
+
+pub enum ResolveError {
+    NotFound { module_name: String },
+    IoError { path: String, reason: String },
+    ParseError { path: String, source: String, errors: Vec<LangError> },
+}
+
+impl ModuleStore {
+    fn new() -> Self {
+        ModuleStore {
+            modules: HashMap::new(),
+            resolutions: HashMap::new(),
+        }
+    }
+
+    pub fn resolve(&self, parent_path: &str, module_name: &str) -> Option<&str> {
+        self.resolutions
+            .get(&(parent_path.to_owned(), module_name.to_owned()))
+            .map(|s| s.as_str())
+    }
+
+    pub fn get(&self, canonical_path: &str) -> Option<&ResolvedModule> {
+        self.modules.get(canonical_path)
+    }
+}
+
+fn find_file(loader: &FileLoader, module_name: &str) -> Result<(String, String), ResolveError> {
+    let filename = format!("{}.ali", module_name);
+    for dir in &loader.search_paths {
+        let candidate = format!("{}/{}", dir, filename);
+        let canonical = path::canonicalize(&candidate);
+        match (loader.read_file)(&canonical) {
+            Ok(contents) => return Ok((canonical, contents)),
+            Err(LoadError::NotFound) => continue,
+            Err(LoadError::IoError(reason)) => {
+                return Err(ResolveError::IoError { path: canonical, reason });
+            }
+        }
+    }
+    Err(ResolveError::NotFound { module_name: module_name.to_owned() })
+}
+
+fn collect_includes(program: &Program) -> Vec<String> {
+    use crate::language::ast::{Block, TypeInst};
+    let mut names = Vec::new();
+    for block in &program.blocks {
+        if let Block::TypeBlock(body) = &block.inner {
+            for instr in body {
+                if let TypeInst::IncludeModule(im) = &instr.inner {
+                    names.push(im.name.inner.clone());
+                }
+            }
+        }
+    }
+    names
+}
+
+pub fn resolve_all_modules(
+    loader: &FileLoader,
+    root_path: &str,
+    root_program: &Program,
+) -> Result<ModuleStore, ResolveError> {
+    let mut store = ModuleStore::new();
+    resolve_recursive(loader, root_path, root_program, &mut store)?;
+    Ok(store)
+}
+
+fn resolve_recursive(
+    loader: &FileLoader,
+    parent_path: &str,
+    program: &Program,
+    store: &mut ModuleStore,
+) -> Result<(), ResolveError> {
+    let includes = collect_includes(program);
+    for module_name in includes {
+        let (canonical_path, contents) = find_file(loader, &module_name)?;
+
+        store.resolutions.insert(
+            (parent_path.to_owned(), module_name),
+            canonical_path.clone(),
+        );
+
+        if store.modules.contains_key(&canonical_path) {
+            continue;
+        }
+
+        let program = match language::parse(&contents) {
+            Ok(p) => p,
+            Err(errors) => {
+                return Err(ResolveError::ParseError {
+                    path: canonical_path,
+                    source: contents,
+                    errors,
+                });
+            }
+        };
+
+        let child_loader = ensure_root_in_loader(loader, &canonical_path);
+        resolve_recursive(&child_loader, &canonical_path, &program, store)?;
+
+        store.modules.insert(canonical_path, ResolvedModule {
+            source: contents,
+            program,
+        });
+    }
+    Ok(())
 }

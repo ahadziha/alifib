@@ -7,7 +7,7 @@ use std::fs;
 use std::process;
 use std::time::Instant;
 
-use aux::loader::{Loader, LoadError, ensure_root_in_loader};
+use aux::loader::{Loader, LoadError, ResolveError, ensure_root_in_loader, resolve_all_modules};
 use interpreter::interpreter::{Context, interpret_program};
 use interpreter::state::State;
 
@@ -128,8 +128,17 @@ fn run_file(loader: &Loader, path: &str) -> Option<(Context, String)> {
         }
     };
 
+    // Pre-resolve all module includes
+    let module_store = match resolve_all_modules(&file_loader, &canonical_path, &program) {
+        Ok(store) => store,
+        Err(e) => {
+            report_resolve_error(&e);
+            return None;
+        }
+    };
+
     let context = Context::new(canonical_path.clone(), State::empty());
-    let result = interpret_program(&file_loader, context, &program);
+    let result = interpret_program(&module_store, context, &program);
 
     if !result.errors.is_empty() {
         language::report_errors(&result.errors, &contents, &canonical_path);
@@ -137,6 +146,20 @@ fn run_file(loader: &Loader, path: &str) -> Option<(Context, String)> {
     }
 
     Some((result.context, contents))
+}
+
+fn report_resolve_error(err: &ResolveError) {
+    match err {
+        ResolveError::NotFound { module_name } => {
+            eprintln!("error: module file {}.ali not found in search paths", module_name);
+        }
+        ResolveError::IoError { path, reason } => {
+            eprintln!("error: could not load `{}`: {}", path, reason);
+        }
+        ResolveError::ParseError { path, source, errors } => {
+            language::report_errors(errors, source, path);
+        }
+    }
 }
 
 fn run_interpreter(input: &str, output: Option<&str>) -> bool {

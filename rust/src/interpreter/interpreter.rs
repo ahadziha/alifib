@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 use crate::aux::{GlobalId, LocalId, Tag};
-use crate::aux::loader::FileLoader;
+use crate::aux::loader::ModuleStore;
 use crate::core::{
     complex::{Complex, MapDomain},
     diagram::{CellData, Diagram},
@@ -20,7 +20,7 @@ use super::include::{interpret_include_module_instr, interpret_include_instr,
 // ---- Main interpreter ----
 
 pub fn interpret_program(
-    loader: &FileLoader,
+    modules: &ModuleStore,
     mut context: Context,
     program: &Program,
 ) -> InterpResult {
@@ -58,34 +58,34 @@ pub fn interpret_program(
 
     let mut result = InterpResult::ok(context);
     for block in &program.blocks {
-        let block_result = interpret_block(loader, result.context.clone(), block);
+        let block_result = interpret_block(modules, result.context.clone(), block);
         result = InterpResult::combine(result, block_result);
     }
     result
 }
 
-fn interpret_block(loader: &FileLoader, context: Context, block: &Spanned<Block>) -> InterpResult {
+fn interpret_block(modules: &ModuleStore, context: Context, block: &Spanned<Block>) -> InterpResult {
     match &block.inner {
-        Block::TypeBlock(body) => interpret_block_type(loader, context, body),
+        Block::TypeBlock(body) => interpret_block_type(modules, context, body),
         Block::LocalBlock { complex, body } => {
-            interpret_block_complex(loader, context, complex, body)
+            interpret_block_complex(context, complex, body)
         }
     }
 }
 
 fn interpret_block_type(
-    loader: &FileLoader,
+    modules: &ModuleStore,
     context: Context,
     body: &[Spanned<TypeInst>],
 ) -> InterpResult {
     let mut result = InterpResult::ok(context);
-    let (_loc, type_result) = interpret_type_block(loader, &result.context, body);
+    let (_loc, type_result) = interpret_type_block(modules, &result.context, body);
     result = InterpResult::combine(result, type_result);
     result
 }
 
 fn interpret_type_block(
-    loader: &FileLoader,
+    modules: &ModuleStore,
     context: &Context,
     body: &[Spanned<TypeInst>],
 ) -> (Option<Complex>, InterpResult) {
@@ -94,7 +94,7 @@ fn interpret_type_block(
 
     for instr in body {
         let ctx = acc_result.context.clone();
-        let (loc_opt, instr_result) = interpret_type_inst(loader, &ctx, instr);
+        let (loc_opt, instr_result) = interpret_type_inst(modules, &ctx, instr);
         acc_result = InterpResult::combine(acc_result, instr_result);
         if let Some(new_loc) = loc_opt {
             any_location = Some(new_loc);
@@ -105,7 +105,7 @@ fn interpret_type_block(
 }
 
 fn interpret_type_inst(
-    loader: &FileLoader,
+    modules: &ModuleStore,
     context: &Context,
     instr: &Spanned<TypeInst>,
 ) -> (Option<Complex>, InterpResult) {
@@ -144,7 +144,7 @@ fn interpret_type_inst(
             }
         }
         TypeInst::IncludeModule(include_mod) => {
-            interpret_include_module_instr(loader, context, include_mod, instr.span)
+            interpret_include_module_instr(modules, context, include_mod, instr.span)
         }
     }
 }
@@ -515,7 +515,6 @@ fn interpret_generator_instr(
 // ---- Local blocks ----
 
 fn interpret_block_complex(
-    _loader: &FileLoader,
     context: Context,
     complex: &Spanned<ast::Complex>,
     body: &[Spanned<LocalInst>],

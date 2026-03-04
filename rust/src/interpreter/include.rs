@@ -1,22 +1,18 @@
 use std::sync::Arc;
 use crate::aux::{GlobalId, LocalId, Tag};
-use crate::aux::path;
-use crate::aux::loader::{FileLoader, LoadError};
+use crate::aux::loader::ModuleStore;
 use crate::core::{
     complex::{Complex, MapDomain},
     diagram::{CellData, Diagram},
     map::PMap,
 };
-use crate::language::{
-    self,
-    ast::{self, Span, IncludeModule},
-};
+use crate::language::ast::{self, Span, IncludeModule};
 use super::types::*;
 use super::interpreter::interpret_program;
 use super::pmap::{interpret_address, interpret_pmap};
 
 pub fn interpret_include_module_instr(
-    loader: &FileLoader,
+    modules: &ModuleStore,
     context: &Context,
     include_mod: &IncludeModule,
     span: Span,
@@ -42,51 +38,23 @@ pub fn interpret_include_module_instr(
         return (None, result);
     }
 
-    // Search for the module file
-    let filename = format!("{}.ali", module_name);
-    let find_file = |loader: &FileLoader| -> Result<(String, String), String> {
-        for dir in &loader.search_paths {
-            let candidate = format!("{}/{}", dir, filename);
-            let canonical = path::canonicalize(&candidate);
-            match (loader.read_file)(&canonical) {
-                Ok(contents) => return Ok((canonical, contents)),
-                Err(LoadError::NotFound) => continue,
-                Err(LoadError::IoError(reason)) => {
-                    return Err(format!("Failed to load {}: {}", canonical, reason));
-                }
-            }
-        }
-        Err(format!("Module file {} not found in search paths", filename))
-    };
-
-    let (canonical_path, contents) = match find_file(loader) {
-        Ok(pair) => pair,
-        Err(msg) => {
+    // Look up the pre-resolved module
+    let canonical_path = match modules.resolve(&module_id, &module_name) {
+        Some(p) => p.to_owned(),
+        None => {
             let mut result = InterpResult::ok(context.clone());
-            result.add_error(make_error(span, msg));
+            result.add_error(make_error(span,
+                format!("Module file {}.ali not found in search paths", module_name)));
             return (None, result);
         }
     };
 
-    // Build loader that includes the module's directory
-    let module_dir = std::path::Path::new(&canonical_path)
-        .parent()
-        .and_then(|p| p.to_str())
-        .map(path::canonicalize)
-        .unwrap_or_else(|| canonical_path.clone());
-    let mut new_search_paths = vec![module_dir];
-    new_search_paths.extend(loader.search_paths.iter().cloned());
-    let loader_for_module = FileLoader {
-        search_paths: path::normalize_search_paths(new_search_paths),
-        read_file: loader.read_file.clone(),
-    };
-
-    // Parse the module file
-    let program = match language::parse(&contents) {
-        Ok(p) => p,
-        Err(parse_errors) => {
+    let resolved = match modules.get(&canonical_path) {
+        Some(r) => r,
+        None => {
             let mut result = InterpResult::ok(context.clone());
-            result.errors.extend(parse_errors);
+            result.add_error(make_error(span,
+                format!("Resolved module {} not found in store", canonical_path)));
             return (None, result);
         }
     };
@@ -94,7 +62,7 @@ pub fn interpret_include_module_instr(
     // Interpret the included module
     let included_module_id = canonical_path.clone();
     let include_context = Context::new_sharing_state(included_module_id.clone(), context);
-    let include_result = interpret_program(&loader_for_module, include_context, &program);
+    let include_result = interpret_program(modules, include_context, &resolved.program);
 
     let mut result = InterpResult::ok(context.clone());
     result.errors.extend(include_result.errors.clone());
