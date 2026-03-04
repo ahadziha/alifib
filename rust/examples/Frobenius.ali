@@ -1,9 +1,9 @@
 (* Frobenius semigroups and their modules *)
 
 @Type
-include Theory;
-include Semigroup;
-let Eq = Theory.Equation;
+include Theory,
+include Semigroup,
+let Eq = Theory.Equation,
 
 (* Frobenius semigroup *)
 Frobenius <<= {
@@ -23,7 +23,7 @@ Frobenius <<= {
     lhs => (split set) (set merge),
     rhs => merge split
   ]
-};
+},
 
 (* Left Frobenius module *)
 Left_module <<= {
@@ -48,7 +48,7 @@ Left_module <<= {
   ],
   let action = LM.action,
   let coaction = LC.coaction
-};
+},
 
 (* Right Frobenius module *)
 Right_module <<= {
@@ -73,7 +73,7 @@ Right_module <<= {
   ],
   let action = RM.action,
   let coaction = RC.coaction
-};
+},
 
 (* Frobenius bimodule *)
 Bimodule <<= {
@@ -115,7 +115,7 @@ Bimodule <<= {
     lhs => (LFM.coaction RF.set) (LF.set RFM.action),
     rhs => RFM.action LFM.coaction
   ]
-};
+},
 
 (* Special Frobenius semigroup *)
 Special <<= Frobenius {
@@ -123,7 +123,7 @@ Special <<= Frobenius {
     lhs => split merge,
     rhs => id
   ]
-};
+},
 
 (* Special left module *)
 Special_left_module <<= Left_module {
@@ -132,7 +132,7 @@ Special_left_module <<= Left_module {
     lhs => LC.coaction LM.action,
     rhs => Set.id
   ]
-};
+},
 
 (* Special right module *)
 Special_right_module <<= Right_module {
@@ -141,7 +141,7 @@ Special_right_module <<= Right_module {
     lhs => RC.coaction RM.action,
     rhs => Set.id
   ]
-};
+},
 
 (* Special bimodule *)
 Special_bimodule <<= Bimodule {

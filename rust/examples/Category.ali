@@ -7,7 +7,7 @@ Eq <<= {
   rhs: dom -> cod,
   dir: lhs -> rhs,
   inv: rhs -> lhs
-};
+},
 
 (* Object with identity *)
 Ob <<= {
@@ -17,7 +17,7 @@ Ob <<= {
     lhs => id id,
     rhs => id
   ]
-};
+},
 
 (* Morphism *)
 Mor <<= {

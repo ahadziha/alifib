@@ -3,13 +3,13 @@ Ob <<= {
   ob,
   id : ob -> ob,
   idem : id id -> id
-};
+},
 
 Mor <<= {
   attach dom :: Ob,
   attach cod :: Ob,
   mor : dom.ob -> cod.ob
-};
+},
 
 Pair <<= {
   attach x :: Ob,

@@ -1,8 +1,8 @@
 (* Yang-Baxter equation and braid structures *)
 
 @Type
-include Theory;
-let Eq = Theory.Equation;
+include Theory,
+let Eq = Theory.Equation,
 
 (* A Yang-Baxter operator. *)
 YB_operator <<= {
@@ -15,7 +15,7 @@ YB_operator <<= {
     lhs => (swap set)(set swap)(swap set),
     rhs => (set swap)(swap set)(set swap)
   ]
-};
+},
 
 (* Invertible Yang-Baxter operator. *)
 Invertible <<= YB_operator {
@@ -32,7 +32,7 @@ Invertible <<= YB_operator {
     lhs => (swap_inv set)(set swap_inv)(swap_inv set),
     rhs => (set swap_inv)(swap_inv set)(set swap_inv)
   ]
-};
+},
 
 (* Symmetric Yang-Baxter operator. *)
 Symmetric <<= YB_operator {

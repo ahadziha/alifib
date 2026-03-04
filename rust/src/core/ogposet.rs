@@ -317,10 +317,12 @@ pub(crate) fn traverse(g: &Arc<Ogposet>, initial_stack: Vec<(usize, IntSet)>, ma
     }
     for d in (1..=max_dim).rev() {
         if d > gd { continue; }
-        let cells: Vec<usize> = dc[d].iter().collect();
-        for cell in cells {
-            for &f in &g.faces_in[d][cell]  { dc[d - 1].insert(f); }
-            for &f in &g.faces_out[d][cell] { dc[d - 1].insert(f); }
+        let (lower, upper) = dc.split_at_mut(d);
+        let dc_d = &upper[0];
+        let dc_d_minus_1 = &mut lower[d - 1];
+        for cell in dc_d.iter() {
+            for &f in &g.faces_in[d][cell]  { dc_d_minus_1.insert(f); }
+            for &f in &g.faces_out[d][cell] { dc_d_minus_1.insert(f); }
         }
     }
 
@@ -350,6 +352,13 @@ pub(crate) fn traverse(g: &Arc<Ogposet>, initial_stack: Vec<(usize, IntSet)>, ma
         (d, bs)
     }).collect();
 
+    // Pre-allocate scratch BitSets to avoid per-iteration allocations
+    let mut scratch_in = BitSet::new(0);
+    let mut scratch_out = BitSet::new(0);
+    let mut scratch_input = BitSet::new(0);
+    let mut scratch_outputs = BitSet::new(0);
+    let mut scratch_singleton = BitSet::new(0);
+
     while !stack.is_empty() {
         let dim = stack.last().unwrap().0;
 
@@ -374,25 +383,20 @@ pub(crate) fn traverse(g: &Arc<Ogposet>, initial_stack: Vec<(usize, IntSet)>, ma
 
         let univ_lower = sizes_g.get(dim - 1).copied().unwrap_or(0);
 
-        let focus_in = {
-            let mut bs = BitSet::new(univ_lower);
-            for p in stack.last().unwrap().1.iter() {
-                for &f in &g.faces_in[dim][p]  { bs.insert(f); }
-            }
-            bs
-        };
-        let focus_out = {
-            let mut bs = BitSet::new(univ_lower);
-            for p in stack.last().unwrap().1.iter() {
-                for &f in &g.faces_out[dim][p] { bs.insert(f); }
-            }
-            bs
-        };
+        scratch_in.reset(univ_lower);
+        for p in stack.last().unwrap().1.iter() {
+            for &f in &g.faces_in[dim][p]  { scratch_in.insert(f); }
+        }
+        scratch_out.reset(univ_lower);
+        for p in stack.last().unwrap().1.iter() {
+            for &f in &g.faces_out[dim][p] { scratch_out.insert(f); }
+        }
 
-        let mut focus_input = focus_in.clone();
-        focus_input.difference_inplace(&focus_out);
+        scratch_input.copy_from(&scratch_in);
+        scratch_input.difference_inplace(&scratch_out);
 
-        if focus_input.iter().any(|p| inv[dim - 1][p] == NO_PREIMAGE) {
+        if scratch_input.iter().any(|p| inv[dim - 1][p] == NO_PREIMAGE) {
+            let focus_input = scratch_input.clone();
             stack.push((dim - 1, focus_input));
             continue;
         }
@@ -400,9 +404,10 @@ pub(crate) fn traverse(g: &Arc<Ogposet>, initial_stack: Vec<(usize, IntSet)>, ma
         if stack.last().unwrap().1.len() == 1 {
             let q = stack.last().unwrap().1.iter().next().unwrap();
             do_mark(dim, q, &mut map, &mut inv, &mut next_idx);
-            let mut outputs = BitSet::new(univ_lower);
-            for &f in &g.faces_out[dim][q] { outputs.insert(f); }
-            if outputs.iter().any(|p| inv[dim - 1][p] == NO_PREIMAGE) {
+            scratch_outputs.reset(univ_lower);
+            for &f in &g.faces_out[dim][q] { scratch_outputs.insert(f); }
+            if scratch_outputs.iter().any(|p| inv[dim - 1][p] == NO_PREIMAGE) {
+                let outputs = scratch_outputs.clone();
                 stack.pop();
                 stack.push((dim - 1, outputs));
             } else {
@@ -415,7 +420,7 @@ pub(crate) fn traverse(g: &Arc<Ogposet>, initial_stack: Vec<(usize, IntSet)>, ma
         let mut best: Option<(usize, usize)> = None;
         {
             let focus = &stack.last().unwrap().1;
-            for x in focus_in.iter() {
+            for x in scratch_in.iter() {
                 let order = inv[dim - 1][x];
                 if order == NO_PREIMAGE { continue; }
                 if let Some(q) = g.cofaces_in[dim - 1][x].iter()
@@ -436,8 +441,9 @@ pub(crate) fn traverse(g: &Arc<Ogposet>, initial_stack: Vec<(usize, IntSet)>, ma
 
         if let Some((_, q)) = best {
             let univ = sizes_g.get(dim).copied().unwrap_or(0);
-            let mut singleton = BitSet::new(univ);
-            singleton.insert(q);
+            scratch_singleton.reset(univ);
+            scratch_singleton.insert(q);
+            let singleton = scratch_singleton.clone();
             stack.push((dim, singleton));
         } else {
             let q_opt = stack.last().unwrap().1.iter()

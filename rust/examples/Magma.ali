@@ -2,17 +2,17 @@
 Ob <<= {
   pt,
   ob : pt -> pt
-};
+},
 
 Magma <<= {
   attach Ob :: Ob,
   m : Ob.ob Ob.ob -> Ob.ob
-};
+},
 
 Comagma <<= {
   attach Ob :: Ob,
   c : Ob.ob -> Ob.ob Ob.ob
-};
+},
 
 FrobeniusMagma <<= {
   attach Ob :: Ob,

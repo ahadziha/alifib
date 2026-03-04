@@ -79,7 +79,7 @@ fn interpret_block_type(
     body: &[Spanned<TypeInst>],
 ) -> InterpResult {
     let mut result = InterpResult::ok(context);
-    let (_loc, type_result) = interpret_type_block(modules, &result.context, body);
+    let type_result = interpret_type_block(modules, &result.context, body);
     result = InterpResult::combine(result, type_result);
     result
 }
@@ -88,58 +88,56 @@ fn interpret_type_block(
     modules: &ModuleStore,
     context: &Context,
     body: &[Spanned<TypeInst>],
-) -> (Option<Complex>, InterpResult) {
+) -> InterpResult {
     let mut acc_result = InterpResult::ok(context.clone());
-    let mut any_location: Option<Complex> = None;
 
     for instr in body {
         let ctx = acc_result.context.clone();
-        let (loc_opt, instr_result) = interpret_type_inst(modules, &ctx, instr);
+        let instr_result = interpret_type_inst(modules, &ctx, instr);
         acc_result = InterpResult::combine(acc_result, instr_result);
-        if let Some(new_loc) = loc_opt {
-            any_location = Some(new_loc);
-        }
     }
 
-    (any_location, acc_result)
+    acc_result
 }
 
 fn interpret_type_inst(
     modules: &ModuleStore,
     context: &Context,
     instr: &Spanned<TypeInst>,
-) -> (Option<Complex>, InterpResult) {
+) -> InterpResult {
     match &instr.inner {
         TypeInst::Generator(generator) => interpret_generator_type(context, generator),
         TypeInst::LetDiag(ld) => {
             let module_id = &context.current_module;
-            let module_location = context.state.find_module(module_id).cloned().unwrap_or_default();
-            let (out, result) = interpret_let_diag(context, &module_location, ld);
+            let module_location = match context.state.find_module(module_id) {
+                Some(m) => m,
+                None => return InterpResult::ok(context.clone()),
+            };
+            let (out, result) = interpret_let_diag(context, module_location, ld);
             match out {
-                None => (None, result),
+                None => result,
                 Some((name, diagram)) => {
                     let module_id2 = result.context.current_module.clone();
-                    let mut current_loc = result.context.state.find_module(&module_id2).cloned().unwrap_or_default();
-                    current_loc.add_diagram(name, diagram);
                     let mut r = result;
-                    r.context.state_mut().set_module(module_id2, current_loc.clone());
-                    (Some(current_loc), r)
+                    r.context.state_mut().modify_module(&module_id2, |c| c.add_diagram(name, diagram));
+                    r
                 }
             }
         }
         TypeInst::DefPMap(dp) => {
             let module_id = &context.current_module;
-            let module_location = context.state.find_module(module_id).cloned().unwrap_or_default();
-            let (out, result) = interpret_def_pmap(context, &module_location, dp);
+            let module_location = match context.state.find_module(module_id) {
+                Some(m) => m,
+                None => return InterpResult::ok(context.clone()),
+            };
+            let (out, result) = interpret_def_pmap(context, module_location, dp);
             match out {
-                None => (None, result),
+                None => result,
                 Some((name, map, domain)) => {
                     let module_id2 = result.context.current_module.clone();
-                    let mut current_loc = result.context.state.find_module(&module_id2).cloned().unwrap_or_default();
-                    current_loc.add_map(name, domain, map);
                     let mut r = result;
-                    r.context.state_mut().set_module(module_id2, current_loc.clone());
-                    (Some(current_loc), r)
+                    r.context.state_mut().modify_module(&module_id2, |c| c.add_map(name, domain, map));
+                    r
                 }
             }
         }
@@ -152,7 +150,7 @@ fn interpret_type_inst(
 fn interpret_generator_type(
     context: &Context,
     generator: &ast::Generator,
-) -> (Option<Complex>, InterpResult) {
+) -> InterpResult {
     let name_with_bd = &generator.name;
     let def = &generator.complex;
 
@@ -164,24 +162,24 @@ fn interpret_generator_type(
         None => {
             let mut result = InterpResult::ok(context.clone());
             result.add_error(make_error(name_span, "Module not found"));
-            return (None, result);
+            return result;
         }
-        Some(m) => m.clone()
+        Some(m) => m,
     };
 
     if module_location.name_in_use(&name) {
         let mut result = InterpResult::ok(context.clone());
         result.add_error(make_error(name_span,
             format!("Generator name already in use: {}", name)));
-        return (None, result);
+        return result;
     }
 
     let (boundaries, mut result) = match &name_with_bd.inner.boundary {
         None => (CellData::Zero, InterpResult::ok(context.clone())),
         Some(bounds) => {
-            let (bopt, r) = interpret_boundaries(context, &module_location, bounds);
+            let (bopt, r) = interpret_boundaries(context, module_location, bounds);
             match bopt {
-                None => return (None, r),
+                None => return r,
                 Some(b) => (b, r),
             }
         }
@@ -190,7 +188,7 @@ fn interpret_generator_type(
     if !matches!(boundaries, CellData::Zero) {
         result.add_error(make_error(name_span,
             "Higher cells in @Type blocks are not supported"));
-        return (None, result);
+        return result;
     }
 
     let context_after = result.context.clone();
@@ -198,18 +196,8 @@ fn interpret_generator_type(
     result = InterpResult::combine(result, complex_result);
 
     let mut definition_complex = match ns_opt {
-        None => return (None, result),
+        None => return result,
         Some(ns) => ns.location,
-    };
-
-    let context_after = result.context.clone();
-    let module_id2 = &context_after.current_module;
-    let mut module_location_now = match context_after.state.find_module(module_id2) {
-        None => {
-            result.add_error(make_error(name_span, "Module not found after processing definition"));
-            return (None, result);
-        }
-        Some(m) => m.clone()
     };
 
     let new_id = GlobalId::fresh();
@@ -219,27 +207,28 @@ fn interpret_generator_type(
         Err(e) => {
             result.add_error(make_error(name_span,
                 format!("Failed to create generator cell: {}", e)));
-            return (None, result);
+            return result;
         }
     };
 
-    let identity = identity_map(&context_after, &definition_complex);
+    let module_id2 = result.context.current_module.clone();
+    let identity = identity_map(&result.context, &definition_complex);
     definition_complex.add_map(
         name.clone(),
         MapDomain::Type(new_id),
         identity,
     );
 
-    module_location_now.add_generator(name.clone(), classifier.clone());
-    module_location_now.add_diagram(name.clone(), classifier);
-
     {
         let s = result.context.state_mut();
         s.set_type(new_id, CellData::Zero, definition_complex);
-        s.set_module(module_id2.clone(), module_location_now.clone());
+        s.modify_module(&module_id2, |m| {
+            m.add_generator(name.clone(), classifier.clone());
+            m.add_diagram(name, classifier);
+        });
     }
 
-    (Some(module_location_now), result)
+    result
 }
 
 // ---- Complex resolution ----
@@ -259,7 +248,7 @@ fn interpret_complex(
                 format!("Module `{}` not found", module_id)));
             return (None, result);
         }
-        Some(m) => m.clone(),
+        Some(m) => m,
     };
 
     let empty_name: LocalId = String::new();
@@ -283,7 +272,7 @@ fn interpret_complex(
                                         format!("Type {} not found", root)));
                                     return (None, r);
                                 }
-                                Some(te) => te.clone(),
+                                Some(te) => te,
                             };
                             let location = (*type_entry.complex).clone();
                             let ns = Namespace { root, location };
@@ -309,7 +298,7 @@ fn interpret_complex(
                             format!("Type {} not found in global record", root)));
                         return (None, result);
                     }
-                    Some(te) => te.clone(),
+                    Some(te) => te,
                 };
                 let location = (*type_entry.complex).clone();
                 let ns = Namespace { root, location };

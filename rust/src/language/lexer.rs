@@ -58,7 +58,6 @@ pub fn lexer<'src>(
         just(')').to(Token::RParen),
         just('.').to(Token::Dot),
         just(',').to(Token::Comma),
-        just(';').to(Token::Semi),
         just('#').to(Token::Hash),
         just(':').to(Token::Colon),
         just('=').to(Token::Eq),

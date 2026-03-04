@@ -16,26 +16,28 @@ pub fn interpret_include_module_instr(
     context: &Context,
     include_mod: &IncludeModule,
     span: Span,
-) -> (Option<Complex>, InterpResult) {
+) -> InterpResult {
     let module_name: LocalId = include_mod.name.inner.clone();
     let alias: LocalId = include_mod.alias.as_ref()
         .map(|a| a.inner.clone())
         .unwrap_or_else(|| module_name.clone());
 
     let module_id = context.current_module.clone();
-    let location = match context.state.find_module(&module_id) {
-        None => {
-            let mut result = InterpResult::ok(context.clone());
-            result.add_error(make_error(span, "Module not found"));
-            return (None, result);
-        }
-        Some(m) => m.clone(),
-    };
+    {
+        let location = match context.state.find_module(&module_id) {
+            None => {
+                let mut result = InterpResult::ok(context.clone());
+                result.add_error(make_error(span, "Module not found"));
+                return result;
+            }
+            Some(m) => m,
+        };
 
-    if location.name_in_use(&alias) {
-        let mut result = InterpResult::ok(context.clone());
-        result.add_error(make_error(span, format!("Partial map name already in use: {}", alias)));
-        return (None, result);
+        if location.name_in_use(&alias) {
+            let mut result = InterpResult::ok(context.clone());
+            result.add_error(make_error(span, format!("Partial map name already in use: {}", alias)));
+            return result;
+        }
     }
 
     // Look up the pre-resolved module
@@ -45,7 +47,7 @@ pub fn interpret_include_module_instr(
             let mut result = InterpResult::ok(context.clone());
             result.add_error(make_error(span,
                 format!("Module file {}.ali not found in search paths", module_name)));
-            return (None, result);
+            return result;
         }
     };
 
@@ -55,7 +57,7 @@ pub fn interpret_include_module_instr(
             let mut result = InterpResult::ok(context.clone());
             result.add_error(make_error(span,
                 format!("Resolved module {} not found in store", canonical_path)));
-            return (None, result);
+            return result;
         }
     };
 
@@ -68,63 +70,56 @@ pub fn interpret_include_module_instr(
     result.errors.extend(include_result.errors.clone());
 
     if include_result.has_errors() {
-        return (None, result);
+        return result;
     }
 
     // Carry forward the state from included module (has all new types/cells)
     result.context.state = Arc::clone(&include_result.context.state);
 
-    let updated_state = &*include_result.context.state;
-
-    let included_location = match updated_state.find_module(&included_module_id) {
-        Some(loc) => loc.clone(),
+    let included_arc = match result.context.state.find_module_arc(&included_module_id) {
+        Some(arc) => arc,
         None => {
             result.add_error(make_error(span, "Included module complex not found"));
-            return (None, result);
+            return result;
         }
     };
 
-    let mut current_location = match updated_state.find_module(&module_id) {
-        Some(loc) => loc.clone(),
-        None => location.clone(),
-    };
+    // Collect generator data from included module (refs into Arc, no deep clone)
+    let gen_data: Vec<_> = included_arc.generator_names().into_iter()
+        .filter(|n| !n.is_empty())
+        .filter_map(|gen_name| {
+            let gen_entry = included_arc.find_generator(&gen_name)?;
+            let classifier = included_arc.classifier(&gen_name)?.clone();
+            let tag = gen_entry.tag.clone();
+            let combined_name = if alias.is_empty() {
+                gen_name
+            } else if gen_name.is_empty() {
+                alias.clone()
+            } else {
+                format!("{}.{}", alias, gen_name)
+            };
+            Some((combined_name, tag, classifier))
+        })
+        .collect();
 
-    // Copy generators from included module
-    for gen_name in included_location.generator_names() {
-        if gen_name.is_empty() {
-            continue;
+    let inclusion = identity_map(&include_result.context, &included_arc);
+
+    // Mutate the current module in place
+    result.context.state_mut().modify_module(&module_id, |current| {
+        for (combined_name, tag, classifier) in gen_data {
+            if current.find_generator_by_tag(&tag).is_some() {
+                continue;
+            }
+            current.add_generator(combined_name, classifier);
         }
-        let gen_entry = match included_location.find_generator(&gen_name) {
-            Some(e) => e.clone(),
-            None => continue,
-        };
-        if current_location.find_generator_by_tag(&gen_entry.tag).is_some() {
-            continue;
-        }
-        let classifier = match included_location.classifier(&gen_name) {
-            Some(d) => d.clone(),
-            None => continue,
-        };
-        let combined_name = if alias.is_empty() {
-            gen_name.clone()
-        } else if gen_name.is_empty() {
-            alias.clone()
-        } else {
-            format!("{}.{}", alias, gen_name)
-        };
-        current_location.add_generator(combined_name, classifier);
-    }
+        current.add_map(
+            alias,
+            MapDomain::Module(included_module_id),
+            inclusion,
+        );
+    });
 
-    let inclusion = identity_map(&include_result.context, &included_location);
-    current_location.add_map(
-        alias,
-        MapDomain::Module(included_module_id),
-        inclusion,
-    );
-
-    result.context.state_mut().set_module(module_id, current_location.clone());
-
-    (Some(current_location), result)
+    result
 }
 
 pub fn interpret_include_instr(

@@ -1,8 +1,8 @@
 (* Semigroups, cosemigroups and their modules *)
 
 @Type
-include Theory;
-let Eq = Theory.Equation;
+include Theory,
+let Eq = Theory.Equation,
 
 (* Semigroup *)
 Semigroup <<= {
@@ -27,7 +27,7 @@ Semigroup <<= {
     lhs => merge id,
     rhs => merge
   ]
-};
+},
 
 (* Cosemigroup *)
 Cosemigroup <<= {
@@ -52,7 +52,7 @@ Cosemigroup <<= {
     lhs => split (set id),
     rhs => split
   ]
-};
+},
 
 (* Left module of a semigroup *)
 Left_module <<= {
@@ -64,7 +64,7 @@ Left_module <<= {
     lhs => (L.merge Set.set) action,
     rhs => (L.set action) action
   ]
-};
+},
 
 (* Right module of a semigroup *)
 Right_module <<= {
@@ -76,7 +76,7 @@ Right_module <<= {
     lhs => (Set.set R.merge) action,
     rhs => (action R.set) action
   ]
-};
+},
 
 (* Bimodule of semigroups *)
 Bimodule <<= {
@@ -96,7 +96,7 @@ Bimodule <<= {
     lhs => (LM.action R.set) RM.action,
     rhs => (L.set RM.action) LM.action
   ]
-};
+},
 
 (* Left comodule of a cosemigroup *)
 Left_comodule <<= {
@@ -108,7 +108,7 @@ Left_comodule <<= {
     lhs => coaction (L.split Set.set),
     rhs => coaction (L.set coaction)
   ]
-};
+},
 
 (* Right comodule of a cosemigroup *)
 Right_comodule <<= {
@@ -120,7 +120,7 @@ Right_comodule <<= {
     lhs => coaction (Set.set R.split),
     rhs => coaction (coaction R.set)
   ]
-};
+},
 
 (* Bicomodule of cosemigroups *)
 Bicomodule <<= {

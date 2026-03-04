@@ -55,6 +55,21 @@ impl BitSet {
         BitSet { bits: self.bits.clone(), count: self.count }
     }
 
+    /// Zero all words and adjust length for a new universe size, reusing allocation.
+    pub fn reset(&mut self, universe: usize) {
+        let words_needed = (universe + 63) / 64;
+        for w in self.bits.iter_mut() { *w = 0; }
+        self.bits.resize(words_needed, 0);
+        self.count = 0;
+    }
+
+    /// Copy contents from another BitSet, reusing existing allocation.
+    pub fn copy_from(&mut self, other: &BitSet) {
+        self.bits.clear();
+        self.bits.extend_from_slice(&other.bits);
+        self.count = other.count;
+    }
+
     /// self &= !other  (in-place set-difference using word-level bitops)
     pub fn difference_inplace(&mut self, other: &BitSet) {
         let n = self.bits.len().min(other.bits.len());

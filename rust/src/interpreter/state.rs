@@ -42,6 +42,12 @@ impl State {
         self.modules.insert(id, Arc::new(complex));
     }
 
+    pub fn modify_module(&mut self, id: &str, f: impl FnOnce(&mut Complex)) {
+        if let Some(arc) = self.modules.get_mut(id) {
+            f(Arc::make_mut(arc));
+        }
+    }
+
     /// Mutate the Complex of a type entry in place via Arc::make_mut.
     pub fn modify_type_complex(&mut self, id: GlobalId, f: impl FnOnce(&mut Complex)) {
         if let Some(entry) = self.types.get_mut(&id) {

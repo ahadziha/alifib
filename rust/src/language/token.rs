@@ -24,7 +24,6 @@ pub enum Token<'src> {
     RParen,    // )
     Dot,       // .
     Comma,     // ,
-    Semi,      // ;
     Hash,      // #
     Colon,     // :
     DColon,    // ::
@@ -61,7 +60,6 @@ impl fmt::Display for Token<'_> {
             Token::RParen => write!(f, ")"),
             Token::Dot => write!(f, "."),
             Token::Comma => write!(f, ","),
-            Token::Semi => write!(f, ";"),
             Token::Hash => write!(f, "#"),
             Token::Colon => write!(f, ":"),
             Token::DColon => write!(f, "::"),

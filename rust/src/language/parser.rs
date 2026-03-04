@@ -418,7 +418,7 @@ fn block<'tokens, 'src: 'tokens>(
         .then(t(Token::Type))
         .ignore_then(
             type_inst()
-                .separated_by(choice((t(Token::Semi), t(Token::Comma))))
+                .separated_by(t(Token::Comma))
                 .allow_trailing()
                 .collect::<Vec<_>>(),
         )
@@ -428,7 +428,7 @@ fn block<'tokens, 'src: 'tokens>(
         .ignore_then(complex_parser())
         .then(
             local_inst()
-                .separated_by(choice((t(Token::Semi), t(Token::Comma))))
+                .separated_by(t(Token::Comma))
                 .allow_trailing()
                 .collect::<Vec<_>>(),
         )

@@ -11,7 +11,7 @@ Equation <<= {
   rhs: dom -> cod,
   dir: lhs -> rhs,
   inv: rhs -> lhs
-};
+},
 
 (* Set with an attached identity function *)
 Set <<= {
@@ -22,7 +22,7 @@ Set <<= {
     lhs => id id,
     rhs => id
   ]
-};
+},
 
 (* Function between Sets *)
 Function <<= {
