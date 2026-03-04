@@ -39,6 +39,14 @@ pub fn parse(source: &str) -> Result<Program, Vec<Error>> {
         span: Span { start: e.span().start, end: e.span().end },
     }));
 
+    errors.dedup_by(|a, b| match (a, b) {
+        (
+            Error::Syntax { message: ma, span: sa },
+            Error::Syntax { message: mb, span: sb },
+        ) => sa == sb && ma == mb,
+        _ => false,
+    });
+
     match ast {
         Some(program) if errors.is_empty() => Ok(program),
         _ => {
