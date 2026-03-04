@@ -2,7 +2,11 @@ use std::sync::Arc;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use crate::aux::Error;
+use super::bitset::BitSet;
 use super::intset::{self, IntSet};
+
+// Re-export so downstream code can keep using `ogposet::Embedding` etc.
+pub use super::embeddings::{Embedding, Pushout, NO_PREIMAGE};
 
 fn set_map(f: impl Fn(usize) -> usize, s: &IntSet) -> IntSet {
     intset::collect_sorted(s.iter().map(|&x| f(x)))
@@ -10,95 +14,6 @@ fn set_map(f: impl Fn(usize) -> usize, s: &IntSet) -> IntSet {
 
 fn set_filter_map(f: impl Fn(usize) -> Option<usize>, s: &IntSet) -> IntSet {
     intset::collect_sorted(s.iter().filter_map(|&x| f(x)))
-}
-
-// ---- BitSet: dense bitvector for traversal temporaries ----
-
-struct BitSet {
-    bits:  Vec<u64>,
-    count: usize,
-}
-
-impl BitSet {
-    fn new(universe: usize) -> Self {
-        let words = (universe + 63) / 64;
-        BitSet { bits: vec![0u64; words], count: 0 }
-    }
-
-    #[inline]
-    fn insert(&mut self, x: usize) -> bool {
-        let (w, b) = (x / 64, 1u64 << (x % 64));
-        if self.bits[w] & b == 0 {
-            self.bits[w] |= b;
-            self.count += 1;
-            true
-        } else {
-            false
-        }
-    }
-
-    #[inline]
-    fn remove(&mut self, x: usize) -> bool {
-        let (w, b) = (x / 64, 1u64 << (x % 64));
-        if self.bits[w] & b != 0 {
-            self.bits[w] &= !b;
-            self.count -= 1;
-            true
-        } else {
-            false
-        }
-    }
-
-    #[inline]
-    fn contains(&self, x: usize) -> bool {
-        let w = x / 64;
-        w < self.bits.len() && self.bits[w] & (1u64 << (x % 64)) != 0
-    }
-
-    fn is_empty(&self) -> bool { self.count == 0 }
-    fn len(&self) -> usize { self.count }
-
-    fn iter(&self) -> BitSetIter<'_> {
-        BitSetIter {
-            bits: &self.bits,
-            word_idx: 0,
-            word: self.bits.first().copied().unwrap_or(0),
-        }
-    }
-
-    fn clone(&self) -> Self {
-        BitSet { bits: self.bits.clone(), count: self.count }
-    }
-
-    /// self &= !other  (in-place set-difference using word-level bitops)
-    fn difference_inplace(&mut self, other: &BitSet) {
-        let n = self.bits.len().min(other.bits.len());
-        for i in 0..n {
-            let removed = self.bits[i] & other.bits[i];
-            self.bits[i] &= !other.bits[i];
-            self.count -= removed.count_ones() as usize;
-        }
-    }
-}
-
-struct BitSetIter<'a> {
-    bits:     &'a [u64],
-    word_idx: usize,
-    word:     u64,
-}
-
-impl<'a> Iterator for BitSetIter<'a> {
-    type Item = usize;
-    fn next(&mut self) -> Option<usize> {
-        while self.word == 0 {
-            self.word_idx += 1;
-            if self.word_idx >= self.bits.len() { return None; }
-            self.word = self.bits[self.word_idx];
-        }
-        let tz = self.word.trailing_zeros() as usize;
-        self.word &= self.word - 1; // clear lowest set bit
-        Some(self.word_idx * 64 + tz)
-    }
 }
 
 // ---- Ogposet ----
@@ -281,41 +196,7 @@ impl Ogposet {
     }
 }
 
-// ---- Embedding ----
-
-/// An embedding (injective map) between two ogposets.
-#[derive(Debug, Clone)]
-pub struct Embedding {
-    pub dom: Arc<Ogposet>,
-    pub cod: Arc<Ogposet>,
-    /// `map[d][i]` = image of cell i at dimension d in the codomain
-    pub map: Vec<Vec<usize>>,
-    /// `inv[d][j]` = preimage of cell j at dimension d in domain, or usize::MAX if none
-    pub inv: Vec<Vec<usize>>,
-}
-
-pub const NO_PREIMAGE: usize = usize::MAX;
-
-impl Embedding {
-    pub fn make(dom: Arc<Ogposet>, cod: Arc<Ogposet>, map: Vec<Vec<usize>>, inv: Vec<Vec<usize>>) -> Self {
-        Self { dom, cod, map, inv }
-    }
-
-    pub fn id(x: Arc<Ogposet>) -> Self {
-        let sizes = x.sizes();
-        let map: Vec<Vec<usize>> = sizes.iter().map(|&n| (0..n).collect()).collect();
-        let inv = map.clone();
-        Self { dom: Arc::clone(&x), cod: x, map, inv }
-    }
-
-    pub fn empty(cod: Arc<Ogposet>) -> Self {
-        let sizes = cod.sizes();
-        let inv: Vec<Vec<usize>> = sizes.iter().map(|&n| vec![NO_PREIMAGE; n]).collect();
-        Self { dom: Arc::new(Ogposet::empty()), cod, map: vec![], inv }
-    }
-}
-
-// ---- Internal helpers ----
+// ---- Operations ----
 
 fn remap_adjacency(
     levels:   usize,
@@ -570,7 +451,6 @@ pub fn traverse(g: &Arc<Ogposet>, initial_stack: Vec<(usize, IntSet)>, mark_norm
         }
     }
 
-    // Phase 2: pass &map and &inv directly to remap_adjacency, then move into Embedding
     let faces_in   = remap_adjacency(map_levels, &map, &inv, -1, &g.faces_in);
     let faces_out  = remap_adjacency(map_levels, &map, &inv, -1, &g.faces_out);
     let cofaces_in  = remap_adjacency(map_levels, &map, &inv,  1, &g.cofaces_in);
@@ -591,7 +471,6 @@ pub fn normalisation(g: &Arc<Ogposet>) -> (Arc<Ogposet>, Embedding) {
         return (Arc::clone(g), Embedding::id(Arc::clone(g)));
     }
 
-    // Check cache
     let key = Arc::as_ptr(g) as usize;
     let cached = NORM_CACHE.with(|c| c.borrow().get(&key).cloned());
     if let Some((shape, emb)) = cached {
@@ -601,7 +480,6 @@ pub fn normalisation(g: &Arc<Ogposet>) -> (Arc<Ogposet>, Embedding) {
     let stack = build_stack_extremal(Sign::Input, g);
     let (dom, emb) = traverse(g, stack, true);
 
-    // Insert into cache
     NORM_CACHE.with(|c| c.borrow_mut().insert(key, (Arc::clone(&dom), emb.clone())));
 
     (dom, emb)
@@ -633,7 +511,6 @@ fn build_stack_cell_n(g: &Ogposet) -> Vec<(usize, IntSet)> {
 pub fn boundary_traverse(sign: Sign, k: usize, g: &Arc<Ogposet>) -> (Arc<Ogposet>, Embedding) {
     let effective_k = if g.dim < 0 { 0 } else { k.min(g.dim as usize) };
 
-    // Check cache
     let cache_key = (Arc::as_ptr(g) as usize, sign, effective_k);
     let cached = BT_CACHE.with(|c| c.borrow().get(&cache_key).cloned());
     if let Some((shape, emb)) = cached {
@@ -655,7 +532,6 @@ pub fn boundary_traverse(sign: Sign, k: usize, g: &Arc<Ogposet>) -> (Arc<Ogposet
         }
     };
 
-    // Insert into cache
     BT_CACHE.with(|c| c.borrow_mut().insert(cache_key, (Arc::clone(&dom), emb.clone())));
 
     (dom, emb)
@@ -707,12 +583,6 @@ pub fn isomorphism_of(u: &Arc<Ogposet>, v: &Arc<Ogposet>) -> Result<Embedding, E
     let inv = produce_rows(&e_v.inv, &e_u.map)?;
 
     Ok(Embedding::make(Arc::clone(u), Arc::clone(v), map, inv))
-}
-
-pub struct Pushout {
-    pub tip: Arc<Ogposet>,
-    pub inl: Embedding,
-    pub inr: Embedding,
 }
 
 /// Pushout of f and g along their common domain.
@@ -852,7 +722,7 @@ fn attach(f: &Embedding, g: &Embedding) -> Pushout {
     Pushout { tip, inl, inr }
 }
 
-// ---- Phase 3: Thread-local caches ----
+// ---- Thread-local caches ----
 
 thread_local! {
     static NORM_CACHE: RefCell<HashMap<usize, (Arc<Ogposet>, Embedding)>> = RefCell::new(HashMap::new());

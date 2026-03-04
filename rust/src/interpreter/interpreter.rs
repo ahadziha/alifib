@@ -7,8 +7,8 @@ use crate::core::{
     complex::{Complex, MapDomain},
     diagram::{CellData, Diagram, Sign as DiagramSign},
     map::PMap,
-    state::State,
 };
+use super::state::State;
 use crate::language::{
     self,
     ast::{self, Span, Spanned, Program, Block, TypeInst, IncludeModule,

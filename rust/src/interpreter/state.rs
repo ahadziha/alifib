@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use crate::aux::{GlobalId, ModuleId, Tag};
-use super::complex::{Complex, MapDomain};
-use super::diagram::CellData;
+use crate::core::complex::{Complex, MapDomain};
+use crate::core::diagram::CellData;
 
 #[derive(Debug, Clone)]
 pub struct TypeEntry {
