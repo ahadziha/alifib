@@ -34,6 +34,7 @@ impl fmt::Display for DComponent {
             Self::Out => f.write_str("out"),
             Self::Paren(d) => write!(f, "({})", d.inner),
             Self::Hole => f.write_str("?"),
+            Self::AnonMap { def, target } => write!(f, "(map {} :: {})", def.inner, target.inner),
         }
     }
 }
@@ -92,10 +93,19 @@ impl fmt::Display for PMapClause {
     }
 }
 
-impl fmt::Display for PMSystem {
+impl fmt::Display for PMapDef {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if let Some(ext) = &self.extend {
-            write!(f, "{}", ext.inner)?;
+        match self {
+            Self::PMap(p) => write!(f, "{p}"),
+            Self::Ext(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl fmt::Display for PMapExt {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some(prefix) = &self.prefix {
+            write!(f, "{}", prefix.inner)?;
         }
         f.write_str("[")?;
         for (i, c) in self.clauses.iter().enumerate() {
@@ -112,7 +122,8 @@ impl fmt::Display for PMapBasic {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Name(n) => f.write_str(n),
-            Self::System(s) => write!(f, "{s}"),
+            Self::AnonMap { def, target } => write!(f, "(map {} :: {})", def.inner, target.inner),
+            Self::Paren(p) => write!(f, "({})", p.inner),
         }
     }
 }
@@ -122,6 +133,20 @@ impl fmt::Display for PMap {
         match self {
             Self::Basic(b) => write!(f, "{b}"),
             Self::Dot { base, rest } => write!(f, "{base}.{}", rest.inner),
+        }
+    }
+}
+
+impl fmt::Display for Complex {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Address(addr) => write!(f, "{}", FmtAddress(addr)),
+            Self::Block { address, body } => {
+                if let Some(addr) = address {
+                    write!(f, "{} ", FmtAddress(addr))?;
+                }
+                write!(f, "{{...{} items}}", body.len())
+            }
         }
     }
 }
@@ -220,18 +245,14 @@ fn pp_local_inst(f: &mut fmt::Formatter, inst: &LocalInst, d: usize) -> fmt::Res
 
 fn pp_let_diag(f: &mut fmt::Formatter, l: &LetDiag, d: usize) -> fmt::Result {
     pad(f, d)?;
-    write!(f, "let {}", l.name.inner)?;
-    if let Some(b) = &l.boundary {
-        write!(f, " : {}", b.inner)?;
-    }
-    writeln!(f, " = {}", l.value.inner)
+    writeln!(f, "let {} = {}", l.name.inner, l.value.inner)
 }
 
 fn pp_def_pmap(f: &mut fmt::Formatter, p: &DefPMap, d: usize) -> fmt::Result {
     pad(f, d)?;
     writeln!(
         f,
-        "def {} :: {} = {}",
+        "let {} :: {} = {}",
         p.name.inner,
         FmtAddress(&p.address.inner),
         p.value.inner

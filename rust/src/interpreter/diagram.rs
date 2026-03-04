@@ -265,6 +265,24 @@ pub fn interpret_d_comp(
         DComponent::Hole => {
             (Some(Component::Hole), InterpResult::ok(context.clone()))
         }
+        DComponent::AnonMap { def, target } => {
+            let (ns_opt, target_result) = super::interpreter::interpret_complex(
+                context, super::types::Mode::Global, target,
+            );
+            match ns_opt {
+                None => (None, target_result),
+                Some(ns) => {
+                    let (mc_opt, def_result) = super::pmap::interpret_pmap_def(
+                        &target_result.context, &ns.location, location, def,
+                    );
+                    let combined = InterpResult::combine(target_result, def_result);
+                    match mc_opt {
+                        None => (None, combined),
+                        Some(mc) => (Some(Component::Term(Term::MTerm(mc))), combined),
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -462,49 +480,7 @@ pub fn interpret_let_diag(
         None => (None, diag_result),
         Some(diagram) => {
             let name = ld.name.inner.clone();
-            let context_after = diag_result.context.clone();
-
-            match &ld.boundary {
-                None => (Some((name, diagram)), diag_result),
-                Some(bounds) => {
-                    let (bounds_opt, bounds_result) = interpret_boundaries(
-                        &context_after, location, bounds
-                    );
-                    let combined = InterpResult::combine(diag_result, bounds_result);
-                    match bounds_opt {
-                        None => (None, combined),
-                        Some(CellData::Zero) => {
-                            (Some((name, diagram)), combined)
-                        }
-                        Some(CellData::Boundary { boundary_in, boundary_out }) => {
-                            let bound_span = bounds.span;
-                            let dim = diagram.dim();
-                            let dim = if dim <= 0 { 0 } else { dim as usize - 1 };
-
-                            let check_boundary = |sign: DiagramSign, expected: &Diagram| -> Result<(), String> {
-                                let actual = Diagram::boundary_normal(sign, dim, &diagram)
-                                    .map_err(|e| e.to_string())?;
-                                if Diagram::isomorphic(&actual, expected) { Ok(()) }
-                                else {
-                                    let side = match sign { DiagramSign::Input => "input", DiagramSign::Output => "output" };
-                                    Err(format!("Diagram does not match {} boundary annotation", side))
-                                }
-                            };
-
-                            let mut r = combined;
-                            if let Err(msg) = check_boundary(DiagramSign::Input, &boundary_in) {
-                                r.add_error(make_error(bound_span, msg));
-                                return (None, r);
-                            }
-                            if let Err(msg) = check_boundary(DiagramSign::Output, &boundary_out) {
-                                r.add_error(make_error(bound_span, msg));
-                                return (None, r);
-                            }
-                            (Some((name, diagram)), r)
-                        }
-                    }
-                }
-            }
+            (Some((name, diagram)), diag_result)
         }
     }
 }

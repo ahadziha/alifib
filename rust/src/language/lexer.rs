@@ -33,7 +33,7 @@ pub fn lexer<'src>(
             "out" => Token::Out,
             "Type" => Token::Type,
             "let" => Token::Let,
-            "def" => Token::Def,
+            "map" => Token::Map,
             "as" => Token::As,
             _ => {
                 if s.chars().next().unwrap().is_ascii_digit() {

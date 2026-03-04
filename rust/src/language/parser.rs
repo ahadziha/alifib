@@ -1,11 +1,12 @@
 use chumsky::input::MappedInput;
 use chumsky::prelude::*;
+use chumsky::recursive::Recursive;
 use chumsky::span::SimpleSpan;
 
 use super::ast::{
     Address, AssertStmt, AttachStmt, Block, Boundary, CInstr, Complex, DComponent, DExpr, DefPMap,
     Diagram, Generator, IncludeModule, IncludeStmt, LetDiag, LocalInst, NameWithBoundary, PMap,
-    PMapBasic, PMapClause, PMSystem, Program, Span, Spanned, TypeInst,
+    PMapBasic, PMapClause, PMapDef, PMapExt, Program, Span, Spanned, TypeInst,
 };
 use super::token::Token;
 
@@ -14,8 +15,22 @@ pub type TokenInput<'tokens, 'src> =
 
 type E<'tokens, 'src> = extra::Err<Rich<'tokens, Token<'src>, SimpleSpan>>;
 
+/// Type-erased recursive parser alias. Using `recursive()` for type erasure
+/// prevents symbol name explosion with deeply nested generic types.
+type R<'tokens, 'src, O> = Recursive<
+    chumsky::recursive::Direct<'tokens, 'tokens, TokenInput<'tokens, 'src>, O, E<'tokens, 'src>>,
+>;
+
+type RDiagram<'tokens, 'src> = R<'tokens, 'src, Spanned<Diagram>>;
+type RPMap<'tokens, 'src> = R<'tokens, 'src, Spanned<PMap>>;
+type RPMapDef<'tokens, 'src> = R<'tokens, 'src, Spanned<PMapDef>>;
+type RComplex<'tokens, 'src> = R<'tokens, 'src, Spanned<Complex>>;
+
 fn cspan(s: SimpleSpan) -> Span {
-    Span { start: s.start, end: s.end }
+    Span {
+        start: s.start,
+        end: s.end,
+    }
 }
 
 fn sp<T>(inner: T, span: Span) -> Spanned<T> {
@@ -62,14 +77,237 @@ fn address<'tokens, 'src: 'tokens>(
 }
 
 // ---------------------------------------------------------------------------
-// Diagram grammar (recursive)
+// Let/Def shared enum
 // ---------------------------------------------------------------------------
 
-fn diagram_parser<'tokens, 'src: 'tokens>(
-) -> impl Parser<'tokens, TokenInput<'tokens, 'src>, Spanned<Diagram>, E<'tokens, 'src>> + Clone {
-    recursive(|diagram| {
-        // DComponent = Name | "in" | "out" | "(" Diagram ")" | "?"
+enum LetOrDef {
+    Let(Spanned<Diagram>),
+    Def(Spanned<Address>, Spanned<PMapDef>),
+}
+
+// ---------------------------------------------------------------------------
+// Builder functions for mutually-referencing parsers.
+//
+// Each builder takes type-erased parser handles and returns a type-erased
+// parser via recursive(). This prevents both:
+// 1. Infinite recursion at parser construction time
+// 2. Symbol name explosion from deeply nested generic types
+// ---------------------------------------------------------------------------
+
+/// Build PMapDef parser: `[clauses]` | PMap [`[clauses]`]
+fn build_pmap_def<'tokens, 'src: 'tokens>(
+    diagram: RDiagram<'tokens, 'src>,
+    pmap: RPMap<'tokens, 'src>,
+) -> RPMapDef<'tokens, 'src> {
+    recursive(move |_| {
+        let clause = diagram
+            .clone()
+            .then_ignore(t(Token::FatArrow))
+            .then(diagram.clone())
+            .map_with(|(lhs, rhs), e| sp(PMapClause { lhs, rhs }, cspan(e.span())));
+
+        let bracketed = clause
+            .separated_by(t(Token::Comma))
+            .allow_trailing()
+            .collect::<Vec<_>>()
+            .delimited_by(t(Token::LBrack), t(Token::RBrack));
+
+        let bare_ext = bracketed.clone().map_with(|clauses, e| {
+            sp(
+                PMapDef::Ext(PMapExt {
+                    prefix: None,
+                    clauses,
+                }),
+                cspan(e.span()),
+            )
+        });
+
+        let pmap_then_maybe_ext =
+            pmap.clone()
+                .then(bracketed.or_not())
+                .map_with(|(pm, mc), e| match mc {
+                    None => sp(PMapDef::PMap(pm.inner), cspan(e.span())),
+                    Some(clauses) => sp(
+                        PMapDef::Ext(PMapExt {
+                            prefix: Some(Box::new(pm)),
+                            clauses,
+                        }),
+                        cspan(e.span()),
+                    ),
+                });
+
+        choice((bare_ext, pmap_then_maybe_ext))
+    })
+}
+
+/// Build Complex parser: `Address? { CInstr, ... }` | `Address`
+fn build_complex<'tokens, 'src: 'tokens>(
+    diagram: RDiagram<'tokens, 'src>,
+    pmap_def: RPMapDef<'tokens, 'src>,
+) -> RComplex<'tokens, 'src> {
+    recursive(move |_| {
+        let let_or_def = t(Token::Let)
+            .ignore_then(name())
+            .then(choice((
+                t(Token::DColon)
+                    .ignore_then(address())
+                    .then_ignore(t(Token::Eq))
+                    .then(pmap_def.clone())
+                    .map(|(a, v)| LetOrDef::Def(a, v)),
+                t(Token::Eq)
+                    .ignore_then(diagram.clone())
+                    .map(LetOrDef::Let),
+            )))
+            .map_with(|(n, lod), e| match lod {
+                LetOrDef::Let(v) => sp(
+                    CInstr::LetDiag(LetDiag {
+                        name: n,
+                        value: v,
+                    }),
+                    cspan(e.span()),
+                ),
+                LetOrDef::Def(a, v) => sp(
+                    CInstr::DefPMap(DefPMap {
+                        name: n,
+                        address: a,
+                        value: v,
+                    }),
+                    cspan(e.span()),
+                ),
+            });
+
+        let attach_stmt = t(Token::Attach)
+            .ignore_then(name())
+            .then_ignore(t(Token::DColon))
+            .then(address())
+            .then(t(Token::Along).ignore_then(pmap_def.clone()).or_not())
+            .map_with(|((n, a), along), e| {
+                sp(
+                    CInstr::AttachStmt(AttachStmt {
+                        name: n,
+                        address: a,
+                        along,
+                    }),
+                    cspan(e.span()),
+                )
+            });
+
+        let include_stmt = t(Token::Include)
+            .ignore_then(address())
+            .then(t(Token::As).ignore_then(name()).or_not())
+            .map_with(|(a, alias), e| {
+                sp(
+                    CInstr::IncludeStmt(IncludeStmt {
+                        address: a,
+                        alias,
+                    }),
+                    cspan(e.span()),
+                )
+            });
+
+        let boundary = diagram
+            .clone()
+            .then_ignore(t(Token::Arrow))
+            .then(diagram.clone())
+            .map_with(|(source, target), e| {
+                sp(Boundary { source, target }, cspan(e.span()))
+            });
+
+        let nwb = name()
+            .then(t(Token::Colon).ignore_then(boundary).or_not())
+            .map_with(|(name, boundary), e| {
+                sp(NameWithBoundary { name, boundary }, cspan(e.span()))
+            })
+            .map(|s| sp(CInstr::NameWithBoundary(s.inner), s.span));
+
+        let cinstr = choice((attach_stmt, include_stmt, let_or_def, nwb));
+
+        let complex_body = cinstr
+            .separated_by(t(Token::Comma))
+            .allow_trailing()
+            .collect::<Vec<_>>();
+
+        let complex_block = address()
+            .or_not()
+            .then(complex_body.delimited_by(t(Token::LBrace), t(Token::RBrace)))
+            .map_with(|(addr, body), e| {
+                sp(
+                    Complex::Block {
+                        address: addr.map(|a| a.inner),
+                        body,
+                    },
+                    cspan(e.span()),
+                )
+            });
+
+        let complex_addr = address().map(|a| sp(Complex::Address(a.inner), a.span));
+
+        choice((complex_block, complex_addr))
+    })
+}
+
+/// Build PMap parser (actually recursive: PMap = PMapBasic [ "." PMap ])
+fn build_pmap<'tokens, 'src: 'tokens>(
+    diagram: RDiagram<'tokens, 'src>,
+) -> RPMap<'tokens, 'src> {
+    recursive(move |pmap: RPMap<'tokens, 'src>| {
+        let pmap_def = build_pmap_def(diagram.clone(), pmap.clone());
+        let complex = build_complex(diagram.clone(), pmap_def.clone());
+
+        let anon_map = t(Token::LParen)
+            .ignore_then(t(Token::Map))
+            .ignore_then(pmap_def)
+            .then_ignore(t(Token::DColon))
+            .then(complex)
+            .then_ignore(t(Token::RParen))
+            .map(|(def, target)| PMapBasic::AnonMap {
+                def: Box::new(def),
+                target,
+            });
+
+        let paren_pmap = pmap
+            .clone()
+            .delimited_by(t(Token::LParen), t(Token::RParen))
+            .map(|p| PMapBasic::Paren(Box::new(p)));
+
+        let name_basic = name().map(|n| PMapBasic::Name(n.inner));
+        let pmap_basic = choice((anon_map, paren_pmap, name_basic));
+
+        pmap_basic
+            .then(t(Token::Dot).ignore_then(pmap.clone()).or_not())
+            .map_with(|(base, rest), e| match rest {
+                None => sp(PMap::Basic(base), cspan(e.span())),
+                Some(rest) => sp(
+                    PMap::Dot {
+                        base,
+                        rest: Box::new(rest),
+                    },
+                    cspan(e.span()),
+                ),
+            })
+    })
+}
+
+/// Build Diagram parser (actually recursive: through DComponent::Paren and AnonMap)
+fn build_diagram<'tokens, 'src: 'tokens>() -> RDiagram<'tokens, 'src> {
+    recursive(|diagram: RDiagram<'tokens, 'src>| {
+        let pmap = build_pmap(diagram.clone());
+        let pmap_def = build_pmap_def(diagram.clone(), pmap.clone());
+        let complex = build_complex(diagram.clone(), pmap_def.clone());
+
+        let anon_map_dcomp = t(Token::LParen)
+            .ignore_then(t(Token::Map))
+            .ignore_then(pmap_def)
+            .then_ignore(t(Token::DColon))
+            .then(complex)
+            .then_ignore(t(Token::RParen))
+            .map(|(def, target)| DComponent::AnonMap {
+                def: Box::new(def),
+                target,
+            });
+
         let dcomponent = choice((
+            anon_map_dcomp,
             diagram
                 .clone()
                 .delimited_by(t(Token::LParen), t(Token::RParen))
@@ -81,7 +319,6 @@ fn diagram_parser<'tokens, 'src: 'tokens>(
         ))
         .map_with(|v, e| sp(v, cspan(e.span())));
 
-        // DExpr = DComponent { "." DComponent }
         let dexpr = dcomponent
             .clone()
             .then(
@@ -90,30 +327,31 @@ fn diagram_parser<'tokens, 'src: 'tokens>(
                     .repeated()
                     .collect::<Vec<_>>(),
             )
-            .map(|(first, rest): (Spanned<DComponent>, Vec<Spanned<DComponent>>)| {
-                if rest.is_empty() {
-                    sp(DExpr::Component(first.inner), first.span)
-                } else {
-                    let mut expr: Spanned<DExpr> =
-                        sp(DExpr::Component(first.inner), first.span);
-                    for field in rest {
-                        let new_span = Span {
-                            start: expr.span.start,
-                            end: field.span.end,
-                        };
-                        expr = sp(
-                            DExpr::Dot {
-                                base: Box::new(expr),
-                                field,
-                            },
-                            new_span,
-                        );
+            .map(
+                |(first, rest): (Spanned<DComponent>, Vec<Spanned<DComponent>>)| {
+                    if rest.is_empty() {
+                        sp(DExpr::Component(first.inner), first.span)
+                    } else {
+                        let mut expr: Spanned<DExpr> =
+                            sp(DExpr::Component(first.inner), first.span);
+                        for field in rest {
+                            let new_span = Span {
+                                start: expr.span.start,
+                                end: field.span.end,
+                            };
+                            expr = sp(
+                                DExpr::Dot {
+                                    base: Box::new(expr),
+                                    field,
+                                },
+                                new_span,
+                            );
+                        }
+                        expr
                     }
-                    expr
-                }
-            });
+                },
+            );
 
-        // DPrincipal = DExpr { DExpr }  (juxtaposition = implicit pasting)
         let dprincipal = dexpr
             .clone()
             .repeated()
@@ -121,7 +359,6 @@ fn diagram_parser<'tokens, 'src: 'tokens>(
             .collect::<Vec<_>>()
             .map_with(|exprs, e| sp(Diagram::Principal(exprs), cspan(e.span())));
 
-        // Diagram = DPrincipal { "#" Nat DPrincipal }
         dprincipal.clone().foldl(
             t(Token::Hash)
                 .ignore_then(nat())
@@ -147,247 +384,82 @@ fn diagram_parser<'tokens, 'src: 'tokens>(
 }
 
 // ---------------------------------------------------------------------------
-// Boundary
+// Program
 // ---------------------------------------------------------------------------
 
-fn boundary<'tokens, 'src: 'tokens>(
-) -> impl Parser<'tokens, TokenInput<'tokens, 'src>, Spanned<Boundary>, E<'tokens, 'src>> + Clone
-{
-    diagram_parser()
+pub fn program_parser<'tokens, 'src: 'tokens>(
+) -> impl Parser<'tokens, TokenInput<'tokens, 'src>, Program, E<'tokens, 'src>> {
+    let diagram = build_diagram();
+    let pmap = build_pmap(diagram.clone());
+    let pmap_def = build_pmap_def(diagram.clone(), pmap.clone());
+    let complex = build_complex(diagram.clone(), pmap_def.clone());
+
+    // --- Boundary & NameWithBoundary ---
+    let boundary = diagram
+        .clone()
         .then_ignore(t(Token::Arrow))
-        .then(diagram_parser())
-        .map_with(|(source, target), e| sp(Boundary { source, target }, cspan(e.span())))
-}
+        .then(diagram.clone())
+        .map_with(|(source, target), e| sp(Boundary { source, target }, cspan(e.span())));
 
-fn name_with_boundary<'tokens, 'src: 'tokens>(
-) -> impl Parser<'tokens, TokenInput<'tokens, 'src>, Spanned<NameWithBoundary>, E<'tokens, 'src>>
-       + Clone {
-    name()
-        .then(t(Token::Colon).ignore_then(boundary()).or_not())
-        .map_with(|(name, boundary), e| sp(NameWithBoundary { name, boundary }, cspan(e.span())))
-}
-
-// ---------------------------------------------------------------------------
-// PMap grammar (recursive)
-// ---------------------------------------------------------------------------
-
-fn pmap_parser<'tokens, 'src: 'tokens>(
-) -> impl Parser<'tokens, TokenInput<'tokens, 'src>, Spanned<PMap>, E<'tokens, 'src>> + Clone {
-    recursive(|pmap| {
-        let clause = diagram_parser()
-            .then_ignore(t(Token::FatArrow))
-            .then(diagram_parser())
-            .map_with(|(lhs, rhs), e| sp(PMapClause { lhs, rhs }, cspan(e.span())));
-
-        let clauses = clause
-            .separated_by(t(Token::Comma))
-            .allow_trailing()
-            .collect::<Vec<_>>();
-
-        let bracketed = clauses.delimited_by(t(Token::LBrack), t(Token::RBrack));
-
-        // Name optionally followed by [clauses] (handles "foo[x => y]" and bare "foo")
-        let name_atom = name()
-            .then(bracketed.clone().or_not())
-            .map(|(n, maybe_clauses)| match maybe_clauses {
-                None => PMapBasic::Name(n.inner),
-                Some(clauses) => PMapBasic::System(PMSystem {
-                    extend: Some(Box::new(sp(
-                        PMap::Basic(PMapBasic::Name(n.inner)),
-                        n.span,
-                    ))),
-                    clauses,
-                }),
-            });
-
-        // Bare [clauses]
-        let bare_system = bracketed.map(|clauses| {
-            PMapBasic::System(PMSystem {
-                extend: None,
-                clauses,
-            })
+    let name_with_boundary = name()
+        .then(t(Token::Colon).ignore_then(boundary).or_not())
+        .map_with(|(name, boundary), e| {
+            sp(NameWithBoundary { name, boundary }, cspan(e.span()))
         });
 
-        let pmap_basic = choice((name_atom, bare_system));
-
-        // PMap = PMapBasic [ "." PMap ]
-        // Recursion only after consuming ".", so always makes progress
-        pmap_basic
-            .then(t(Token::Dot).ignore_then(pmap).or_not())
-            .map_with(|(base, rest), e| match rest {
-                None => sp(PMap::Basic(base), cspan(e.span())),
-                Some(rest) => sp(
-                    PMap::Dot {
-                        base,
-                        rest: Box::new(rest),
-                    },
-                    cspan(e.span()),
-                ),
-            })
-    })
-}
-
-// ---------------------------------------------------------------------------
-// Complex
-// ---------------------------------------------------------------------------
-
-fn complex_parser<'tokens, 'src: 'tokens>(
-) -> impl Parser<'tokens, TokenInput<'tokens, 'src>, Spanned<Complex>, E<'tokens, 'src>> + Clone {
-    let let_diag = t(Token::Let)
-        .ignore_then(name())
-        .then(t(Token::Colon).ignore_then(boundary()).or_not())
-        .then_ignore(t(Token::Eq))
-        .then(diagram_parser())
-        .map_with(|((n, b), v), e| {
-            sp(
-                CInstr::LetDiag(LetDiag {
-                    name: n,
-                    boundary: b,
-                    value: v,
-                }),
-                cspan(e.span()),
-            )
-        });
-
-    let def_pmap = t(Token::Def)
-        .ignore_then(name())
-        .then_ignore(t(Token::DColon))
-        .then(address())
-        .then_ignore(t(Token::Eq))
-        .then(pmap_parser())
-        .map_with(|((n, a), v), e| {
-            sp(
-                CInstr::DefPMap(DefPMap {
-                    name: n,
-                    address: a,
-                    value: v,
-                }),
-                cspan(e.span()),
-            )
-        });
-
-    let attach_stmt = t(Token::Attach)
-        .ignore_then(name())
-        .then_ignore(t(Token::DColon))
-        .then(address())
-        .then(t(Token::Along).ignore_then(pmap_parser()).or_not())
-        .map_with(|((n, a), along), e| {
-            sp(
-                CInstr::AttachStmt(AttachStmt {
-                    name: n,
-                    address: a,
-                    along,
-                }),
-                cspan(e.span()),
-            )
-        });
-
-    let include_stmt = t(Token::Include)
-        .ignore_then(address())
-        .then(t(Token::As).ignore_then(name()).or_not())
-        .map_with(|(a, alias), e| {
-            sp(
-                CInstr::IncludeStmt(IncludeStmt {
-                    address: a,
-                    alias,
-                }),
-                cspan(e.span()),
-            )
-        });
-
-    let nwb = name_with_boundary().map(|s| sp(CInstr::NameWithBoundary(s.inner), s.span));
-
-    let cinstr = choice((attach_stmt, include_stmt, let_diag, def_pmap, nwb));
-
-    let complex_body = cinstr
-        .separated_by(t(Token::Comma))
-        .allow_trailing()
-        .collect::<Vec<_>>();
-
-    let complex_block = address()
-        .or_not()
-        .then(complex_body.delimited_by(t(Token::LBrace), t(Token::RBrace)))
-        .map_with(|(addr, body), e| {
-            sp(
-                Complex::Block {
-                    address: addr.map(|a| a.inner),
-                    body,
-                },
-                cspan(e.span()),
-            )
-        });
-
-    let complex_addr = address().map(|a| sp(Complex::Address(a.inner), a.span));
-
-    choice((complex_block, complex_addr))
-}
-
-// ---------------------------------------------------------------------------
-// Let/Def for local and type blocks (standalone)
-// ---------------------------------------------------------------------------
-
-fn let_diag_parser<'tokens, 'src: 'tokens>(
-) -> impl Parser<'tokens, TokenInput<'tokens, 'src>, LetDiag, E<'tokens, 'src>> + Clone {
-    t(Token::Let)
-        .ignore_then(name())
-        .then(t(Token::Colon).ignore_then(boundary()).or_not())
-        .then_ignore(t(Token::Eq))
-        .then(diagram_parser())
-        .map(|((n, b), v)| LetDiag {
-            name: n,
-            boundary: b,
-            value: v,
-        })
-}
-
-fn def_pmap_parser<'tokens, 'src: 'tokens>(
-) -> impl Parser<'tokens, TokenInput<'tokens, 'src>, DefPMap, E<'tokens, 'src>> + Clone {
-    t(Token::Def)
-        .ignore_then(name())
-        .then_ignore(t(Token::DColon))
-        .then(address())
-        .then_ignore(t(Token::Eq))
-        .then(pmap_parser())
-        .map(|((n, a), v)| DefPMap {
-            name: n,
-            address: a,
-            value: v,
-        })
-}
-
-// ---------------------------------------------------------------------------
-// Local instructions (at a complex)
-// ---------------------------------------------------------------------------
-
-fn local_inst<'tokens, 'src: 'tokens>(
-) -> impl Parser<'tokens, TokenInput<'tokens, 'src>, Spanned<LocalInst>, E<'tokens, 'src>> + Clone
-{
+    // --- Local instructions ---
     let assert_stmt = t(Token::Assert)
-        .ignore_then(diagram_parser())
+        .ignore_then(diagram.clone())
         .then_ignore(t(Token::Eq))
-        .then(diagram_parser())
-        .map_with(|(lhs, rhs), e| sp(LocalInst::AssertStmt(AssertStmt { lhs, rhs }), cspan(e.span())));
+        .then(diagram.clone())
+        .map_with(|(lhs, rhs), e| {
+            sp(
+                LocalInst::AssertStmt(AssertStmt { lhs, rhs }),
+                cspan(e.span()),
+            )
+        });
 
-    let let_local =
-        let_diag_parser().map_with(|l, e| sp(LocalInst::LetDiag(l), cspan(e.span())));
-    let def_local =
-        def_pmap_parser().map_with(|d, e| sp(LocalInst::DefPMap(d), cspan(e.span())));
+    let let_or_def_local = t(Token::Let)
+        .ignore_then(name())
+        .then(choice((
+            t(Token::DColon)
+                .ignore_then(address())
+                .then_ignore(t(Token::Eq))
+                .then(pmap_def.clone())
+                .map(|(a, v)| LetOrDef::Def(a, v)),
+            t(Token::Eq)
+                .ignore_then(diagram.clone())
+                .map(LetOrDef::Let),
+        )))
+        .map_with(|(n, lod), e| match lod {
+            LetOrDef::Let(v) => sp(
+                LocalInst::LetDiag(LetDiag {
+                    name: n,
+                    value: v,
+                }),
+                cspan(e.span()),
+            ),
+            LetOrDef::Def(a, v) => sp(
+                LocalInst::DefPMap(DefPMap {
+                    name: n,
+                    address: a,
+                    value: v,
+                }),
+                cspan(e.span()),
+            ),
+        });
 
-    choice((assert_stmt, def_local, let_local))
-}
+    let local_inst = choice((assert_stmt, let_or_def_local));
 
-// ---------------------------------------------------------------------------
-// Type instructions
-// ---------------------------------------------------------------------------
-
-fn type_inst<'tokens, 'src: 'tokens>(
-) -> impl Parser<'tokens, TokenInput<'tokens, 'src>, Spanned<TypeInst>, E<'tokens, 'src>> + Clone
-{
-    let generator = name_with_boundary()
+    // --- Type instructions ---
+    let generator = name_with_boundary
         .then_ignore(t(Token::LArrow))
-        .then(complex_parser())
+        .then(complex.clone())
         .map_with(|(name, complex), e| {
-            sp(TypeInst::Generator(Generator { name, complex }), cspan(e.span()))
+            sp(
+                TypeInst::Generator(Generator { name, complex }),
+                cspan(e.span()),
+            )
         });
 
     let include_module = t(Token::Include)
@@ -400,24 +472,43 @@ fn type_inst<'tokens, 'src: 'tokens>(
             )
         });
 
-    let let_type =
-        let_diag_parser().map_with(|l, e| sp(TypeInst::LetDiag(l), cspan(e.span())));
-    let def_type =
-        def_pmap_parser().map_with(|d, e| sp(TypeInst::DefPMap(d), cspan(e.span())));
+    let let_or_def_type = t(Token::Let)
+        .ignore_then(name())
+        .then(choice((
+            t(Token::DColon)
+                .ignore_then(address())
+                .then_ignore(t(Token::Eq))
+                .then(pmap_def)
+                .map(|(a, v)| LetOrDef::Def(a, v)),
+            t(Token::Eq)
+                .ignore_then(diagram.clone())
+                .map(LetOrDef::Let),
+        )))
+        .map_with(|(n, lod), e| match lod {
+            LetOrDef::Let(v) => sp(
+                TypeInst::LetDiag(LetDiag {
+                    name: n,
+                    value: v,
+                }),
+                cspan(e.span()),
+            ),
+            LetOrDef::Def(a, v) => sp(
+                TypeInst::DefPMap(DefPMap {
+                    name: n,
+                    address: a,
+                    value: v,
+                }),
+                cspan(e.span()),
+            ),
+        });
 
-    choice((generator, include_module, def_type, let_type))
-}
+    let type_inst = choice((generator, include_module, let_or_def_type));
 
-// ---------------------------------------------------------------------------
-// Block
-// ---------------------------------------------------------------------------
-
-fn block<'tokens, 'src: 'tokens>(
-) -> impl Parser<'tokens, TokenInput<'tokens, 'src>, Spanned<Block>, E<'tokens, 'src>> + Clone {
+    // --- Blocks ---
     let type_block = t(Token::At)
         .then(t(Token::Type))
         .ignore_then(
-            type_inst()
+            type_inst
                 .separated_by(t(Token::Comma))
                 .allow_trailing()
                 .collect::<Vec<_>>(),
@@ -425,25 +516,20 @@ fn block<'tokens, 'src: 'tokens>(
         .map_with(|insts, e| sp(Block::TypeBlock(insts), cspan(e.span())));
 
     let local_block = t(Token::At)
-        .ignore_then(complex_parser())
+        .ignore_then(complex)
         .then(
-            local_inst()
+            local_inst
                 .separated_by(t(Token::Comma))
                 .allow_trailing()
                 .collect::<Vec<_>>(),
         )
-        .map_with(|(complex, body), e| sp(Block::LocalBlock { complex, body }, cspan(e.span())));
+        .map_with(|(complex, body), e| {
+            sp(Block::LocalBlock { complex, body }, cspan(e.span()))
+        });
 
-    choice((type_block, local_block))
-}
+    let block = choice((type_block, local_block));
 
-// ---------------------------------------------------------------------------
-// Program
-// ---------------------------------------------------------------------------
-
-pub fn program_parser<'tokens, 'src: 'tokens>(
-) -> impl Parser<'tokens, TokenInput<'tokens, 'src>, Program, E<'tokens, 'src>> {
-    block()
+    block
         .repeated()
         .collect()
         .then_ignore(end())

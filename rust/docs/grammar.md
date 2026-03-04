@@ -66,7 +66,7 @@
 
 <CInstr> ::= <NameWithBoundary> | <LetDiag> | <DefPMap> | <AttachStmt> | <IncludeStmt>  
 <IncludeStmt> ::= "include" <Address> [ "as" <Name> ]
-<AttachStmt> ::= "attach" <Name> "::" <Address> [ "along" <PMap> ]
+<AttachStmt> ::= "attach" <Name> "::" <Address> [ "along" <PMapDef> ]
 
 -- A _local block_ is a series of local instructions
 
@@ -88,17 +88,18 @@
 <Diagram> ::= <DPrincipal> | <Diagram> "#" <Nat> <DPrincipal>
 <DPrincipal> ::= <DExpr> | <DPrincipal> <DExpr>
 <DExpr> ::= <DComponent> | <DExpr> "." <DComponent>
-<DComponent> ::= <Name> | <PMap> | <Bd> | "(" <Diagram> ")" | "?"
+<DComponent> ::= <Name> | <AnonMap> | <Bd> | "(" <Diagram> ")" | "?"
 <Bd> ::= "in" | "out"
+<AnonMap> ::= "(" "map" <PMapDef> "::" <Complex> ")"
 
 -- A general _partial map_ is a dotted sequence of basic partial maps.
--- A basic partial map is either 
+-- A basic partial map is either
 -- * a name
 -- * a parenthesized partial map
 -- * an anonymous map, which is necessarily an extension
 
 <PMap> ::= <PMapBasic> | <PMap> "." <PMapBasic>
-<PMapBasic> ::= <Name> | "(" "map" <PMapDef> "::" <Complex> ")" | "(" <PMap> ")"
+<PMapBasic> ::= <Name> | <AnonMap> | "(" <PMap> ")"
 
 -- An extension is (optionally) a partial map followed by a number of clauses
 -- that extend it.

@@ -36,7 +36,7 @@ Mor <<= {
 
 (* The identity on an object is a morphism *)
 @Ob
-def Id :: Mor = [
+let Id :: Mor = [
   Dom => Ob,
   Cod => Ob,
   mor => id,
@@ -51,19 +51,19 @@ Pair <<= {
   attach Snd :: Mor along [
     Dom => Fst.Cod
   ],
-  def Dom :: Ob = Fst.Dom,
-  def Cod :: Ob = Snd.Cod,
+  let Dom :: Ob = Fst.Dom,
+  let Cod :: Ob = Snd.Cod,
   let mor = Fst.mor Snd.mor,
-  def Left_id :: Eq = [
+  let Left_id :: Eq = [
     dir => (Fst.Left_id.dir #0 Snd.Left_id.inv) (Fst.Right_id.dir Snd.mor),
     inv => (Fst.Left_id.inv #0 Snd.Left_id.inv) (Fst.Dom.id Fst.Right_id.dir Snd.mor)
   ],
-  def Right_id :: Eq = [
+  let Right_id :: Eq = [
     dir => (Fst.mor (Snd.Right_id.dir Snd.Left_id.inv)) (Fst.Right_id.dir Snd.mor),
     inv => (Fst.mor (Snd.Right_id.inv (Snd.Left_id.inv Snd.Cod.id)))
       (Fst.Right_id.dir Snd.mor Snd.Cod.id)
   ],
-  def Comp :: Mor = [
+  let Comp :: Mor = [
     Dom => Dom,
     Cod => Cod,
     mor => mor,

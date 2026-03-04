@@ -43,7 +43,7 @@ Function <<= {
 }
 
 @Set
-def Id :: Function = [
+let Id :: Function = [
   Dom => Set,
   Cod => Set,
   fun => id,

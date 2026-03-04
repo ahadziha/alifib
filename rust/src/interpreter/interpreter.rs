@@ -233,7 +233,7 @@ fn interpret_generator_type(
 
 // ---- Complex resolution ----
 
-fn interpret_complex(
+pub(super) fn interpret_complex(
     context: &Context,
     mode: Mode,
     complex: &Spanned<ast::Complex>,

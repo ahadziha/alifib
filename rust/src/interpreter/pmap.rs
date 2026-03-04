@@ -5,7 +5,7 @@ use crate::core::{
     diagram::{CellData, Diagram, Sign as DiagramSign},
     map::PMap,
 };
-use crate::language::ast::{self, Span, Spanned, PMapBasic, PMSystem, PMapClause, DefPMap, Address};
+use crate::language::ast::{self, Span, Spanned, PMapBasic, PMapDef, PMapExt, PMapClause, DefPMap, Address};
 use super::types::*;
 use super::diagram::interpret_diagram_as_term;
 
@@ -130,10 +130,20 @@ pub fn interpret_pmap(
     source: &Complex,
     pmap: &Spanned<ast::PMap>,
 ) -> (Option<MapComponent>, InterpResult) {
-    match &pmap.inner {
-        ast::PMap::Basic(basic) => interpret_pmap_basic(context, location, source, basic, pmap.span),
+    interpret_pmap_inner(context, location, source, &pmap.inner, pmap.span)
+}
+
+fn interpret_pmap_inner(
+    context: &Context,
+    location: &Complex,
+    source: &Complex,
+    pmap: &ast::PMap,
+    span: Span,
+) -> (Option<MapComponent>, InterpResult) {
+    match pmap {
+        ast::PMap::Basic(basic) => interpret_pmap_basic(context, location, source, basic, span),
         ast::PMap::Dot { base, rest } => {
-            let (base_opt, base_result) = interpret_pmap_basic(context, location, source, base, pmap.span);
+            let (base_opt, base_result) = interpret_pmap_basic(context, location, source, base, span);
             match base_opt {
                 None => (None, base_result),
                 Some(base_comp) => {
@@ -197,21 +207,53 @@ fn interpret_pmap_basic(
                 }
             }
         }
-        PMapBasic::System(pm_system) => {
-            interpret_pm_system(context, location, _source, pm_system, span)
+        PMapBasic::AnonMap { def, target } => {
+            let (ns_opt, target_result) = super::interpreter::interpret_complex(
+                context, super::types::Mode::Global, target,
+            );
+            match ns_opt {
+                None => (None, target_result),
+                Some(ns) => {
+                    let (mc_opt, def_result) = interpret_pmap_def(
+                        &target_result.context, &ns.location, _source, def,
+                    );
+                    (mc_opt, InterpResult::combine(target_result, def_result))
+                }
+            }
+        }
+        PMapBasic::Paren(inner) => {
+            interpret_pmap(context, location, _source, inner)
         }
     }
 }
 
-fn interpret_pm_system(
+// ---- PMapDef / PMapExt interpretation ----
+
+pub fn interpret_pmap_def(
     context: &Context,
     location: &Complex,
     source: &Complex,
-    pm_system: &PMSystem,
+    pmap_def: &Spanned<PMapDef>,
+) -> (Option<MapComponent>, InterpResult) {
+    match &pmap_def.inner {
+        PMapDef::PMap(pmap) => {
+            interpret_pmap_inner(context, location, source, pmap, pmap_def.span)
+        }
+        PMapDef::Ext(ext) => {
+            interpret_pmap_ext(context, location, source, ext, pmap_def.span)
+        }
+    }
+}
+
+fn interpret_pmap_ext(
+    context: &Context,
+    location: &Complex,
+    source: &Complex,
+    ext: &PMapExt,
     span: Span,
 ) -> (Option<MapComponent>, InterpResult) {
     // Start with prefix map or empty map
-    let (initial_mc, prefix_result) = match &pm_system.extend {
+    let (initial_mc, prefix_result) = match &ext.prefix {
         None => {
             let map = PMap::empty().unwrap();
             (MapComponent { map, source: Arc::new(source.clone()) }, InterpResult::ok(context.clone()))
@@ -230,7 +272,7 @@ fn interpret_pm_system(
     let effective_source = &*initial_mc.source;
     let mut acc_result = prefix_result;
 
-    for clause in &pm_system.clauses {
+    for clause in &ext.clauses {
         let ctx = acc_result.context.clone();
         let (m_opt, clause_result) = interpret_pm_clause(
             &ctx, location, effective_source, current_map, clause, span
@@ -518,7 +560,7 @@ pub fn interpret_def_pmap(
                 }
                 Some(te) => (*te.complex).clone(),
             };
-            let (mc_opt, m_result) = interpret_pmap(&context_after, location, &source, &dp.value);
+            let (mc_opt, m_result) = interpret_pmap_def(&context_after, location, &source, &dp.value);
             let combined = InterpResult::combine(addr_result, m_result);
             match mc_opt {
                 None => (None, combined),

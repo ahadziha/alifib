@@ -76,7 +76,7 @@ pub enum CInstr {
 pub struct AttachStmt {
     pub name: Spanned<String>,
     pub address: Spanned<Address>,
-    pub along: Option<Spanned<PMap>>,
+    pub along: Option<Spanned<PMapDef>>,
 }
 
 pub struct IncludeStmt {
@@ -117,14 +117,13 @@ pub struct Boundary {
 
 pub struct LetDiag {
     pub name: Spanned<String>,
-    pub boundary: Option<Spanned<Boundary>>,
     pub value: Spanned<Diagram>,
 }
 
 pub struct DefPMap {
     pub name: Spanned<String>,
     pub address: Spanned<Address>,
-    pub value: Spanned<PMap>,
+    pub value: Spanned<PMapDef>,
 }
 
 // ---------------------------------------------------------------------------
@@ -158,11 +157,25 @@ pub enum DComponent {
     Out,
     Paren(Box<Spanned<Diagram>>),
     Hole,
+    AnonMap {
+        def: Box<Spanned<PMapDef>>,
+        target: Spanned<Complex>,
+    },
 }
 
 // ---------------------------------------------------------------------------
 // Partial maps
 // ---------------------------------------------------------------------------
+
+pub enum PMapDef {
+    PMap(PMap),
+    Ext(PMapExt),
+}
+
+pub struct PMapExt {
+    pub prefix: Option<Box<Spanned<PMap>>>,
+    pub clauses: Vec<Spanned<PMapClause>>,
+}
 
 pub enum PMap {
     Basic(PMapBasic),
@@ -174,12 +187,11 @@ pub enum PMap {
 
 pub enum PMapBasic {
     Name(String),
-    System(PMSystem),
-}
-
-pub struct PMSystem {
-    pub extend: Option<Box<Spanned<PMap>>>,
-    pub clauses: Vec<Spanned<PMapClause>>,
+    AnonMap {
+        def: Box<Spanned<PMapDef>>,
+        target: Spanned<Complex>,
+    },
+    Paren(Box<Spanned<PMap>>),
 }
 
 pub struct PMapClause {

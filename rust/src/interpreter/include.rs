@@ -9,7 +9,7 @@ use crate::core::{
 use crate::language::ast::{self, Span, IncludeModule};
 use super::types::*;
 use super::interpreter::interpret_program;
-use super::pmap::{interpret_address, interpret_pmap};
+use super::pmap::{interpret_address, interpret_pmap_def};
 
 pub fn interpret_include_module_instr(
     modules: &ModuleStore,
@@ -364,7 +364,7 @@ fn interpret_attach(
                     return (None, r);
                 }
             };
-            let (mc_opt, pmap_result) = interpret_pmap(&context_after, location, &source, pmap_node);
+            let (mc_opt, pmap_result) = interpret_pmap_def(&context_after, location, &source, pmap_node);
             let combined = InterpResult::combine(addr_result, pmap_result);
             match mc_opt {
                 None => (None, combined),
