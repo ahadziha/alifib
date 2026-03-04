@@ -9,6 +9,7 @@ use crate::core::{
     map::PMap,
 };
 use super::state::State;
+use crate::aux::loader::{FileLoader, LoadError};
 use crate::language::{
     self,
     ast::{self, Span, Spanned, Program, Block, TypeInst, IncludeModule,
@@ -41,29 +42,6 @@ impl Context {
     /// Get a mutable reference to the state via Arc::make_mut (copy-on-write).
     pub fn state_mut(&mut self) -> &mut State {
         Arc::make_mut(&mut self.state)
-    }
-}
-
-// ---- File loader ----
-
-#[derive(Debug, Clone)]
-pub enum LoadError {
-    NotFound,
-    IoError(String),
-}
-
-#[derive(Clone)]
-pub struct FileLoader {
-    pub search_paths: Vec<String>,
-    pub read_file: Arc<dyn Fn(&str) -> Result<String, LoadError> + Send + Sync>,
-}
-
-impl FileLoader {
-    pub fn default_read(path: &str) -> Result<String, LoadError> {
-        if !std::path::Path::new(path).exists() {
-            return Err(LoadError::NotFound);
-        }
-        std::fs::read_to_string(path).map_err(|e| LoadError::IoError(e.to_string()))
     }
 }
 
@@ -143,155 +121,6 @@ fn unknown_span() -> Span {
 
 fn make_error(span: Span, message: impl Into<String>) -> Error {
     Error::Runtime { message: message.into(), span }
-}
-
-// ---- Session ----
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SessionStatus {
-    LoadError,
-    ParserError,
-    InterpreterError,
-    Success,
-}
-
-#[derive(Debug, Clone)]
-pub struct SessionResult {
-    pub context: Context,
-    pub errors: Vec<Error>,
-    pub status: SessionStatus,
-    pub source: String,
-    pub filename: String,
-}
-
-pub struct Loader {
-    inner: FileLoader,
-}
-
-impl Loader {
-    fn path_separator() -> char {
-        if cfg!(windows) { ';' } else { ':' }
-    }
-
-    fn split_paths(value: &str) -> Vec<String> {
-        value.split(Self::path_separator())
-            .filter(|p| !p.is_empty())
-            .map(|p| p.to_owned())
-            .collect()
-    }
-
-    fn env_search_paths() -> Vec<String> {
-        match std::env::var("ALIFIB_PATH") {
-            Ok(value) if !value.is_empty() => Self::split_paths(&value),
-            _ => vec![],
-        }
-    }
-
-    pub fn make(
-        search_paths: Vec<String>,
-        read_file: Option<Arc<dyn Fn(&str) -> Result<String, LoadError> + Send + Sync>>,
-    ) -> Self {
-        let read_file = read_file.unwrap_or_else(|| Arc::new(FileLoader::default_read));
-        let search_paths = path::normalize_search_paths(search_paths);
-        Self { inner: FileLoader { search_paths, read_file } }
-    }
-
-    pub fn default(extra_search_paths: Vec<String>) -> Self {
-        let cwd = path::canonicalize(&std::env::current_dir()
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_else(|_| ".".to_owned()));
-        let env_paths = Self::env_search_paths();
-        let combined = std::iter::once(cwd)
-            .chain(env_paths)
-            .chain(extra_search_paths)
-            .collect();
-        Self::make(combined, None)
-    }
-
-    pub fn file_loader(&self) -> &FileLoader {
-        &self.inner
-    }
-}
-
-fn ensure_root_in_loader(loader: &FileLoader, canonical_path: &str) -> FileLoader {
-    let root = std::path::Path::new(canonical_path)
-        .parent()
-        .and_then(|p| p.to_str())
-        .map(path::canonicalize)
-        .unwrap_or_else(|| canonical_path.to_owned());
-    let mut desired = vec![root];
-    desired.extend(loader.search_paths.iter().cloned());
-    let normalized = path::normalize_search_paths(desired);
-    if normalized == loader.search_paths {
-        loader.clone()
-    } else {
-        FileLoader {
-            search_paths: normalized,
-            read_file: loader.read_file.clone(),
-        }
-    }
-}
-
-pub fn run(loader: &Loader, path: &str) -> SessionResult {
-    let canonical_path = path::canonicalize(path);
-    let module_id = canonical_path.clone();
-    let base_context = Context::new(module_id, State::empty());
-
-    let file_loader = loader.file_loader();
-    let contents = match (file_loader.read_file)(&canonical_path) {
-        Err(LoadError::NotFound) => {
-            return SessionResult {
-                context: base_context,
-                errors: vec![],
-                status: SessionStatus::LoadError,
-                source: String::new(),
-                filename: canonical_path,
-            };
-        }
-        Err(LoadError::IoError(reason)) => {
-            eprintln!("error: could not load `{}`: {}", path, reason);
-            return SessionResult {
-                context: base_context,
-                errors: vec![],
-                status: SessionStatus::LoadError,
-                source: String::new(),
-                filename: canonical_path,
-            };
-        }
-        Ok(s) => s,
-    };
-
-    let file_loader = ensure_root_in_loader(file_loader, &canonical_path);
-
-    // Parse
-    let program = match language::parse(&contents) {
-        Ok(p) => p,
-        Err(parse_errors) => {
-            return SessionResult {
-                context: base_context,
-                errors: parse_errors,
-                status: SessionStatus::ParserError,
-                source: contents,
-                filename: canonical_path,
-            };
-        }
-    };
-
-    // Interpret
-    let interp_result = interpret_program(&file_loader, base_context, &program);
-    let status = if interp_result.has_errors() {
-        SessionStatus::InterpreterError
-    } else {
-        SessionStatus::Success
-    };
-
-    SessionResult {
-        context: interp_result.context,
-        errors: interp_result.errors,
-        status,
-        source: contents,
-        filename: canonical_path,
-    }
 }
 
 // ---- Main interpreter ----

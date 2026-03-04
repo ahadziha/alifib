@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use crate::aux::{Error, Tag};
 use super::ogposet::{self, Ogposet, Sign as OgSign};
-pub use super::ogposet::isomorphism_of;
+pub(crate) use super::ogposet::isomorphism_of;
 pub use super::embeddings::{Embedding, Pushout, NO_PREIMAGE};
 
 /// Sign in the diagram sense (no `Both` variant)
@@ -174,7 +174,7 @@ impl Diagram {
     /// Paste u and v at level k.
     pub fn paste(k: usize, u: &Diagram, v: &Diagram) -> Result<Diagram, Error> {
         let (_, e_u, e_v) = Diagram::pastability(k, u, v)?;
-        let Pushout { tip: shape_uv, inl, inr } = ogposet::pushout(&e_u, &e_v);
+        let Pushout { tip: shape_uv, inl, inr } = super::pushout::pushout(&e_u, &e_v);
         let sizes_uv = shape_uv.sizes();
         let num_dims = sizes_uv.len();
 
@@ -219,7 +219,7 @@ impl Diagram {
         let (_, e_u, e_v) = Diagram::parallelism(u, v)?;
 
         let d = if u.shape.dim < 0 { 0 } else { u.shape.dim as usize };
-        let Pushout { tip: bd_uv, inl, inr } = ogposet::pushout(&e_u, &e_v);
+        let Pushout { tip: bd_uv, inl, inr } = super::pushout::pushout(&e_u, &e_v);
         let sizes_bd = bd_uv.sizes();
 
         let mut faces_in: Vec<Vec<super::intset::IntSet>> = Vec::new();

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use super::ogposet::Ogposet;
 
+pub const NO_PREIMAGE: usize = usize::MAX;
 /// An embedding (injective map) between two ogposets.
 #[derive(Debug, Clone)]
 pub struct Embedding {
@@ -11,8 +12,6 @@ pub struct Embedding {
     /// `inv[d][j]` = preimage of cell j at dimension d in domain, or usize::MAX if none
     pub inv: Vec<Vec<usize>>,
 }
-
-pub const NO_PREIMAGE: usize = usize::MAX;
 
 impl Embedding {
     pub fn make(dom: Arc<Ogposet>, cod: Arc<Ogposet>, map: Vec<Vec<usize>>, inv: Vec<Vec<usize>>) -> Self {

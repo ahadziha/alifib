@@ -1,5 +1,6 @@
 pub mod error;
 pub mod id;
+pub mod loader;
 pub mod path;
 
 pub use error::Error;

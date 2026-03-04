@@ -7,6 +7,10 @@ use std::fs;
 use std::process;
 use std::time::Instant;
 
+use aux::loader::{Loader, LoadError, ensure_root_in_loader};
+use interpreter::interpreter::{Context, interpret_program};
+use interpreter::state::State;
+
 const USAGE: &str = "Usage: alifib2 <input-file> [-o|--output <output-file>] [--ast] [--bench N]";
 
 #[derive(Clone, Copy)]
@@ -96,29 +100,53 @@ fn run_ast(input: &str, output: Option<&str>) -> bool {
     true
 }
 
-fn run_interpreter(input: &str, output: Option<&str>) -> bool {
-    use interpreter::interpreter::{Loader, SessionStatus, run};
+// ---- Session runner ----
 
-    let loader = Loader::default(vec![]);
-    let result = run(&loader, input);
+fn run_file(loader: &Loader, path: &str) -> Option<(Context, String)> {
+    let canonical_path = aux::path::canonicalize(path);
+    let file_loader = loader.file_loader();
 
-    match result.status {
-        SessionStatus::LoadError => {
-            eprintln!("error: could not load `{}`", input);
-            return false;
+    let contents = match (file_loader.read_file)(&canonical_path) {
+        Ok(s) => s,
+        Err(LoadError::NotFound) => {
+            eprintln!("error: could not load `{}`", path);
+            return None;
         }
-        SessionStatus::ParserError => {
-            language::report_errors(&result.errors, &result.source, &result.filename);
-            return false;
+        Err(LoadError::IoError(reason)) => {
+            eprintln!("error: could not load `{}`: {}", path, reason);
+            return None;
         }
-        SessionStatus::InterpreterError => {
-            language::report_errors(&result.errors, &result.source, &result.filename);
-            return false;
+    };
+
+    let file_loader = ensure_root_in_loader(file_loader, &canonical_path);
+
+    let program = match language::parse(&contents) {
+        Ok(p) => p,
+        Err(parse_errors) => {
+            language::report_errors(&parse_errors, &contents, &canonical_path);
+            return None;
         }
-        SessionStatus::Success => {}
+    };
+
+    let context = Context::new(canonical_path.clone(), State::empty());
+    let result = interpret_program(&file_loader, context, &program);
+
+    if !result.errors.is_empty() {
+        language::report_errors(&result.errors, &contents, &canonical_path);
+        return None;
     }
 
-    let text = result.context.state.display();
+    Some((result.context, contents))
+}
+
+fn run_interpreter(input: &str, output: Option<&str>) -> bool {
+    let loader = Loader::default(vec![]);
+    let (context, _) = match run_file(&loader, input) {
+        Some(pair) => pair,
+        None => return false,
+    };
+
+    let text = context.state.display();
     if let Err(msg) = write_output(output, &text) {
         eprintln!("error: {}", msg);
         return false;
@@ -127,23 +155,18 @@ fn run_interpreter(input: &str, output: Option<&str>) -> bool {
 }
 
 fn run_bench(input: &str, n: usize) -> bool {
-    use interpreter::interpreter::{Loader, SessionStatus, run};
+    let loader = Loader::default(vec![]);
 
     // Warmup
-    let loader = Loader::default(vec![]);
-    let result = run(&loader, input);
-    match result.status {
-        SessionStatus::Success => {}
-        _ => {
-            eprintln!("error: benchmark file failed on warmup");
-            return false;
-        }
+    if run_file(&loader, input).is_none() {
+        eprintln!("error: benchmark file failed on warmup");
+        return false;
     }
 
     let start = Instant::now();
     for _ in 0..n {
         let loader = Loader::default(vec![]);
-        run(&loader, input);
+        run_file(&loader, input);
     }
     let elapsed = start.elapsed();
     let ms_per_run = elapsed.as_secs_f64() * 1000.0 / n as f64;
