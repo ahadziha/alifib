@@ -1,3 +1,5 @@
+mod aux;
+mod core;
 mod language;
 
 use std::fs;
