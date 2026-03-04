@@ -1,8 +1,8 @@
 use ariadne::{Color, Label, Report, ReportKind, Source};
-use chumsky::span::SimpleSpan;
+use super::ast::Span;
 
 pub enum Error {
-    Syntax { message: String, span: SimpleSpan },
+    Syntax { message: String, span: Span },
     Runtime { message: String },
 }
 

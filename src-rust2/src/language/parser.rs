@@ -1,17 +1,25 @@
 use chumsky::input::MappedInput;
 use chumsky::prelude::*;
-use chumsky::span::Spanned as Sp;
+use chumsky::span::SimpleSpan;
 
-use super::ast::*;
+use super::ast::{
+    Address, AssertStmt, AttachStmt, Block, Boundary, CInstr, Complex, DComponent, DExpr, DefPMap,
+    Diagram, Generator, IncludeModule, IncludeStmt, LetDiag, LocalInst, NameWithBoundary, PMap,
+    PMapBasic, PMapClause, PMSystem, Program, Span, Spanned, TypeInst,
+};
 use super::token::Token;
 
 pub type TokenInput<'tokens, 'src> =
-    MappedInput<'tokens, Token<'src>, Span, &'tokens [(Token<'src>, Span)]>;
+    MappedInput<'tokens, Token<'src>, SimpleSpan, &'tokens [(Token<'src>, SimpleSpan)]>;
 
-type E<'tokens, 'src> = extra::Err<Rich<'tokens, Token<'src>, Span>>;
+type E<'tokens, 'src> = extra::Err<Rich<'tokens, Token<'src>, SimpleSpan>>;
+
+fn cspan(s: SimpleSpan) -> Span {
+    Span { start: s.start, end: s.end }
+}
 
 fn sp<T>(inner: T, span: Span) -> Spanned<T> {
-    Sp { inner, span }
+    Spanned { inner, span }
 }
 
 // ---------------------------------------------------------------------------
@@ -23,7 +31,7 @@ fn name<'tokens, 'src: 'tokens>(
     select_ref! {
         Token::Ident(s) => s.to_string(),
     }
-    .spanned()
+    .map_with(|v, e| sp(v, cspan(e.span())))
 }
 
 fn nat<'tokens, 'src: 'tokens>(
@@ -31,7 +39,7 @@ fn nat<'tokens, 'src: 'tokens>(
     select_ref! {
         Token::Nat(s) => s.to_string(),
     }
-    .spanned()
+    .map_with(|v, e| sp(v, cspan(e.span())))
 }
 
 fn t<'tokens, 'src: 'tokens>(
@@ -50,7 +58,7 @@ fn address<'tokens, 'src: 'tokens>(
         .separated_by(t(Token::Dot))
         .at_least(1)
         .collect::<Vec<_>>()
-        .spanned()
+        .map_with(|v, e| sp(v, cspan(e.span())))
 }
 
 // ---------------------------------------------------------------------------
@@ -71,7 +79,7 @@ fn diagram_parser<'tokens, 'src: 'tokens>(
             t(Token::Question).map(|_| DComponent::Hole),
             select_ref! { Token::Ident(s) => DComponent::Name(s.to_string()) },
         ))
-        .spanned();
+        .map_with(|v, e| sp(v, cspan(e.span())));
 
         // DExpr = DComponent { "." DComponent }
         let dexpr = dcomponent
@@ -89,8 +97,10 @@ fn diagram_parser<'tokens, 'src: 'tokens>(
                     let mut expr: Spanned<DExpr> =
                         sp(DExpr::Component(first.inner), first.span);
                     for field in rest {
-                        let new_span =
-                            Span::new(expr.span.context(), expr.span.start()..field.span.end());
+                        let new_span = Span {
+                            start: expr.span.start,
+                            end: field.span.end,
+                        };
                         expr = sp(
                             DExpr::Dot {
                                 base: Box::new(expr),
@@ -109,7 +119,7 @@ fn diagram_parser<'tokens, 'src: 'tokens>(
             .repeated()
             .at_least(1)
             .collect::<Vec<_>>()
-            .map_with(|exprs, e| sp(Diagram::Principal(exprs), e.span()));
+            .map_with(|exprs, e| sp(Diagram::Principal(exprs), cspan(e.span())));
 
         // Diagram = DPrincipal { "#" Nat DPrincipal }
         dprincipal.clone().foldl(
@@ -120,16 +130,16 @@ fn diagram_parser<'tokens, 'src: 'tokens>(
             |lhs: Spanned<Diagram>, (dim, rhs): (Spanned<String>, Vec<Spanned<DExpr>>)| {
                 let end = rhs
                     .last()
-                    .map(|r| r.span.end())
-                    .unwrap_or(dim.span.end());
-                let new_span = Span::new(lhs.span.context(), lhs.span.start()..end);
+                    .map(|r| r.span.end)
+                    .unwrap_or(dim.span.end);
+                let start = lhs.span.start;
                 sp(
                     Diagram::Paste {
                         lhs: Box::new(lhs),
                         dim,
                         rhs,
                     },
-                    new_span,
+                    Span { start, end },
                 )
             },
         )
@@ -146,7 +156,7 @@ fn boundary<'tokens, 'src: 'tokens>(
     diagram_parser()
         .then_ignore(t(Token::Arrow))
         .then(diagram_parser())
-        .map_with(|(source, target), e| sp(Boundary { source, target }, e.span()))
+        .map_with(|(source, target), e| sp(Boundary { source, target }, cspan(e.span())))
 }
 
 fn name_with_boundary<'tokens, 'src: 'tokens>(
@@ -154,7 +164,7 @@ fn name_with_boundary<'tokens, 'src: 'tokens>(
        + Clone {
     name()
         .then(t(Token::Colon).ignore_then(boundary()).or_not())
-        .map_with(|(name, boundary), e| sp(NameWithBoundary { name, boundary }, e.span()))
+        .map_with(|(name, boundary), e| sp(NameWithBoundary { name, boundary }, cspan(e.span())))
 }
 
 // ---------------------------------------------------------------------------
@@ -167,7 +177,7 @@ fn pmap_parser<'tokens, 'src: 'tokens>(
         let clause = diagram_parser()
             .then_ignore(t(Token::FatArrow))
             .then(diagram_parser())
-            .map_with(|(lhs, rhs), e| sp(PMapClause { lhs, rhs }, e.span()));
+            .map_with(|(lhs, rhs), e| sp(PMapClause { lhs, rhs }, cspan(e.span())));
 
         let clauses = clause
             .separated_by(t(Token::Comma))
@@ -205,13 +215,13 @@ fn pmap_parser<'tokens, 'src: 'tokens>(
         pmap_basic
             .then(t(Token::Dot).ignore_then(pmap).or_not())
             .map_with(|(base, rest), e| match rest {
-                None => sp(PMap::Basic(base), e.span()),
+                None => sp(PMap::Basic(base), cspan(e.span())),
                 Some(rest) => sp(
                     PMap::Dot {
                         base,
                         rest: Box::new(rest),
                     },
-                    e.span(),
+                    cspan(e.span()),
                 ),
             })
     })
@@ -235,7 +245,7 @@ fn complex_parser<'tokens, 'src: 'tokens>(
                     boundary: b,
                     value: v,
                 }),
-                e.span(),
+                cspan(e.span()),
             )
         });
 
@@ -252,7 +262,7 @@ fn complex_parser<'tokens, 'src: 'tokens>(
                     address: a,
                     value: v,
                 }),
-                e.span(),
+                cspan(e.span()),
             )
         });
 
@@ -268,7 +278,7 @@ fn complex_parser<'tokens, 'src: 'tokens>(
                     address: a,
                     along,
                 }),
-                e.span(),
+                cspan(e.span()),
             )
         });
 
@@ -281,7 +291,7 @@ fn complex_parser<'tokens, 'src: 'tokens>(
                     address: a,
                     alias,
                 }),
-                e.span(),
+                cspan(e.span()),
             )
         });
 
@@ -303,7 +313,7 @@ fn complex_parser<'tokens, 'src: 'tokens>(
                     address: addr.map(|a| a.inner),
                     body,
                 },
-                e.span(),
+                cspan(e.span()),
             )
         });
 
@@ -356,12 +366,12 @@ fn local_inst<'tokens, 'src: 'tokens>(
         .ignore_then(diagram_parser())
         .then_ignore(t(Token::Eq))
         .then(diagram_parser())
-        .map_with(|(lhs, rhs), e| sp(LocalInst::AssertStmt(AssertStmt { lhs, rhs }), e.span()));
+        .map_with(|(lhs, rhs), e| sp(LocalInst::AssertStmt(AssertStmt { lhs, rhs }), cspan(e.span())));
 
     let let_local =
-        let_diag_parser().map_with(|l, e| sp(LocalInst::LetDiag(l), e.span()));
+        let_diag_parser().map_with(|l, e| sp(LocalInst::LetDiag(l), cspan(e.span())));
     let def_local =
-        def_pmap_parser().map_with(|d, e| sp(LocalInst::DefPMap(d), e.span()));
+        def_pmap_parser().map_with(|d, e| sp(LocalInst::DefPMap(d), cspan(e.span())));
 
     choice((assert_stmt, def_local, let_local))
 }
@@ -377,7 +387,7 @@ fn type_inst<'tokens, 'src: 'tokens>(
         .then_ignore(t(Token::LArrow))
         .then(complex_parser())
         .map_with(|(name, complex), e| {
-            sp(TypeInst::Generator(Generator { name, complex }), e.span())
+            sp(TypeInst::Generator(Generator { name, complex }), cspan(e.span()))
         });
 
     let include_module = t(Token::Include)
@@ -386,14 +396,14 @@ fn type_inst<'tokens, 'src: 'tokens>(
         .map_with(|(name, alias), e| {
             sp(
                 TypeInst::IncludeModule(IncludeModule { name, alias }),
-                e.span(),
+                cspan(e.span()),
             )
         });
 
     let let_type =
-        let_diag_parser().map_with(|l, e| sp(TypeInst::LetDiag(l), e.span()));
+        let_diag_parser().map_with(|l, e| sp(TypeInst::LetDiag(l), cspan(e.span())));
     let def_type =
-        def_pmap_parser().map_with(|d, e| sp(TypeInst::DefPMap(d), e.span()));
+        def_pmap_parser().map_with(|d, e| sp(TypeInst::DefPMap(d), cspan(e.span())));
 
     choice((generator, include_module, def_type, let_type))
 }
@@ -412,7 +422,7 @@ fn block<'tokens, 'src: 'tokens>(
                 .allow_trailing()
                 .collect::<Vec<_>>(),
         )
-        .map_with(|insts, e| sp(Block::TypeBlock(insts), e.span()));
+        .map_with(|insts, e| sp(Block::TypeBlock(insts), cspan(e.span())));
 
     let local_block = t(Token::At)
         .ignore_then(complex_parser())
@@ -422,7 +432,7 @@ fn block<'tokens, 'src: 'tokens>(
                 .allow_trailing()
                 .collect::<Vec<_>>(),
         )
-        .map_with(|(complex, body), e| sp(Block::LocalBlock { complex, body }, e.span()));
+        .map_with(|(complex, body), e| sp(Block::LocalBlock { complex, body }, cspan(e.span())));
 
     choice((type_block, local_block))
 }

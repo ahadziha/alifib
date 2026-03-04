@@ -11,6 +11,8 @@ use chumsky::prelude::*;
 pub use ast::Program;
 pub use error::Error;
 
+use ast::Span;
+
 pub fn parse(source: &str) -> Result<Program, Vec<Error>> {
     let (tokens, lex_errs) = lexer::lexer().parse(source).into_output_errors();
 
@@ -18,7 +20,7 @@ pub fn parse(source: &str) -> Result<Program, Vec<Error>> {
         .iter()
         .map(|e| Error::Syntax {
             message: format!("{}", e.reason()),
-            span: *e.span(),
+            span: Span { start: e.span().start, end: e.span().end },
         })
         .collect();
 
@@ -34,7 +36,7 @@ pub fn parse(source: &str) -> Result<Program, Vec<Error>> {
 
     errors.extend(parse_errs.iter().map(|e| Error::Syntax {
         message: format!("{}", e.reason()),
-        span: *e.span(),
+        span: Span { start: e.span().start, end: e.span().end },
     }));
 
     match ast {
@@ -43,7 +45,7 @@ pub fn parse(source: &str) -> Result<Program, Vec<Error>> {
             if errors.is_empty() {
                 errors.push(Error::Syntax {
                     message: "parse error".to_string(),
-                    span: SimpleSpan::from(0..0),
+                    span: Span { start: 0, end: 0 },
                 });
             }
             Err(errors)

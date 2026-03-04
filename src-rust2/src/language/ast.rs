@@ -1,8 +1,16 @@
 #![allow(dead_code)]
 
-pub use chumsky::span::{SimpleSpan, Spanned};
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Span {
+    pub start: usize,
+    pub end: usize,
+}
 
-pub type Span = SimpleSpan;
+#[derive(Clone, Debug)]
+pub struct Spanned<T> {
+    pub inner: T,
+    pub span: Span,
+}
 
 // ---------------------------------------------------------------------------
 // Program & Blocks
