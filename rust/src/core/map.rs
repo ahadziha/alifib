@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use crate::aux::{Error, Tag};
 use super::diagram::{CellData, Diagram, PasteTree, Sign};
 
@@ -12,7 +12,7 @@ pub struct Entry {
 #[derive(Debug, Clone)]
 pub struct PMap {
     table: HashMap<Tag, Entry>,
-    by_dim: BTreeMap<usize, Vec<Tag>>,
+    by_dim: HashMap<usize, Vec<Tag>>,
     pub cellular: bool,
 }
 
@@ -21,7 +21,7 @@ impl PMap {
     pub fn empty() -> Result<PMap, Error> {
         Ok(PMap {
             table: HashMap::new(),
-            by_dim: BTreeMap::new(),
+            by_dim: HashMap::new(),
             cellular: true,
         })
     }
@@ -29,7 +29,7 @@ impl PMap {
     /// Build a partial map from a list of (tag, dim, cell_data, image) entries.
     pub fn of_entries(entries: Vec<(Tag, usize, CellData, Diagram)>, cellular: bool) -> PMap {
         let mut table = HashMap::with_capacity(entries.len());
-        let mut by_dim: BTreeMap<usize, Vec<Tag>> = BTreeMap::new();
+        let mut by_dim: HashMap<usize, Vec<Tag>> = HashMap::new();
         for (tag, dim, cell_data, image) in entries {
             table.insert(tag.clone(), Entry { cell_data, image });
             by_dim.entry(dim).or_default().push(tag);
@@ -47,9 +47,13 @@ impl PMap {
             .ok_or_else(|| Error::new("not in the domain of definition"))
     }
 
-    /// Return all (dim, tags) pairs, tags in insertion order.
+    /// Return all (dim, tags) pairs sorted by dimension, tags in insertion order.
     pub fn domain_by_dim(&self) -> Vec<(usize, Vec<Tag>)> {
-        self.by_dim.iter().map(|(&d, tags)| (d, tags.iter().rev().cloned().collect())).collect()
+        let mut result: Vec<(usize, Vec<Tag>)> = self.by_dim.iter()
+            .map(|(&d, tags)| (d, tags.iter().rev().cloned().collect()))
+            .collect();
+        result.sort_by_key(|(d, _)| *d);
+        result
     }
 
     pub fn has_local_labels(&self) -> bool {
@@ -169,7 +173,7 @@ impl PMap {
     /// Compose partial maps: g after f (g . f).
     pub fn compose(g: &PMap, f: &PMap) -> PMap {
         let mut table = HashMap::with_capacity(f.table.len());
-        let mut by_dim: BTreeMap<usize, Vec<Tag>> = BTreeMap::new();
+        let mut by_dim: HashMap<usize, Vec<Tag>> = HashMap::new();
         let mut cellular = true;
 
         for (dim, tags) in f.domain_by_dim() {

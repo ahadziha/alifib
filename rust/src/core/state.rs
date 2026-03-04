@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::sync::Arc;
 use crate::aux::{GlobalId, ModuleId, Tag};
 use super::complex::{Complex, MapDomain};
@@ -18,10 +18,10 @@ pub struct CellEntry {
 /// The global interpreter state.
 #[derive(Debug, Clone, Default)]
 pub struct State {
-    pub cells: BTreeMap<GlobalId, CellEntry>,
-    pub cells_by_dim: BTreeMap<usize, Vec<GlobalId>>,
-    pub types: BTreeMap<GlobalId, TypeEntry>,
-    pub modules: BTreeMap<ModuleId, Arc<Complex>>,
+    pub cells: HashMap<GlobalId, CellEntry>,
+    pub cells_by_dim: HashMap<usize, Vec<GlobalId>>,
+    pub types: HashMap<GlobalId, TypeEntry>,
+    pub modules: HashMap<ModuleId, Arc<Complex>>,
 }
 
 impl State {

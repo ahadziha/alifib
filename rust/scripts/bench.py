@@ -18,7 +18,7 @@ import time
 
 RUST_DIR  = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPO      = os.path.dirname(RUST_DIR)
-OCAML_BIN = os.path.join(REPO, "_build", "default", "src", "main.exe")
+OCAML_BIN = os.path.join(REPO, "ocaml", "_build", "default", "src", "main.exe")
 RUST_BIN  = os.path.join(RUST_DIR, "target", "release", "alifib")
 OCAML_EXAMPLES = os.path.join(REPO, "ocaml", "examples")
 RUST_EXAMPLES  = os.path.join(RUST_DIR, "examples")

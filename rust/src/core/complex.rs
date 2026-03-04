@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{HashMap, HashSet};
 use crate::aux::{GlobalId, LocalId, ModuleId, Tag};
 use super::diagram::{CellData, Diagram};
 use super::map::PMap;
@@ -29,16 +29,16 @@ pub struct LocalCellEntry {
 
 #[derive(Debug, Clone, Default)]
 struct Generators {
-    by_name: BTreeMap<LocalId, GeneratorEntry>,
-    by_tag: BTreeMap<Tag, LocalId>,
-    by_dim: BTreeMap<usize, BTreeSet<LocalId>>,
-    classifiers: BTreeMap<LocalId, Diagram>,
+    by_name: HashMap<LocalId, GeneratorEntry>,
+    by_tag: HashMap<Tag, LocalId>,
+    by_dim: HashMap<usize, HashSet<LocalId>>,
+    classifiers: HashMap<LocalId, Diagram>,
 }
 
 #[derive(Debug, Clone, Default)]
 struct LocalCells {
-    by_id: BTreeMap<LocalId, LocalCellEntry>,
-    by_dim: BTreeMap<usize, BTreeSet<LocalId>>,
+    by_id: HashMap<LocalId, LocalCellEntry>,
+    by_dim: HashMap<usize, HashSet<LocalId>>,
 }
 
 /// A complex: the environment of generators, diagrams, maps, and local cells
@@ -46,10 +46,10 @@ struct LocalCells {
 #[derive(Debug, Clone, Default)]
 pub struct Complex {
     generators: Generators,
-    diagrams: BTreeMap<LocalId, Diagram>,
-    maps: BTreeMap<LocalId, MapEntry>,
+    diagrams: HashMap<LocalId, Diagram>,
+    maps: HashMap<LocalId, MapEntry>,
     local_cells: LocalCells,
-    used_names: BTreeSet<LocalId>,
+    used_names: HashSet<LocalId>,
 }
 
 impl Complex {
