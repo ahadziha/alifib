@@ -59,7 +59,7 @@ impl Complex {
 
     // ---- Generators ----
 
-    pub fn add_generator(mut self, name: LocalId, classifier: Diagram) -> Self {
+    pub fn add_generator(&mut self, name: LocalId, classifier: Diagram) {
         let dim = if classifier.dim() < 0 { 0 } else { classifier.dim() as usize };
         let labels = &classifier.labels;
         let top_labels = &labels[dim];
@@ -70,7 +70,6 @@ impl Complex {
         self.generators.by_dim.entry(dim).or_default().insert(name.clone());
         self.generators.classifiers.insert(name.clone(), classifier);
         self.generators.by_name.insert(name, GeneratorEntry { tag, dim });
-        self
     }
 
     pub fn find_generator(&self, name: &str) -> Option<&GeneratorEntry> {
@@ -101,10 +100,9 @@ impl Complex {
 
     // ---- Diagrams ----
 
-    pub fn add_diagram(mut self, name: LocalId, diagram: Diagram) -> Self {
+    pub fn add_diagram(&mut self, name: LocalId, diagram: Diagram) {
         self.diagrams.insert(name.clone(), diagram);
         self.used_names.insert(name);
-        self
     }
 
     pub fn find_diagram(&self, name: &str) -> Option<&Diagram> {
@@ -117,10 +115,9 @@ impl Complex {
 
     // ---- Maps ----
 
-    pub fn add_map(mut self, name: LocalId, domain: MapDomain, map: PMap) -> Self {
+    pub fn add_map(&mut self, name: LocalId, domain: MapDomain, map: PMap) {
         self.maps.insert(name.clone(), MapEntry { map, domain });
         self.used_names.insert(name);
-        self
     }
 
     pub fn find_map(&self, name: &str) -> Option<&MapEntry> {
@@ -133,10 +130,9 @@ impl Complex {
 
     // ---- Local cells ----
 
-    pub fn add_local_cell(mut self, name: LocalId, dim: usize, data: CellData) -> Self {
+    pub fn add_local_cell(&mut self, name: LocalId, dim: usize, data: CellData) {
         self.local_cells.by_dim.entry(dim).or_default().insert(name.clone());
         self.local_cells.by_id.insert(name, LocalCellEntry { data });
-        self
     }
 
     pub fn find_local_cell(&self, name: &str) -> Option<&LocalCellEntry> {

@@ -323,8 +323,8 @@ pub fn interpret_program(
         };
         let empty_name: LocalId = String::new();
         let mut module_complex = Complex::empty();
-        module_complex = module_complex.add_generator(empty_name.clone(), empty_diagram.clone());
-        module_complex = module_complex.add_diagram(empty_name, empty_diagram);
+        module_complex.add_generator(empty_name.clone(), empty_diagram.clone());
+        module_complex.add_diagram(empty_name, empty_diagram);
         {
             let s = Arc::make_mut(&mut context.state);
             s.set_type(empty_id, CellData::Zero, Complex::empty());
@@ -397,7 +397,7 @@ fn interpret_type_inst(
                 Some((name, diagram)) => {
                     let module_id2 = result.context.current_module.clone();
                     let mut current_loc = result.context.state.find_module(&module_id2).cloned().unwrap_or_default();
-                    current_loc = current_loc.add_diagram(name, diagram);
+                    current_loc.add_diagram(name, diagram);
                     let mut r = result;
                     r.context.state_mut().set_module(module_id2, current_loc.clone());
                     (Some(current_loc), r)
@@ -413,7 +413,7 @@ fn interpret_type_inst(
                 Some((name, map, domain)) => {
                     let module_id2 = result.context.current_module.clone();
                     let mut current_loc = result.context.state.find_module(&module_id2).cloned().unwrap_or_default();
-                    current_loc = current_loc.add_map(name, domain, map);
+                    current_loc.add_map(name, domain, map);
                     let mut r = result;
                     r.context.state_mut().set_module(module_id2, current_loc.clone());
                     (Some(current_loc), r)
@@ -474,14 +474,14 @@ fn interpret_generator_type(
     let (ns_opt, complex_result) = interpret_complex(&context_after, Mode::Global, def);
     result = InterpResult::combine(result, complex_result);
 
-    let definition_complex = match ns_opt {
+    let mut definition_complex = match ns_opt {
         None => return (None, result),
         Some(ns) => ns.location,
     };
 
     let context_after = result.context.clone();
     let module_id2 = &context_after.current_module;
-    let module_location_now = match context_after.state.find_module(module_id2) {
+    let mut module_location_now = match context_after.state.find_module(module_id2) {
         None => {
             result.add_error(make_error(name_span, "Module not found after processing definition"));
             return (None, result);
@@ -501,23 +501,22 @@ fn interpret_generator_type(
     };
 
     let identity = identity_map(&context_after, &definition_complex);
-    let definition_with_identity = definition_complex.add_map(
+    definition_complex.add_map(
         name.clone(),
         MapDomain::Type(new_id),
         identity,
     );
 
-    let updated_module = module_location_now
-        .add_generator(name.clone(), classifier.clone())
-        .add_diagram(name.clone(), classifier);
+    module_location_now.add_generator(name.clone(), classifier.clone());
+    module_location_now.add_diagram(name.clone(), classifier);
 
     {
         let s = result.context.state_mut();
-        s.set_type(new_id, CellData::Zero, definition_with_identity);
-        s.set_module(module_id2.clone(), updated_module.clone());
+        s.set_type(new_id, CellData::Zero, definition_complex);
+        s.set_module(module_id2.clone(), module_location_now.clone());
     }
 
-    (Some(updated_module), result)
+    (Some(module_location_now), result)
 }
 
 fn interpret_include_module_instr(
@@ -649,19 +648,19 @@ fn interpret_include_module_instr(
         } else {
             format!("{}.{}", alias, gen_name)
         };
-        current_location = current_location.add_generator(combined_name, classifier);
+        current_location.add_generator(combined_name, classifier);
     }
 
     let inclusion = identity_map(&include_result.context, &included_location);
-    let final_location = current_location.add_map(
+    current_location.add_map(
         alias,
         MapDomain::Module(included_module_id),
         inclusion,
     );
 
-    result.context.state_mut().set_module(module_id, final_location.clone());
+    result.context.state_mut().set_module(module_id, current_location.clone());
 
-    (Some(final_location), result)
+    (Some(current_location), result)
 }
 
 fn interpret_block_complex(
@@ -739,13 +738,10 @@ fn interpret_local_inst(
                             "Named diagrams must contain only global cells"));
                         return (None, r);
                     }
-                    let new_location = location.clone().add_diagram(name.clone(), diagram.clone());
-                    let root_complex = match result.context.state.find_type(root) {
-                        Some(te) => (*te.complex).clone().add_diagram(name, diagram),
-                        None => return (None, result),
-                    };
+                    let mut new_location = location.clone();
+                    new_location.add_diagram(name.clone(), diagram.clone());
                     let mut r = result;
-                    r.context.state_mut().update_type_complex(root, root_complex);
+                    r.context.state_mut().modify_type_complex(root, |c| c.add_diagram(name, diagram));
                     (Some(new_location), r)
                 }
             }
@@ -767,13 +763,10 @@ fn interpret_local_inst(
                             "Named maps must only be valued in global cells"));
                         return (None, r);
                     }
-                    let new_location = location.clone().add_map(name.clone(), domain.clone(), map.clone());
-                    let root_complex = match result.context.state.find_type(root) {
-                        Some(te) => (*te.complex).clone().add_map(name, domain, map),
-                        None => return (None, result),
-                    };
+                    let mut new_location = location.clone();
+                    new_location.add_map(name.clone(), domain.clone(), map.clone());
                     let mut r = result;
-                    r.context.state_mut().update_type_complex(root, root_complex);
+                    r.context.state_mut().modify_type_complex(root, |c| c.add_map(name, domain, map));
                     (Some(new_location), r)
                 }
             }
@@ -1002,7 +995,7 @@ fn interpret_c_block(
 fn interpret_c_instr(
     context: Context,
     mode: Mode,
-    location: Complex,
+    mut location: Complex,
     instr: &Spanned<CInstr>,
 ) -> (Complex, InterpResult) {
     match &instr.inner {
@@ -1020,8 +1013,8 @@ fn interpret_c_instr(
                             format!("Diagram name already in use: {}", name)));
                         return (location, r);
                     }
-                    let new_location = location.add_diagram(name, diagram);
-                    (new_location, result)
+                    location.add_diagram(name, diagram);
+                    (location, result)
                 }
             }
         }
@@ -1036,8 +1029,8 @@ fn interpret_c_instr(
                             format!("Partial map name already in use: {}", name)));
                         return (location, r);
                     }
-                    let new_location = location.add_map(name, domain, map);
-                    (new_location, result)
+                    location.add_map(name, domain, map);
+                    (location, result)
                 }
             }
         }
@@ -1055,7 +1048,7 @@ fn interpret_c_instr(
 fn interpret_generator_instr(
     context: Context,
     mode: Mode,
-    location: Complex,
+    mut location: Complex,
     nwb: &NameWithBoundary,
     outer_span: Span,
 ) -> (Complex, InterpResult) {
@@ -1109,19 +1102,18 @@ fn interpret_generator_instr(
         }
     };
 
-    let mut new_location = location
-        .add_generator(name.clone(), classifier.clone())
-        .add_diagram(name.clone(), classifier.clone());
+    location.add_generator(name.clone(), classifier.clone());
+    location.add_diagram(name.clone(), classifier.clone());
 
     if mode == Mode::Local {
-        new_location = new_location.add_local_cell(name.clone(), dim, boundaries.clone());
+        location.add_local_cell(name.clone(), dim, boundaries.clone());
     }
 
     if let (Mode::Global, Some(id)) = (mode, new_id_opt) {
         Arc::make_mut(&mut result.context.state).set_cell(id, dim, boundaries);
     }
 
-    (new_location, result)
+    (location, result)
 }
 
 fn interpret_include_instr(
@@ -1169,12 +1161,12 @@ fn interpret_include_instr(
             let combined = if alias_prefix.is_empty() { gen_name.clone() }
                 else if gen_name.is_empty() { alias_prefix.to_owned() }
                 else { format!("{}.{}", alias_prefix, gen_name) };
-            new_location = new_location.add_generator(combined, classifier);
+            new_location.add_generator(combined, classifier);
         }
     }
 
     let inclusion = identity_map(&context_after, &subtype);
-    let new_location = new_location.add_map(name, MapDomain::Type(id), inclusion);
+    new_location.add_map(name, MapDomain::Type(id), inclusion);
 
     (Some(new_location), include_result)
 }
@@ -1256,7 +1248,7 @@ fn interpret_attach_instr(
                     Ok(d) => d,
                     Err(_) => continue,
                 };
-                CellData::Boundary { boundary_in: image_in, boundary_out: image_out }
+                CellData::Boundary { boundary_in: Arc::new(image_in), boundary_out: Arc::new(image_out) }
             }
         };
 
@@ -1280,20 +1272,21 @@ fn interpret_attach_instr(
             Err(_) => continue,
         };
 
-        current_location = match mode {
+        match mode {
             Mode::Global => current_location.add_generator(combined.clone(), image_classifier.clone()),
-            Mode::Local => current_location
-                .add_local_cell(combined.clone(), *gen_dim, image_cell_data.clone())
-                .add_generator(combined.clone(), image_classifier.clone()),
+            Mode::Local => {
+                current_location.add_local_cell(combined.clone(), *gen_dim, image_cell_data.clone());
+                current_location.add_generator(combined.clone(), image_classifier.clone());
+            }
         };
 
         current_map.insert_raw(gen_tag.clone(), *gen_dim, gen_cell_data, image_classifier);
     }
 
-    let final_location = current_location.add_map(name, domain, current_map);
+    current_location.add_map(name, domain, current_map);
     let mut r = attach_result;
     r.context.state = current_state;
-    (Some(final_location), r)
+    (Some(current_location), r)
 }
 
 // ---- Address resolution ----
@@ -2320,7 +2313,7 @@ fn interpret_boundaries(
             match out_opt {
                 None => (None, combined),
                 Some(boundary_out) => {
-                    (Some(CellData::Boundary { boundary_in, boundary_out }), combined)
+                    (Some(CellData::Boundary { boundary_in: Arc::new(boundary_in), boundary_out: Arc::new(boundary_out) }), combined)
                 }
             }
         }

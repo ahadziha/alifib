@@ -32,7 +32,7 @@ pub enum PasteTree {
 #[derive(Debug, Clone)]
 pub enum CellData {
     Zero,
-    Boundary { boundary_in: Diagram, boundary_out: Diagram },
+    Boundary { boundary_in: Arc<Diagram>, boundary_out: Arc<Diagram> },
 }
 
 /// A diagram: a labelled, oriented graded poset with paste structure.

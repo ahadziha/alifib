@@ -38,14 +38,15 @@ impl State {
         self.types.insert(id, TypeEntry { data, complex: Arc::new(complex) });
     }
 
-    pub fn update_type_complex(&mut self, id: GlobalId, complex: Complex) {
-        if let Some(entry) = self.types.get_mut(&id) {
-            entry.complex = Arc::new(complex);
-        }
-    }
-
     pub fn set_module(&mut self, id: ModuleId, complex: Complex) {
         self.modules.insert(id, Arc::new(complex));
+    }
+
+    /// Mutate the Complex of a type entry in place via Arc::make_mut.
+    pub fn modify_type_complex(&mut self, id: GlobalId, f: impl FnOnce(&mut Complex)) {
+        if let Some(entry) = self.types.get_mut(&id) {
+            f(Arc::make_mut(&mut entry.complex));
+        }
     }
 
     pub fn find_cell(&self, id: GlobalId) -> Option<&CellEntry> {
