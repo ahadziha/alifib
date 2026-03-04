@@ -147,7 +147,8 @@ fn build_complex<'tokens, 'src: 'tokens>(
 ) -> RComplex<'tokens, 'src> {
     recursive(move |_| {
         let let_or_def = t(Token::Let)
-            .ignore_then(name())
+            .ignore_then(t(Token::Total).or_not())
+            .then(name())
             .then(choice((
                 t(Token::DColon)
                     .ignore_then(address())
@@ -158,7 +159,7 @@ fn build_complex<'tokens, 'src: 'tokens>(
                     .ignore_then(diagram.clone())
                     .map(LetOrDef::Let),
             )))
-            .map_with(|(n, lod), e| match lod {
+            .map_with(|((tot, n), lod), e| match lod {
                 LetOrDef::Let(v) => sp(
                     CInstr::LetDiag(LetDiag {
                         name: n,
@@ -168,6 +169,7 @@ fn build_complex<'tokens, 'src: 'tokens>(
                 ),
                 LetOrDef::Def(a, v) => sp(
                     CInstr::DefPMap(DefPMap {
+                        total: tot.is_some(),
                         name: n,
                         address: a,
                         value: v,
@@ -426,7 +428,8 @@ pub fn program_parser<'tokens, 'src: 'tokens>(
         });
 
     let let_or_def_local = t(Token::Let)
-        .ignore_then(name())
+        .ignore_then(t(Token::Total).or_not())
+        .then(name())
         .then(choice((
             t(Token::DColon)
                 .ignore_then(address())
@@ -437,7 +440,7 @@ pub fn program_parser<'tokens, 'src: 'tokens>(
                 .ignore_then(diagram.clone())
                 .map(LetOrDef::Let),
         )))
-        .map_with(|(n, lod), e| match lod {
+        .map_with(|((tot, n), lod), e| match lod {
             LetOrDef::Let(v) => sp(
                 LocalInst::LetDiag(LetDiag {
                     name: n,
@@ -447,6 +450,7 @@ pub fn program_parser<'tokens, 'src: 'tokens>(
             ),
             LetOrDef::Def(a, v) => sp(
                 LocalInst::DefPMap(DefPMap {
+                    total: tot.is_some(),
                     name: n,
                     address: a,
                     value: v,
@@ -479,7 +483,8 @@ pub fn program_parser<'tokens, 'src: 'tokens>(
         });
 
     let let_or_def_type = t(Token::Let)
-        .ignore_then(name())
+        .ignore_then(t(Token::Total).or_not())
+        .then(name())
         .then(choice((
             t(Token::DColon)
                 .ignore_then(address())
@@ -490,7 +495,7 @@ pub fn program_parser<'tokens, 'src: 'tokens>(
                 .ignore_then(diagram.clone())
                 .map(LetOrDef::Let),
         )))
-        .map_with(|(n, lod), e| match lod {
+        .map_with(|((tot, n), lod), e| match lod {
             LetOrDef::Let(v) => sp(
                 TypeInst::LetDiag(LetDiag {
                     name: n,
@@ -500,6 +505,7 @@ pub fn program_parser<'tokens, 'src: 'tokens>(
             ),
             LetOrDef::Def(a, v) => sp(
                 TypeInst::DefPMap(DefPMap {
+                    total: tot.is_some(),
                     name: n,
                     address: a,
                     value: v,

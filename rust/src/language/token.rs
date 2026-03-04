@@ -11,6 +11,7 @@ pub enum Token<'src> {
     Out,
     Type,
     Let,
+    Total,
     Map,
     As,
 
@@ -49,6 +50,7 @@ impl fmt::Display for Token<'_> {
             Token::Out => write!(f, "out"),
             Token::Type => write!(f, "Type"),
             Token::Let => write!(f, "let"),
+            Token::Total => write!(f, "total"),
             Token::Map => write!(f, "map"),
             Token::As => write!(f, "as"),
             Token::At => write!(f, "@"),

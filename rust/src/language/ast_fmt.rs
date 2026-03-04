@@ -249,13 +249,23 @@ fn pp_let_diag(f: &mut fmt::Formatter, l: &LetDiag, d: usize) -> fmt::Result {
 
 fn pp_def_pmap(f: &mut fmt::Formatter, p: &DefPMap, d: usize) -> fmt::Result {
     pad(f, d)?;
-    writeln!(
-        f,
-        "let {} :: {} = {}",
-        p.name.inner,
-        FmtAddress(&p.address.inner),
-        p.value.inner
-    )
+    if p.total {
+        writeln!(
+            f,
+            "let total {} :: {} = {}",
+            p.name.inner,
+            FmtAddress(&p.address.inner),
+            p.value.inner
+        )
+    } else {
+        writeln!(
+            f,
+            "let {} :: {} = {}",
+            p.name.inner,
+            FmtAddress(&p.address.inner),
+            p.value.inner
+        )
+    }
 }
 
 fn pp_complex_header(f: &mut fmt::Formatter, c: &Complex) -> fmt::Result {

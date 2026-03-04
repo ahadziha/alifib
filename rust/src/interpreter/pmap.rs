@@ -614,10 +614,22 @@ pub fn interpret_def_pmap(
                 Some(te) => (*te.complex).clone(),
             };
             let (mc_opt, m_result) = interpret_pmap_def(&context_after, location, &source, &dp.value);
-            let combined = InterpResult::combine(addr_result, m_result);
+            let mut combined = InterpResult::combine(addr_result, m_result);
             match mc_opt {
                 None => (None, combined),
                 Some(mc) => {
+                    if dp.total {
+                        for gen_name in source.generator_names() {
+                            if let Some(entry) = source.find_generator(&gen_name) {
+                                if !mc.map.is_defined_at(&entry.tag) {
+                                    combined.add_error(make_error(
+                                        dp.name.span,
+                                        format!("Total map `{}` is not defined on generator `{}`", dp.name.inner, gen_name),
+                                    ));
+                                }
+                            }
+                        }
+                    }
                     let name = dp.name.inner.clone();
                     (Some((name, mc.map, MapDomain::Type(id))), combined)
                 }

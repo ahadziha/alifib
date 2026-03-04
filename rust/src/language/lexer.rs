@@ -33,6 +33,7 @@ pub fn lexer<'src>(
             "out" => Token::Out,
             "Type" => Token::Type,
             "let" => Token::Let,
+            "total" => Token::Total,
             "map" => Token::Map,
             "as" => Token::As,
             _ => {

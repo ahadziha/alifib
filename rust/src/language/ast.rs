@@ -121,6 +121,7 @@ pub struct LetDiag {
 }
 
 pub struct DefPMap {
+    pub total: bool,
     pub name: Spanned<String>,
     pub address: Spanned<Address>,
     pub value: Spanned<PMapDef>,
