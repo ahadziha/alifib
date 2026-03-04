@@ -159,6 +159,9 @@ fn report_resolve_error(err: &ResolveError) {
         ResolveError::ParseError { path, source, errors } => {
             language::report_errors(errors, source, path);
         }
+        ResolveError::Cycle { path } => {
+            eprintln!("error: cyclic module dependency involving `{}`", path);
+        }
     }
 }
 

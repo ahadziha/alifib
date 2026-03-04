@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use super::path;
 use crate::language::{self, Program, Error as LangError};
@@ -104,6 +104,7 @@ pub enum ResolveError {
     NotFound { module_name: String },
     IoError { path: String, reason: String },
     ParseError { path: String, source: String, errors: Vec<LangError> },
+    Cycle { path: String },
 }
 
 impl ModuleStore {
@@ -162,7 +163,9 @@ pub fn resolve_all_modules(
     root_program: &Program,
 ) -> Result<ModuleStore, ResolveError> {
     let mut store = ModuleStore::new();
-    resolve_recursive(loader, root_path, root_program, &mut store)?;
+    let mut resolving = HashSet::new();
+    resolving.insert(root_path.to_owned());
+    resolve_recursive(loader, root_path, root_program, &mut store, &mut resolving)?;
     Ok(store)
 }
 
@@ -171,6 +174,7 @@ fn resolve_recursive(
     parent_path: &str,
     program: &Program,
     store: &mut ModuleStore,
+    resolving: &mut HashSet<String>,
 ) -> Result<(), ResolveError> {
     let includes = collect_includes(program);
     for module_name in includes {
@@ -185,6 +189,10 @@ fn resolve_recursive(
             continue;
         }
 
+        if !resolving.insert(canonical_path.clone()) {
+            return Err(ResolveError::Cycle { path: canonical_path });
+        }
+
         let program = match language::parse(&contents) {
             Ok(p) => p,
             Err(errors) => {
@@ -197,7 +205,7 @@ fn resolve_recursive(
         };
 
         let child_loader = ensure_root_in_loader(loader, &canonical_path);
-        resolve_recursive(&child_loader, &canonical_path, &program, store)?;
+        resolve_recursive(&child_loader, &canonical_path, &program, store, resolving)?;
 
         store.modules.insert(canonical_path, ResolvedModule {
             source: contents,
