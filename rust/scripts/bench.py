@@ -2,7 +2,7 @@
 """Benchmark the OCaml and Rust alifib implementations against each other.
 
 Run from anywhere inside the repo:
-    python3 bench.py
+    python3 rust/scripts/bench.py
 
 Optional flags:
     -n N      number of runs per batch (default: 30)
@@ -16,10 +16,12 @@ import subprocess
 import sys
 import time
 
-REPO = os.path.dirname(os.path.abspath(__file__))
+RUST_DIR  = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO      = os.path.dirname(RUST_DIR)
 OCAML_BIN = os.path.join(REPO, "_build", "default", "src", "main.exe")
-RUST_BIN  = os.path.join(REPO, "src-rust", "target", "release", "alifib")
-EXAMPLES  = os.path.join(REPO, "examples")
+RUST_BIN  = os.path.join(RUST_DIR, "target", "release", "alifib")
+OCAML_EXAMPLES = os.path.join(REPO, "ocaml", "examples")
+RUST_EXAMPLES  = os.path.join(RUST_DIR, "examples")
 
 
 def bench(cmd, path, n):
@@ -49,20 +51,21 @@ def main():
 
     if run_ocaml and not os.path.isfile(OCAML_BIN):
         print(f"OCaml binary not found: {OCAML_BIN}", file=sys.stderr)
-        print("Build with: dune build", file=sys.stderr)
+        print("Build with: cd ocaml && dune build", file=sys.stderr)
         run_ocaml = False
 
     if run_rust and not os.path.isfile(RUST_BIN):
         print(f"Rust binary not found: {RUST_BIN}", file=sys.stderr)
-        print("Build with: cargo build --release  (inside src-rust/)", file=sys.stderr)
+        print("Build with: cd rust && cargo build --release", file=sys.stderr)
         run_rust = False
 
     if not run_ocaml and not run_rust:
         sys.exit(1)
 
-    files = sorted(f for f in os.listdir(EXAMPLES) if f.endswith(".ali"))
+    # Use Rust examples as the canonical file list; OCaml examples may differ
+    files = sorted(f for f in os.listdir(RUST_EXAMPLES) if f.endswith(".ali"))
     if not files:
-        print(f"No .ali files found in {EXAMPLES}", file=sys.stderr)
+        print(f"No .ali files found in {RUST_EXAMPLES}", file=sys.stderr)
         sys.exit(1)
 
     # Header
@@ -77,17 +80,28 @@ def main():
         print("-" * 34)
 
     for fname in files:
-        path = os.path.join(EXAMPLES, fname)
         name = fname[:-4]
+        rust_path  = os.path.join(RUST_EXAMPLES, fname)
+        ocaml_path = os.path.join(OCAML_EXAMPLES, fname)
 
-        ocaml_ms = best_of(OCAML_BIN, path, args.n) if run_ocaml else None
-        rust_ms  = best_of(RUST_BIN,  path, args.n) if run_rust  else None
+        if run_ocaml and not os.path.isfile(ocaml_path):
+            ocaml_ms = None
+        else:
+            ocaml_ms = best_of(OCAML_BIN, ocaml_path, args.n) if run_ocaml else None
+
+        rust_ms = best_of(RUST_BIN, rust_path, args.n) if run_rust else None
 
         if run_ocaml and run_rust:
-            ratio = rust_ms / ocaml_ms if ocaml_ms and ocaml_ms > 0 else float("nan")
-            print(f"{name:<22} {ocaml_ms:>10.1f} {rust_ms:>10.1f} {ratio:>7.1f}x")
+            if ocaml_ms is not None:
+                ratio = rust_ms / ocaml_ms if ocaml_ms > 0 else float("nan")
+                print(f"{name:<22} {ocaml_ms:>10.1f} {rust_ms:>10.1f} {ratio:>7.1f}x")
+            else:
+                print(f"{name:<22} {'N/A':>10} {rust_ms:>10.1f} {'N/A':>8}")
         elif run_ocaml:
-            print(f"{name:<22} {ocaml_ms:>10.1f}")
+            if ocaml_ms is not None:
+                print(f"{name:<22} {ocaml_ms:>10.1f}")
+            else:
+                print(f"{name:<22} {'N/A':>10}")
         else:
             print(f"{name:<22} {rust_ms:>10.1f}")
 
