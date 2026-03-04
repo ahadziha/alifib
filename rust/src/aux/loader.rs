@@ -47,6 +47,19 @@ pub struct Loader {
     inner: FileLoader,
 }
 
+pub struct LoadedFile {
+    pub canonical_path: String,
+    pub source: String,
+    pub program: Program,
+    pub modules: ModuleStore,
+}
+
+pub enum LoadFileError {
+    Load { path: String, cause: LoadError },
+    Parse { path: String, source: String, errors: Vec<LangError> },
+    Resolve(ResolveError),
+}
+
 impl Loader {
     fn path_separator() -> char {
         if cfg!(windows) { ';' } else { ':' }
@@ -81,8 +94,20 @@ impl Loader {
         Self { inner: FileLoader { search_paths, read_file } }
     }
 
-    pub fn file_loader(&self) -> &FileLoader {
-        &self.inner
+    pub fn load(&self, path: &str) -> Result<LoadedFile, LoadFileError> {
+        let canonical_path = super::path::canonicalize(path);
+        let source = (self.inner.read_file)(&canonical_path)
+            .map_err(|cause| LoadFileError::Load { path: path.to_owned(), cause })?;
+        let file_loader = ensure_root_in_loader(&self.inner, &canonical_path);
+        let program = language::parse(&source)
+            .map_err(|errors| LoadFileError::Parse {
+                path: canonical_path.clone(),
+                source: source.clone(),
+                errors,
+            })?;
+        let modules = resolve_all_modules(&file_loader, &canonical_path, &program)
+            .map_err(LoadFileError::Resolve)?;
+        Ok(LoadedFile { canonical_path, source, program, modules })
     }
 }
 

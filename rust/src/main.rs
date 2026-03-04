@@ -7,11 +7,12 @@ use std::fs;
 use std::process;
 use std::time::Instant;
 
-use aux::loader::{Loader, LoadError, ResolveError, ensure_root_in_loader, resolve_all_modules};
+use aux::error::report_load_file_error;
+use aux::loader::Loader;
 use interpreter::interpreter::{Context, interpret_program};
 use interpreter::state::State;
 
-const USAGE: &str = "Usage: alifib2 <input-file> [-o|--output <output-file>] [--ast] [--bench N]";
+const USAGE: &str = "Usage: alifib <input-file> [-o|--output <output-file>] [--ast] [--bench N]";
 
 #[derive(Clone, Copy)]
 enum Mode {
@@ -42,6 +43,10 @@ fn parse_args() -> Result<Args, String> {
                         .ok_or_else(|| format!("{} requires an argument", arg))?
                         .clone(),
                 );
+            }
+            "-h" | "--help" => {
+                println!("{}", USAGE);
+                process::exit(0);
             }
             "--ast" => mode = Mode::Ast,
             "--bench" => {
@@ -79,19 +84,20 @@ fn write_output(path: Option<&str>, text: &str) -> Result<(), String> {
     }
 }
 
-fn read_and_parse(input: &str) -> Result<language::Program, ()> {
-    let source = fs::read_to_string(input).map_err(|e| {
-        eprintln!("error: could not read `{}`: {}", input, e);
-    })?;
-    language::parse(&source).map_err(|errors| {
-        language::report_errors(&errors, &source, input);
-    })
-}
-
 fn run_ast(input: &str, output: Option<&str>) -> bool {
-    let program = match read_and_parse(input) {
+    let source = match fs::read_to_string(input) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("error: could not read `{}`: {}", input, e);
+            return false;
+        }
+    };
+    let program = match language::parse(&source) {
         Ok(p) => p,
-        Err(()) => return false,
+        Err(errors) => {
+            language::report_errors(&errors, &source, input);
+            return false;
+        }
     };
     if let Err(msg) = write_output(output, &program.to_string()) {
         eprintln!("error: {}", msg);
@@ -100,69 +106,24 @@ fn run_ast(input: &str, output: Option<&str>) -> bool {
     true
 }
 
-// ---- Session runner ----
-
 fn run_file(loader: &Loader, path: &str) -> Option<(Context, String)> {
-    let canonical_path = aux::path::canonicalize(path);
-    let file_loader = loader.file_loader();
-
-    let contents = match (file_loader.read_file)(&canonical_path) {
-        Ok(s) => s,
-        Err(LoadError::NotFound) => {
-            eprintln!("error: could not load `{}`", path);
-            return None;
-        }
-        Err(LoadError::IoError(reason)) => {
-            eprintln!("error: could not load `{}`: {}", path, reason);
-            return None;
-        }
-    };
-
-    let file_loader = ensure_root_in_loader(file_loader, &canonical_path);
-
-    let program = match language::parse(&contents) {
-        Ok(p) => p,
-        Err(parse_errors) => {
-            language::report_errors(&parse_errors, &contents, &canonical_path);
-            return None;
-        }
-    };
-
-    // Pre-resolve all module includes
-    let module_store = match resolve_all_modules(&file_loader, &canonical_path, &program) {
-        Ok(store) => store,
+    let loaded = match loader.load(path) {
+        Ok(f) => f,
         Err(e) => {
-            report_resolve_error(&e);
+            report_load_file_error(&e);
             return None;
         }
     };
 
-    let context = Context::new(canonical_path.clone(), State::empty());
-    let result = interpret_program(&module_store, context, &program);
+    let context = Context::new(loaded.canonical_path.clone(), State::empty());
+    let result = interpret_program(&loaded.modules, context, &loaded.program);
 
     if !result.errors.is_empty() {
-        language::report_errors(&result.errors, &contents, &canonical_path);
+        language::report_errors(&result.errors, &loaded.source, &loaded.canonical_path);
         return None;
     }
 
-    Some((result.context, contents))
-}
-
-fn report_resolve_error(err: &ResolveError) {
-    match err {
-        ResolveError::NotFound { module_name } => {
-            eprintln!("error: module file {}.ali not found in search paths", module_name);
-        }
-        ResolveError::IoError { path, reason } => {
-            eprintln!("error: could not load `{}`: {}", path, reason);
-        }
-        ResolveError::ParseError { path, source, errors } => {
-            language::report_errors(errors, source, path);
-        }
-        ResolveError::Cycle { path } => {
-            eprintln!("error: cyclic module dependency involving `{}`", path);
-        }
-    }
+    Some((result.context, loaded.source))
 }
 
 fn run_interpreter(input: &str, output: Option<&str>) -> bool {
