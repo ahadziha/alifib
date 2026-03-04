@@ -30,7 +30,7 @@
 
 -- A _type block_ is a series of type instructions:
 
-<TypeBlock> ::= <TypeInst> { ";" <TypeInst> }
+<TypeBlock> ::= <TypeInst> { ";" <TypeInst> } [ ";" ]
 
 -- A _type instruction_ adds global complexes. It can be:
 -- * a generator instruction, declaring a name (optionally with a boundary) to stand for a complex
@@ -66,7 +66,7 @@
 
 -- A _local block_ is a series of local instructions
 
-<LocalBlock> ::= <LocalInst> { ";" <LocalInst> } 
+<LocalBlock> ::= <LocalInst> { ";" <LocalInst> } [ ";" ]
 
 -- A _local instruction_ is either
 -- * a local definition of a diagram

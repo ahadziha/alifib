@@ -1,118 +1,113 @@
 mod language;
 
-use std::env;
 use std::fs;
+use std::process;
 
-use ariadne::{Color, Label, Report, ReportKind, Source};
-use chumsky::input::Input as _;
-use chumsky::prelude::*;
+const USAGE: &str = "Usage: alifib2 <input-file> [-o|--output <output-file>] [--ast]";
 
-use language::ast::*;
-use language::lexer;
-use language::parser;
-
-fn count_blocks(program: &Program) -> (usize, usize) {
-    let mut type_blocks = 0;
-    let mut local_blocks = 0;
-    for b in &program.blocks {
-        match &b.inner {
-            Block::TypeBlock(_) => type_blocks += 1,
-            Block::LocalBlock { .. } => local_blocks += 1,
-        }
-    }
-    (type_blocks, local_blocks)
+#[derive(Clone, Copy)]
+enum Mode {
+    Interpret,
+    Ast,
 }
 
-fn count_generators(program: &Program) -> usize {
-    let mut count = 0;
-    for b in &program.blocks {
-        if let Block::TypeBlock(insts) = &b.inner {
-            for inst in insts {
-                if matches!(&inst.inner, TypeInst::Generator(_)) {
-                    count += 1;
+struct Args {
+    input: String,
+    output: Option<String>,
+    mode: Mode,
+}
+
+fn parse_args() -> Result<Args, String> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut input = None;
+    let mut output = None;
+    let mut mode = Mode::Interpret;
+
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "-o" | "--output" => {
+                output = Some(
+                    iter.next()
+                        .ok_or_else(|| format!("{} requires an argument", arg))?
+                        .clone(),
+                );
+            }
+            "--ast" => mode = Mode::Ast,
+            s if s.starts_with('-') => return Err(format!("Unknown option: {}", s)),
+            s => {
+                if input.is_some() {
+                    return Err("Multiple input files specified".to_string());
                 }
+                input = Some(s.to_string());
             }
         }
     }
-    count
+
+    Ok(Args {
+        input: input.ok_or(USAGE)?,
+        output,
+        mode,
+    })
+}
+
+fn write_output(path: Option<&str>, text: &str) -> Result<(), String> {
+    match path {
+        None => {
+            println!("{}", text);
+            Ok(())
+        }
+        Some(p) => fs::write(p, text).map_err(|e| format!("could not write `{}`: {}", p, e)),
+    }
+}
+
+fn read_and_parse(input: &str) -> Result<language::Program, ()> {
+    let source = fs::read_to_string(input).map_err(|e| {
+        eprintln!("error: could not read `{}`: {}", input, e);
+    })?;
+    language::parse(&source).map_err(|errors| {
+        language::report_errors(&errors, &source, input);
+    })
+}
+
+fn run_ast(input: &str, output: Option<&str>) -> bool {
+    let program = match read_and_parse(input) {
+        Ok(p) => p,
+        Err(()) => return false,
+    };
+    if let Err(msg) = write_output(output, &program.to_string()) {
+        eprintln!("error: {}", msg);
+        return false;
+    }
+    true
+}
+
+fn run_interpreter(input: &str, output: Option<&str>) -> bool {
+    let _program = match read_and_parse(input) {
+        Ok(p) => p,
+        Err(()) => return false,
+    };
+    // TODO: interpret program
+    let _ = output;
+    eprintln!("Interpreter not yet implemented");
+    true
 }
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
-        eprintln!("Usage: {} <file.ali>", args[0]);
-        std::process::exit(1);
-    }
-
-    let filename = &args[1];
-    let src = match fs::read_to_string(filename) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("Error reading {}: {}", filename, e);
-            std::process::exit(1);
+    let args = match parse_args() {
+        Ok(a) => a,
+        Err(msg) => {
+            eprintln!("{}", msg);
+            process::exit(1);
         }
     };
 
-    // Lex
-    let (tokens, lex_errs) = lexer::lexer().parse(&src).into_output_errors();
-
-    for e in &lex_errs {
-        Report::build(ReportKind::Error, (filename.as_str(), e.span().into_range()))
-            .with_message("Lex error")
-            .with_label(
-                Label::new((filename.as_str(), e.span().into_range()))
-                    .with_message(format!("{}", e.reason()))
-                    .with_color(Color::Red),
-            )
-            .finish()
-            .eprint((filename.as_str(), Source::from(&src)))
-            .unwrap();
-    }
-
-    let tokens = match tokens {
-        Some(t) => t,
-        None => {
-            eprintln!("Lexing failed, cannot parse.");
-            std::process::exit(1);
-        }
+    let ok = match args.mode {
+        Mode::Ast => run_ast(&args.input, args.output.as_deref()),
+        Mode::Interpret => run_interpreter(&args.input, args.output.as_deref()),
     };
 
-    // Parse
-    let eoi = SimpleSpan::from(src.len()..src.len());
-    let token_input = tokens.as_slice().split_token_span(eoi);
-    let (ast, parse_errs) = parser::program_parser()
-        .parse(token_input)
-        .into_output_errors();
-
-    for e in &parse_errs {
-        let span = e.span();
-        Report::build(ReportKind::Error, (filename.as_str(), span.into_range()))
-            .with_message("Parse error")
-            .with_label(
-                Label::new((filename.as_str(), span.into_range()))
-                    .with_message(format!("{}", e.reason()))
-                    .with_color(Color::Red),
-            )
-            .finish()
-            .eprint((filename.as_str(), Source::from(&src)))
-            .unwrap();
-    }
-
-    match ast {
-        Some(program) => {
-            let (type_blocks, local_blocks) = count_blocks(&program);
-            let generators = count_generators(&program);
-            println!(
-                "Parsed OK: {} block(s) ({} type, {} local), {} generator(s)",
-                type_blocks + local_blocks,
-                type_blocks,
-                local_blocks,
-                generators,
-            );
-        }
-        None => {
-            eprintln!("Parsing failed.");
-            std::process::exit(1);
-        }
+    if !ok {
+        process::exit(1);
     }
 }
