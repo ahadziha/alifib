@@ -6,14 +6,14 @@ use crate::aux::path;
 use crate::core::{
     complex::{Complex, MapDomain},
     diagram::{CellData, Diagram, Sign as DiagramSign},
-    map::Map,
+    map::PMap,
     state::State,
 };
 use crate::language::{
     self,
     ast::{self, Span, Spanned, Program, Block, TypeInst, IncludeModule,
           CInstr, NameWithBoundary, LetDiag, DefPMap, LocalInst, AssertStmt,
-          PMap, PMapBasic, PMSystem, PMapClause, DExpr, DComponent, Address},
+          PMapBasic, PMSystem, PMapClause, DExpr, DComponent, Address},
     error::Error,
 };
 
@@ -107,7 +107,7 @@ pub struct Namespace {
 
 #[derive(Debug, Clone)]
 pub struct MapComponent {
-    pub map: Map,
+    pub map: PMap,
     pub source: Arc<Complex>,
 }
 
@@ -126,7 +126,7 @@ pub enum Component {
 
 #[derive(Debug, Clone)]
 pub enum TermPair {
-    MTermPair { fst: Map, snd: Map, source: Arc<Complex> },
+    MTermPair { fst: PMap, snd: PMap, source: Arc<Complex> },
     DTermPair { fst: Diagram, snd: Diagram },
 }
 
@@ -539,7 +539,7 @@ fn interpret_include_module_instr(
 
     if location.name_in_use(&alias) {
         let mut result = InterpResult::ok(context.clone());
-        result.add_error(make_error(span, format!("Map name already in use: {}", alias)));
+        result.add_error(make_error(span, format!("Partial map name already in use: {}", alias)));
         return (None, result);
     }
 
@@ -755,7 +755,7 @@ fn interpret_local_inst(
                     if location.name_in_use(&name) {
                         let mut r = result;
                         r.add_error(make_error(dp.name.span,
-                            format!("Map name already in use: {}", name)));
+                            format!("Partial map name already in use: {}", name)));
                         return (None, r);
                     }
                     if map.has_local_labels() {
@@ -1031,7 +1031,7 @@ fn interpret_c_instr(
                     if location.name_in_use(&name) {
                         let mut r = result;
                         r.add_error(make_error(dp.name.span,
-                            format!("Map name already in use: {}", name)));
+                            format!("Partial map name already in use: {}", name)));
                         return (location, r);
                     }
                     let new_location = location.add_map(name, domain, map);
@@ -1139,7 +1139,7 @@ fn interpret_include_instr(
 
     if location.name_in_use(&name) {
         let mut r = include_result;
-        r.add_error(make_error(span, format!("Map name already in use: {}", name)));
+        r.add_error(make_error(span, format!("Partial map name already in use: {}", name)));
         return (None, r);
     }
 
@@ -1195,7 +1195,7 @@ fn interpret_attach_instr(
     if location.name_in_use(&name) {
         let mut r = attach_result;
         r.add_error(make_error(attach_stmt.name.span,
-            format!("Map name already in use: {}", name)));
+            format!("Partial map name already in use: {}", name)));
         return (None, r);
     }
 
@@ -1246,11 +1246,11 @@ fn interpret_attach_instr(
         let image_cell_data = match &gen_cell_data {
             CellData::Zero => CellData::Zero,
             CellData::Boundary { boundary_in, boundary_out } => {
-                let image_in = match Map::apply(&current_map, boundary_in) {
+                let image_in = match PMap::apply(&current_map, boundary_in) {
                     Ok(d) => d,
                     Err(_) => continue,
                 };
-                let image_out = match Map::apply(&current_map, boundary_out) {
+                let image_out = match PMap::apply(&current_map, boundary_out) {
                     Ok(d) => d,
                     Err(_) => continue,
                 };
@@ -1348,7 +1348,7 @@ fn interpret_address(
             None => {
                 let mut r = base_result;
                 r.add_error(make_error(*seg_span,
-                    format!("Map `{}` not found", seg_name)));
+                    format!("Partial map `{}` not found", seg_name)));
                 return (None, r);
             }
             Some(me) => {
@@ -1453,7 +1453,7 @@ fn interpret_attach(
     location: &Complex,
     attach_stmt: &ast::AttachStmt,
     span: Span,
-) -> (Option<(LocalId, Map, MapDomain)>, InterpResult) {
+) -> (Option<(LocalId, PMap, MapDomain)>, InterpResult) {
     let (id_opt, addr_result) = interpret_address(context, &attach_stmt.address.inner, attach_stmt.address.span);
     let context_after = addr_result.context.clone();
 
@@ -1466,7 +1466,7 @@ fn interpret_attach(
 
     match &attach_stmt.along {
         None => {
-            let map = Map::empty().unwrap();
+            let map = PMap::empty().unwrap();
             (Some((name, map, MapDomain::Type(id))), addr_result)
         }
         Some(pmap_node) => {
@@ -1494,11 +1494,11 @@ fn interpret_pmap(
     context: &Context,
     location: &Complex,
     source: &Complex,
-    pmap: &Spanned<PMap>,
+    pmap: &Spanned<ast::PMap>,
 ) -> (Option<MapComponent>, InterpResult) {
     match &pmap.inner {
-        PMap::Basic(basic) => interpret_pmap_basic(context, location, source, basic, pmap.span),
-        PMap::Dot { base, rest } => {
+        ast::PMap::Basic(basic) => interpret_pmap_basic(context, location, source, basic, pmap.span),
+        ast::PMap::Dot { base, rest } => {
             let (base_opt, base_result) = interpret_pmap_basic(context, location, source, base, pmap.span);
             match base_opt {
                 None => (None, base_result),
@@ -1510,7 +1510,7 @@ fn interpret_pmap(
                     match rest_opt {
                         None => (None, combined),
                         Some(rest_comp) => {
-                            let composed = Map::compose(&base_comp.map, &rest_comp.map);
+                            let composed = PMap::compose(&base_comp.map, &rest_comp.map);
                             (Some(MapComponent { map: composed, source: rest_comp.source }), combined)
                         }
                     }
@@ -1533,7 +1533,7 @@ fn interpret_pmap_basic(
             match location.find_map(name) {
                 None => {
                     let mut r = base_result;
-                    r.add_error(make_error(span, format!("Map not found: `{}`", name)));
+                    r.add_error(make_error(span, format!("Partial map not found: `{}`", name)));
                     (None, r)
                 }
                 Some(entry) => {
@@ -1579,7 +1579,7 @@ fn interpret_pm_system(
     // Start with prefix map or empty map
     let (initial_mc, prefix_result) = match &pm_system.extend {
         None => {
-            let map = Map::empty().unwrap();
+            let map = PMap::empty().unwrap();
             (MapComponent { map, source: Arc::new(source.clone()) }, InterpResult::ok(context.clone()))
         }
         Some(prefix) => {
@@ -1618,28 +1618,27 @@ fn interpret_pm_clause(
     context: &Context,
     location: &Complex,
     source: &Complex,
-    map: Map,
+    map: PMap,
     clause: &Spanned<PMapClause>,
-    span: Span,
-) -> (Option<Map>, InterpResult) {
-    let (left_opt, left_result) = interpret_diagram(context, source, &clause.inner.lhs);
+    _span: Span,
+) -> (Option<PMap>, InterpResult) {
+    let (left_opt, left_result) = interpret_diagram_as_term(context, source, &clause.inner.lhs);
     match left_opt {
         None => return (None, left_result),
         Some(left_term) => {
-            let (right_opt, right_result) = interpret_diagram(&left_result.context, location, &clause.inner.rhs);
+            let (right_opt, right_result) = interpret_diagram_as_term(&left_result.context, location, &clause.inner.rhs);
             let combined = InterpResult::combine(left_result, right_result);
             match right_opt {
                 None => (None, combined),
                 Some(right_term) => {
-                    // Both should be diagrams; extend map
-                    match smart_extend(
+                    match interpret_assign(
                         &combined.context,
                         map,
                         source,
                         location,
                         &left_term,
                         &right_term,
-                        span,
+                        clause.span,
                     ) {
                         Ok(new_m) => (Some(new_m), combined),
                         Err(e) => {
@@ -1654,17 +1653,90 @@ fn interpret_pm_clause(
     }
 }
 
+/// Handle assignment of a term to another term in a map clause.
+/// Supports both diagram-to-diagram (via smart_extend) and map-to-map assignments.
+fn interpret_assign(
+    context: &Context,
+    map: PMap,
+    source: &Complex,
+    target: &Complex,
+    left: &Term,
+    right: &Term,
+    span: Span,
+) -> Result<PMap, aux::Error> {
+    match (left, right) {
+        (Term::DTerm(d_left), Term::DTerm(d_right)) => {
+            smart_extend(context, map, source, target, d_left, d_right, span)
+        }
+        (Term::MTerm(mc_left), Term::MTerm(mc_right)) => {
+            if !Arc::ptr_eq(&mc_left.source, &mc_right.source) {
+                return Err(aux::Error::new("Not a well-formed assignment"));
+            }
+            let src_complex = &*mc_left.source;
+            let mut generators: Vec<(usize, Tag, LocalId)> = src_complex
+                .generator_names()
+                .into_iter()
+                .filter_map(|name| {
+                    src_complex.find_generator(&name).map(|entry| {
+                        (entry.dim, entry.tag.clone(), name)
+                    })
+                })
+                .collect();
+            generators.sort_by_key(|(dim, _, _)| *dim);
+
+            let mut extended = map;
+            for (_dim, tag, name) in &generators {
+                let defined_left = mc_left.map.is_defined_at(tag);
+                let defined_right = mc_right.map.is_defined_at(tag);
+                if defined_left && defined_right {
+                    let left_image = mc_left.map.image(tag)?;
+                    if left_image.is_cell() {
+                        let right_image = mc_right.map.image(tag)?;
+                        extended = smart_extend(
+                            context, extended, source, target,
+                            left_image, right_image, span,
+                        )?;
+                    } else {
+                        // Non-cell left image: check all its labels are already defined
+                        let all_defined = left_image.labels.iter()
+                            .flat_map(|row| row.iter())
+                            .all(|t| extended.is_defined_at(t));
+                        if !all_defined {
+                            return Err(aux::Error::new(
+                                "Failed to extend map (not enough information)",
+                            ));
+                        }
+                    }
+                } else if defined_left && !defined_right {
+                    return Err(aux::Error::new(format!(
+                        "{} is in the domain of definition of the first map, but not the second map",
+                        name
+                    )));
+                } else if defined_right && !defined_left {
+                    return Err(aux::Error::new(format!(
+                        "{} is in the domain of definition of the second map, but not the first map",
+                        name
+                    )));
+                }
+                // else: neither defined, skip
+            }
+            Ok(extended)
+        }
+        _ => Err(aux::Error::new("Not a well-formed assignment")),
+    }
+}
+
 /// Smart extension of a map: adds a mapping from a source cell to a target diagram,
 /// recursively extending for boundary cells as needed.
 fn smart_extend(
     context: &Context,
-    map: Map,
+    map: PMap,
     source: &Complex,
     target: &Complex,
     source_diag: &Diagram,
     target_diag: &Diagram,
     span: Span,
-) -> Result<Map, aux::Error> {
+) -> Result<PMap, aux::Error> {
     if !source_diag.is_cell() {
         return Err(aux::Error::new("Left-hand side of map instruction must be a cell"));
     }
@@ -1791,7 +1863,7 @@ fn smart_extend(
         }
     }
 
-    Map::extend(current, tag, dim, cell_data, target_diag.clone())
+    PMap::extend(current, tag, dim, cell_data, target_diag.clone())
 }
 
 fn get_cell_data(context: &Context, source: &Complex, tag: &Tag) -> Option<CellData> {
@@ -1989,7 +2061,7 @@ fn interpret_d_expr(
                             (None, r)
                         }
                         Some(Component::Term(Term::DTerm(d))) => {
-                            match Map::apply(&mc.map, &d) {
+                            match PMap::apply(&mc.map, &d) {
                                 Ok(d_img) => (Some(Term::DTerm(d_img)), combined),
                                 Err(e) => {
                                     let mut r = combined;
@@ -1999,7 +2071,7 @@ fn interpret_d_expr(
                             }
                         }
                         Some(Component::Term(Term::MTerm(right_mc))) => {
-                            let composed = Map::compose(&mc.map, &right_mc.map);
+                            let composed = PMap::compose(&mc.map, &right_mc.map);
                             (Some(Term::MTerm(MapComponent { map: composed, source: right_mc.source })), combined)
                         }
                     }
@@ -2312,13 +2384,13 @@ fn interpret_let_diag(
     }
 }
 
-// ---- Map naming ----
+// ---- Partial map naming ----
 
 fn interpret_def_pmap(
     context: &Context,
     location: &Complex,
     dp: &DefPMap,
-) -> (Option<(LocalId, Map, MapDomain)>, InterpResult) {
+) -> (Option<(LocalId, PMap, MapDomain)>, InterpResult) {
     let (id_opt, addr_result) = interpret_address(context, &dp.address.inner, dp.address.span);
     match id_opt {
         None => (None, addr_result),
@@ -2348,7 +2420,7 @@ fn interpret_def_pmap(
 
 // ---- Identity map ----
 
-fn identity_map(context: &Context, domain: &Complex) -> Map {
+fn identity_map(context: &Context, domain: &Complex) -> PMap {
     let entries: Vec<(Tag, usize, CellData, Diagram)> = domain.generator_names()
         .into_iter()
         .filter_map(|name| {
@@ -2368,5 +2440,5 @@ fn identity_map(context: &Context, domain: &Complex) -> Map {
             Some((tag, dim, cell_data, image))
         })
         .collect();
-    Map::of_entries(entries, true)
+    PMap::of_entries(entries, true)
 }

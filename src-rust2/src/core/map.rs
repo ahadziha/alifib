@@ -8,33 +8,33 @@ pub struct Entry {
     pub image: Diagram,
 }
 
-/// A cellular map: maps tags (cells) to diagrams.
+/// A partial map: maps tags (cells) to diagrams.
 #[derive(Debug, Clone)]
-pub struct Map {
+pub struct PMap {
     table: HashMap<Tag, Entry>,
     by_dim: BTreeMap<usize, Vec<Tag>>,
     pub cellular: bool,
 }
 
-impl Map {
-    /// Create an empty map.
-    pub fn empty() -> Result<Map, Error> {
-        Ok(Map {
+impl PMap {
+    /// Create an empty partial map.
+    pub fn empty() -> Result<PMap, Error> {
+        Ok(PMap {
             table: HashMap::new(),
             by_dim: BTreeMap::new(),
             cellular: true,
         })
     }
 
-    /// Build a map from a list of (tag, dim, cell_data, image) entries.
-    pub fn of_entries(entries: Vec<(Tag, usize, CellData, Diagram)>, cellular: bool) -> Map {
+    /// Build a partial map from a list of (tag, dim, cell_data, image) entries.
+    pub fn of_entries(entries: Vec<(Tag, usize, CellData, Diagram)>, cellular: bool) -> PMap {
         let mut table = HashMap::with_capacity(entries.len());
         let mut by_dim: BTreeMap<usize, Vec<Tag>> = BTreeMap::new();
         for (tag, dim, cell_data, image) in entries {
             table.insert(tag.clone(), Entry { cell_data, image });
             by_dim.entry(dim).or_default().push(tag);
         }
-        Map { table, by_dim, cellular }
+        PMap { table, by_dim, cellular }
     }
 
     pub fn is_defined_at(&self, tag: &Tag) -> bool {
@@ -64,15 +64,15 @@ impl Map {
         self.table.insert(tag, Entry { cell_data, image });
     }
 
-    /// Extend the map with a new entry, checking boundary compatibility.
+    /// Extend the partial map with a new entry, checking boundary compatibility.
     /// Consumes `f` to avoid an unnecessary clone.
     pub fn extend(
-        f: Map,
+        f: PMap,
         tag: Tag,
         dim: usize,
         cell_data: CellData,
         image: Diagram,
-    ) -> Result<Map, Error> {
+    ) -> Result<PMap, Error> {
         if f.is_defined_at(&tag) {
             return Err(Error::new("already defined"));
         }
@@ -97,8 +97,8 @@ impl Map {
             match &cell_data {
                 CellData::Zero => panic!("n-cell must have boundaries"),
                 CellData::Boundary { boundary_in, boundary_out } => {
-                    let mapped_in = Map::apply(&f, boundary_in)?;
-                    let mapped_out = Map::apply(&f, boundary_out)?;
+                    let mapped_in = PMap::apply(&f, boundary_in)?;
+                    let mapped_out = PMap::apply(&f, boundary_out)?;
 
                     let boundary_idx = dim - 1;
                     let expected_input = Diagram::boundary_normal(Sign::Input, boundary_idx, &image)?;
@@ -124,8 +124,8 @@ impl Map {
         }
     }
 
-    /// Apply map f to a diagram by following its paste tree structure.
-    pub fn apply(f: &Map, diagram: &Diagram) -> Result<Diagram, Error> {
+    /// Apply partial map f to a diagram by following its paste tree structure.
+    pub fn apply(f: &PMap, diagram: &Diagram) -> Result<Diagram, Error> {
         let n = if diagram.dim() < 0 { 0 } else { diagram.dim() as usize };
         let root_tree = match diagram.tree(Sign::Input, n) {
             Some(t) => t.clone(),
@@ -166,8 +166,8 @@ impl Map {
         }
     }
 
-    /// Compose maps: g after f (g . f).
-    pub fn compose(g: &Map, f: &Map) -> Map {
+    /// Compose partial maps: g after f (g . f).
+    pub fn compose(g: &PMap, f: &PMap) -> PMap {
         let mut table = HashMap::with_capacity(f.table.len());
         let mut by_dim: BTreeMap<usize, Vec<Tag>> = BTreeMap::new();
         let mut cellular = true;
@@ -175,7 +175,7 @@ impl Map {
         for (dim, tags) in f.domain_by_dim() {
             for tag in tags {
                 let f_entry = match f.table.get(&tag) { Some(e) => e, None => continue };
-                let image_gf = match Map::apply(g, &f_entry.image) {
+                let image_gf = match PMap::apply(g, &f_entry.image) {
                     Ok(d) => d,
                     Err(_) => continue,
                 };
@@ -188,12 +188,12 @@ impl Map {
             }
         }
 
-        Map { table, by_dim, cellular }
+        PMap { table, by_dim, cellular }
     }
 }
 
 
-fn find_undefined<'a>(f: &Map, tree: &'a PasteTree) -> Option<&'a Tag> {
+fn find_undefined<'a>(f: &PMap, tree: &'a PasteTree) -> Option<&'a Tag> {
     match tree {
         PasteTree::Leaf(tag) => {
             if f.is_defined_at(tag) { None } else { Some(tag) }
@@ -217,7 +217,7 @@ fn map_tree(tree: &PasteTree, cache: &HashMap<Tag, Tag>) -> PasteTree {
     }
 }
 
-fn apply_tree(f: &Map, tree: &PasteTree) -> Result<Diagram, Error> {
+fn apply_tree(f: &PMap, tree: &PasteTree) -> Result<Diagram, Error> {
     match tree {
         PasteTree::Leaf(tag) => {
             f.image(tag).cloned()

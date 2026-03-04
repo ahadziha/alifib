@@ -51,8 +51,8 @@ Pair <<= {
   attach Snd :: Mor along [
     Dom => Fst.Cod
   ],
-  let Dom = Fst.Dom,
-  let Cod = Snd.Cod,
+  def Dom :: Ob = Fst.Dom,
+  def Cod :: Ob = Snd.Cod,
   let mor = Fst.mor Snd.mor,
   def Left_id :: Eq = [
     dir => (Fst.Left_id.dir #0 Snd.Left_id.inv) (Fst.Right_id.dir Snd.mor),

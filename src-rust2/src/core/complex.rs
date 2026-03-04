@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use crate::aux::{GlobalId, LocalId, ModuleId, Tag};
 use super::diagram::{CellData, Diagram};
-use super::map::Map;
+use super::map::PMap;
 
 /// The domain of a map entry: either a type or a module.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,7 +18,7 @@ pub struct GeneratorEntry {
 
 #[derive(Debug, Clone)]
 pub struct MapEntry {
-    pub map: Map,
+    pub map: PMap,
     pub domain: MapDomain,
 }
 
@@ -117,7 +117,7 @@ impl Complex {
 
     // ---- Maps ----
 
-    pub fn add_map(mut self, name: LocalId, domain: MapDomain, map: Map) -> Self {
+    pub fn add_map(mut self, name: LocalId, domain: MapDomain, map: PMap) -> Self {
         self.maps.insert(name.clone(), MapEntry { map, domain });
         self.used_names.insert(name);
         self
