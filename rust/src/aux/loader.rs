@@ -4,19 +4,19 @@ use super::path;
 use crate::language::{self, Program, Error as LangError};
 
 #[derive(Debug, Clone)]
-pub enum LoadError {
+pub(crate) enum LoadError {
     NotFound,
     IoError(String),
 }
 
 #[derive(Clone)]
-pub struct FileLoader {
-    pub search_paths: Vec<String>,
-    pub read_file: Arc<dyn Fn(&str) -> Result<String, LoadError> + Send + Sync>,
+struct FileLoader {
+    search_paths: Vec<String>,
+    read_file: Arc<dyn Fn(&str) -> Result<String, LoadError> + Send + Sync>,
 }
 
 impl FileLoader {
-    pub fn default_read(path: &str) -> Result<String, LoadError> {
+    fn default_read(path: &str) -> Result<String, LoadError> {
         if !std::path::Path::new(path).exists() {
             return Err(LoadError::NotFound);
         }
@@ -24,21 +24,23 @@ impl FileLoader {
     }
 }
 
-pub fn ensure_root_in_loader(loader: &FileLoader, canonical_path: &str) -> FileLoader {
-    let root = std::path::Path::new(canonical_path)
-        .parent()
-        .and_then(|p| p.to_str())
-        .map(path::canonicalize)
-        .unwrap_or_else(|| canonical_path.to_owned());
-    let mut desired = vec![root];
-    desired.extend(loader.search_paths.iter().cloned());
-    let normalized = path::normalize_search_paths(desired);
-    if normalized == loader.search_paths {
-        loader.clone()
-    } else {
-        FileLoader {
-            search_paths: normalized,
-            read_file: loader.read_file.clone(),
+impl FileLoader {
+    fn with_parent_dir(&self, file_path: &str) -> FileLoader {
+        let parent = std::path::Path::new(file_path)
+            .parent()
+            .and_then(|p| p.to_str())
+            .map(path::canonicalize)
+            .unwrap_or_else(|| file_path.to_owned());
+        let mut desired = vec![parent];
+        desired.extend(self.search_paths.iter().cloned());
+        let normalized = path::normalize_search_paths(desired);
+        if normalized == self.search_paths {
+            self.clone()
+        } else {
+            FileLoader {
+                search_paths: normalized,
+                read_file: self.read_file.clone(),
+            }
         }
     }
 }
@@ -54,7 +56,7 @@ pub struct LoadedFile {
     pub modules: ModuleStore,
 }
 
-pub enum LoadFileError {
+pub(crate) enum LoadFileError {
     Load { path: String, cause: LoadError },
     Parse { path: String, source: String, errors: Vec<LangError> },
     Resolve(ResolveError),
@@ -98,7 +100,7 @@ impl Loader {
         let canonical_path = super::path::canonicalize(path);
         let source = (self.inner.read_file)(&canonical_path)
             .map_err(|cause| LoadFileError::Load { path: path.to_owned(), cause })?;
-        let file_loader = ensure_root_in_loader(&self.inner, &canonical_path);
+        let file_loader = self.inner.with_parent_dir(&canonical_path);
         let program = language::parse(&source)
             .map_err(|errors| LoadFileError::Parse {
                 path: canonical_path.clone(),
@@ -116,7 +118,6 @@ impl Loader {
 // ---------------------------------------------------------------------------
 
 pub struct ResolvedModule {
-    pub source: String,
     pub program: Program,
 }
 
@@ -125,7 +126,7 @@ pub struct ModuleStore {
     resolutions: HashMap<(String, String), String>,
 }
 
-pub enum ResolveError {
+pub(crate) enum ResolveError {
     NotFound { module_name: String },
     IoError { path: String, reason: String },
     ParseError { path: String, source: String, errors: Vec<LangError> },
@@ -182,7 +183,7 @@ fn collect_includes(program: &Program) -> Vec<String> {
     names
 }
 
-pub fn resolve_all_modules(
+fn resolve_all_modules(
     loader: &FileLoader,
     root_path: &str,
     root_program: &Program,
@@ -229,13 +230,10 @@ fn resolve_recursive(
             }
         };
 
-        let child_loader = ensure_root_in_loader(loader, &canonical_path);
+        let child_loader = loader.with_parent_dir(&canonical_path);
         resolve_recursive(&child_loader, &canonical_path, &program, store, resolving)?;
 
-        store.modules.insert(canonical_path, ResolvedModule {
-            source: contents,
-            program,
-        });
+        store.modules.insert(canonical_path, ResolvedModule { program });
     }
     Ok(())
 }

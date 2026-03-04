@@ -9,7 +9,7 @@ use std::time::Instant;
 
 use aux::error::report_load_file_error;
 use aux::loader::Loader;
-use interpreter::interpreter::{Context, interpret_program};
+use interpreter::{Context, interpret_program};
 use interpreter::state::State;
 
 const USAGE: &str = "Usage: alifib <input-file> [-o|--output <output-file>] [--ast] [--bench N]";
@@ -152,7 +152,6 @@ fn run_bench(input: &str, n: usize) -> bool {
 
     let start = Instant::now();
     for _ in 0..n {
-        let loader = Loader::default(vec![]);
         run_file(&loader, input);
     }
     let elapsed = start.elapsed();
