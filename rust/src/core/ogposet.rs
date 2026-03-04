@@ -1,3 +1,6 @@
+use std::sync::Arc;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use crate::aux::Error;
 use super::intset::{self, IntSet};
 
@@ -100,7 +103,7 @@ impl<'a> Iterator for BitSetIter<'a> {
 
 // ---- Ogposet ----
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Sign {
     Input,
     Output,
@@ -283,8 +286,8 @@ impl Ogposet {
 /// An embedding (injective map) between two ogposets.
 #[derive(Debug, Clone)]
 pub struct Embedding {
-    pub dom: Ogposet,
-    pub cod: Ogposet,
+    pub dom: Arc<Ogposet>,
+    pub cod: Arc<Ogposet>,
     /// `map[d][i]` = image of cell i at dimension d in the codomain
     pub map: Vec<Vec<usize>>,
     /// `inv[d][j]` = preimage of cell j at dimension d in domain, or usize::MAX if none
@@ -294,21 +297,21 @@ pub struct Embedding {
 pub const NO_PREIMAGE: usize = usize::MAX;
 
 impl Embedding {
-    pub fn make(dom: Ogposet, cod: Ogposet, map: Vec<Vec<usize>>, inv: Vec<Vec<usize>>) -> Self {
+    pub fn make(dom: Arc<Ogposet>, cod: Arc<Ogposet>, map: Vec<Vec<usize>>, inv: Vec<Vec<usize>>) -> Self {
         Self { dom, cod, map, inv }
     }
 
-    pub fn id(x: Ogposet) -> Self {
+    pub fn id(x: Arc<Ogposet>) -> Self {
         let sizes = x.sizes();
         let map: Vec<Vec<usize>> = sizes.iter().map(|&n| (0..n).collect()).collect();
         let inv = map.clone();
-        Self { dom: x.clone(), cod: x, map, inv }
+        Self { dom: Arc::clone(&x), cod: x, map, inv }
     }
 
-    pub fn empty(cod: Ogposet) -> Self {
+    pub fn empty(cod: Arc<Ogposet>) -> Self {
         let sizes = cod.sizes();
         let inv: Vec<Vec<usize>> = sizes.iter().map(|&n| vec![NO_PREIMAGE; n]).collect();
-        Self { dom: Ogposet::empty(), cod, map: vec![], inv }
+        Self { dom: Arc::new(Ogposet::empty()), cod, map: vec![], inv }
     }
 }
 
@@ -343,87 +346,80 @@ fn remap_adjacency(
     }).collect()
 }
 
-struct EmbedData {
-    forward: Vec<Vec<usize>>,
-    inv_dom: Vec<Vec<usize>>,
-}
-
 /// Compute the boundary (sign-side, up to dimension k) of g.
-pub fn boundary(sign: Sign, k: usize, g: &Ogposet) -> (Ogposet, Embedding) {
+pub fn boundary(sign: Sign, k: usize, g: &Arc<Ogposet>) -> (Arc<Ogposet>, Embedding) {
     if g.dim < 0 {
-        return (Ogposet::empty(), Embedding::empty(g.clone()));
+        return (Arc::new(Ogposet::empty()), Embedding::empty(Arc::clone(g)));
     }
     let gd = g.dim as usize;
     if k >= gd {
-        return (g.clone(), Embedding::id(g.clone()));
+        return (Arc::clone(g), Embedding::id(Arc::clone(g)));
     }
 
     let dims_b = k + 1;
     let sizes_g = g.sizes();
-    let mut acc:      Vec<Vec<usize>> = vec![vec![]; dims_b];
+    let mut forward:  Vec<Vec<usize>> = vec![vec![]; dims_b];
     let mut inv_dom:  Vec<Vec<usize>> = (0..dims_b).map(|d| vec![NO_PREIMAGE; sizes_g[d]]).collect();
     let mut next_idx: Vec<usize>      = vec![0; dims_b];
 
     let insert_f = |j: usize, old: usize,
-                        acc: &mut Vec<Vec<usize>>,
+                        forward: &mut Vec<Vec<usize>>,
                         inv_dom: &mut Vec<Vec<usize>>,
                         next_idx: &mut Vec<usize>| {
         let i = next_idx[j];
         inv_dom[j][old] = i;
-        acc[j].push(old);
+        forward[j].push(old);
         next_idx[j] += 1;
     };
 
     let extremal_k = g.extremal(sign, k);
     for i in extremal_k {
-        insert_f(k, i, &mut acc, &mut inv_dom, &mut next_idx);
+        insert_f(k, i, &mut forward, &mut inv_dom, &mut next_idx);
     }
 
     for j in (0..k).rev() {
-        let parents: Vec<usize> = acc[j + 1].clone();
+        let parents: Vec<usize> = forward[j + 1].clone();
         for parent_old in parents {
             let faces = g.faces_of(Sign::Both, j + 1, parent_old);
             for f in faces {
                 if inv_dom[j][f] == NO_PREIMAGE {
-                    insert_f(j, f, &mut acc, &mut inv_dom, &mut next_idx);
+                    insert_f(j, f, &mut forward, &mut inv_dom, &mut next_idx);
                 }
             }
         }
         let maximal_j = g.maximal(j);
         for m in maximal_j {
             if inv_dom[j][m] == NO_PREIMAGE {
-                insert_f(j, m, &mut acc, &mut inv_dom, &mut next_idx);
+                insert_f(j, m, &mut forward, &mut inv_dom, &mut next_idx);
             }
         }
     }
 
-    let forward = acc;
-    let ed = EmbedData { forward, inv_dom };
+    let faces_in   = remap_adjacency(dims_b, &forward, &inv_dom, -1, &g.faces_in);
+    let faces_out  = remap_adjacency(dims_b, &forward, &inv_dom, -1, &g.faces_out);
+    let cofaces_in  = remap_adjacency(dims_b, &forward, &inv_dom,  1, &g.cofaces_in);
+    let cofaces_out = remap_adjacency(dims_b, &forward, &inv_dom,  1, &g.cofaces_out);
 
-    let faces_in   = remap_adjacency(dims_b, &ed.forward, &ed.inv_dom, -1, &g.faces_in);
-    let faces_out  = remap_adjacency(dims_b, &ed.forward, &ed.inv_dom, -1, &g.faces_out);
-    let cofaces_in  = remap_adjacency(dims_b, &ed.forward, &ed.inv_dom,  1, &g.cofaces_in);
-    let cofaces_out = remap_adjacency(dims_b, &ed.forward, &ed.inv_dom,  1, &g.cofaces_out);
-
-    let sub = Ogposet { dim: k as isize, faces_in, faces_out, cofaces_in, cofaces_out, normal: false };
+    let sub = Arc::new(Ogposet { dim: k as isize, faces_in, faces_out, cofaces_in, cofaces_out, normal: false });
 
     let full_levels = sizes_g.len();
     let cod_inv: Vec<Vec<usize>> = (0..full_levels).map(|d| {
-        if d < dims_b { ed.inv_dom[d].clone() } else { vec![NO_PREIMAGE; sizes_g[d]] }
+        if d < dims_b { inv_dom[d].clone() } else { vec![NO_PREIMAGE; sizes_g[d]] }
     }).collect();
 
-    let emb = Embedding::make(sub.clone(), g.clone(), ed.forward, cod_inv);
+    let emb = Embedding::make(Arc::clone(&sub), Arc::clone(g), forward, cod_inv);
     (sub, emb)
 }
 
 /// Traverse a subset of cells in g (specified by initial_stack: list of (dim, set_of_cells))
 /// and return the sub-ogposet induced by the downward closure of those cells.
-pub fn traverse(g: &Ogposet, initial_stack: Vec<(usize, IntSet)>) -> (Ogposet, Embedding) {
+/// If `mark_normal` is true, the resulting ogposet has `normal: true`.
+pub fn traverse(g: &Arc<Ogposet>, initial_stack: Vec<(usize, IntSet)>, mark_normal: bool) -> (Arc<Ogposet>, Embedding) {
     if initial_stack.is_empty() {
-        return (Ogposet::empty(), Embedding::empty(g.clone()));
+        return (Arc::new(Ogposet::empty()), Embedding::empty(Arc::clone(g)));
     }
     let gd = if g.dim < 0 {
-        return (Ogposet::empty(), Embedding::empty(g.clone()));
+        return (Arc::new(Ogposet::empty()), Embedding::empty(Arc::clone(g)));
     } else {
         g.dim as usize
     };
@@ -574,33 +570,41 @@ pub fn traverse(g: &Ogposet, initial_stack: Vec<(usize, IntSet)>) -> (Ogposet, E
         }
     }
 
-    let ed = EmbedData {
-        forward: map.clone(),
-        inv_dom: (0..map_levels).map(|d| inv[d].clone()).collect(),
-    };
+    // Phase 2: pass &map and &inv directly to remap_adjacency, then move into Embedding
+    let faces_in   = remap_adjacency(map_levels, &map, &inv, -1, &g.faces_in);
+    let faces_out  = remap_adjacency(map_levels, &map, &inv, -1, &g.faces_out);
+    let cofaces_in  = remap_adjacency(map_levels, &map, &inv,  1, &g.cofaces_in);
+    let cofaces_out = remap_adjacency(map_levels, &map, &inv,  1, &g.cofaces_out);
 
-    let faces_in   = remap_adjacency(map_levels, &ed.forward, &ed.inv_dom, -1, &g.faces_in);
-    let faces_out  = remap_adjacency(map_levels, &ed.forward, &ed.inv_dom, -1, &g.faces_out);
-    let cofaces_in  = remap_adjacency(map_levels, &ed.forward, &ed.inv_dom,  1, &g.cofaces_in);
-    let cofaces_out = remap_adjacency(map_levels, &ed.forward, &ed.inv_dom,  1, &g.cofaces_out);
-
-    let dom = Ogposet {
+    let dom = Arc::new(Ogposet {
         dim: max_dim as isize,
         faces_in, faces_out, cofaces_in, cofaces_out,
-        normal: false,
-    };
-    let emb = Embedding::make(dom.clone(), g.clone(), map, inv);
+        normal: mark_normal,
+    });
+    let emb = Embedding::make(Arc::clone(&dom), Arc::clone(g), map, inv);
     (dom, emb)
 }
 
 /// Compute the normal form of g (traverse from input extremals)
-pub fn normalisation(g: &Ogposet) -> (Ogposet, Embedding) {
+pub fn normalisation(g: &Arc<Ogposet>) -> (Arc<Ogposet>, Embedding) {
     if g.is_normal() {
-        return (g.clone(), Embedding::id(g.clone()));
+        return (Arc::clone(g), Embedding::id(Arc::clone(g)));
     }
+
+    // Check cache
+    let key = Arc::as_ptr(g) as usize;
+    let cached = NORM_CACHE.with(|c| c.borrow().get(&key).cloned());
+    if let Some((shape, emb)) = cached {
+        return (shape, emb);
+    }
+
     let stack = build_stack_extremal(Sign::Input, g);
-    let (dom, emb) = traverse(g, stack);
-    (Ogposet { normal: true, ..dom }, emb)
+    let (dom, emb) = traverse(g, stack, true);
+
+    // Insert into cache
+    NORM_CACHE.with(|c| c.borrow_mut().insert(key, (Arc::clone(&dom), emb.clone())));
+
+    (dom, emb)
 }
 
 fn build_stack_extremal(sign: Sign, g: &Ogposet) -> Vec<(usize, IntSet)> {
@@ -626,35 +630,46 @@ fn build_stack_cell_n(g: &Ogposet) -> Vec<(usize, IntSet)> {
 }
 
 /// Compute boundary traversal: normalised boundary at level k with a given sign.
-pub fn boundary_traverse(sign: Sign, k: usize, g: &Ogposet) -> (Ogposet, Embedding) {
+pub fn boundary_traverse(sign: Sign, k: usize, g: &Arc<Ogposet>) -> (Arc<Ogposet>, Embedding) {
     let effective_k = if g.dim < 0 { 0 } else { k.min(g.dim as usize) };
-    match sign {
+
+    // Check cache
+    let cache_key = (Arc::as_ptr(g) as usize, sign, effective_k);
+    let cached = BT_CACHE.with(|c| c.borrow().get(&cache_key).cloned());
+    if let Some((shape, emb)) = cached {
+        return (shape, emb);
+    }
+
+    let (dom, emb) = match sign {
         Sign::Input => {
             let stack = build_stack_paste(Sign::Input, g, effective_k);
-            let (dom, emb) = traverse(g, stack);
-            (Ogposet { normal: true, ..dom }, emb)
+            traverse(g, stack, true)
         }
         Sign::Output => {
             let stack = build_stack_paste(Sign::Output, g, effective_k);
-            let (dom, emb) = traverse(g, stack);
-            (Ogposet { normal: true, ..dom }, emb)
+            traverse(g, stack, true)
         }
         Sign::Both => {
             let stack = build_stack_cell_n(g);
-            traverse(g, stack)
+            traverse(g, stack, false)
         }
-    }
+    };
+
+    // Insert into cache
+    BT_CACHE.with(|c| c.borrow_mut().insert(cache_key, (Arc::clone(&dom), emb.clone())));
+
+    (dom, emb)
 }
 
 /// Try to find an isomorphism from u to v.
-pub fn isomorphism_of(u: &Ogposet, v: &Ogposet) -> Result<Embedding, Error> {
+pub fn isomorphism_of(u: &Arc<Ogposet>, v: &Arc<Ogposet>) -> Result<Embedding, Error> {
     let failure = |msg: &str| Err(Error::new(msg));
 
     if u.dim != v.dim { return failure("dimensions do not match"); }
     let sizes_u = u.sizes();
     let sizes_v = v.sizes();
     if sizes_u != sizes_v { return failure("shapes do not match"); }
-    if Ogposet::equal(u, v) { return Ok(Embedding::id(u.clone())); }
+    if Ogposet::equal(u, v) { return Ok(Embedding::id(Arc::clone(u))); }
 
     let (u_norm, e_u) = normalisation(u);
     let (v_norm, e_v) = normalisation(v);
@@ -691,11 +706,11 @@ pub fn isomorphism_of(u: &Ogposet, v: &Ogposet) -> Result<Embedding, Error> {
     let map = produce_rows(&e_u.inv, &e_v.map)?;
     let inv = produce_rows(&e_v.inv, &e_u.map)?;
 
-    Ok(Embedding::make(u.clone(), v.clone(), map, inv))
+    Ok(Embedding::make(Arc::clone(u), Arc::clone(v), map, inv))
 }
 
 pub struct Pushout {
-    pub tip: Ogposet,
+    pub tip: Arc<Ogposet>,
     pub inl: Embedding,
     pub inr: Embedding,
 }
@@ -809,14 +824,14 @@ fn attach(f: &Embedding, g: &Embedding) -> Pushout {
         }
     }
 
-    let tip = Ogposet {
+    let tip = Arc::new(Ogposet {
         dim: tip_dim_isize,
         faces_in:   tip_faces_in,
         faces_out:  tip_faces_out,
         cofaces_in:  tip_cofaces_in,
         cofaces_out: tip_cofaces_out,
         normal: false,
-    };
+    });
 
     let tip_sizes = tip.sizes();
     let b_dim = if b.dim < 0 { 0 } else { b.dim as usize };
@@ -831,8 +846,21 @@ fn attach(f: &Embedding, g: &Embedding) -> Pushout {
         arr
     }).collect();
 
-    let inl = Embedding::make(b.clone(), tip.clone(), inl_map, inl_inv);
-    let inr = Embedding::make(c.clone(), tip.clone(), inr_map, inr_inv);
+    let inl = Embedding::make(Arc::clone(b), Arc::clone(&tip), inl_map, inl_inv);
+    let inr = Embedding::make(Arc::clone(c), Arc::clone(&tip), inr_map, inr_inv);
 
     Pushout { tip, inl, inr }
+}
+
+// ---- Phase 3: Thread-local caches ----
+
+thread_local! {
+    static NORM_CACHE: RefCell<HashMap<usize, (Arc<Ogposet>, Embedding)>> = RefCell::new(HashMap::new());
+    static BT_CACHE: RefCell<HashMap<(usize, Sign, usize), (Arc<Ogposet>, Embedding)>> = RefCell::new(HashMap::new());
+}
+
+/// Clear all caches (call between independent runs if needed)
+pub fn clear_caches() {
+    NORM_CACHE.with(|c| c.borrow_mut().clear());
+    BT_CACHE.with(|c| c.borrow_mut().clear());
 }

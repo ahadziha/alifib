@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use crate::aux::{Error, Tag};
 use super::ogposet::{self, Embedding, Ogposet, Sign as OgSign};
 
@@ -37,13 +38,13 @@ pub enum CellData {
 /// `trees[d][sign_idx]` is the paste tree at dimension d for the given sign (0=Input, 1=Output).
 #[derive(Debug, Clone)]
 pub struct Diagram {
-    pub shape: Ogposet,
+    pub shape: Arc<Ogposet>,
     pub labels: Vec<Vec<Tag>>,       // labels[dim][pos]
     pub trees: Vec<[PasteTree; 2]>,  // trees[dim][sign_idx]
 }
 
 impl Diagram {
-    pub fn new(shape: Ogposet, labels: Vec<Vec<Tag>>, trees: Vec<[PasteTree; 2]>) -> Self {
+    pub fn new(shape: Arc<Ogposet>, labels: Vec<Vec<Tag>>, trees: Vec<[PasteTree; 2]>) -> Self {
         Self { shape, labels, trees }
     }
 
@@ -101,7 +102,7 @@ impl Diagram {
         let (_, emb) = ogposet::boundary(sign.as_ogposet_sign(), k, &d.shape);
         let pulled_labels = pullback_labels(d, &emb);
         let new_trees = boundary_trees(&d.trees, sign, k);
-        Ok(Diagram::new(emb.dom.clone(), pulled_labels, new_trees))
+        Ok(Diagram::new(Arc::clone(&emb.dom), pulled_labels, new_trees))
     }
 
     /// Return the normalised (sign, k)-boundary.
@@ -125,7 +126,7 @@ impl Diagram {
     }
 
     /// Check whether u and v have parallel boundaries (same boundary shape and labels).
-    pub fn parallelism(u: &Diagram, v: &Diagram) -> Result<(Ogposet, Embedding, Embedding), Error> {
+    pub fn parallelism(u: &Diagram, v: &Diagram) -> Result<(Arc<Ogposet>, Embedding, Embedding), Error> {
         let dim_u = u.shape.dim;
         let dim_v = v.shape.dim;
         if dim_u != dim_v {
@@ -152,7 +153,7 @@ impl Diagram {
     }
 
     /// Check whether u and v can be pasted at level k.
-    pub fn pastability(k: usize, u: &Diagram, v: &Diagram) -> Result<(Ogposet, Embedding, Embedding), Error> {
+    pub fn pastability(k: usize, u: &Diagram, v: &Diagram) -> Result<(Arc<Ogposet>, Embedding, Embedding), Error> {
         let dim_u = if u.shape.dim < 0 { 0 } else { u.shape.dim as usize };
         let dim_v = if v.shape.dim < 0 { 0 } else { v.shape.dim as usize };
         let (out_u, e_u) = ogposet::boundary_traverse(OgSign::Output, k.min(dim_u), &u.shape);
@@ -206,7 +207,7 @@ impl Diagram {
     }
 
     fn cell0(tag: Tag) -> Result<Diagram, Error> {
-        let shape = Ogposet::point();
+        let shape = Arc::new(Ogposet::point());
         let labels = vec![vec![tag.clone()]];
         let trees = vec![[PasteTree::Leaf(tag.clone()), PasteTree::Leaf(tag)]];
         Ok(Diagram::new(shape, labels, trees))
@@ -263,7 +264,7 @@ impl Diagram {
             }
         }
 
-        let shape_uv = Ogposet::make((d + 1) as isize, faces_in, faces_out, cofaces_in, cofaces_out);
+        let shape_uv = Arc::new(Ogposet::make((d + 1) as isize, faces_in, faces_out, cofaces_in, cofaces_out));
 
         let mut base_labels: Vec<Vec<Option<Tag>>> = sizes_bd.iter().map(|&n| vec![None; n]).collect();
         for (dim, mapping) in inl.map.iter().enumerate() {
