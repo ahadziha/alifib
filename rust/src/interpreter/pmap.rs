@@ -7,7 +7,7 @@ use crate::core::{
 };
 use crate::language::ast::{self, Span, Spanned, PMapBasic, PMapDef, PMapExt, PMapClause, DefPMap, Address};
 use super::types::*;
-use super::diagram::interpret_diagram_as_term;
+use super::diagram::{interpret_diagram_as_term, render_diagram, render_boundary_partial};
 
 // ---- Address resolution ----
 
@@ -287,6 +287,41 @@ fn interpret_pmap_ext(
         }
     }
 
+    // Deferred hole boundary computation: use the map as-is after all clauses.
+    let ctx = &acc_result.context;
+    for hole in &mut acc_result.holes {
+        if let Some(tag) = &hole.source_tag {
+            if let Some(cell_data) = get_cell_data(ctx, effective_source, tag) {
+                if let CellData::Boundary { boundary_in, boundary_out } = &cell_data {
+                    let rendered_in = match PMap::apply(&current_map, boundary_in) {
+                        Ok(mi) => render_diagram(&mi, location),
+                        Err(_) => render_boundary_partial(boundary_in, &current_map, location),
+                    };
+                    let rendered_out = match PMap::apply(&current_map, boundary_out) {
+                        Ok(mo) => render_diagram(&mo, location),
+                        Err(_) => render_boundary_partial(boundary_out, &current_map, location),
+                    };
+                    match &mut hole.boundary {
+                        Some(existing) => {
+                            if existing.boundary_in == "?" {
+                                existing.boundary_in = rendered_in;
+                            }
+                            if existing.boundary_out == "?" {
+                                existing.boundary_out = rendered_out;
+                            }
+                        }
+                        None => {
+                            hole.boundary = Some(HoleBoundaryInfo {
+                                boundary_in: rendered_in,
+                                boundary_out: rendered_out,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     (Some(MapComponent { map: current_map, source: initial_mc.source }), acc_result)
 }
 
@@ -303,9 +338,27 @@ fn interpret_pm_clause(
         None => return (None, left_result),
         Some(left_term) => {
             let (right_opt, right_result) = interpret_diagram_as_term(&left_result.context, location, &clause.inner.rhs);
-            let combined = InterpResult::combine(left_result, right_result);
+            let mut combined = InterpResult::combine(left_result, right_result);
             match right_opt {
-                None => (None, combined),
+                None => {
+                    if combined.holes.is_empty() {
+                        (None, combined)
+                    } else {
+                        // RHS was a hole — record source tag for deferred boundary computation
+                        if let Term::DTerm(source_diag) = &left_term {
+                            if source_diag.is_cell() {
+                                let d = source_diag.dim().max(0) as usize;
+                                if let Some(tag) = source_diag.labels.get(d).and_then(|r| r.first()) {
+                                    if let Some(last_hole) = combined.holes.last_mut() {
+                                        last_hole.source_tag = Some(tag.clone());
+                                    }
+                                }
+                            }
+                        }
+                        // Return map unchanged so processing continues
+                        (Some(map), combined)
+                    }
+                }
                 Some(right_term) => {
                     match interpret_assign(
                         &combined.context,

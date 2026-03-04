@@ -1,0 +1,124 @@
+@Type
+
+Arrow <<= { s, t, arr : s -> t  },
+
+A <<= { x, y, f : x -> y },
+B <<= { x, y, z, f : x -> y, g : y -> z},
+
+Square <<= {
+  a, b, c, d,
+  f : a -> b, g : b -> d,
+  h : a -> c, k : c -> d,
+  alpha : f g -> h k
+},
+
+C <<= {
+  x, y, z, w,
+  p : x -> y, q : y -> w,
+  r : x -> z, s : z -> w
+},
+
+@A
+  let H :: Arrow = [ s => x, t => y, arr => ? ]
+
+@B
+  let H :: Arrow = [ s => x, t => z, arr => ? g ]
+
+@C
+  let H :: Square = [
+    a => x, b => y, c => z, d => w,
+    f => p, g => q, h => r, k => s,
+    alpha => ?
+  ]
+
+(* 2x2 grid of tiles:
+     a --ab--> b --bc--> c
+     |         |         |
+     ad   tl   be   tr   cf
+     |         |         |
+     v         v         v
+     d --de--> e --ef--> f
+     |         |         |
+     dg   bl   eh   br   fi
+     |         |         |
+     v         v         v
+     g --gh--> h --hi--> i
+*)
+@Type
+Grid <<= {
+  a, b, c, d, e, f, g, h, i,
+  ab : a -> b, bc : b -> c,
+  de : d -> e, ef : e -> f,
+  gh : g -> h, hi : h -> i,
+  ad : a -> d, be : b -> e, cf : c -> f,
+  dg : d -> g, eh : e -> h, fi : f -> i,
+  tl : ab be -> ad de,
+  tr : bc cf -> be ef,
+  bl : de eh -> dg gh,
+  br : ef fi -> eh hi
+},
+(*
+     p00 --h0--> p01 --h1--> p02
+      |           |           |
+      v0    s0    v1    s1    v2
+      |           |           |
+      v           v           v
+     p10 --h3--> p11 --h4--> p12
+      |           |           |
+      v3    s2    v4    s3    v5
+      |           |           |
+      v           v           v
+     p20 --h6--> p21 --h7--> p22
+*)
+D <<= {
+  p00, p01, p02, p10, p11, p12, p20, p21, p22,
+  h0 : p00 -> p01, h1 : p01 -> p02,
+  h3 : p10 -> p11, h4 : p11 -> p12,
+  h6 : p20 -> p21, h7 : p21 -> p22,
+  v0 : p00 -> p10, v1 : p01 -> p11, v2 : p02 -> p12,
+  v3 : p10 -> p20, v4 : p11 -> p21, v5 : p12 -> p22,
+  s0 : h0 v1 -> v0 h3,
+  s1 : h1 v2 -> v1 h4,
+  s2 : h3 v4 -> v3 h6,
+  s3 : h4 v5 -> v4 h7
+},
+
+(* Without manual lower-dim mappings: partial boundaries *)
+@D
+  let H5 :: Grid = [ tl => s0, tr => s1, bl => s2, br => ? ]
+
+@D
+  let H6 :: Grid = [ tl => s0, tr => s1, bl => ?, br => s3 ]
+
+(* With manual lower-dim mappings: full boundaries *)
+@D
+  let H1 :: Grid = [
+    a => p00, b => p01, c => p02, d => p10, e => p11, f => p12, g => p20, h => p21, i => p22,
+    ab => h0, bc => h1, de => h3, ef => h4, gh => h6, hi => h7,
+    ad => v0, be => v1, cf => v2, dg => v3, eh => v4, fi => v5,
+    tl => s0, tr => s1, bl => s2, br => ?
+  ]
+
+@D
+  let H2 :: Grid = [
+    a => p00, b => p01, c => p02, d => p10, e => p11, f => p12, g => p20, h => p21, i => p22,
+    ab => h0, bc => h1, de => h3, ef => h4, gh => h6, hi => h7,
+    ad => v0, be => v1, cf => v2, dg => v3, eh => v4, fi => v5,
+    tl => s0, tr => s1, bl => ?, br => s3
+  ]
+
+@D
+  let H3 :: Grid = [
+    a => p00, b => p01, c => p02, d => p10, e => p11, f => p12, g => p20, h => p21, i => p22,
+    ab => h0, bc => h1, de => h3, ef => h4, gh => h6, hi => h7,
+    ad => v0, be => v1, cf => v2, dg => v3, eh => v4, fi => v5,
+    tl => s0, tr => ?, bl => s2, br => s3
+  ]
+
+@D
+  let H4 :: Grid = [
+    a => p00, b => p01, c => p02, d => p10, e => p11, f => p12, g => p20, h => p21, i => p22,
+    ab => h0, bc => h1, de => h3, ef => h4, gh => h6, hi => h7,
+    ad => v0, be => v1, cf => v2, dg => v3, eh => v4, fi => v5,
+    tl => ?, tr => s1, bl => s2, br => s3
+  ]

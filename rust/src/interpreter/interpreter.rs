@@ -364,6 +364,7 @@ fn interpret_c_block(
     let mut current_location: Complex = initial_location.clone();
     let mut current_context: Context = context.clone();
     let mut acc_errors: Vec<crate::language::error::Error> = Vec::new();
+    let mut acc_holes: Vec<super::types::HoleInfo> = Vec::new();
 
     for instr in body {
         let (new_location, instr_result) =
@@ -371,9 +372,10 @@ fn interpret_c_block(
         current_location = new_location;
         current_context = instr_result.context;
         acc_errors.extend(instr_result.errors);
+        acc_holes.extend(instr_result.holes);
     }
 
-    let acc_result = InterpResult { context: current_context, errors: acc_errors };
+    let acc_result = InterpResult { context: current_context, errors: acc_errors, holes: acc_holes };
     (Some(current_location), acc_result)
 }
 

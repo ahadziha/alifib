@@ -106,7 +106,14 @@ fn run_ast(input: &str, output: Option<&str>) -> bool {
     true
 }
 
-fn run_file(loader: &Loader, path: &str) -> Option<(Context, String)> {
+struct RunResult {
+    context: Context,
+    #[allow(dead_code)]
+    source: String,
+    has_holes: bool,
+}
+
+fn run_file(loader: &Loader, path: &str) -> Option<RunResult> {
     let loaded = match loader.load(path) {
         Ok(f) => f,
         Err(e) => {
@@ -123,17 +130,26 @@ fn run_file(loader: &Loader, path: &str) -> Option<(Context, String)> {
         return None;
     }
 
-    Some((result.context, loaded.source))
+    if !result.holes.is_empty() {
+        language::report_holes(&result.holes, &loaded.source, &loaded.canonical_path);
+        return Some(RunResult { context: result.context, source: loaded.source, has_holes: true });
+    }
+
+    Some(RunResult { context: result.context, source: loaded.source, has_holes: false })
 }
 
 fn run_interpreter(input: &str, output: Option<&str>) -> bool {
     let loader = Loader::default(vec![]);
-    let (context, _) = match run_file(&loader, input) {
-        Some(pair) => pair,
+    let run = match run_file(&loader, input) {
+        Some(r) => r,
         None => return false,
     };
 
-    let text = context.state.display();
+    if run.has_holes {
+        return true; // holes already printed, exit 0
+    }
+
+    let text = run.context.state.display();
     if let Err(msg) = write_output(output, &text) {
         eprintln!("error: {}", msg);
         return false;
@@ -145,9 +161,16 @@ fn run_bench(input: &str, n: usize) -> bool {
     let loader = Loader::default(vec![]);
 
     // Warmup
-    if run_file(&loader, input).is_none() {
-        eprintln!("error: benchmark file failed on warmup");
-        return false;
+    match run_file(&loader, input) {
+        None => {
+            eprintln!("error: benchmark file failed on warmup");
+            return false;
+        }
+        Some(r) if r.has_holes => {
+            eprintln!("error: benchmark file contains holes");
+            return false;
+        }
+        _ => {}
     }
 
     let start = Instant::now();

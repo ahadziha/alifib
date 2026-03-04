@@ -64,3 +64,7 @@ pub fn parse(source: &str) -> Result<Program, Vec<Error>> {
 pub fn report_errors(errors: &[Error], source: &str, filename: &str) {
     error::report_errors(errors, source, filename);
 }
+
+pub fn report_holes(holes: &[crate::interpreter::types::HoleInfo], source: &str, filename: &str) {
+    error::report_holes(holes, source, filename);
+}

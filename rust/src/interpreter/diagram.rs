@@ -139,7 +139,12 @@ pub fn interpret_d_expr(
             let (comp_opt, result) = interpret_d_comp(context, location, comp, d_expr.span);
             match comp_opt {
                 None => (None, result),
-                Some(Component::Hole) | Some(Component::Bd(_)) => {
+                Some(Component::Hole) => {
+                    let mut r = result;
+                    r.add_hole(HoleInfo { span: d_expr.span, boundary: None, source_tag: None });
+                    (None, r)
+                }
+                Some(Component::Bd(_)) => {
                     let mut r = result;
                     r.add_error(make_error(d_expr.span, "Not a diagram or map"));
                     (None, r)
@@ -169,7 +174,12 @@ pub fn interpret_d_expr(
                                 }
                             }
                         }
-                        Some(Component::Term(_)) | Some(Component::Hole) => {
+                        Some(Component::Hole) => {
+                            let mut r = combined;
+                            r.add_hole(HoleInfo { span: field.span, boundary: None, source_tag: None });
+                            (None, r)
+                        }
+                        Some(Component::Term(_)) => {
                             let mut r = combined;
                             r.add_error(make_error(field.span, "Not a well-formed diagram expression"));
                             (None, r)
@@ -183,7 +193,12 @@ pub fn interpret_d_expr(
                     let combined = InterpResult::combine(left_result, comp_result);
                     match comp_opt {
                         None => (None, combined),
-                        Some(Component::Hole) | Some(Component::Bd(_)) => {
+                        Some(Component::Hole) => {
+                            let mut r = combined;
+                            r.add_hole(HoleInfo { span: field.span, boundary: None, source_tag: None });
+                            (None, r)
+                        }
+                        Some(Component::Bd(_)) => {
                             let mut r = combined;
                             r.add_error(make_error(field.span, "Not a diagram or map"));
                             (None, r)
@@ -409,7 +424,32 @@ fn interpret_principal_as_term(
 
     let (first_opt, first_result) = interpret_d_expr(context, location, &exprs[0]);
     match first_opt {
-        None => return (None, first_result),
+        None => {
+            let mut result = first_result;
+            // If a hole was added and there are more exprs, use right-context
+            if !result.holes.is_empty() && exprs.len() > 1 {
+                let (next_opt, next_result) = interpret_d_expr(&result.context, location, &exprs[1]);
+                result = InterpResult::combine(result, next_result);
+                if let Some(Term::DTerm(d_right)) = next_opt {
+                    let k = (d_right.dim().max(0) as usize).saturating_sub(1);
+                    if let Ok(in_bd) = Diagram::boundary(DiagramSign::Input, k, &d_right) {
+                        if let Some(last_hole) = result.holes.last_mut() {
+                            let bd_out = render_diagram(&in_bd, location);
+                            match &mut last_hole.boundary {
+                                Some(existing) => { existing.boundary_out = bd_out; }
+                                None => {
+                                    last_hole.boundary = Some(HoleBoundaryInfo {
+                                        boundary_in: "?".into(),
+                                        boundary_out: bd_out,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return (None, result);
+        }
         Some(term) => {
             if exprs.len() == 1 {
                 return (Some(term), first_result);
@@ -429,10 +469,25 @@ fn interpret_principal_as_term(
             let mut result = first_result;
 
             for expr in &exprs[1..] {
+                let prev_hole_count = result.holes.len();
                 let (term_opt, expr_result) = interpret_d_expr(&result.context, location, expr);
                 result = InterpResult::combine(result, expr_result);
                 match term_opt {
-                    None => return (None, result),
+                    None => {
+                        // If a hole was just added, enrich with left-context boundary
+                        if result.holes.len() > prev_hole_count {
+                            let k = (acc.dim().max(0) as usize).saturating_sub(1);
+                            if let Ok(out_bd) = Diagram::boundary(DiagramSign::Output, k, &acc) {
+                                if let Some(last_hole) = result.holes.last_mut() {
+                                    last_hole.boundary = Some(HoleBoundaryInfo {
+                                        boundary_in: render_diagram(&out_bd, location),
+                                        boundary_out: "?".into(),
+                                    });
+                                }
+                            }
+                        }
+                        return (None, result);
+                    }
                     Some(Term::MTerm(_)) => {
                         result.add_error(make_error(expr.span, "Not a diagram"));
                         return (None, result);
@@ -478,6 +533,44 @@ pub fn interpret_boundaries(
                 }
             }
         }
+    }
+}
+
+// ---- Render helper ----
+
+pub fn render_diagram(diagram: &Diagram, location: &Complex) -> String {
+    let d = diagram.dim().max(0) as usize;
+    match diagram.labels.get(d) {
+        Some(top_labels) if !top_labels.is_empty() => {
+            top_labels.iter().map(|tag| {
+                location.find_generator_by_tag(tag)
+                    .filter(|n| !n.is_empty())
+                    .cloned()
+                    .unwrap_or_else(|| format!("{}", tag))
+            }).collect::<Vec<_>>().join(" ")
+        }
+        _ => "?".to_string(),
+    }
+}
+
+/// Render a source boundary diagram through a partial map. Mapped tags are rendered
+/// via their image's top label; unmapped tags are rendered as `?`.
+pub fn render_boundary_partial(
+    boundary: &Diagram,
+    map: &PMap,
+    location: &Complex,
+) -> String {
+    let d = boundary.dim().max(0) as usize;
+    match boundary.labels.get(d) {
+        Some(top_labels) if !top_labels.is_empty() => {
+            top_labels.iter().map(|tag| {
+                match map.image(tag) {
+                    Ok(img) => render_diagram(img, location),
+                    Err(_) => "?".to_string(),
+                }
+            }).collect::<Vec<_>>().join(" ")
+        }
+        _ => "?".to_string(),
     }
 }
 

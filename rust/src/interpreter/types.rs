@@ -40,27 +40,50 @@ impl Context {
     }
 }
 
+// ---- Hole info ----
+
+#[derive(Debug, Clone)]
+pub struct HoleInfo {
+    pub span: Span,
+    pub boundary: Option<HoleBoundaryInfo>,
+    /// Source cell tag, for deferred boundary computation in pmap context.
+    pub source_tag: Option<Tag>,
+}
+
+#[derive(Debug, Clone)]
+pub struct HoleBoundaryInfo {
+    pub boundary_in: String,
+    pub boundary_out: String,
+}
+
 // ---- Interpretation result ----
 
 #[derive(Debug, Clone)]
 pub struct InterpResult {
     pub context: Context,
     pub errors: Vec<Error>,
+    pub holes: Vec<HoleInfo>,
 }
 
 impl InterpResult {
     pub fn ok(context: Context) -> Self {
-        Self { context, errors: vec![] }
+        Self { context, errors: vec![], holes: vec![] }
     }
 
     pub fn add_error(&mut self, err: Error) {
         self.errors.push(err);
     }
 
+    pub fn add_hole(&mut self, hole: HoleInfo) {
+        self.holes.push(hole);
+    }
+
     pub fn combine(prev: InterpResult, next: InterpResult) -> InterpResult {
         let mut errors = prev.errors;
         errors.extend(next.errors);
-        InterpResult { context: next.context, errors }
+        let mut holes = prev.holes;
+        holes.extend(next.holes);
+        InterpResult { context: next.context, errors, holes }
     }
 
     pub fn has_errors(&self) -> bool {
