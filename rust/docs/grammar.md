@@ -13,10 +13,14 @@
 <Boundary> ::= <Diagram> "->" <Diagram>
 <NameWithBoundary> ::= <Name> [ ":" <Boundary> ]
 
--- We will often make use of local definitions of _diagrams_ and _maps.
+-- We will often make use of local definitions of _diagrams_ and _maps_.
+-- A local definition of a map _must_ come with a partial map definition. The reason
+-- is that a _partial map extension_ should only be allowed when its domain is
+-- explicitly requested, e.g. in a let with "::" or in an anonymous map.
 
-<LetDiag> ::= "let" <Name> [ ":" <Boundary> ] "=" <Diagram>
-<DefPMap> ::= "def" <Name> "::" <Address> "=" <PMap>
+<LetDiag> ::= "let" <Name> "=" <Diagram>
+<DefPMap> ::= "let" <Name> "::" <Address> "=" <PMapDef>
+<PMapDef> ::= <PMap> | <PMapExt>
 
 -- A program is a (potentially empty) series of blocks
 
@@ -80,37 +84,25 @@
 -- * a concatenation of explicit pastings
 -- * each of which is a concatenation of implicit pastings
 -- * each part of which is a dotted series of components
--- * which are either names, boundaries (+ or -), (diagrams), or holes
+-- * which are either names, partial maps, boundaries (+ or -), (diagrams), or holes
 <Diagram> ::= <DPrincipal> | <Diagram> "#" <Nat> <DPrincipal>
 <DPrincipal> ::= <DExpr> | <DPrincipal> <DExpr>
 <DExpr> ::= <DComponent> | <DExpr> "." <DComponent>
-<DComponent> ::= <Name> | <Bd> | "(" <Diagram> ")" | "?"
+<DComponent> ::= <Name> | <PMap> | <Bd> | "(" <Diagram> ")" | "?"
 <Bd> ::= "in" | "out"
 
--- A _partial map_ is either
--- * a name of a previously defined partial map, or
--- * a system
---
--- NOTE (parser refactoring): The original grammar
---
---   <PMap> ::= <PMapBasic> [ "." <PMap> ]
---   <PMapBasic> ::= <Name> | <PMSystem>
---   <PMSystem> ::= [ <PMap> ] "[" [ <PMapClauses> ] "]"
---
--- is left-recursive: PMap -> PMapBasic -> PMSystem -> [PMap] -> ...
--- The parser rewrites it by inlining the optional PMap prefix of PMSystem
--- into PMapBasic, so that the "[" is always reached after consuming a Name
--- or immediately:
---
---   <PMapBasic> ::= <Name> [ "[" <PMapClauses> "]" ]   -- name, or name extending a system
---                 | "[" <PMapClauses> "]"               -- bare system
---
--- This accepts the same language. Chaining like foo[...][...] is not
--- supported (it would require iterating over "[" suffixes); in practice
--- this pattern does not occur.
+-- A general _partial map_ is a dotted sequence of basic partial maps.
+-- A basic partial map is either 
+-- * a name
+-- * a parenthesized partial map
+-- * an anonymous map, which is necessarily an extension
 
-<PMap> ::= <PMapBasic> [ "." <PMap> ]
-<PMapBasic> ::= <Name> [ "[" [ <PMapClauses> ] "]" ]
-              | "[" [ <PMapClauses> ] "]"
+<PMap> ::= <PMapBasic> | <PMap> "." <PMapBasic>
+<PMapBasic> ::= <Name> | "(" "map" <PMapDef> "::" <Complex> ")" | "(" <PMap> ")"
+
+-- An extension is (optionally) a partial map followed by a number of clauses
+-- that extend it.
+
+<PMapExt> ::= [ <PMap> ] "[" <PMapClauses> "]"
 <PMapClauses> ::= <PMapClause> { "," <PMapClause> }
 <PMapClause> ::= <Diagram> "=>" <Diagram>
