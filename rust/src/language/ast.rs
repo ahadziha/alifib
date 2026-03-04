@@ -152,15 +152,11 @@ pub enum DExpr {
 }
 
 pub enum DComponent {
-    Name(String),
+    PMap(PMapBasic),
     In,
     Out,
     Paren(Box<Spanned<Diagram>>),
     Hole,
-    AnonMap {
-        def: Box<Spanned<PMapDef>>,
-        target: Spanned<Complex>,
-    },
 }
 
 // ---------------------------------------------------------------------------

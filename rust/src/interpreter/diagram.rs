@@ -4,7 +4,7 @@ use crate::core::{
     diagram::{CellData, Diagram, Sign as DiagramSign},
     map::PMap,
 };
-use crate::language::ast::{self, Span, Spanned, DExpr, DComponent};
+use crate::language::ast::{self, Span, Spanned, DExpr, DComponent, PMapBasic};
 use super::types::*;
 
 // ---- Diagram interpretation ----
@@ -216,38 +216,69 @@ pub fn interpret_d_comp(
     span: Span,
 ) -> (Option<Component>, InterpResult) {
     match d_comp {
-        DComponent::Name(name) => {
-            let base_result = InterpResult::ok(context.clone());
-            if let Some(diagram) = location.find_diagram(name) {
-                return (Some(Component::Term(Term::DTerm(diagram.clone()))), base_result);
-            }
-            if let Some(entry) = location.find_map(name) {
-                let source = match &entry.domain {
-                    crate::core::complex::MapDomain::Type(id) => match context.state.find_type(*id) {
-                        Some(te) => Arc::clone(&te.complex),
-                        None => {
-                            let mut r = base_result;
-                            r.add_error(make_error(span, format!("Type {} not found", id)));
-                            return (None, r);
+        DComponent::PMap(basic) => {
+            match basic {
+                PMapBasic::Name(name) => {
+                    let base_result = InterpResult::ok(context.clone());
+                    if let Some(diagram) = location.find_diagram(name) {
+                        return (Some(Component::Term(Term::DTerm(diagram.clone()))), base_result);
+                    }
+                    if let Some(entry) = location.find_map(name) {
+                        let source = match &entry.domain {
+                            crate::core::complex::MapDomain::Type(id) => match context.state.find_type(*id) {
+                                Some(te) => Arc::clone(&te.complex),
+                                None => {
+                                    let mut r = base_result;
+                                    r.add_error(make_error(span, format!("Type {} not found", id)));
+                                    return (None, r);
+                                }
+                            },
+                            crate::core::complex::MapDomain::Module(mid) => match context.state.find_module_arc(mid) {
+                                Some(m) => m,
+                                None => {
+                                    let mut r = base_result;
+                                    r.add_error(make_error(span, format!("Module `{}` not found", mid)));
+                                    return (None, r);
+                                }
+                            },
+                        };
+                        return (Some(Component::Term(Term::MTerm(MapComponent {
+                            map: entry.map.clone(),
+                            source,
+                        }))), base_result);
+                    }
+                    let mut r = base_result;
+                    r.add_error(make_error(span, format!("Name `{}` not found", name)));
+                    (None, r)
+                }
+                PMapBasic::AnonMap { def, target } => {
+                    let (ns_opt, target_result) = super::interpreter::interpret_complex(
+                        context, super::types::Mode::Global, target,
+                    );
+                    match ns_opt {
+                        None => (None, target_result),
+                        Some(ns) => {
+                            let (mc_opt, def_result) = super::pmap::interpret_pmap_def(
+                                &target_result.context, &ns.location, location, def,
+                            );
+                            let combined = InterpResult::combine(target_result, def_result);
+                            match mc_opt {
+                                None => (None, combined),
+                                Some(mc) => (Some(Component::Term(Term::MTerm(mc))), combined),
+                            }
                         }
-                    },
-                    crate::core::complex::MapDomain::Module(mid) => match context.state.find_module_arc(mid) {
-                        Some(m) => m,
-                        None => {
-                            let mut r = base_result;
-                            r.add_error(make_error(span, format!("Module `{}` not found", mid)));
-                            return (None, r);
-                        }
-                    },
-                };
-                return (Some(Component::Term(Term::MTerm(MapComponent {
-                    map: entry.map.clone(),
-                    source,
-                }))), base_result);
+                    }
+                }
+                PMapBasic::Paren(inner_pmap) => {
+                    let (mc_opt, result) = super::pmap::interpret_pmap(
+                        context, location, location, inner_pmap,
+                    );
+                    match mc_opt {
+                        None => (None, result),
+                        Some(mc) => (Some(Component::Term(Term::MTerm(mc))), result),
+                    }
+                }
             }
-            let mut r = base_result;
-            r.add_error(make_error(span, format!("Name `{}` not found", name)));
-            (None, r)
         }
         DComponent::In => {
             (Some(Component::Bd(DiagramSign::Input)), InterpResult::ok(context.clone()))
@@ -264,24 +295,6 @@ pub fn interpret_d_comp(
         }
         DComponent::Hole => {
             (Some(Component::Hole), InterpResult::ok(context.clone()))
-        }
-        DComponent::AnonMap { def, target } => {
-            let (ns_opt, target_result) = super::interpreter::interpret_complex(
-                context, super::types::Mode::Global, target,
-            );
-            match ns_opt {
-                None => (None, target_result),
-                Some(ns) => {
-                    let (mc_opt, def_result) = super::pmap::interpret_pmap_def(
-                        &target_result.context, &ns.location, location, def,
-                    );
-                    let combined = InterpResult::combine(target_result, def_result);
-                    match mc_opt {
-                        None => (None, combined),
-                        Some(mc) => (Some(Component::Term(Term::MTerm(mc))), combined),
-                    }
-                }
-            }
         }
     }
 }
