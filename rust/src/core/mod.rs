@@ -4,5 +4,5 @@ pub mod diagram;
 pub mod embeddings;
 pub mod intset;
 pub mod map;
-pub mod ogposet;
+pub(crate) mod ogposet;
 

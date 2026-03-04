@@ -1802,7 +1802,7 @@ fn smart_extend(
             let sub_source = &source_boundary;
             current = smart_extend(context, current, source, target, sub_source, &target_boundary, span)?;
         } else {
-            match crate::core::ogposet::isomorphism_of(&source_boundary.shape, &target_boundary.shape) {
+            match crate::core::diagram::isomorphism_of(&source_boundary.shape, &target_boundary.shape) {
                 Err(_) => return Err(aux::Error::new("Failed to extend map (boundary shapes don't match)")),
                 Ok(embedding) => {
                     let bd_d = if source_boundary.dim() < 0 { 0 } else { source_boundary.dim() as usize };

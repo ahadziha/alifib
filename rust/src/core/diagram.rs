@@ -1,6 +1,8 @@
 use std::sync::Arc;
 use crate::aux::{Error, Tag};
-use super::ogposet::{self, Embedding, Ogposet, Sign as OgSign};
+use super::ogposet::{self, Ogposet, Sign as OgSign};
+pub use super::ogposet::isomorphism_of;
+pub use super::embeddings::{Embedding, Pushout, NO_PREIMAGE};
 
 /// Sign in the diagram sense (no `Both` variant)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -172,7 +174,7 @@ impl Diagram {
     /// Paste u and v at level k.
     pub fn paste(k: usize, u: &Diagram, v: &Diagram) -> Result<Diagram, Error> {
         let (_, e_u, e_v) = Diagram::pastability(k, u, v)?;
-        let ogposet::Pushout { tip: shape_uv, inl, inr } = ogposet::pushout(&e_u, &e_v);
+        let Pushout { tip: shape_uv, inl, inr } = ogposet::pushout(&e_u, &e_v);
         let sizes_uv = shape_uv.sizes();
         let num_dims = sizes_uv.len();
 
@@ -217,7 +219,7 @@ impl Diagram {
         let (_, e_u, e_v) = Diagram::parallelism(u, v)?;
 
         let d = if u.shape.dim < 0 { 0 } else { u.shape.dim as usize };
-        let ogposet::Pushout { tip: bd_uv, inl, inr } = ogposet::pushout(&e_u, &e_v);
+        let Pushout { tip: bd_uv, inl, inr } = ogposet::pushout(&e_u, &e_v);
         let sizes_bd = bd_uv.sizes();
 
         let mut faces_in: Vec<Vec<super::intset::IntSet>> = Vec::new();
@@ -238,14 +240,14 @@ impl Diagram {
                     let inl_inv_d = &inl.inv[d];
                     let inr_inv_d = &inr.inv[d];
                     cofaces_in.push((0..n).map(|idx| {
-                        if inl_inv_d.get(idx).copied().unwrap_or(ogposet::NO_PREIMAGE) != ogposet::NO_PREIMAGE {
+                        if inl_inv_d.get(idx).copied().unwrap_or(NO_PREIMAGE) != NO_PREIMAGE {
                             vec![0usize]
                         } else {
                             vec![]
                         }
                     }).collect());
                     cofaces_out.push((0..n).map(|idx| {
-                        if inr_inv_d.get(idx).copied().unwrap_or(ogposet::NO_PREIMAGE) != ogposet::NO_PREIMAGE {
+                        if inr_inv_d.get(idx).copied().unwrap_or(NO_PREIMAGE) != NO_PREIMAGE {
                             vec![0usize]
                         } else {
                             vec![]

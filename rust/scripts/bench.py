@@ -24,15 +24,29 @@ OCAML_EXAMPLES = os.path.join(REPO, "ocaml", "examples")
 RUST_EXAMPLES  = os.path.join(RUST_DIR, "examples")
 
 
-def bench(cmd, path, n):
+def bench_ocaml(cmd, path, n):
+    """Benchmark OCaml by spawning n processes (no in-process bench mode)."""
     t0 = time.perf_counter()
     for _ in range(n):
         subprocess.run([cmd, path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return (time.perf_counter() - t0) / n * 1000  # ms per run
 
 
-def best_of(cmd, path, n, batches=3):
-    return min(bench(cmd, path, n) for _ in range(batches))
+def best_of_ocaml(cmd, path, n, batches=3):
+    return min(bench_ocaml(cmd, path, n) for _ in range(batches))
+
+
+def bench_rust(cmd, path, n):
+    """Benchmark Rust using its --bench flag (runs N iterations in-process)."""
+    result = subprocess.run(
+        [cmd, path, "--bench", str(n)],
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
+    )
+    return float(result.stdout.strip())
+
+
+def best_of_rust(cmd, path, n, batches=3):
+    return min(bench_rust(cmd, path, n) for _ in range(batches))
 
 
 def main():
@@ -87,9 +101,9 @@ def main():
         if run_ocaml and not os.path.isfile(ocaml_path):
             ocaml_ms = None
         else:
-            ocaml_ms = best_of(OCAML_BIN, ocaml_path, args.n) if run_ocaml else None
+            ocaml_ms = best_of_ocaml(OCAML_BIN, ocaml_path, args.n) if run_ocaml else None
 
-        rust_ms = best_of(RUST_BIN, rust_path, args.n) if run_rust else None
+        rust_ms = best_of_rust(RUST_BIN, rust_path, args.n) if run_rust else None
 
         if run_ocaml and run_rust:
             if ocaml_ms is not None:

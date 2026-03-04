@@ -5,8 +5,9 @@ mod language;
 
 use std::fs;
 use std::process;
+use std::time::Instant;
 
-const USAGE: &str = "Usage: alifib2 <input-file> [-o|--output <output-file>] [--ast]";
+const USAGE: &str = "Usage: alifib2 <input-file> [-o|--output <output-file>] [--ast] [--bench N]";
 
 #[derive(Clone, Copy)]
 enum Mode {
@@ -18,6 +19,7 @@ struct Args {
     input: String,
     output: Option<String>,
     mode: Mode,
+    bench: Option<usize>,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -25,6 +27,7 @@ fn parse_args() -> Result<Args, String> {
     let mut input = None;
     let mut output = None;
     let mut mode = Mode::Interpret;
+    let mut bench = None;
 
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
@@ -37,6 +40,13 @@ fn parse_args() -> Result<Args, String> {
                 );
             }
             "--ast" => mode = Mode::Ast,
+            "--bench" => {
+                let n_str = iter.next()
+                    .ok_or_else(|| "--bench requires a number".to_string())?;
+                let n: usize = n_str.parse()
+                    .map_err(|_| format!("--bench: invalid number '{}'", n_str))?;
+                bench = Some(n);
+            }
             s if s.starts_with('-') => return Err(format!("Unknown option: {}", s)),
             s => {
                 if input.is_some() {
@@ -51,6 +61,7 @@ fn parse_args() -> Result<Args, String> {
         input: input.ok_or(USAGE)?,
         output,
         mode,
+        bench,
     })
 }
 
@@ -115,6 +126,31 @@ fn run_interpreter(input: &str, output: Option<&str>) -> bool {
     true
 }
 
+fn run_bench(input: &str, n: usize) -> bool {
+    use interpreter::interpreter::{Loader, SessionStatus, run};
+
+    // Warmup
+    let loader = Loader::default(vec![]);
+    let result = run(&loader, input);
+    match result.status {
+        SessionStatus::Success => {}
+        _ => {
+            eprintln!("error: benchmark file failed on warmup");
+            return false;
+        }
+    }
+
+    let start = Instant::now();
+    for _ in 0..n {
+        let loader = Loader::default(vec![]);
+        run(&loader, input);
+    }
+    let elapsed = start.elapsed();
+    let ms_per_run = elapsed.as_secs_f64() * 1000.0 / n as f64;
+    println!("{:.3}", ms_per_run);
+    true
+}
+
 fn main() {
     let args = match parse_args() {
         Ok(a) => a,
@@ -124,9 +160,13 @@ fn main() {
         }
     };
 
-    let ok = match args.mode {
-        Mode::Ast => run_ast(&args.input, args.output.as_deref()),
-        Mode::Interpret => run_interpreter(&args.input, args.output.as_deref()),
+    let ok = if let Some(n) = args.bench {
+        run_bench(&args.input, n)
+    } else {
+        match args.mode {
+            Mode::Ast => run_ast(&args.input, args.output.as_deref()),
+            Mode::Interpret => run_interpreter(&args.input, args.output.as_deref()),
+        }
     };
 
     if !ok {
