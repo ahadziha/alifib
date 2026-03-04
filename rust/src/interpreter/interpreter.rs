@@ -37,6 +37,11 @@ impl Context {
     pub fn with_state(&self, state: State) -> Self {
         Self { current_module: self.current_module.clone(), state: Arc::new(state) }
     }
+
+    /// Get a mutable reference to the state via Arc::make_mut (copy-on-write).
+    pub fn state_mut(&mut self) -> &mut State {
+        Arc::make_mut(&mut self.state)
+    }
 }
 
 // ---- File loader ----
@@ -293,7 +298,7 @@ pub fn run(loader: &Loader, path: &str) -> SessionResult {
 
 pub fn interpret_program(
     loader: &FileLoader,
-    context: Context,
+    mut context: Context,
     program: &Program,
 ) -> InterpResult {
     let module_id = context.current_module.clone();
@@ -320,10 +325,12 @@ pub fn interpret_program(
         let mut module_complex = Complex::empty();
         module_complex = module_complex.add_generator(empty_name.clone(), empty_diagram.clone());
         module_complex = module_complex.add_diagram(empty_name, empty_diagram);
-        let new_state = (*context.state).clone()
-            .set_type(empty_id, CellData::Zero, Complex::empty())
-            .set_module(module_id.clone(), module_complex);
-        context.with_state(new_state)
+        {
+            let s = Arc::make_mut(&mut context.state);
+            s.set_type(empty_id, CellData::Zero, Complex::empty());
+            s.set_module(module_id.clone(), module_complex);
+        }
+        context
     };
 
     let mut result = InterpResult::ok(context);
@@ -388,13 +395,11 @@ fn interpret_type_inst(
             match out {
                 None => (None, result),
                 Some((name, diagram)) => {
-                    let ctx_after = result.context.clone();
-                    let module_id2 = &ctx_after.current_module;
-                    let mut current_loc = ctx_after.state.find_module(module_id2).cloned().unwrap_or_default();
+                    let module_id2 = result.context.current_module.clone();
+                    let mut current_loc = result.context.state.find_module(&module_id2).cloned().unwrap_or_default();
                     current_loc = current_loc.add_diagram(name, diagram);
-                    let new_state = (*ctx_after.state).clone().set_module(module_id2.clone(), current_loc.clone());
                     let mut r = result;
-                    r.context = r.context.with_state(new_state);
+                    r.context.state_mut().set_module(module_id2, current_loc.clone());
                     (Some(current_loc), r)
                 }
             }
@@ -406,13 +411,11 @@ fn interpret_type_inst(
             match out {
                 None => (None, result),
                 Some((name, map, domain)) => {
-                    let ctx_after = result.context.clone();
-                    let module_id2 = &ctx_after.current_module;
-                    let mut current_loc = ctx_after.state.find_module(module_id2).cloned().unwrap_or_default();
+                    let module_id2 = result.context.current_module.clone();
+                    let mut current_loc = result.context.state.find_module(&module_id2).cloned().unwrap_or_default();
                     current_loc = current_loc.add_map(name, domain, map);
-                    let new_state = (*ctx_after.state).clone().set_module(module_id2.clone(), current_loc.clone());
                     let mut r = result;
-                    r.context = r.context.with_state(new_state);
+                    r.context.state_mut().set_module(module_id2, current_loc.clone());
                     (Some(current_loc), r)
                 }
             }
@@ -508,10 +511,11 @@ fn interpret_generator_type(
         .add_generator(name.clone(), classifier.clone())
         .add_diagram(name.clone(), classifier);
 
-    let new_state = (*context_after.state).clone()
-        .set_type(new_id, CellData::Zero, definition_with_identity)
-        .set_module(module_id2.clone(), updated_module.clone());
-    result.context = result.context.with_state(new_state);
+    {
+        let s = result.context.state_mut();
+        s.set_type(new_id, CellData::Zero, definition_with_identity);
+        s.set_module(module_id2.clone(), updated_module.clone());
+    }
 
     (Some(updated_module), result)
 }
@@ -604,6 +608,9 @@ fn interpret_include_module_instr(
         return (None, result);
     }
 
+    // Carry forward the state from included module (has all new types/cells)
+    result.context.state = Arc::clone(&include_result.context.state);
+
     let updated_state = &*include_result.context.state;
 
     let included_location = match updated_state.find_module(&included_module_id) {
@@ -652,8 +659,7 @@ fn interpret_include_module_instr(
         inclusion,
     );
 
-    let final_state = updated_state.clone().set_module(module_id, final_location.clone());
-    result.context = result.context.with_state(final_state);
+    result.context.state_mut().set_module(module_id, final_location.clone());
 
     (Some(final_location), result)
 }
@@ -718,7 +724,6 @@ fn interpret_local_inst(
     match &instr.inner {
         LocalInst::LetDiag(ld) => {
             let (out, result) = interpret_let_diag(context, location, ld);
-            let context_after = result.context.clone();
             match out {
                 None => (None, result),
                 Some((name, diagram)) => {
@@ -735,20 +740,18 @@ fn interpret_local_inst(
                         return (None, r);
                     }
                     let new_location = location.clone().add_diagram(name.clone(), diagram.clone());
-                    let root_complex = match context_after.state.find_type(root) {
+                    let root_complex = match result.context.state.find_type(root) {
                         Some(te) => (*te.complex).clone().add_diagram(name, diagram),
                         None => return (None, result),
                     };
-                    let new_state = (*context_after.state).clone().update_type_complex(root, root_complex);
                     let mut r = result;
-                    r.context = r.context.with_state(new_state);
+                    r.context.state_mut().update_type_complex(root, root_complex);
                     (Some(new_location), r)
                 }
             }
         }
         LocalInst::DefPMap(dp) => {
             let (out, result) = interpret_def_pmap(context, location, dp);
-            let context_after = result.context.clone();
             match out {
                 None => (None, result),
                 Some((name, map, domain)) => {
@@ -765,13 +768,12 @@ fn interpret_local_inst(
                         return (None, r);
                     }
                     let new_location = location.clone().add_map(name.clone(), domain.clone(), map.clone());
-                    let root_complex = match context_after.state.find_type(root) {
+                    let root_complex = match result.context.state.find_type(root) {
                         Some(te) => (*te.complex).clone().add_map(name, domain, map),
                         None => return (None, result),
                     };
-                    let new_state = (*context_after.state).clone().update_type_complex(root, root_complex);
                     let mut r = result;
-                    r.context = r.context.with_state(new_state);
+                    r.context.state_mut().update_type_complex(root, root_complex);
                     (Some(new_location), r)
                 }
             }
@@ -1116,7 +1118,7 @@ fn interpret_generator_instr(
     }
 
     if let (Mode::Global, Some(id)) = (mode, new_id_opt) {
-        Arc::make_mut(&mut result.context.state).set_cell_mut(id, dim, boundaries);
+        Arc::make_mut(&mut result.context.state).set_cell(id, dim, boundaries);
     }
 
     (new_location, result)
@@ -1225,7 +1227,7 @@ fn interpret_attach_instr(
     generators.sort_by_key(|(dim, _, _)| *dim);
 
     let mut current_location = location.clone();
-    let mut current_state = (*context_after.state).clone();
+    let mut current_state = Arc::clone(&context_after.state);
     let mut current_map = map.clone();
 
     for (gen_dim, gen_name, gen_tag) in &generators {
@@ -1267,7 +1269,7 @@ fn interpret_attach_instr(
         let image_tag = match mode {
             Mode::Global => {
                 let image_id = GlobalId::fresh();
-                current_state = current_state.set_cell(image_id, *gen_dim, image_cell_data.clone());
+                Arc::make_mut(&mut current_state).set_cell(image_id, *gen_dim, image_cell_data.clone());
                 Tag::Global(image_id)
             }
             Mode::Local => Tag::Local(combined.clone()),
@@ -1290,7 +1292,7 @@ fn interpret_attach_instr(
 
     let final_location = current_location.add_map(name, domain, current_map);
     let mut r = attach_result;
-    r.context = r.context.with_state(current_state);
+    r.context.state = current_state;
     (Some(final_location), r)
 }
 

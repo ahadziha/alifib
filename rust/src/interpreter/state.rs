@@ -29,33 +29,23 @@ impl State {
         Self::default()
     }
 
-    pub fn set_cell(mut self, id: GlobalId, dim: usize, data: CellData) -> Self {
-        self.cells_by_dim.entry(dim).or_default().push(id);
-        self.cells.insert(id, CellEntry { data });
-        self
-    }
-
-    /// Mutate the state in place. Use via `Arc::make_mut` to avoid cloning.
-    pub fn set_cell_mut(&mut self, id: GlobalId, dim: usize, data: CellData) {
+    pub fn set_cell(&mut self, id: GlobalId, dim: usize, data: CellData) {
         self.cells_by_dim.entry(dim).or_default().push(id);
         self.cells.insert(id, CellEntry { data });
     }
 
-    pub fn set_type(mut self, id: GlobalId, data: CellData, complex: Complex) -> Self {
+    pub fn set_type(&mut self, id: GlobalId, data: CellData, complex: Complex) {
         self.types.insert(id, TypeEntry { data, complex: Arc::new(complex) });
-        self
     }
 
-    pub fn update_type_complex(mut self, id: GlobalId, complex: Complex) -> Self {
+    pub fn update_type_complex(&mut self, id: GlobalId, complex: Complex) {
         if let Some(entry) = self.types.get_mut(&id) {
             entry.complex = Arc::new(complex);
         }
-        self
     }
 
-    pub fn set_module(mut self, id: ModuleId, complex: Complex) -> Self {
+    pub fn set_module(&mut self, id: ModuleId, complex: Complex) {
         self.modules.insert(id, Arc::new(complex));
-        self
     }
 
     pub fn find_cell(&self, id: GlobalId) -> Option<&CellEntry> {

@@ -25,7 +25,7 @@ impl Sign {
 #[derive(Debug, Clone)]
 pub enum PasteTree {
     Leaf(Tag),
-    Node { dim: usize, left: Box<PasteTree>, right: Box<PasteTree> },
+    Node { dim: usize, left: Arc<PasteTree>, right: Arc<PasteTree> },
 }
 
 /// Cell data: either a 0-cell (no boundaries) or an n-cell with specified boundaries.
@@ -355,8 +355,8 @@ fn paste_trees(u_trees: &[[PasteTree; 2]], v_trees: &[[PasteTree; 2]], n: usize,
             let v_in = v_trees.get(k).map(|p| p[0].clone()).unwrap_or_else(|| dummy(k));
             let v_out = v_trees.get(k).map(|p| p[1].clone()).unwrap_or_else(|| dummy(k));
             [
-                PasteTree::Node { dim: n, left: Box::new(u_in), right: Box::new(v_in) },
-                PasteTree::Node { dim: n, left: Box::new(u_out), right: Box::new(v_out) },
+                PasteTree::Node { dim: n, left: Arc::new(u_in), right: Arc::new(v_in) },
+                PasteTree::Node { dim: n, left: Arc::new(u_out), right: Arc::new(v_out) },
             ]
         }
     }).collect()

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use crate::aux::{Error, Tag};
 use super::diagram::{CellData, Diagram, PasteTree, Sign};
 
@@ -215,8 +216,8 @@ fn map_tree(tree: &PasteTree, cache: &HashMap<Tag, Tag>) -> PasteTree {
         }
         PasteTree::Node { dim, left, right } => PasteTree::Node {
             dim: *dim,
-            left: Box::new(map_tree(left, cache)),
-            right: Box::new(map_tree(right, cache)),
+            left: Arc::new(map_tree(left, cache)),
+            right: Arc::new(map_tree(right, cache)),
         },
     }
 }
