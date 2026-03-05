@@ -11,6 +11,7 @@ use aux::error::report_load_file_error;
 use aux::loader::Loader;
 use interpreter::{Context, interpret_program};
 use interpreter::state::State;
+use interpreter::types::HoleInfo;
 
 const USAGE: &str = "Usage: alifib <input-file> [-o|--output <output-file>] [--ast] [--bench N]";
 
@@ -108,9 +109,9 @@ fn run_ast(input: &str, output: Option<&str>) -> bool {
 
 struct RunResult {
     context: Context,
-    #[allow(dead_code)]
     source: String,
-    has_holes: bool,
+    canonical_path: String,
+    holes: Vec<HoleInfo>,
 }
 
 fn run_file(loader: &Loader, path: &str) -> Option<RunResult> {
@@ -130,12 +131,12 @@ fn run_file(loader: &Loader, path: &str) -> Option<RunResult> {
         return None;
     }
 
-    if !result.holes.is_empty() {
-        language::report_holes(&result.holes, &loaded.source, &loaded.canonical_path);
-        return Some(RunResult { context: result.context, source: loaded.source, has_holes: true });
-    }
-
-    Some(RunResult { context: result.context, source: loaded.source, has_holes: false })
+    Some(RunResult {
+        context: result.context,
+        canonical_path: loaded.canonical_path,
+        holes: result.holes,
+        source: loaded.source,
+    })
 }
 
 fn run_interpreter(input: &str, output: Option<&str>) -> bool {
@@ -145,14 +146,13 @@ fn run_interpreter(input: &str, output: Option<&str>) -> bool {
         None => return false,
     };
 
-    if run.has_holes {
-        return true; // holes already printed, exit 0
-    }
-
     let text = run.context.state.display();
     if let Err(msg) = write_output(output, &text) {
         eprintln!("error: {}", msg);
         return false;
+    }
+    if !run.holes.is_empty() {
+        language::report_holes(&run.holes, &run.source, &run.canonical_path);
     }
     true
 }
@@ -166,7 +166,7 @@ fn run_bench(input: &str, n: usize) -> bool {
             eprintln!("error: benchmark file failed on warmup");
             return false;
         }
-        Some(r) if r.has_holes => {
+        Some(r) if !r.holes.is_empty() => {
             eprintln!("error: benchmark file contains holes");
             return false;
         }
