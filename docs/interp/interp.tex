@@ -1,0 +1,1181 @@
+\documentclass[acmsmall,screen,nonacm]{acmart}
+
+\usepackage{macros}
+\usepackage{mathpartir}
+\usepackage{cleveref}
+
+\begin{document}
+
+\title{Operational Semantics of the \textsf{alifib} Interpreter}
+\author{} \date{}
+\maketitle
+
+\begin{abstract}
+We give a big-step operational semantics for the \textsf{alifib}
+interpreter. The language manipulates \emph{directed complexes}---oriented
+graded posets labelled by cell generators and equipped with partial maps
+between them---for the purpose of formalising constructions in higher
+category theory. We describe the abstract syntax, the interpreter state,
+and give evaluation rules for every language construct. We draw attention
+to several subtle design decisions and their rationale.
+\end{abstract}
+
+\tableofcontents
+
+% ===========================================================================
+\section{Introduction}
+\label{sec:intro}
+% ===========================================================================
+
+An \textsf{alifib} program declares \emph{types} (each of which carries a
+directed complex of generators), \emph{cells} (generators at various
+dimensions with specified source and target boundaries), \emph{diagrams}
+(labelled pasting diagrams built by composition of cells), and
+\emph{partial maps} (structure-preserving maps between complexes). The
+interpreter maintains a mutable global state and threads it through the
+evaluation of each instruction.
+
+This document provides a self-contained formal account of the
+interpreter's behaviour, abstracting away Rust-level implementation
+details (error reporting, span tracking, \texttt{Arc}-based sharing)
+while preserving every semantically meaningful step.
+
+\paragraph{Conventions.}
+We write $\State$ for the global state, $\Complex$ for a complex (the
+local namespace of generators, diagrams, and maps associated with a type
+or module), and $n$ for names. We use $\Downarrow$ for big-step
+evaluation. Metavariables are colour-coded: \Type{types} in blue,
+\Cell{cells} in brown, \Map{maps} in teal, and \Diag{diagrams} in
+purple. Keywords appear in $\kw{sans\text{-}serif}$.
+All nonterminals in the grammar are set in \textsf{sans-serif}.
+
+% ===========================================================================
+\section{Abstract Syntax}
+\label{sec:syntax}
+% ===========================================================================
+
+We present the abstract syntax in layers. We simplify the concrete syntax
+wherever it would introduce unnecessary detail: for instance, we omit span
+annotations and flatten optional fields. The concrete syntax of
+\textsf{alifib} can be recovered by consulting the parser.
+
+% ---------------------------------------------------------------------------
+\subsection{Programs, Blocks, and Instructions}
+\label{sec:syntax:prog}
+% ---------------------------------------------------------------------------
+
+A program is a sequence of blocks. There are two kinds: \emph{type blocks}
+(introduced by $\kwtype$) for declaring new types, diagrams, maps, and
+module inclusions at the top level; and \emph{local blocks} (introduced by
+$\mathsf{@}\Cpx$) for working within an existing type's complex.
+
+\begin{figure}[t]
+\fbox{\text{programs and blocks}}
+\[
+  \begin{array}{rcll}
+    \Prog  & \Coloneqq & \overline{\Block}         \\[3pt]
+    \Block & \Coloneqq & \kwtype\;\overline{\TyInst}
+             & \text{type block} \\
+           &           & \mathsf{@}\Cpx\;\overline{\LocInst}
+             & \text{local block}
+  \end{array}
+\]
+
+\fbox{\text{type-level instructions}}
+\[
+  \begin{array}{rcll}
+    \TyInst & \Coloneqq & n \;\decl\; \Cpx
+              & \text{type declaration} \\
+            &           & \kwlet\;n = \Diagram
+              & \text{diagram naming} \\
+            &           & \kwlet\;n \mathbin{::} \Addr = \PMapDef
+              & \text{map definition} \\
+            &           & \kwlet\;\kwtotal\;n \mathbin{::} \Addr = \PMapDef
+              & \text{total map definition} \\
+            &           & \kwinclude\;n\;[\kwas\;n']
+              & \text{module inclusion}
+  \end{array}
+\]
+
+\fbox{\text{complex-body instructions}}
+\[
+  \begin{array}{rcll}
+    \CInst & \Coloneqq & n                   & \text{0-cell} \\
+           &           & n : \Diagram \to \Diagram & \text{higher cell} \\
+           &           & \kwlet\;n = \Diagram & \text{diagram naming} \\
+           &           & \kwlet\;[\kwtotal]\;n \mathbin{::} \Addr = \PMapDef
+             & \text{map definition} \\
+           &           & \kwinclude\;\Addr\;[\kwas\;n]
+             & \text{type inclusion} \\
+           &           & \kwattach\;n \mathbin{::} \Addr\;[\kwalong\;\PMapDef]
+             & \text{type attachment}
+  \end{array}
+\]
+
+\fbox{\text{local instructions}}
+\[
+  \begin{array}{rcll}
+    \LocInst & \Coloneqq & \kwlet\;n = \Diagram
+               & \text{diagram naming} \\
+             &           & \kwlet\;[\kwtotal]\;n \mathbin{::} \Addr = \PMapDef
+               & \text{map definition} \\
+             &           & \kwassert\;\Diagram = \Diagram
+               & \text{equality assertion}
+  \end{array}
+\]
+\caption{Programs and instructions.}
+\label{fig:syntax:prog}
+\end{figure}
+
+\Cref{fig:syntax:prog} gives the full grammar of programs and
+instructions. All forms that define partial maps use the $\kwlet$ keyword
+in the concrete syntax; the distinction between diagram bindings and map
+definitions is syntactic (map definitions include a $\mathbin{::} \Addr$
+annotation). The keyword $\kwtotal$ marks a map definition as total,
+meaning the interpreter checks that every generator in the source complex
+has an image.
+
+The type declaration form $n \;\decl\; \Cpx$ introduces a new 0-dimensional
+type with a complex body. The symbol $\decl$ is written \texttt{<<=} in
+the concrete syntax. The interpreter rejects type declarations with
+non-trivial boundaries: all types are 0-cells, and higher cells are
+declared inside complex bodies.
+
+% ---------------------------------------------------------------------------
+\subsection{Complexes and Addresses}
+\label{sec:syntax:cpx}
+% ---------------------------------------------------------------------------
+
+A complex reference identifies which type's complex to operate in:
+\[
+  \begin{array}{rcll}
+    \Cpx  & \Coloneqq & \Addr
+            & \text{resolved address} \\
+          &           & \Addr\;\{ \overline{\CInst} \}
+            & \text{address with inline body} \\[3pt]
+    \Addr & \Coloneqq & \varepsilon \mid n_1.n_2.\cdots.n_k
+  \end{array}
+\]
+The empty address $\varepsilon$ refers to the current module's anonymous root
+type. A non-empty address is resolved by navigating module-domain maps
+for all segments except the last, and then looking up the final segment
+as a cell diagram (\cref{sec:complex:addr}).
+
+% ---------------------------------------------------------------------------
+\subsection{Diagrams}
+\label{sec:syntax:diag}
+% ---------------------------------------------------------------------------
+
+\begin{figure}[t]
+\fbox{\text{diagram expressions}}
+\[
+  \begin{array}{rcll}
+    \Diagram & \Coloneqq & \DExpr_1 \;\cdots\; \DExpr_k
+               & \text{implicit pasting} \\
+             &           & \Diagram \paste{k} \DExpr_1 \;\cdots\; \DExpr_j
+               & \text{explicit pasting at dimension $k$} \\[3pt]
+    \DExpr   & \Coloneqq & \DComp
+               & \text{component} \\
+             &           & \DExpr.\DComp
+               & \text{dot access} \\[3pt]
+    \DComp   & \Coloneqq & n
+               & \text{name lookup} \\
+             &           & (\Diagram)
+               & \text{parenthesised diagram} \\
+             &           & (\PMapG)
+               & \text{parenthesised map} \\
+             &           & (\,\kwmap\;\PMapDef \mathbin{::} \Cpx\,)
+               & \text{anonymous map} \\
+             &           & \kwin \mid \kwout
+               & \text{boundary accessors} \\
+             &           & \kwhole
+               & \text{hole}
+  \end{array}
+\]
+
+\fbox{\text{partial map expressions}}
+\[
+  \begin{array}{rcll}
+    \PMapDef  & \Coloneqq & \PMapG
+                & \text{plain map} \\
+              &           & \PMapExt
+                & \text{extension map} \\[3pt]
+    \PMapG    & \Coloneqq & \PMapBasic
+                & \text{basic map} \\
+              &           & \PMapBasic.\PMapG
+                & \text{composition via dot} \\[3pt]
+    \PMapBasic & \Coloneqq & n
+                & \text{named map} \\
+              &           & (\,\kwmap\;\PMapDef \mathbin{::} \Cpx\,)
+                & \text{anonymous map} \\
+              &           & (\PMapG)
+                & \text{parenthesised} \\[3pt]
+    \PMapExt  & \Coloneqq & [\,\overline{\Clause}\,]
+                & \text{extension from empty} \\
+              &           & \PMapG\;[\,\overline{\Clause}\,]
+                & \text{extension of prefix} \\[3pt]
+    \Clause   & \Coloneqq & \Diagram \Rightarrow \Diagram
+  \end{array}
+\]
+\caption{Diagram and partial map expressions.}
+\label{fig:syntax:expr}
+\end{figure}
+
+\Cref{fig:syntax:expr} gives the grammar of expressions. There are two
+kinds of pasting. \emph{Implicit pasting} (juxtaposition) pastes a
+sequence of diagram expressions left to right, automatically computing the
+paste dimension from the dimensions of the operands. \emph{Explicit
+pasting} $\Diagram \paste{k} \overline{\DExpr}$ pastes at a specified
+dimension $k$.
+
+\paragraph{Name ambiguity.}
+When a name $n$ is looked up in a complex, the interpreter checks the
+diagram namespace first, then the map namespace. A name found as a diagram
+produces a diagram term; a name found as a map produces a map term
+carrying both the map and a reference to its source complex. This
+overloading is intentional: the dot operator~(.) behaves differently
+depending on whether its left operand is a diagram or a map
+(\cref{sec:diag:dot}).
+
+\paragraph{Holes.}
+The hole symbol $\kwhole$ (written \texttt{?} in concrete syntax) is not
+a first-class value. When the interpreter encounters a hole, it records
+diagnostic information (including boundary context inferred from adjacent
+expressions) and aborts diagram evaluation. Holes exist to support
+interactive development.
+
+% ===========================================================================
+\section{Interpreter State}
+\label{sec:state}
+% ===========================================================================
+
+The interpreter maintains a global state $\State$ consisting of three
+finite maps:
+\[
+  \State = \langle \cells, \types, \modules \rangle
+\]
+
+\begin{itemize}
+  \item $\cells : \GId \rightharpoonup (\mathbb{N} \times \CData)$ maps
+    global identifiers to their dimension and cell data.
+  \item $\types : \GId \rightharpoonup (\CData \times \Complex)$ maps
+    global identifiers of types to their cell data and associated complex.
+  \item $\modules : \textsf{ModId} \rightharpoonup \Complex$ maps canonical
+    file paths to module-level complexes.
+\end{itemize}
+
+% ---------------------------------------------------------------------------
+\subsection{Global Identifiers and Tags}
+\label{sec:state:gid}
+% ---------------------------------------------------------------------------
+
+The state uses \emph{global identifiers} $\GId \in \mathbb{N}$ to name
+cells and types across the entire program. Identifiers are allocated by a
+monotonic counter: $\fresh$ returns the next unused natural number. Every
+globally-registered cell or type receives a unique $\GId$ at the point of
+declaration.
+
+The purpose of global identifiers is to provide a stable, unique identity
+for each cell that is invariant under renaming. Two cells in different
+complexes may bear the same human-readable name (e.g.\ \texttt{pt}) but
+refer to entirely different generators; conversely, the \emph{same} cell
+may appear in multiple complexes under different names (e.g.\ after an
+$\kwinclude$). Global identifiers resolve this: they are the canonical
+identity of a cell. In the Rust implementation, $\GId$ is a wrapper around
+\texttt{usize} allocated via a global atomic counter.
+
+Every cell in a diagram is labelled not with a name but with a \emph{tag}:
+\[
+  \textsf{Tag} \Coloneqq \TagG{\GId} \mid \TagL{n}
+\]
+Global tags $\TagG{\GId}$ reference cells registered in $\State.\cells$
+or $\State.\types$. Local tags $\TagL{n}$ reference cells in a complex's
+local cell store; they are used only inside complex bodies being
+constructed and must not appear in persisted definitions. The reason for
+having two kinds of tags is that local cells are temporary scaffolding
+during complex construction: they exist in the working copy of a complex
+but are not registered in the global state.
+
+% ---------------------------------------------------------------------------
+\subsection{Cell Data}
+\label{sec:state:celldata}
+% ---------------------------------------------------------------------------
+
+Every cell has associated \emph{cell data} describing its boundary:
+\[
+  \CData \Coloneqq \CZero \mid \CBdy{d^{-}}{d^{+}}
+\]
+The symbol $\CZero$ denotes a 0-cell (no boundaries). The form
+$\CBdy{d^{-}}{d^{+}}$ describes a cell of dimension $n > 0$ with
+input boundary $d^{-}$ and output boundary $d^{+}$, both diagrams of
+dimension $n - 1$.
+
+% ---------------------------------------------------------------------------
+\subsection{Complexes}
+\label{sec:state:complex}
+% ---------------------------------------------------------------------------
+
+A \emph{complex} $\Complex$ is the namespace associated with a type or
+module. It bundles four components:
+\[
+  \Complex = \langle \mathit{gens}, \mathit{diags}, \mathit{maps},
+    \mathit{locals} \rangle
+\]
+\begin{itemize}
+  \item $\mathit{gens} : n \rightharpoonup
+    (\textsf{Tag} \times \mathbb{N} \times \Diag{D})$
+    maps generator names to their tag, dimension, and
+    \emph{classifier diagram} (the diagram consisting of that single cell).
+  \item $\mathit{diags} : n \rightharpoonup \Diag{D}$ maps diagram names
+    to diagram values.
+  \item $\mathit{maps} : n \rightharpoonup
+    (\textsf{MapDom} \times \Map{F})$ maps partial map names to a domain
+    annotation and a map value.
+    The domain is either $\mathsf{Ty}(\GId)$ or $\mathsf{Mod}(\textsf{ModId})$.
+  \item $\mathit{locals} : n \rightharpoonup (\mathbb{N} \times \CData)$
+    stores locally-scoped cells (populated only during complex body
+    interpretation).
+\end{itemize}
+A complex also maintains a set of all names in use, to detect collisions
+eagerly. Every generator is entered into both $\mathit{gens}$ and
+$\mathit{diags}$: the former records structural metadata while the latter
+enables name resolution during diagram evaluation.
+
+% ---------------------------------------------------------------------------
+\subsection{Terms}
+\label{sec:state:terms}
+% ---------------------------------------------------------------------------
+
+Diagram expressions evaluate to \emph{terms}:
+\[
+  \TermD \Coloneqq \DTerm{\Diag{D}} \mid
+  \MTerm{\Map{F}, \Complex_{\mathit{src}}}
+\]
+A diagram term $\DTerm{\Diag{D}}$ carries a concrete diagram. A map
+term $\MTerm{\Map{F}, \Complex_{\mathit{src}}}$ carries a partial map
+$\Map{F}$ together with a reference to its \emph{source complex}. The
+source complex is essential: it determines the namespace in which further
+dot-access into the map is resolved.
+
+The reason the interpreter tracks terms rather than just diagrams is that
+partial maps and diagrams share the same expression language. When the user
+writes \texttt{F.x}, the interpreter must know that \texttt{F} is a map
+in order to resolve \texttt{x} in the source complex of \texttt{F} (not
+in the ambient complex). The term type makes this dispatch explicit.
+
+% ---------------------------------------------------------------------------
+\subsection{State Threading}
+\label{sec:state:threading}
+% ---------------------------------------------------------------------------
+
+The state $\State$ is threaded through interpretation. The judgment form is:
+\[
+  \IntJ{\State}{\Complex}{\mathit{instr}}{\State'}
+\]
+reading: ``under state $\State$ and location $\Complex$, interpreting
+instruction $\mathit{instr}$ yields a new state $\State'$.'' Instructions
+within a block are processed sequentially: each receives the state produced
+by the previous. Local blocks stop on first error; complex bodies process
+all instructions regardless of errors.
+
+In the Rust implementation, $\State$ is wrapped in \texttt{Arc<State>} and
+mutated via \texttt{Arc::make\_mut}. This copy-on-write discipline is not
+observable in the formal rules but explains why the implementation freely
+clones contexts before potentially-failing operations.
+
+% ===========================================================================
+\section{Program Interpretation}
+\label{sec:prog}
+% ===========================================================================
+
+\subsection{Module Initialisation}
+\label{sec:prog:init}
+
+When a module $m$ is first interpreted, its complex is initialised with an
+anonymous root type:
+
+\begin{mathpar}
+  \inferrule*[lab=\textsc{Prog-Skip}]
+    {\findmod{m} \neq \bot}
+    {\IntJ{\State}{\cdot}{\Prog(m)}{\State}}
+  \and
+  \inferrule*[lab=\textsc{Prog-Init}]
+    {\findmod{m} = \bot \\
+     \GId_r = \fresh \\
+     D_r = \CellOf{\TagG{\GId_r}}{\CZero} \\\\
+     \Complex_0 = [\varepsilon \mapsto D_r] \\
+     \State_1 = \State[\types(\GId_r) \mapsto (\CZero, \emptyset),\;
+                        \modules(m) \mapsto \Complex_0] \\\\
+     \IntJ{\State_1}{\Complex_0}{\overline{\Block}}{\State'}}
+    {\IntJ{\State}{\cdot}{\Prog(m)}{\State'}}
+\end{mathpar}
+
+\textsc{Prog-Skip} ensures idempotent module loading: if $m$ is already
+loaded, its interpretation is skipped entirely. This prevents
+double-interpretation when two modules include the same dependency, but
+it also means that the order of includes can affect what state a module
+sees.
+
+\textsc{Prog-Init} allocates a fresh $\GId_r$ for an anonymous root type,
+creates its cell diagram $D_r$, and registers both the type (with an
+empty complex) and the module (with a complex containing $D_r$ under the
+empty name $\varepsilon$). The root type and the module complex are
+\emph{distinct} objects: the module complex holds the root generator
+\emph{reference}, while the root type's complex will hold generators
+declared by the first $\kwtype$ block that has no explicit address.
+
+\subsection{Block Dispatch}
+\label{sec:prog:block}
+
+\begin{mathpar}
+  \inferrule*[lab=\textsc{Blk-Type}]
+    {\IntJ{\State}{\findmod{m}}{\overline{\TyInst}}{\State'}}
+    {\IntJ{\State}{\cdot}{\kwtype\;\overline{\TyInst}}{\State'}}
+  \and
+  \inferrule*[lab=\textsc{Blk-Local}]
+    {\ResJ{\State}{\Cpx}{(\GId_r, \Complex)} \\
+     \IntJ{\State}{\Complex}{\overline{\LocInst}}{\State'}}
+    {\IntJ{\State}{\cdot}{\mathsf{@}\Cpx\;\overline{\LocInst}}{\State'}}
+\end{mathpar}
+
+A type block interprets its instructions within the module complex. A local
+block first resolves its complex reference to a namespace
+$(\GId_r, \Complex)$ and then interprets local instructions within that
+complex.
+
+% ===========================================================================
+\section{Type-Level Instructions}
+\label{sec:type}
+% ===========================================================================
+
+\subsection{Type Declaration}
+\label{sec:type:gen}
+
+\begin{mathpar}
+  \inferrule*[lab=\textsc{TyDecl}]
+    {n \notin \mathit{used}(\findmod{m}) \\
+     \ResJ{\State}{\Cpx}{(\_, \Complex_{\mathit{def}})} \\
+     \GId_T = \fresh \\
+     D_T = \CellOf{\TagG{\GId_T}}{\CZero} \\\\
+     F_{\mathit{id}} = \idmap{\Complex_{\mathit{def}}} \\
+     \Complex'_{\mathit{def}} = \Complex_{\mathit{def}}
+       [\mathit{maps}(n) \mapsto (\mathsf{Ty}(\GId_T), F_{\mathit{id}})] \\\\
+     \State' = \State[\types(\GId_T) \mapsto
+       (\CZero, \Complex'_{\mathit{def}}),\;
+       \modules(m)(n) \mapsto D_T]}
+    {\IntJ{\State}{\findmod{m}}{n \;\decl\; \Cpx}{\State'}}
+\end{mathpar}
+
+A type declaration resolves the complex body $\Cpx$ (interpreting any cell
+generators, includes, and attaches inside), allocates a fresh $\GId_T$,
+constructs the identity map $F_{\mathit{id}}$ on the definition complex,
+and adds this identity map to the type's own complex under its own name.
+The classifier diagram $D_T$ is added to both the generator and diagram
+namespaces of the module complex.
+
+\paragraph{The self-referencing identity map.}
+The identity map is added to the type's own complex under the type's name.
+This is how a type ``refers to itself'': inside the complex of a type
+$T$, the name $T$ resolves to the identity inclusion map. This is
+essential for constructions like $\kwattach\;S \mathbin{::} \textrm{Semigroup}\;\kwalong\;[\textrm{Set} \Rightarrow \textrm{Set}]$, where the right-hand \textrm{Set}
+refers to the current type's own identity.
+
+% ---------------------------------------------------------------------------
+\subsection{Diagram Naming}
+\label{sec:type:let}
+% ---------------------------------------------------------------------------
+
+\begin{mathpar}
+  \inferrule*[lab=\textsc{TyLet}]
+    {\EvalD{\State}{\findmod{m}}{\Diagram}{D}}
+    {\IntJ{\State}{\findmod{m}}{\kwlet\;n = \Diagram}%
+          {\State[\modules(m).\mathit{diags}(n) \mapsto D]}}
+\end{mathpar}
+
+The diagram expression is evaluated and bound in the module complex.
+Unlike complex-body and local-block let-bindings, the type-level form does
+\emph{not} check name uniqueness---it silently overwrites.
+
+% ---------------------------------------------------------------------------
+\subsection{Map Definition}
+\label{sec:type:def}
+% ---------------------------------------------------------------------------
+
+\begin{mathpar}
+  \inferrule*[lab=\textsc{TyMap}]
+    {\AddrJ{\State}{\Addr}{\GId_S} \\
+     \Complex_S = \findtype{\GId_S}.\Complex \\
+     \EvalM{\State}{\findmod{m}}{(\PMapDef, \Complex_S)}{F}}
+    {\IntJ{\State}{\findmod{m}}{\kwlet\;n \mathbin{::} \Addr = \PMapDef}%
+          {\State[\modules(m).\mathit{maps}(n) \mapsto
+            (\mathsf{Ty}(\GId_S), F)]}}
+\end{mathpar}
+
+The address resolves to the source type $\GId_S$. The map definition is
+evaluated with $\Complex_S$ as the source complex. For $\kwtotal$ maps, an
+additional post-hoc check verifies that every generator in $\Complex_S$
+has an image; the map is returned even if the check fails (errors
+accumulate).
+
+As at the type level, name uniqueness is not checked.
+
+% ---------------------------------------------------------------------------
+\subsection{Module Inclusion}
+\label{sec:type:import}
+% ---------------------------------------------------------------------------
+
+\begin{mathpar}
+  \inferrule*[lab=\textsc{TyInclude}]
+    {\mathit{alias} = n'\text{ if given, else }n \\
+     \mathit{alias} \notin \mathit{used}(\findmod{m}) \\
+     m' = \mathsf{resolve}(m, n) \\
+     \IntJ{\State}{\cdot}{\Prog(m')}{\State_1} \\\\
+     \Complex_{m'} = \State_1.\modules(m') \\
+     F_{\mathit{id}} = \idmap{\Complex_{m'}} \\
+     \mathit{gs} = \{ (\mathit{alias}.n_g, t_g, D_g) \mid
+       (n_g, t_g, D_g) \in \Complex_{m'}.\mathit{gens},\;
+       n_g \neq \varepsilon \} \\\\
+     \State' = \State_1[
+       \modules(m).\mathit{gens} \mathbin{{+}{=}} \mathit{gs},\;
+       \modules(m).\mathit{maps}(\mathit{alias}) \mapsto
+         (\mathsf{Mod}(m'), F_{\mathit{id}})]}
+    {\IntJ{\State}{\findmod{m}}{\kwinclude\;n\;[\kwas\;n']}{\State'}}
+\end{mathpar}
+
+Module inclusion resolves $n$ to a canonical path $m'$, recursively
+interprets $m'$ (which may transitively include further modules), and then
+merges the included module's generators into the current module's complex.
+The alias defaults to $n$ when no $\kwas$ clause is given; in either case,
+the alias is checked for uniqueness in the current module.
+Generators are prefixed with the alias and
+duplicates---identified by tag, not by name---are silently skipped. This
+is how diamond dependencies are handled: if two imports bring in the same
+cell (same $\GId$), only the first copy is kept.
+
+The state $\State_1$ from the recursive interpretation is carried forward
+as the base for further modifications, ensuring that all types, cells, and
+modules registered during the recursive call are visible.
+
+% ===========================================================================
+\section{Complex Resolution}
+\label{sec:complex}
+% ===========================================================================
+
+Complex references resolve to namespaces $(\GId, \Complex)$:
+
+\begin{mathpar}
+  \inferrule*[lab=\textsc{Cpx-Root}]
+    {\findmod{m}.\mathit{gens}(\varepsilon) = (\TagG{\GId_r}, \_, \_) \\
+     \Complex = \findtype{\GId_r}.\Complex}
+    {\ResJ{\State}{\varepsilon}{(\GId_r, \Complex)}}
+  \and
+  \inferrule*[lab=\textsc{Cpx-Addr}]
+    {\AddrJ{\State}{\Addr}{\GId} \\
+     \Complex = \findtype{\GId}.\Complex}
+    {\ResJ{\State}{\Addr}{(\GId, \Complex)}}
+  \and
+  \inferrule*[lab=\textsc{Cpx-Block}]
+    {\ResJ{\State}{\Addr}{(\GId, \Complex_0)} \\
+     \IntJ{\State}{\Complex_0}{\overline{\CInst}}{(\State', \Complex')}}
+    {\ResJ{\State}{\Addr\;\{\overline{\CInst}\}}{(\GId, \Complex')}}
+\end{mathpar}
+
+\textsc{Cpx-Root} handles the empty address by looking up the anonymous root
+generator in the module complex. \textsc{Cpx-Addr} resolves a non-empty
+address to a type's complex. \textsc{Cpx-Block} first resolves the
+address, then interprets the body instructions, threading both state and
+location; the body may add generators, diagrams, maps, includes, and
+attaches. State changes from the body persist to the outer context.
+
+\subsection{Address Resolution}
+\label{sec:complex:addr}
+
+\begin{mathpar}
+  \inferrule*[lab=\textsc{Addr-Leaf}]
+    {\Complex.\mathit{diags}(n) = D \\
+     D\;\text{is a cell} \\
+     \mathit{top}(D) = \TagG{\GId}}
+    {\AddrJ{\State}{n}{\GId}}
+  \and
+  \inferrule*[lab=\textsc{Addr-Step}]
+    {\Complex.\mathit{maps}(n_1) = (\mathsf{Mod}(m'), \_) \\
+     \Complex' = \findmod{m'} \\
+     \AddrJ{\State[\Complex']}
+       {n_2.\cdots.n_k}{\GId}}
+    {\AddrJ{\State}{n_1.n_2.\cdots.n_k}{\GId}}
+\end{mathpar}
+
+Address resolution navigates the \emph{map} namespace, not the generator
+namespace. All segments except the last must be names of maps with module
+domains; each step follows the module reference to its complex. The final
+segment is looked up in the diagram namespace and must be a single cell.
+
+\paragraph{Why maps, not generators?}
+The map namespace is used because module inclusions register an identity
+map under the alias name. This map's domain records which module (or type)
+the inclusion came from, and its source complex provides the namespace for
+further resolution.  Using maps rather than generators allows the same
+resolution mechanism to work for both module paths
+(\texttt{Theory.Equation}) and type paths (\texttt{F.S}).
+
+% ===========================================================================
+\section{Complex Body Instructions}
+\label{sec:cinstr}
+% ===========================================================================
+
+Complex body instructions are interpreted in a mode $\mu \in \{\ModeG, \ModeL\}$.
+In $\ModeG$ mode, new generators receive global tags and are registered in
+$\State.\cells$. In $\ModeL$ mode, they receive local tags and are stored
+in the complex's local cell store.
+
+\subsection{Cell Generator}
+\label{sec:cinstr:gen}
+
+\begin{mathpar}
+  \inferrule*[lab=\textsc{CGen}]
+    {n \notin \mathit{used}(\Complex) \\
+     \mathit{cd} = \text{(boundary from context)} \\
+     \dim = \text{(inferred from } \mathit{cd}\text{)} \\\\
+     \mu = \ModeG \implies
+       \GId = \fresh,\;
+       t = \TagG{\GId} \\
+     \mu = \ModeL \implies
+       t = \TagL{n} \\\\
+     D = \CellOf{t}{\mathit{cd}} \\
+     \Complex' = \Complex[\mathit{gens}(n) \mapsto D,\;
+       \mathit{diags}(n) \mapsto D]}
+    {\IntJ{\State}{\Complex}{n : \cdots}{\State', \Complex'}}
+\end{mathpar}
+
+A bare name declares a 0-cell ($\mathit{cd} = \CZero$, $\dim = 0$). A name
+with boundary $n : d^{-} \to d^{+}$ declares an $n$-cell with
+$\mathit{cd} = \CBdy{d^{-}}{d^{+}}$ and
+$\dim = \mathsf{dim}(d^{-}) + 1$, where $d^{-}$ and $d^{+}$ are
+evaluated as diagrams in the current complex.
+
+The cell diagram $D = \CellOf{t}{\mathit{cd}}$ is constructed by taking
+the pushout of the input and output boundary embeddings into a common lower
+boundary, then adding one new top-dimensional cell. The resulting ogposet
+has the combined shape of the two boundaries with the new cell on top.
+
+The cell is entered into both $\mathit{gens}$ and $\mathit{diags}$.  In
+$\ModeG$ mode the cell is also registered in $\State.\cells$; in $\ModeL$
+mode it is added to $\Complex.\mathit{locals}$.
+
+\subsection{Complex-Body Let and Def}
+\label{sec:cinstr:let}
+
+\begin{mathpar}
+  \inferrule*[lab=\textsc{CLet}]
+    {n \notin \mathit{used}(\Complex) \\
+     \EvalD{\State}{\Complex}{\Diagram}{D}}
+    {\IntJ{\State}{\Complex}{\kwlet\;n = \Diagram}
+          {\State, \Complex[\mathit{diags}(n) \mapsto D]}}
+  \and
+  \inferrule*[lab=\textsc{CDef}]
+    {n \notin \mathit{used}(\Complex) \\
+     \AddrJ{\State}{\Addr}{\GId_S} \\
+     \EvalM{\State}{\Complex}{(\PMapDef, \Complex_S)}{F}}
+    {\IntJ{\State}{\Complex}{\kwlet\;n \mathbin{::} \Addr = \PMapDef}
+          {\State, \Complex[\mathit{maps}(n) \mapsto (\mathsf{Ty}(\GId_S), F)]}}
+\end{mathpar}
+
+Unlike the type-level variants, these check name uniqueness.
+
+\subsection{Include}
+\label{sec:cinstr:include}
+
+\begin{mathpar}
+  \inferrule*[lab=\textsc{CInclude}]
+    {\AddrJ{\State}{\Addr}{\GId} \\
+     \Complex_S = \findtype{\GId}.\Complex \\
+     n \notin \mathit{used}(\Complex) \\
+     F_{\mathit{id}} = \idmap{\Complex_S} \\\\
+     \mathit{gs} = \{ (n.n_g, t_g, D_g) \mid
+       (n_g, t_g, D_g) \in \Complex_S.\mathit{gens},\;
+       t_g \notin \Complex \} \\
+     \Complex' = \Complex[\mathit{gens} \mathbin{{+}{=}} \mathit{gs},\;
+       \mathit{maps}(n) \mapsto (\mathsf{Ty}(\GId), F_{\mathit{id}})]}
+    {\IntJ{\State}{\Complex}{\kwinclude\;\Addr\;[\kwas\;n]}%
+          {\State, \Complex'}}
+\end{mathpar}
+
+Include copies generators from the source type's complex into the current
+complex, prefixing names, and adds an identity map. Crucially, no fresh
+identifiers are allocated: the included generators retain their original
+tags. This means that the ``same'' cell can appear in multiple complexes
+under different names, but it has one canonical identity.
+
+If no alias is given and the name would contain a dot (indicating a
+non-local type), the interpreter raises an error: inclusion of non-local
+types requires an explicit alias.
+
+\subsection{Attach}
+\label{sec:cinstr:attach}
+
+\begin{mathpar}
+  \inferrule*[lab=\textsc{CAttach}]
+    {\AddrJ{\State}{\Addr}{\GId_A} \\
+     \Complex_A = \findtype{\GId_A}.\Complex \\
+     n \notin \mathit{used}(\Complex) \\
+     F_0 = \text{(evaluate along map, or } \emptyset \text{ if omitted)} \\\\
+     \text{for each } (n_g, t_g, \dim_g) \in \Complex_A.\mathit{gens}
+       \text{, by ascending dimension, with } F_i(t_g) = \bot\text{:} \\
+     \quad \GId' = \fresh \qquad
+     \mathit{cd}' = \mathsf{bdy}(F_i, t_g) \qquad
+     D' = \CellOf{\TagG{\GId'}}{\mathit{cd}'} \\
+     \quad F_{i+1} = F_i[t_g \mapsto D'] \qquad
+     \State_{i+1} = \State_i[\cells(\GId') \mapsto (\dim_g, \mathit{cd}')] \\\\
+     \Complex' = \Complex[\mathit{gens} \mathbin{{+}{=}} \mathit{new},\;
+       \mathit{maps}(n) \mapsto (\mathsf{Ty}(\GId_A), F_{\mathit{final}})]}
+    {\IntJ{\State}{\Complex}{\kwattach\;n \mathbin{::} \Addr\;
+       [\kwalong\;\PMapDef]}{\State', \Complex'}}
+\end{mathpar}
+
+\noindent
+Here $\mathsf{bdy}(F, t)$ is $\CZero$ if the cell is 0-dimensional, and
+$\CBdy{\apply{F}{d^{-}}}{\apply{F}{d^{+}}}$ otherwise (where
+$\CBdy{d^{-}}{d^{+}}$ is the cell data of $t$).
+
+Attachment differs from inclusion in a fundamental way: it creates
+\emph{fresh} cells for every generator not already in the ``along'' map.
+Generators are processed in ascending dimension order, ensuring that when
+we encounter an $n$-cell, all of its boundary cells have already been
+mapped (either by the ``along'' map or by a previous iteration step).
+
+\paragraph{Attach vs.\ include.}
+Include reuses existing tags and creates no new cells; the result is an
+aliased view of the same generators. Attach creates genuinely new cells
+with fresh $\GId$s and new tag identities. This is the mechanism for
+instantiating a ``template'': attaching the same type twice produces two
+independent copies.
+
+% ===========================================================================
+\section{Local Instructions}
+\label{sec:local}
+% ===========================================================================
+
+Local instructions operate within a resolved namespace
+$(\GId_r, \Complex)$. Their defining feature is that definitions are
+\emph{persisted}: the interpreter writes them back into the type's complex
+in the global state.
+
+\subsection{Local Let and Def}
+\label{sec:local:let}
+
+\begin{mathpar}
+  \inferrule*[lab=\textsc{LocLet}]
+    {n \notin \mathit{used}(\Complex) \\
+     \EvalD{\State}{\Complex}{\Diagram}{D} \\
+     D\;\text{has no local tags}}
+    {\IntJ{\State}{(\GId_r, \Complex)}{\kwlet\;n = \Diagram}%
+          {\State[\types(\GId_r).\Complex.\mathit{diags}(n) \mapsto D]}}
+  \and
+  \inferrule*[lab=\textsc{LocDef}]
+    {n \notin \mathit{used}(\Complex) \\
+     \EvalM{\State}{\Complex}{(\PMapDef, \Complex_S)}{F} \\
+     F\;\text{has no local tags}}
+    {\IntJ{\State}{(\GId_r, \Complex)}
+      {\kwlet\;n \mathbin{::} \Addr = \PMapDef}%
+      {\State[\types(\GId_r).\Complex.\mathit{maps}(n) \mapsto
+        (\mathsf{Ty}(\GId_S), F)]}}
+\end{mathpar}
+
+Before persisting, the interpreter checks that the diagram or map
+contains no locally-tagged cells. This ensures that definitions exported to
+global state are self-contained. (This check is \emph{not} performed for
+definitions inside complex bodies, which may legitimately refer to local
+cells.)
+
+The ``local'' in ``local block'' refers to the \emph{scope of operation}
+(which type's complex we are working in), not to the lifetime of the
+definition. Local-block definitions are global in duration.
+
+\subsection{Assertions}
+\label{sec:local:assert}
+
+\begin{mathpar}
+  \inferrule*[lab=\textsc{Assert-Diag}]
+    {\EvalD{\State}{\Complex}{\Diagram_1}{D_1} \\
+     \EvalD{\State}{\Complex}{\Diagram_2}{D_2} \\
+     D_1 \cong D_2}
+    {\AssertJ{\State}{\Complex}{\kwassert\;\Diagram_1 = \Diagram_2}}
+  \and
+  \inferrule*[lab=\textsc{Assert-Map}]
+    {\EvalT{\State}{\Complex}{\Diagram_1}{\MTerm{F_1, \Complex_S}} \\
+     \EvalT{\State}{\Complex}{\Diagram_2}{\MTerm{F_2, \Complex_S}} \\\\
+     \forall (n, t) \in \Complex_S.\mathit{gens}{:}\;
+       \mathsf{def}(F_1, t) = \mathsf{def}(F_2, t) \\
+     \forall t\;\text{defined in both}{:}\;
+       F_1(t) \cong F_2(t)}
+    {\AssertJ{\State}{\Complex}{\kwassert\;\Diagram_1 = \Diagram_2}}
+\end{mathpar}
+
+Both sides must evaluate to terms of the same kind (both diagram or both
+map). Diagram equality is checked via isomorphism of the underlying
+ogposets with matching labels. Map equality is checked pointwise:  for
+each generator in the shared source complex, both maps must agree on
+definedness and have isomorphic images.
+
+\paragraph{Structural, not propositional.}
+Assertions check \emph{definitional} (structural) equality. There are no
+non-trivial equalities: everything interesting is a \emph{rewrite} (a
+higher-dimensional cell). For example, the unit law
+$\kwassert\;\mathit{id}\;{}\alpha = \alpha$ will \emph{fail}, because
+$\mathit{id}\;{}\alpha$ has an additional cell in its ogposet. To
+express the unit law, one declares a cell
+$\lambda : \mathit{id}\;{}\alpha \to \alpha$.
+
+However, middle-four interchange---the equation
+$(\alpha \paste{0} \beta)(\gamma \paste{0} \delta) =
+(\alpha\gamma) \paste{0} (\beta\delta)$---\emph{is} structural: both
+sides produce isomorphic ogposets.
+
+% ===========================================================================
+\section{Diagram Evaluation}
+\label{sec:diag}
+% ===========================================================================
+
+\subsection{Implicit Pasting}
+\label{sec:diag:juxt}
+
+\begin{mathpar}
+  \inferrule*[lab=\textsc{Diag-One}]
+    {\EvalT{\State}{\Complex}{\DExpr}{\DTerm{D}}}
+    {\EvalD{\State}{\Complex}{\DExpr}{D}}
+  \and
+  \inferrule*[lab=\textsc{Diag-Juxt}]
+    {\EvalD{\State}{\Complex}{\DExpr_1}{D_1} \\
+     \EvalD{\State}{\Complex}{\DExpr_2\;\cdots\;\DExpr_k}{D_R} \\\\
+     j = \max(\min(\dim(D_1), \dim(D_R)) - 1,\; 0) \\
+     D = D_1 \paste{j} D_R}
+    {\EvalD{\State}{\Complex}{\DExpr_1\;\DExpr_2\;\cdots\;\DExpr_k}{D}}
+\end{mathpar}
+
+Juxtaposition is a left fold. The paste dimension is computed as
+$\max(\min(\dim(D_1), \dim(D_R)) - 1,\; 0)$, clamped to be non-negative.
+For two 1-cells this gives $j = 0$ (horizontal composition); for two
+2-cells, $j = 1$ (vertical composition).
+
+\subsection{Explicit Pasting}
+\label{sec:diag:paste}
+
+\begin{mathpar}
+  \inferrule*[lab=\textsc{Diag-Paste}]
+    {\EvalD{\State}{\Complex}{\overline{\DExpr}_R}{D_R} \\
+     \EvalD{\State}{\Complex}{\Diagram_L}{D_L} \\
+     \bdy{+}{k}{D_L} \cong \bdy{-}{k}{D_R} \\
+     D = D_L \paste{k} D_R}
+    {\EvalD{\State}{\Complex}{\Diagram_L \paste{k}
+      \overline{\DExpr}_R}{D}}
+\end{mathpar}
+
+The right-hand side is evaluated before the left-hand side. This matches
+OCaml's evaluation order and is preserved in the Rust implementation for
+compatibility. The paste is defined only when $D_L$'s output $k$-boundary
+matches $D_R$'s input $k$-boundary. The result is computed as a pushout
+of the two boundary embeddings, merging labels and paste trees.
+
+\subsection{Component Evaluation}
+\label{sec:diag:comp}
+
+\begin{mathpar}
+  \inferrule*[lab=\textsc{Comp-Name-D}]
+    {\Complex.\mathit{diags}(n) = D}
+    {\EvalT{\State}{\Complex}{n}{\DTerm{D}}}
+  \and
+  \inferrule*[lab=\textsc{Comp-Name-M}]
+    {\Complex.\mathit{diags}(n) = \bot \\
+     \Complex.\mathit{maps}(n) = (\mathit{dom}, F) \\
+     \Complex_S = \mathsf{src}(\State, \mathit{dom})}
+    {\EvalT{\State}{\Complex}{n}{\MTerm{F, \Complex_S}}}
+\end{mathpar}
+
+\begin{mathpar}
+  \inferrule*[lab=\textsc{Comp-Paren}]
+    {\EvalD{\State}{\Complex}{\Diagram}{D}}
+    {\EvalT{\State}{\Complex}{(\Diagram)}{\DTerm{D}}}
+  \and
+  \inferrule*[lab=\textsc{Comp-PMap}]
+    {\EvalM{\State}{\Complex}{(\PMapG, \Complex)}{F, \Complex_S}}
+    {\EvalT{\State}{\Complex}{(\PMapG)}{\MTerm{F, \Complex_S}}}
+\end{mathpar}
+
+\begin{mathpar}
+  \inferrule*[lab=\textsc{Comp-AnonMap}]
+    {\ResJ{\State}{\Cpx}{(\_, \Complex_T)} \\
+     \EvalM{\State}{\Complex_T}{(\PMapDef, \Complex)}{F, \Complex_S}}
+    {\EvalT{\State}{\Complex}{(\,\kwmap\;\PMapDef :: \Cpx\,)}
+      {\MTerm{F, \Complex_S}}}
+  \and
+  \inferrule*[lab=\textsc{Comp-Bd}]
+    {\strut}
+    {\EvalT{\State}{\Complex}{\kwin}{\mathsf{Bd}(\text{in})}}
+\end{mathpar}
+
+Name lookup checks diagrams first, then maps. Anonymous maps first resolve
+the complex (which may trigger further interpretation), then evaluate the
+map definition in that context. The source complex $\Complex_S$ for
+$\mathsf{src}(\State, \mathit{dom})$ is
+$\findtype{\GId}.\Complex$ if $\mathit{dom} = \mathsf{Ty}(\GId)$, or
+$\findmod{m}$ if $\mathit{dom} = \mathsf{Mod}(m)$.
+
+\subsection{Dot Access}
+\label{sec:diag:dot}
+
+The dot operator has three semantically distinct behaviours:
+
+\begin{mathpar}
+  \inferrule*[lab=\textsc{Dot-Bd}]
+    {\EvalT{\State}{\Complex}{\DExpr}{\DTerm{D}} \\
+     k = \max(\dim(D) - 1, 0) \\
+     D' = \bdy{s}{k}{D}}
+    {\EvalT{\State}{\Complex}{\DExpr.\mathsf{Bd}(s)}{\DTerm{D'}}}
+\end{mathpar}
+
+\begin{mathpar}
+  \inferrule*[lab=\textsc{Dot-Apply}]
+    {\EvalT{\State}{\Complex}{\DExpr}{\MTerm{F, \Complex_S}} \\
+     \EvalT{\State}{\Complex_S}{\DComp}{\DTerm{D}} \\
+     D' = \apply{F}{D}}
+    {\EvalT{\State}{\Complex}{\DExpr.\DComp}{\DTerm{D'}}}
+\end{mathpar}
+
+\begin{mathpar}
+  \inferrule*[lab=\textsc{Dot-Compose}]
+    {\EvalT{\State}{\Complex}{\DExpr}{\MTerm{F, \Complex_S}} \\
+     \EvalT{\State}{\Complex_S}{\DComp}{\MTerm{G, \Complex_{S'}}} \\
+     H = \compose{F}{G}}
+    {\EvalT{\State}{\Complex}{\DExpr.\DComp}
+      {\MTerm{H, \Complex_{S'}}}}
+\end{mathpar}
+
+\textsc{Dot-Bd}: extracting the codimension-1 boundary of a diagram.
+
+\textsc{Dot-Apply}: the key rule. The right-hand component is evaluated
+in the source complex $\Complex_S$ of the map, not in the ambient
+complex $\Complex$. This is how \texttt{F.x} resolves \texttt{x} in
+$F$'s domain. The result is the image of $D$ under $F$.
+
+\textsc{Dot-Compose}: when both sides are maps, compose them. The
+source complex of the result is $\Complex_{S'}$ (the inner map's source).
+
+\paragraph{Dot on diagram with a non-boundary component} produces an error.
+Similarly, a boundary accessor on a map term produces an error. These
+cases are intentionally not given rules: they signal a type error in the
+user's program.
+
+% ===========================================================================
+\section{Partial Map Evaluation}
+\label{sec:pmap}
+% ===========================================================================
+
+Map expressions evaluate relative to a source complex $\Complex_S$
+(the domain of the map being defined). We write the judgment as
+$\EvalM{\State}{\Complex}{(\PMapDef, \Complex_S)}{F}$.
+
+\subsection{Basic Lookup and Composition}
+\label{sec:pmap:basic}
+
+\begin{mathpar}
+  \inferrule*[lab=\textsc{PM-Name}]
+    {\Complex.\mathit{maps}(n) = (\mathit{dom}, F) \\
+     \Complex_S = \mathsf{src}(\State, \mathit{dom})}
+    {\EvalM{\State}{\Complex}{n}{\MC{F}{\Complex_S}}}
+  \and
+  \inferrule*[lab=\textsc{PM-Dot}]
+    {\EvalM{\State}{\Complex}{\PMapBasic}{\MC{F}{\Complex_S}} \\
+     \EvalM{\State}{\Complex_S}{\PMapG}{\MC{G}{\Complex_{S'}}} \\
+     H = \compose{F}{G}}
+    {\EvalM{\State}{\Complex}{\PMapBasic.\PMapG}{\MC{H}{\Complex_{S'}}}}
+\end{mathpar}
+
+Map composition via dot follows the same pattern as diagram dot access:
+the right side is resolved in the left side's source complex.
+
+\subsection{Extension Maps}
+\label{sec:pmap:ext}
+
+\begin{mathpar}
+  \inferrule*[lab=\textsc{PM-Ext}]
+    {F_0 = \text{(prefix map, or } \emptyset \text{)} \\
+     \text{for each clause } \Diagram_i \Rightarrow \Diagram'_i\text{:} \\
+     \quad \EvalD{\State}{\Complex_S}{\Diagram_i}{D_i} \qquad
+     \EvalD{\State}{\Complex}{\Diagram'_i}{D'_i} \\
+     \quad F_{i+1} = \smartext(F_i, \Complex_S, \Complex, D_i, D'_i)}
+    {\EvalM{\State}{\Complex}{(\PMapExt, \Complex_S)}{F_{\mathit{final}}}}
+\end{mathpar}
+
+In each clause, the left-hand side is evaluated in the source complex
+$\Complex_S$ and the right-hand side in the current location $\Complex$.
+This is because each clause maps a cell of the source type to a diagram
+in the ambient complex. Clauses are processed sequentially: each extends
+the map built by the previous, so later clauses see earlier mappings.
+
+\subsection{The Smart Extension Algorithm}
+\label{sec:pmap:smart}
+
+The function $\smartext(F, \Complex_S, \Complex_T, D_s, D_t)$ extends
+a partial map $F$ with a mapping from a source cell $D_s$ to a target
+diagram $D_t$, automatically inferring mappings for unmapped boundary
+cells:
+
+\begin{enumerate}
+  \item \textbf{Cell check.} $D_s$ must be a single cell. Extract its
+    tag $t$.
+  \item \textbf{Idempotence.} If $F(t)$ is already defined and
+    isomorphic to $D_t$, return $F$ unchanged. If defined but not
+    isomorphic, raise an error.
+  \item \textbf{Boundary collection.} Look up the cell data for $t$
+    (checking $\State.\cells$ first, then $\State.\types$ as fallback,
+    since types also carry cell data). If
+    it has boundaries $\CBdy{d^{-}}{d^{+}}$, collect all top-dimensional
+    tags in both that are not yet mapped by $F$.
+  \item \textbf{Recursive extension.} For each unmapped boundary tag $t_b$
+    with sign $s$:
+    \begin{enumerate}
+      \item Compute $D_b = \bdy{s}{\dim-1}{D_t}$ (the corresponding
+        boundary of the \emph{target}).
+      \item If the source boundary is a single cell, recurse.
+      \item If the source boundary is composite, find an isomorphism
+        between the source and target boundary shapes, use it to
+        identify which target tag corresponds to $t_b$, then recurse.
+    \end{enumerate}
+  \item \textbf{Validation.} Call $\mathsf{PMap{:}{:}extend}$ to add
+    $t \mapsto D_t$, which checks boundary compatibility.
+\end{enumerate}
+
+\paragraph{Isomorphism-based inference.}
+When the source boundary is composite, the algorithm must determine which
+cell in the target boundary corresponds to each unmapped source cell.
+It normalises both boundary ogposets, finds a bijection between their
+cells, and uses this to transfer labels. If a source tag appears at
+multiple positions in the boundary, the algorithm checks that all
+corresponding target positions carry the same label. This is the mechanism
+that makes terse definitions like \texttt{[merge => split]} automatically
+infer boundary mappings.
+
+\subsection{Map-to-Map Assignment}
+\label{sec:pmap:mapassign}
+
+When a clause maps a map term to another map term (both $\MTerm{\cdot}$),
+the interpreter processes it as a pointwise extension:
+\begin{enumerate}
+  \item Verify that both maps share the same source complex.
+  \item Iterate over generators of the shared source, sorted by dimension.
+  \item For each generator defined in both maps: if the left image is a
+    cell, call $\smartext$ to map the left image to the right image. If
+    the left image is composite, check that all its labels are already
+    defined in the current map (but do not recurse).
+  \item A generator defined in one map but not the other is an error.
+\end{enumerate}
+
+This handles constructions like \texttt{[Dom => Ob, Cod => Ob]} where
+\texttt{Dom} and \texttt{Cod} resolve to maps.
+
+% ===========================================================================
+\section{Map Application and Composition}
+\label{sec:apply}
+% ===========================================================================
+
+The operation $\apply{F}{D}$ applies a partial map to a diagram. There
+are two paths:
+
+\begin{itemize}
+  \item \textbf{Cellular.} If $F$ is cellular (all images are single
+    cells), simply remap each label tag in $D$ to the corresponding image
+    tag. The ogposet shape is shared. This is the common case for identity
+    maps and inclusion maps.
+  \item \textbf{General.} Follow the paste tree of $D$ recursively. For a
+    $\mathsf{Leaf}(t)$, return $F(t)$. For a $\mathsf{Node}(k, L, R)$,
+    recursively apply to $L$ and $R$, then paste the results at dimension
+    $k$.
+\end{itemize}
+
+The identity map $\idmap{\Complex}$ maps every generator's tag to its own
+classifier diagram. It is always cellular and therefore enjoys the fast
+application path.
+
+Map composition $\compose{F}{G}$ is computed lazily: apply $F$ to each
+image in $G$'s table.
+
+% ===========================================================================
+\section{Data Structures}
+\label{sec:data}
+% ===========================================================================
+
+For completeness, we briefly describe the key structures underlying
+diagram manipulation.
+
+\subsection{Oriented Graded Posets}
+An oriented graded poset (ogposet) $G$ has a dimension, a set of cells at
+each dimension, and face maps $\partial^{\pm}_d : G_d \to \mathcal{P}(G_{d-1})$ giving the input and output faces. Key operations:
+normalisation (canonical cell ordering, cached by pointer identity),
+boundary extraction ($\bdy{\pm}{k}{G}$, also cached), and isomorphism
+finding (normalise both, compose embeddings).
+
+\subsection{Diagrams}
+A diagram $D$ is an ogposet (the shape) together with labels
+$\ell_d : G_d \to \textsf{Tag}$ and paste trees recording how the
+diagram was built. The distinction between a cell and a composite is
+recorded in the paste tree: a cell has a $\mathsf{Leaf}$ at the top level.
+
+\subsection{Partial Maps}
+A partial map $F$ is a table $\textsf{Tag} \rightharpoonup
+(\CData, \Diag{D})$, with a Boolean \texttt{cellular} flag. Tags are
+indexed by dimension for ordered iteration. The $\mathsf{extend}$ operation
+validates boundary compatibility before adding a new entry.
+
+% ===========================================================================
+\section{Summary of Subtleties}
+\label{sec:pain}
+% ===========================================================================
+
+\begin{enumerate}
+  \item \textbf{Name ambiguity.} A name may resolve to a diagram or a
+    map. Diagrams are checked first. The dot operator dispatches on the
+    left operand's kind.
+
+  \item \textbf{Evaluation order.} Implicit pasting evaluates left to
+    right. Explicit pasting ($\paste{k}$) evaluates the right side first,
+    matching OCaml's evaluation order.
+
+  \item \textbf{Source complex switch.} Dotting into a map evaluates the
+    right component in the map's source complex, not the ambient complex.
+    This is the mechanism behind \texttt{F.x}.
+
+  \item \textbf{Local block persistence.} Definitions in local blocks are
+    persisted to global state. ``Local'' refers to scope of operation, not
+    lifetime.
+
+  \item \textbf{No local tags in persisted definitions.} Local blocks
+    check for local tags before persisting. Complex bodies do not.
+
+  \item \textbf{Attach creates fresh cells; include reuses tags.} Attach
+    processes generators by ascending dimension to ensure boundary
+    computability.
+
+  \item \textbf{Smart extension.} The $\smartext$ algorithm infers
+    boundary mappings via ogposet isomorphisms. This can fail if boundary
+    shapes differ or if a tag maps inconsistently.
+
+  \item \textbf{Totality is post-hoc.} Checked after all clauses,
+    non-fatal.
+
+  \item \textbf{Module idempotency.} A module is interpreted at most once.
+    Import order can affect visible state.
+
+  \item \textbf{Structural equality only.} Unit laws fail; middle-four
+    interchange passes. Non-trivial equalities are higher cells.
+
+  \item \textbf{Self-referencing identity.} A type's name inside its own
+    complex resolves to the identity inclusion map.
+
+  \item \textbf{Type-level let/def do not check uniqueness.}
+    Complex-body and local-block variants do.
+
+  \item \textbf{Diamond imports.} Duplicate generators (same tag) from
+    multiple imports are silently deduplicated.
+\end{enumerate}
+
+\end{document}

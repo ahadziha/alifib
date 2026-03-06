@@ -1,0 +1,191 @@
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{macros}[2026/03/06 alifib interpreter macros]
+
+\RequirePackage{xparse}
+\RequirePackage{xcolor}
+\RequirePackage{mathtools}
+\RequirePackage{stmaryrd}
+\RequirePackage{amssymb}
+
+% ===========================================================================
+% Colors (following the POPL paper's color-coding conventions)
+% ===========================================================================
+
+\definecolor{TypeBlue}{HTML}{006AC4}
+\definecolor{CellBrown}{HTML}{694A00}
+\definecolor{MapTeal}{HTML}{006768}
+\definecolor{DiagPurple}{HTML}{7B2D8B}
+\definecolor{StateOrange}{HTML}{CC6600}
+
+% ===========================================================================
+% Syntactic categories — colored wrappers
+% ===========================================================================
+
+\NewDocumentCommand{\Type}{m}{{\color{TypeBlue}{#1}}}
+\NewDocumentCommand{\Cell}{m}{{\color{CellBrown}{#1}}}
+\NewDocumentCommand{\Map}{m}{{\color{MapTeal}{#1}}}
+\NewDocumentCommand{\Diag}{m}{{\color{DiagPurple}{#1}}}
+\NewDocumentCommand{\St}{m}{{\color{StateOrange}{#1}}}
+
+% ===========================================================================
+% Grammar nonterminals — all in \textsf, all \ensuremath-safe
+% ===========================================================================
+
+% Programs and blocks
+\NewDocumentCommand{\Prog}{}{\ensuremath{\textsf{Prog}}}
+\NewDocumentCommand{\Block}{}{\ensuremath{\textsf{Block}}}
+
+% Instructions
+\NewDocumentCommand{\TyInst}{}{\ensuremath{\textsf{TyInst}}}
+\NewDocumentCommand{\CInst}{}{\ensuremath{\textsf{CInst}}}
+\NewDocumentCommand{\LocInst}{}{\ensuremath{\textsf{LocInst}}}
+
+% Complex
+\NewDocumentCommand{\Cpx}{}{\ensuremath{\textsf{Cpx}}}
+
+% Diagram grammar
+\NewDocumentCommand{\Diagram}{}{\ensuremath{\textsf{Diag}}}
+\NewDocumentCommand{\DExpr}{}{\ensuremath{\textsf{DExpr}}}
+\NewDocumentCommand{\DComp}{}{\ensuremath{\textsf{DComp}}}
+
+% Partial map grammar
+\NewDocumentCommand{\PMapG}{}{\ensuremath{\textsf{PMap}}}
+\NewDocumentCommand{\PMapDef}{}{\ensuremath{\textsf{PMDef}}}
+\NewDocumentCommand{\PMapBasic}{}{\ensuremath{\textsf{PMBasic}}}
+\NewDocumentCommand{\PMapExt}{}{\ensuremath{\textsf{PMExt}}}
+\NewDocumentCommand{\Clause}{}{\ensuremath{\textsf{Clause}}}
+
+% Address, Boundary
+\NewDocumentCommand{\Addr}{}{\ensuremath{\textsf{Addr}}}
+\NewDocumentCommand{\Bound}{}{\ensuremath{\textsf{Bnd}}}
+\NewDocumentCommand{\NameBd}{}{\ensuremath{\textsf{NmBd}}}
+
+% ===========================================================================
+% Keywords — \textsf in matching gray
+% ===========================================================================
+
+\NewDocumentCommand{\kw}{m}{\ensuremath{\mathsf{#1}}}
+
+\NewDocumentCommand{\kwtype}{}{\kw{@Type}}
+\NewDocumentCommand{\kwlet}{}{\kw{let}}
+\NewDocumentCommand{\kwtotal}{}{\kw{total}}
+\NewDocumentCommand{\kwinclude}{}{\kw{include}}
+\NewDocumentCommand{\kwattach}{}{\kw{attach}}
+\NewDocumentCommand{\kwalong}{}{\kw{along}}
+\NewDocumentCommand{\kwassert}{}{\kw{assert}}
+\NewDocumentCommand{\kwin}{}{\kw{in}}
+\NewDocumentCommand{\kwout}{}{\kw{out}}
+\NewDocumentCommand{\kwhole}{}{\kw{?}}
+\NewDocumentCommand{\kwmap}{}{\kw{map}}
+\NewDocumentCommand{\kwas}{}{\kw{as}}
+
+% <<= rendered as a proper symbol
+\NewDocumentCommand{\decl}{}{\mathbin{\ll\!=}}
+
+% #_k pasting symbol
+\NewDocumentCommand{\paste}{m}{\mathbin{\#_{#1}}}
+
+% => in map clauses
+\NewDocumentCommand{\mapsto@clause}{}{\Rightarrow}
+
+% ===========================================================================
+% Semantic domains
+% ===========================================================================
+
+% State
+\NewDocumentCommand{\State}{}{\St{\Sigma}}
+
+% Complex (calligraphic)
+\NewDocumentCommand{\Complex}{}{\mathcal{C}}
+
+% Namespace
+\NewDocumentCommand{\Namespace}{}{\mathcal{N}}
+
+% Specific state components
+\NewDocumentCommand{\cells}{}{\St{\mathsf{cells}}}
+\NewDocumentCommand{\types}{}{\St{\mathsf{types}}}
+\NewDocumentCommand{\modules}{}{\St{\mathsf{modules}}}
+
+% Lookup operations
+\NewDocumentCommand{\findcell}{m}{\State.\mathsf{cells}(#1)}
+\NewDocumentCommand{\findtype}{m}{\State.\mathsf{types}(#1)}
+\NewDocumentCommand{\findmod}{m}{\State.\mathsf{mods}(#1)}
+
+% Diagram operations
+\NewDocumentCommand{\Paste}{mmm}{#1 \paste{#2} #3}
+\NewDocumentCommand{\bdyin}{m}{\partial^{-}_{#1}}
+\NewDocumentCommand{\bdyout}{m}{\partial^{+}_{#1}}
+\NewDocumentCommand{\bdy}{mmm}{\partial^{#1}_{#2}(#3)}
+\NewDocumentCommand{\CellOf}{mm}{\mathsf{cell}(#1, #2)}
+
+% Partial map operations
+\NewDocumentCommand{\apply}{mm}{#1(#2)}
+\NewDocumentCommand{\compose}{mm}{#1 \circ #2}
+\NewDocumentCommand{\smartext}{}{\mathsf{ext}^{*}}
+\NewDocumentCommand{\idmap}{m}{\mathsf{id}_{#1}}
+
+% CellData
+\NewDocumentCommand{\CData}{}{\textsf{CData}}
+\NewDocumentCommand{\CZero}{}{\ensuremath{\bullet}}
+\NewDocumentCommand{\CBdy}{mm}{\langle #1 , #2 \rangle}
+
+% GlobalId
+\NewDocumentCommand{\GId}{}{\mathit{gid}}
+\NewDocumentCommand{\fresh}{}{\mathsf{fresh}()}
+
+% Tag
+\NewDocumentCommand{\TagG}{m}{\mathsf{G}(#1)}
+\NewDocumentCommand{\TagL}{m}{\mathsf{L}(#1)}
+
+% Mode
+\NewDocumentCommand{\ModeG}{}{\mathsf{Glob}}
+\NewDocumentCommand{\ModeL}{}{\mathsf{Loc}}
+
+% Term
+\NewDocumentCommand{\TermD}{}{\textsf{Term}}
+\NewDocumentCommand{\DTerm}{m}{\Diag{\mathsf{D}}(#1)}
+\NewDocumentCommand{\MTerm}{m}{\Map{\mathsf{M}}(#1)}
+
+% MapComponent (map + source)
+\NewDocumentCommand{\MC}{mm}{(#1, #2)}
+
+% ===========================================================================
+% Judgments
+% ===========================================================================
+
+% Interpretation: Sigma; C |- instr ==> Sigma'
+\NewDocumentCommand{\IntJ}{mmmm}{%
+  #1 ; #2 \vdash #3 \Downarrow #4%
+}
+
+% Diagram evaluation
+\NewDocumentCommand{\EvalD}{mmmm}{%
+  #1 ; #2 \vdash^{\Diag{d}} #3 \Downarrow #4%
+}
+
+% Term evaluation (overloaded: may return DTerm or MTerm)
+\NewDocumentCommand{\EvalT}{mmmm}{%
+  #1 ; #2 \vdash #3 \Downarrow #4%
+}
+
+% Map evaluation
+\NewDocumentCommand{\EvalM}{mmmm}{%
+  #1 ; #2 \vdash^{\Map{m}} #3 \Downarrow #4%
+}
+
+% Assert judgment
+\NewDocumentCommand{\AssertJ}{mmm}{%
+  #1 ; #2 \vdash #3 \;\checkmark
+}
+
+% Complex resolution
+\NewDocumentCommand{\ResJ}{mmm}{%
+  #1 \vdash_{\mathsf{cpx}} #2 \Downarrow #3%
+}
+
+% Address resolution
+\NewDocumentCommand{\AddrJ}{mmm}{%
+  #1 \vdash_{\mathsf{addr}} #2 \Downarrow #3%
+}
+
+\endinput
