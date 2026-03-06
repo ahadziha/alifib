@@ -1,8 +1,10 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::sync::Arc;
 use crate::aux::{GlobalId, ModuleId, Tag};
 use crate::core::complex::{Complex, MapDomain};
-use crate::core::diagram::CellData;
+use crate::core::diagram::{CellData, Diagram, Sign};
+use super::diagram::render_diagram;
 
 #[derive(Debug, Clone)]
 pub struct TypeEntry {
@@ -74,100 +76,177 @@ impl State {
 
     /// Pretty-print the state in a human-readable format.
     pub fn display(&self) -> String {
-        let mut out = String::new();
-        let cells_count = self.cells.len();
-        let types_count = self.types.len();
-        let modules_count = self.modules.len();
-        out.push_str(&format!("{} cells, {} types, {} modules\n\n", cells_count, types_count, modules_count));
+        format!("{}", self)
+    }
+}
 
-        let empty_or = |s: &str| if s.is_empty() { "<empty>".to_owned() } else { s.to_owned() };
-        let render_list = |items: Vec<String>| {
-            if items.is_empty() { "(none)".to_owned() } else { items.join(", ") }
-        };
+fn name_or_empty(s: &str) -> &str {
+    if s.is_empty() { "<empty>" } else { s }
+}
 
-        let render_cells_by_dim = |cplx: &Complex| -> String {
-            let names = cplx.generator_names();
-            if names.is_empty() { return "(none)".to_owned(); }
-            let mut dims: Vec<usize> = names.iter()
-                .filter_map(|n| cplx.generator_dim(n))
-                .collect();
-            dims.sort_unstable();
-            dims.dedup();
-            dims.iter().map(|&dim| {
-                let mut gens = cplx.generators_in_dim(dim);
-                gens.sort();
-                let rendered = gens.iter().map(|n| empty_or(n)).collect::<Vec<_>>().join(", ");
-                if rendered.is_empty() { format!("[{}]", dim) }
-                else { format!("[{}] {}", dim, rendered) }
-            }).collect::<Vec<_>>().join(", ")
-        };
-
-        let mut module_entries: Vec<(&ModuleId, &Complex)> =
-            self.modules.iter().map(|(id, arc)| (id, &**arc)).collect();
-        module_entries.sort_by_key(|(id, _)| id.as_str());
-
-        let mut entries_str: Vec<String> = Vec::new();
-        for (module_id, module_complex) in module_entries {
-            let mut module_str = format!("* Module {}\n", module_id);
-            let generator_names = module_complex.generator_names();
-
-            let string_of_domain = |domain: &MapDomain| -> String {
-                match domain {
-                    MapDomain::Type(gid) => {
-                        let tag = Tag::Global(*gid);
-                        match module_complex.find_generator_by_tag(&tag) {
-                            Some(name) => empty_or(name),
-                            None => format!("{}", gid),
-                        }
-                    }
-                    MapDomain::Module(mid) => mid.clone(),
-                }
-            };
-
-            let mut type_entries: Vec<String> = Vec::new();
-            for gen_name in &generator_names {
-                let type_label = empty_or(gen_name);
-                let details = match module_complex.find_generator(gen_name) {
-                    None => ("(missing)".into(), "(missing)".into(), "(missing)".into()),
-                    Some(entry) => {
-                        match &entry.tag {
-                            Tag::Local(_) => {
-                                ("(local tag)".into(), "(local tag)".into(), "(local tag)".into())
-                            }
-                            Tag::Global(gid) => {
-                                match self.find_type(*gid) {
-                                    None => ("(not found)".into(), "(not found)".into(), "(not found)".into()),
-                                    Some(type_entry) => {
-                                        let cells = render_cells_by_dim(&*type_entry.complex);
-                                        let diagrams = render_list(
-                                            type_entry.complex.diagram_names().into_iter()
-                                                .map(|n| empty_or(&n)).collect()
-                                        );
-                                        let maps = render_list(
-                                            type_entry.complex.map_names().into_iter().map(|mn| {
-                                                let dom = match type_entry.complex.find_map(&mn) {
-                                                    Some(me) => string_of_domain(&me.domain),
-                                                    None => "?".into(),
-                                                };
-                                                format!("{} :: {}", empty_or(&mn), dom)
-                                            }).collect()
-                                        );
-                                        (cells, diagrams, maps)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                };
-                type_entries.push(format!(
-                    "Type {}\n  - Cells: {}\n  - Diagrams: {}\n  - Maps: {}\n",
-                    type_label, details.0, details.1, details.2
-                ));
-            }
-            module_str.push_str(&type_entries.join("\n"));
-            entries_str.push(module_str);
+/// Render a cell's boundary as `name : src -> tgt`, or just `name` for 0-cells.
+fn render_cell(name: &str, data: &CellData, complex: &Complex) -> String {
+    let label = name_or_empty(name);
+    match data {
+        CellData::Zero => label.to_owned(),
+        CellData::Boundary { boundary_in, boundary_out } => {
+            let src = render_diagram(boundary_in, complex);
+            let tgt = render_diagram(boundary_out, complex);
+            format!("{} : {} -> {}", label, src, tgt)
         }
-        out.push_str(&entries_str.join("\n"));
-        out
+    }
+}
+
+/// Look up cell data for a tag, checking global cells, types, then local cells.
+fn cell_data_for_tag(state: &State, complex: &Complex, tag: &Tag) -> Option<CellData> {
+    match tag {
+        Tag::Global(gid) => state
+            .find_cell(*gid)
+            .map(|e| e.data.clone())
+            .or_else(|| state.find_type(*gid).map(|e| e.data.clone())),
+        Tag::Local(name) => complex.find_local_cell(name).map(|e| e.data.clone()),
+    }
+}
+
+/// Render a named diagram with its boundary, e.g. `alpha : f g -> h k`.
+fn render_named_diagram(name: &str, diag: &Diagram, complex: &Complex) -> String {
+    let label = name_or_empty(name);
+    let d = diag.dim();
+    if d <= 0 {
+        return label.to_owned();
+    }
+    let k = (d - 1) as usize;
+    let (Ok(src), Ok(tgt)) = (
+        Diagram::boundary(Sign::Input, k, diag),
+        Diagram::boundary(Sign::Output, k, diag),
+    ) else {
+        return label.to_owned();
+    };
+    format!(
+        "{} : {} -> {}",
+        label,
+        render_diagram(&src, complex),
+        render_diagram(&tgt, complex),
+    )
+}
+
+fn render_domain(domain: &MapDomain, module_complex: &Complex) -> String {
+    match domain {
+        MapDomain::Type(gid) => {
+            let tag = Tag::Global(*gid);
+            module_complex
+                .find_generator_by_tag(&tag)
+                .map(|n| name_or_empty(n).to_owned())
+                .unwrap_or_else(|| format!("{}", gid))
+        }
+        MapDomain::Module(mid) => mid.clone(),
+    }
+}
+
+impl fmt::Display for State {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(
+            f,
+            "{} cells, {} types, {} modules",
+            self.cells.len(),
+            self.types.len(),
+            self.modules.len(),
+        )?;
+
+        let mut module_entries: Vec<_> = self
+            .modules
+            .iter()
+            .map(|(id, arc)| (id.as_str(), &**arc))
+            .collect();
+        module_entries.sort_by_key(|(id, _)| *id);
+
+        for (module_id, module_complex) in &module_entries {
+            write!(f, "\n* Module {}\n", module_id)?;
+
+            let generator_names = module_complex.generator_names();
+            for (i, gen_name) in generator_names.iter().enumerate() {
+                if i > 0 {
+                    writeln!(f)?;
+                }
+                let type_label = name_or_empty(gen_name);
+
+                let Some(gen_entry) = module_complex.find_generator(gen_name) else {
+                    writeln!(f, "Type {} (missing)", type_label)?;
+                    continue;
+                };
+                let Tag::Global(gid) = &gen_entry.tag else {
+                    writeln!(f, "Type {} (local)", type_label)?;
+                    continue;
+                };
+                let Some(type_entry) = self.find_type(*gid) else {
+                    writeln!(f, "Type {} (not found)", type_label)?;
+                    continue;
+                };
+
+                writeln!(f, "Type {}", type_label)?;
+                let tc = &type_entry.complex;
+
+                // Cells grouped by dimension, with boundaries
+                let mut dims: Vec<usize> = tc
+                    .generator_names()
+                    .iter()
+                    .filter_map(|n| tc.generator_dim(n))
+                    .collect();
+                dims.sort_unstable();
+                dims.dedup();
+
+                if dims.is_empty() {
+                    writeln!(f, "  (no cells)")?;
+                } else {
+                    for dim in &dims {
+                        let mut gens = tc.generators_in_dim(*dim);
+                        gens.sort();
+
+                        let rendered: Vec<String> = gens
+                            .iter()
+                            .filter_map(|name| {
+                                let entry = tc.find_generator(name)?;
+                                let data = cell_data_for_tag(self, tc, &entry.tag)?;
+                                Some(render_cell(name, &data, tc))
+                            })
+                            .collect();
+
+                        if !rendered.is_empty() {
+                            writeln!(f, "  [{}] {}", dim, rendered.join(", "))?;
+                        }
+                    }
+                }
+
+                // Diagrams
+                let diagram_names = tc.diagram_names();
+                if !diagram_names.is_empty() {
+                    let diags: Vec<String> = diagram_names
+                        .iter()
+                        .filter_map(|n| {
+                            let diag = tc.find_diagram(n)?;
+                            Some(render_named_diagram(n, diag, tc))
+                        })
+                        .collect();
+                    writeln!(f, "  Diagrams: {}", diags.join(", "))?;
+                }
+
+                // Maps
+                let map_names = tc.map_names();
+                if !map_names.is_empty() {
+                    let maps: Vec<String> = map_names
+                        .iter()
+                        .map(|mn| {
+                            let dom = tc
+                                .find_map(mn)
+                                .map(|me| render_domain(&me.domain, module_complex))
+                                .unwrap_or_else(|| "?".into());
+                            format!("{} :: {}", name_or_empty(mn), dom)
+                        })
+                        .collect();
+                    writeln!(f, "  Maps: {}", maps.join(", "))?;
+                }
+            }
+        }
+        Ok(())
     }
 }
