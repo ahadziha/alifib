@@ -31,9 +31,13 @@ An \textsf{alifib} program declares \emph{types} (each of which carries a
 directed complex of generators), \emph{cells} (generators at various
 dimensions with specified source and target boundaries), \emph{diagrams}
 (labelled pasting diagrams built by composition of cells), and
-\emph{partial maps} (structure-preserving maps between complexes). The
-interpreter maintains a mutable global state and threads it through the
-evaluation of each instruction.
+\emph{partial maps} (structure-preserving maps between complexes).
+Intuitively, a directed complex is an oriented graded poset---a
+collection of cells at each dimension, with face maps connecting each cell
+to the lower-dimensional cells on its boundary---that serves as the
+combinatorial data underlying a pasting diagram in a higher category.
+The interpreter maintains a mutable global state and threads it through
+the evaluation of each instruction.
 
 This document provides a self-contained formal account of the
 interpreter's behaviour, abstracting away Rust-level implementation
@@ -337,9 +341,13 @@ module. It bundles four components:
     interpretation).
 \end{itemize}
 A complex also maintains a set of all names in use, to detect collisions
-eagerly. Every generator is entered into both $\mathit{gens}$ and
-$\mathit{diags}$: the former records structural metadata while the latter
-enables name resolution during diagram evaluation.
+eagerly. When a generator is \emph{declared} in a complex body, it is
+entered into both $\mathit{gens}$ and $\mathit{diags}$: the former
+records structural metadata while the latter enables name resolution
+during diagram evaluation. Generators imported via $\kwinclude$ or
+$\kwattach$ are entered only into $\mathit{gens}$; they are accessed
+through dot notation on the inclusion map rather than by direct name
+lookup in $\mathit{diags}$.
 
 % ---------------------------------------------------------------------------
 \subsection{Terms}
@@ -361,7 +369,10 @@ The reason the interpreter tracks terms rather than just diagrams is that
 partial maps and diagrams share the same expression language. When the user
 writes \texttt{F.x}, the interpreter must know that \texttt{F} is a map
 in order to resolve \texttt{x} in the source complex of \texttt{F} (not
-in the ambient complex). The term type makes this dispatch explicit.
+in the ambient complex). For example, if \texttt{F} is a map from a type
+\texttt{Group} to the current type, then \texttt{F.mul} looks up
+\texttt{mul} in \texttt{Group}'s complex and returns its image under
+\texttt{F}. The term type makes this dispatch explicit.
 
 % ---------------------------------------------------------------------------
 \subsection{State Threading}
@@ -375,8 +386,9 @@ The state $\State$ is threaded through interpretation. The judgment form is:
 reading: ``under state $\State$ and location $\Complex$, interpreting
 instruction $\mathit{instr}$ yields a new state $\State'$.'' Instructions
 within a block are processed sequentially: each receives the state produced
-by the previous. Local blocks stop on first error; complex bodies process
-all instructions regardless of errors.
+by the previous. Local blocks stop on first error; type blocks and complex
+bodies process all instructions regardless of errors, accumulating
+diagnostics.
 
 In the Rust implementation, $\State$ is wrapped in \texttt{Arc<State>} and
 mutated via \texttt{Arc::make\_mut}. This copy-on-write discipline is not
@@ -493,8 +505,9 @@ refers to the current type's own identity.
 \end{mathpar}
 
 The diagram expression is evaluated and bound in the module complex.
-Unlike complex-body and local-block let-bindings, the type-level form does
-\emph{not} check name uniqueness---it silently overwrites.
+Unlike complex-body and local-block let-bindings, the Rust
+implementation does \emph{not} check name uniqueness at the type level:
+a duplicate name silently overwrites the previous binding.
 
 % ---------------------------------------------------------------------------
 \subsection{Map Definition}
@@ -517,7 +530,7 @@ additional post-hoc check verifies that every generator in $\Complex_S$
 has an image; the map is returned even if the check fails (errors
 accumulate).
 
-As at the type level, name uniqueness is not checked.
+As with \textsc{TyLet}, name uniqueness is not checked at the type level.
 
 % ---------------------------------------------------------------------------
 \subsection{Module Inclusion}
@@ -655,7 +668,8 @@ evaluated as diagrams in the current complex.
 
 The cell diagram $D = \CellOf{t}{\mathit{cd}}$ is constructed by taking
 the pushout of the input and output boundary embeddings into a common lower
-boundary, then adding one new top-dimensional cell. The resulting ogposet
+boundary, then adding one new top-dimensional cell. The resulting
+ogposet (oriented graded poset; see \cref{sec:data})
 has the combined shape of the two boundaries with the new cell on top.
 
 The cell is entered into both $\mathit{gens}$ and $\mathit{diags}$.  In
@@ -680,7 +694,8 @@ mode it is added to $\Complex.\mathit{locals}$.
           {\State, \Complex[\mathit{maps}(n) \mapsto (\mathsf{Ty}(\GId_S), F)]}}
 \end{mathpar}
 
-Unlike the type-level variants, these check name uniqueness.
+All \texttt{let} forms---type-level, complex-body, and local---check name
+uniqueness.
 
 \subsection{Include}
 \label{sec:cinstr:include}
@@ -739,6 +754,9 @@ $\CBdy{d^{-}}{d^{+}}$ is the cell data of $t$).
 
 Attachment differs from inclusion in a fundamental way: it creates
 \emph{fresh} cells for every generator not already in the ``along'' map.
+The ``along'' map specifies which generators of the attached type should
+be identified with existing generators in the current complex (e.g.,
+sharing a common base type), while every other generator gets a fresh copy.
 Generators are processed in ascending dimension order, ensuring that when
 we encounter an $n$-cell, all of its boundary cells have already been
 mapped (either by the ``along'' map or by a previous iteration step).
@@ -818,13 +836,15 @@ each generator in the shared source complex, both maps must agree on
 definedness and have isomorphic images.
 
 \paragraph{Structural, not propositional.}
-Assertions check \emph{definitional} (structural) equality. There are no
-non-trivial equalities: everything interesting is a \emph{rewrite} (a
+Assertions check \emph{definitional} (structural) equality---isomorphism
+of the underlying ogposets with matching labels. There are no non-trivial
+equalities: everything interesting is a \emph{rewrite} (a
 higher-dimensional cell). For example, the unit law
 $\kwassert\;\mathit{id}\;{}\alpha = \alpha$ will \emph{fail}, because
-$\mathit{id}\;{}\alpha$ has an additional cell in its ogposet. To
-express the unit law, one declares a cell
-$\lambda : \mathit{id}\;{}\alpha \to \alpha$.
+$\mathit{id}\;{}\alpha$ has an additional identity cell in its ogposet
+that $\alpha$ alone does not. To express the unit law, one declares a
+cell $\lambda : \mathit{id}\;{}\alpha \to \alpha$, which is itself a
+rewrite witnessing the relationship.
 
 However, middle-four interchange---the equation
 $(\alpha \paste{0} \beta)(\gamma \paste{0} \delta) =
@@ -845,17 +865,21 @@ sides produce isomorphic ogposets.
     {\EvalD{\State}{\Complex}{\DExpr}{D}}
   \and
   \inferrule*[lab=\textsc{Diag-Juxt}]
-    {\EvalD{\State}{\Complex}{\DExpr_1}{D_1} \\
-     \EvalD{\State}{\Complex}{\DExpr_2\;\cdots\;\DExpr_k}{D_R} \\\\
-     j = \max(\min(\dim(D_1), \dim(D_R)) - 1,\; 0) \\
-     D = D_1 \paste{j} D_R}
-    {\EvalD{\State}{\Complex}{\DExpr_1\;\DExpr_2\;\cdots\;\DExpr_k}{D}}
+    {\EvalD{\State}{\Complex}{\DExpr_1\;\cdots\;\DExpr_{k-1}}{D_L} \\
+     \EvalD{\State}{\Complex}{\DExpr_k}{D_R} \\\\
+     j = \min(\dim(D_L), \dim(D_R)) - 1 \\
+     D = D_L \paste{j} D_R}
+    {\EvalD{\State}{\Complex}{\DExpr_1\;\cdots\;\DExpr_k}{D}}
 \end{mathpar}
 
-Juxtaposition is a left fold. The paste dimension is computed as
-$\max(\min(\dim(D_1), \dim(D_R)) - 1,\; 0)$, clamped to be non-negative.
-For two 1-cells this gives $j = 0$ (horizontal composition); for two
-2-cells, $j = 1$ (vertical composition).
+Juxtaposition is left-associative. The Rust implementation evaluates
+implicit pasting left to right: the first expression is evaluated, then
+each subsequent expression is evaluated and pasted onto the accumulator.
+This differs from explicit pasting, which evaluates the right side before
+the left (\cref{sec:diag:paste}). The paste dimension is
+$\min(\dim(D_L), \dim(D_R)) - 1$. For two 1-cells this gives $j = 0$
+(horizontal composition); for two 2-cells, $j = 1$ (vertical
+composition).
 
 \subsection{Explicit Pasting}
 \label{sec:diag:paste}
@@ -870,9 +894,9 @@ For two 1-cells this gives $j = 0$ (horizontal composition); for two
       \overline{\DExpr}_R}{D}}
 \end{mathpar}
 
-The right-hand side is evaluated before the left-hand side. This matches
-OCaml's evaluation order and is preserved in the Rust implementation for
-compatibility. The paste is defined only when $D_L$'s output $k$-boundary
+The right-hand side is evaluated before the left-hand side, matching
+the OCaml reference implementation's evaluation order.
+The paste is defined only when $D_L$'s output $k$-boundary
 matches $D_R$'s input $k$-boundary. The result is computed as a pushout
 of the two boundary embeddings, merging labels and paste trees.
 
@@ -904,18 +928,28 @@ of the two boundary embeddings, merging labels and paste trees.
 \begin{mathpar}
   \inferrule*[lab=\textsc{Comp-AnonMap}]
     {\ResJ{\State}{\Cpx}{(\_, \Complex_T)} \\
-     \EvalM{\State}{\Complex_T}{(\PMapDef, \Complex)}{F, \Complex_S}}
+     \EvalM{\State}{\Complex_T}{(\PMapDef, \Complex)}{F}}
     {\EvalT{\State}{\Complex}{(\,\kwmap\;\PMapDef :: \Cpx\,)}
-      {\MTerm{F, \Complex_S}}}
+      {\MTerm{F, \Complex}}}
   \and
   \inferrule*[lab=\textsc{Comp-Bd}]
     {\strut}
     {\EvalT{\State}{\Complex}{\kwin}{\mathsf{Bd}(\text{in})}}
 \end{mathpar}
 
-Name lookup checks diagrams first, then maps. Anonymous maps first resolve
-the complex (which may trigger further interpretation), then evaluate the
-map definition in that context. The source complex $\Complex_S$ for
+Name lookup checks diagrams first, then maps.
+
+\paragraph{Anonymous maps in diagram context.}
+Anonymous maps resolve $\Cpx$ to obtain $\Complex_T$, which
+becomes the evaluation context for clause right-hand sides (images).
+Clause left-hand sides are resolved in the \emph{ambient} complex
+$\Complex$, which also becomes the returned map's source. In other words,
+the $\mathbin{::}\Cpx$ annotation in a diagram-level anonymous map
+specifies where images live, not where sources come from. This differs
+from the convention in named map definitions ($\kwlet\;n \mathbin{::}
+\Addr = \ldots$), where $\Addr$ identifies the source type.
+
+The source complex for
 $\mathsf{src}(\State, \mathit{dom})$ is
 $\findtype{\GId}.\Complex$ if $\mathit{dom} = \mathsf{Ty}(\GId)$, or
 $\findmod{m}$ if $\mathit{dom} = \mathsf{Mod}(m)$.
@@ -954,8 +988,9 @@ The dot operator has three semantically distinct behaviours:
 
 \textsc{Dot-Apply}: the key rule. The right-hand component is evaluated
 in the source complex $\Complex_S$ of the map, not in the ambient
-complex $\Complex$. This is how \texttt{F.x} resolves \texttt{x} in
-$F$'s domain. The result is the image of $D$ under $F$.
+complex $\Complex$. This \emph{context switch} is how \texttt{F.x}
+resolves \texttt{x} in $F$'s domain rather than in the surrounding
+namespace. The result is the image of $D$ under $F$.
 
 \textsc{Dot-Compose}: when both sides are maps, compose them. The
 source complex of the result is $\Complex_{S'}$ (the inner map's source).
@@ -1053,7 +1088,9 @@ cells, and uses this to transfer labels. If a source tag appears at
 multiple positions in the boundary, the algorithm checks that all
 corresponding target positions carry the same label. This is the mechanism
 that makes terse definitions like \texttt{[merge => split]} automatically
-infer boundary mappings.
+infer boundary mappings: the user maps only the top-dimensional cells,
+and the algorithm deduces where the boundary cells must go by matching
+boundary shapes.
 
 \subsection{Map-to-Map Assignment}
 \label{sec:pmap:mapassign}
@@ -1096,8 +1133,8 @@ The identity map $\idmap{\Complex}$ maps every generator's tag to its own
 classifier diagram. It is always cellular and therefore enjoys the fast
 application path.
 
-Map composition $\compose{F}{G}$ is computed lazily: apply $F$ to each
-image in $G$'s table.
+Map composition $\compose{F}{G}$ is computed eagerly: for each entry
+$t \mapsto D$ in $G$'s table, the result maps $t$ to $\apply{F}{D}$.
 
 % ===========================================================================
 \section{Data Structures}
@@ -1136,9 +1173,10 @@ validates boundary compatibility before adding a new entry.
     map. Diagrams are checked first. The dot operator dispatches on the
     left operand's kind.
 
-  \item \textbf{Evaluation order.} Implicit pasting evaluates left to
-    right. Explicit pasting ($\paste{k}$) evaluates the right side first,
-    matching OCaml's evaluation order.
+  \item \textbf{Evaluation order.} Implicit pasting is left-associative
+    and evaluates left to right.
+    Explicit pasting ($\paste{k}$) evaluates the right side first,
+    matching the OCaml reference implementation.
 
   \item \textbf{Source complex switch.} Dotting into a map evaluates the
     right component in the map's source complex, not the ambient complex.
@@ -1171,11 +1209,18 @@ validates boundary compatibility before adding a new entry.
   \item \textbf{Self-referencing identity.} A type's name inside its own
     complex resolves to the identity inclusion map.
 
-  \item \textbf{Type-level let/def do not check uniqueness.}
-    Complex-body and local-block variants do.
-
   \item \textbf{Diamond imports.} Duplicate generators (same tag) from
     multiple imports are silently deduplicated.
+
+  \item \textbf{Anonymous map convention.} In a named map definition
+    $\kwlet\;f \mathbin{::} T = \ldots$, the annotation $T$ identifies
+    the \emph{source}. In a diagram-level anonymous map
+    $(\kwmap\;\ldots \mathbin{::} T)$, the annotation $T$ identifies
+    where \emph{images} are evaluated---the opposite convention.
+
+  \item \textbf{Type-level name uniqueness.} Name collisions are checked
+    in complex bodies and local blocks but not in type blocks, where a
+    duplicate $\kwlet$ silently overwrites.
 \end{enumerate}
 
 \end{document}
