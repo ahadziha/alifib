@@ -1,0 +1,49 @@
+(* Generated from ARI format: SK90_2_02 *)
+
+@Type
+Eq <<= {
+  pt,
+  dom : pt -> pt,
+  cod : pt -> pt,
+  lhs : dom -> cod,
+  rhs : dom -> cod,
+  dir : lhs -> rhs,
+  inv : rhs -> lhs
+},
+
+SK90_2_02 <<= {
+  pt,
+  ob : pt -> pt,
+
+  (* Structural cells *)
+  copy : ob -> ob ob,
+  swap : ob ob -> ob ob,
+
+  (* Function symbols *)
+  plus : ob ob -> ob,
+  f : ob -> ob,
+
+  (* Identity 2-cells *)
+  id_1 : ob -> ob,
+  id_2 : ob ob -> ob ob,
+
+  (* Naturality of copy *)
+  attach Copy_plus :: Eq along [ lhs => plus copy, rhs => (copy #0 copy) (ob swap ob) (plus #0 plus) ],
+  attach Copy_f :: Eq along [ lhs => f copy, rhs => copy (f #0 f) ],
+
+  (* Structural equations *)
+  id_1_idem : id_1 id_1 -> id_1,
+  id_1_idem_inv : id_1 -> id_1 id_1,
+  swap_inv : swap swap -> id_2,
+  swap_inv_inv : id_2 -> swap swap,
+  copy_comm : copy swap -> copy,
+  copy_comm_inv : copy -> copy swap,
+
+  (* Rewrite rules *)
+  (* Rule 1: +(+(x, y), z) -> +(x, +(y, z)) *)
+  rule_1 : (plus #0 id_1) plus -> (id_1 #0 plus) plus,
+  (* Rule 2: +(f(x), f(y)) -> f(+(x, y)) *)
+  rule_2 : (f #0 f) plus -> plus f,
+  (* Rule 3: +(f(x), +(f(y), z)) -> +(f(+(x, y)), z) *)
+  rule_3 : (f #0 ((f #0 id_1) plus)) plus -> ((plus f) #0 id_1) plus
+}
