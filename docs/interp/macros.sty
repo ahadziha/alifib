@@ -5,6 +5,7 @@
 \RequirePackage{xcolor}
 \RequirePackage{mathtools}
 \RequirePackage{stmaryrd}
+\let\Bbbk\relax
 \RequirePackage{amssymb}
 
 % ===========================================================================
@@ -16,6 +17,7 @@
 \definecolor{MapTeal}{HTML}{006768}
 \definecolor{DiagPurple}{HTML}{7B2D8B}
 \definecolor{StateOrange}{HTML}{CC6600}
+\definecolor{IdGreen}{HTML}{2E6B2E}
 
 % ===========================================================================
 % Syntactic categories — colored wrappers
@@ -26,6 +28,7 @@
 \NewDocumentCommand{\Map}{m}{{\color{MapTeal}{#1}}}
 \NewDocumentCommand{\Diag}{m}{{\color{DiagPurple}{#1}}}
 \NewDocumentCommand{\St}{m}{{\color{StateOrange}{#1}}}
+\NewDocumentCommand{\Id}{m}{{\color{IdGreen}{#1}}}
 
 % ===========================================================================
 % Grammar nonterminals — all in \textsf, all \ensuremath-safe
@@ -104,42 +107,52 @@
 % Specific state components
 \NewDocumentCommand{\cells}{}{\St{\mathsf{cells}}}
 \NewDocumentCommand{\types}{}{\St{\mathsf{types}}}
-\NewDocumentCommand{\modules}{}{\St{\mathsf{modules}}}
+\NewDocumentCommand{\modules}{}{\St{\mathsf{mods}}}
 
 % Lookup operations
-\NewDocumentCommand{\findcell}{m}{\State.\mathsf{cells}(#1)}
-\NewDocumentCommand{\findtype}{m}{\State.\mathsf{types}(#1)}
-\NewDocumentCommand{\findmod}{m}{\State.\mathsf{mods}(#1)}
+\NewDocumentCommand{\findcell}{m}{\State.\cells(#1)}
+\NewDocumentCommand{\findtype}{m}{\State.\types(#1)}
+\NewDocumentCommand{\findmod}{m}{\State.\modules(#1)}
 
 % Diagram operations
 \NewDocumentCommand{\Paste}{mmm}{#1 \paste{#2} #3}
 \NewDocumentCommand{\bdyin}{m}{\partial^{-}_{#1}}
 \NewDocumentCommand{\bdyout}{m}{\partial^{+}_{#1}}
 \NewDocumentCommand{\bdy}{mmm}{\partial^{#1}_{#2}(#3)}
-\NewDocumentCommand{\CellOf}{mm}{\mathsf{cell}(#1, #2)}
+\NewDocumentCommand{\CellOf}{mm}{\St{\mathsf{cell}}(#1, #2)}
 
 % Partial map operations
 \NewDocumentCommand{\apply}{mm}{#1(#2)}
 \NewDocumentCommand{\compose}{mm}{#1 \circ #2}
+\NewDocumentCommand{\dn}{}{\!\downarrow}    % defined
+\NewDocumentCommand{\up}{}{\!\uparrow}      % undefined
 \NewDocumentCommand{\smartext}{}{\mathsf{ext}^{*}}
 \NewDocumentCommand{\idmap}{m}{\mathsf{id}_{#1}}
 
 % CellData
-\NewDocumentCommand{\CData}{}{\textsf{CData}}
-\NewDocumentCommand{\CZero}{}{\ensuremath{\bullet}}
-\NewDocumentCommand{\CBdy}{mm}{\langle #1 , #2 \rangle}
+\NewDocumentCommand{\CData}{}{\St{\textsf{CData}}}
+\NewDocumentCommand{\CZero}{}{\St{\bullet}}
+\NewDocumentCommand{\CBdy}{mm}{\St{\langle #1 , #2 \rangle}}
 
 % GlobalId
-\NewDocumentCommand{\GId}{}{\mathit{gid}}
-\NewDocumentCommand{\fresh}{}{\mathsf{fresh}()}
+\NewDocumentCommand{\GIds}{}{\Id{\mathcal{G}}}   % the set of global identifiers
+\NewDocumentCommand{\GId}{}{\Id{\mathit{g}}}      % metavariable ranging over \GIds
+\NewDocumentCommand{\fresh}{}{\Id{\mathsf{fresh}()}}
 
 % Tag
-\NewDocumentCommand{\TagG}{m}{\mathsf{G}(#1)}
-\NewDocumentCommand{\TagL}{m}{\mathsf{L}(#1)}
+\NewDocumentCommand{\Tag}{}{\Id{\textsf{Tag}}}
+\NewDocumentCommand{\TagG}{m}{\Id{\mathsf{G}(#1)}}
+\NewDocumentCommand{\TagL}{m}{\Id{\mathsf{L}(#1)}}
+
+% ModId, MapDom
+\NewDocumentCommand{\ModId}{}{\Id{\textsf{ModId}}}
+\NewDocumentCommand{\MapDom}{}{\St{\textsf{MapDom}}}
+\NewDocumentCommand{\TyDom}{}{\St{\mathsf{Ty}}}
+\NewDocumentCommand{\ModDom}{}{\St{\mathsf{Mod}}}
 
 % Mode
-\NewDocumentCommand{\ModeG}{}{\mathsf{Glob}}
-\NewDocumentCommand{\ModeL}{}{\mathsf{Loc}}
+\NewDocumentCommand{\ModeG}{}{\St{\mathsf{Glob}}}
+\NewDocumentCommand{\ModeL}{}{\St{\mathsf{Loc}}}
 
 % Term
 \NewDocumentCommand{\TermD}{}{\textsf{Term}}
