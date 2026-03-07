@@ -10,3 +10,9 @@
 *.blg
 *.bcf
 *.run.xml
+*.minted
+*.pyc
+*.egg-info/
+__pycache__/
+__pypackages__/
+.DS_Store

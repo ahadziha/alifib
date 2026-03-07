@@ -3,6 +3,9 @@
 \usepackage{macros}
 \usepackage{mathpartir}
 \usepackage{cleveref}
+\usepackage{tikz}
+\usepackage{minted}
+\setminted{fontsize=\small, frame=none, breaklines}
 
 \begin{document}
 
@@ -11,11 +14,12 @@
 
 \begin{abstract}
 We give a big-step operational semantics for the \textsf{alifib}
-interpreter. The language manipulates \emph{directed complexes}---oriented
-graded posets labelled by cell generators and equipped with partial maps
-between them---for the purpose of formalising constructions in higher
-category theory. We describe the abstract syntax, the interpreter state,
-and give evaluation rules for every language construct. We draw attention
+interpreter.  The language constructs \emph{regular directed complexes}---combinatorial
+structures whose cells and pasting diagrams are modelled by
+\emph{molecules}, an inductively defined class of shapes---and computes
+with pasting diagrams over them, for the purpose of higher-dimensional
+rewriting and higher category theory.  We describe the abstract syntax, the interpreter state,
+and give evaluation rules for every language construct.  We draw attention
 to several subtle design decisions and their rationale.
 \end{abstract}
 
@@ -28,17 +32,37 @@ to several subtle design decisions and their rationale.
 \label{sec:intro}
 % ===========================================================================
 
-An \textsf{alifib} program declares \emph{types} (each of which carries a
-directed complex of generators), \emph{cells} (generators at various
-dimensions with specified source and target boundaries), \emph{diagrams}
-(labelled pasting diagrams built by composition of cells), and
-\emph{partial maps} (structure-preserving maps between complexes).
-Intuitively, a directed complex is an oriented graded poset---a
-collection of cells at each dimension, with face maps connecting each cell
-to the lower-dimensional cells on its boundary---that serves as the
-combinatorial data underlying a pasting diagram in a higher category.
-The interpreter maintains a mutable global state and threads it through
-the evaluation of each instruction.
+\textsf{alifib} is a language for constructing \emph{regular directed
+complexes}\footnote{A.\ Hadzihasanovic, \emph{Combinatorics of
+higher-categorical diagrams}, 2024; D.-M.\ Kessler,
+\emph{Computational Aspects of Rewriting in Higher-Dimensional
+Diagrams}, 2025.} and computing with \emph{pasting diagrams} over
+them, in the framework of higher-dimensional rewriting.
+
+The shapes of pasting diagrams in this framework are called
+\emph{molecules}: an inductively defined class built from points by
+pasting and the atom construction (\cref{sec:molecules:def}).  A
+finite \emph{regular directed complex} is an oriented graded poset
+whose cells are ``locally atoms'': the closure of every cell is an
+atom.  In full generality, directed complexes are presheaves on the
+category of atoms; \textsf{alifib} works with the finite case,
+constructing them cell by cell.  Regularity ensures that every pasting
+diagram decomposes uniquely into atoms, one per cell, making the
+labelling of diagrams well-defined.
+
+A \emph{pasting diagram} over a regular directed complex~$P$ is a
+composable configuration of cells drawn from~$P$, whose shape is a
+\emph{molecule}.  Users build pasting diagrams by composing cells;
+these diagrams serve as the source and target boundaries of new,
+higher-dimensional cells.  \Cref{sec:molecules} gives formal
+definitions and illustrative examples, including concrete
+\textsf{alifib} code.
+
+Beyond constructing directed complexes, \textsf{alifib} manages
+\emph{partial maps} (structure-preserving maps between complexes) and
+\emph{modules} (file-level namespaces).  The interpreter maintains a
+mutable global state and threads it through the evaluation of each
+instruction.
 
 This document provides a self-contained formal account of the
 interpreter's behaviour, abstracting away Rust-level implementation
@@ -51,13 +75,366 @@ local namespace of generators, diagrams, and maps associated with a type
 or module), and $\Namespace$ for the set of names (identifier strings
 from the parser); we use $n$ as a metavariable ranging over
 $\Namespace$. We use $\Downarrow$ for big-step
-evaluation. Metavariables are colour-coded: \Type{types} in blue,
+evaluation.  Metavariables are colour-coded: \Type{types} in blue,
 \Cell{cells} in brown, \Map{maps} in teal, \Diag{diagrams} in
 purple, \St{state components} in orange, and \Id{identifiers/tags} in
-green. Keywords appear in $\kw{sans\text{-}serif}$.
+green.  Keywords appear in $\kw{sans\text{-}serif}$.
 All nonterminals in the grammar are set in \textsf{sans-serif}.
 For partial maps and lookups, $f(x)\dn$ means $f$ is defined at~$x$
 and $f(x)\up$ means it is undefined.
+
+% ===========================================================================
+\section{Directed Complexes and Diagrams}
+\label{sec:molecules}
+% ===========================================================================
+
+This section recalls the combinatorial framework underlying
+\textsf{alifib}: molecules, regular directed complexes, and diagrams.
+The underlying combinatorial objects are oriented graded posets; the
+implementation-level representation is described in
+\cref{sec:data:ogposet}.
+
+An \emph{oriented graded poset} (ogposet) is a graded set
+$U = U_0 \sqcup U_1 \sqcup \cdots \sqcup U_n$ together with, for each
+element $x \in U_k$ with $k > 0$, two sets of faces: an
+\emph{input boundary} $\bdyin{} x \subseteq U_{k-1}$ and an
+\emph{output boundary} $\bdyout{} x \subseteq U_{k-1}$.
+Intuitively, elements of $U_k$ are $k$-dimensional cells, input faces
+are ``source'' faces, and output faces are ``target'' faces.
+The \emph{$k$-boundary} $\bdy{\pm}{k}{U}$ is the sub-ogposet
+consisting of all cells reachable from the $\pm$-extremal cells at
+dimension~$k$ and below.
+
+% ---------------------------------------------------------------------------
+\subsection{Molecules}
+\label{sec:molecules:def}
+% ---------------------------------------------------------------------------
+
+\emph{Molecules} are the shapes of pasting diagrams.  They form an
+inductively defined class of oriented graded posets:
+\begin{enumerate}
+\item \textbf{Point.}  The ogposet with a single 0-cell is a molecule.
+\item \textbf{Paste.}  If $U$ and $V$ are molecules and
+  $\bdy{+}{k}{U} \cong \bdy{-}{k}{V}$ for some $k \geq 0$, then the
+  pushout $U \paste{k} V$ (gluing $U$ and $V$ along the shared
+  $k$-boundary) is a molecule.
+\item \textbf{Atom.}  If $U$ and $V$ are \emph{round} molecules of
+  the same dimension with matching boundaries, then $U \Rightarrow V$
+  (the ogposet formed by adding a single top-dimensional cell with
+  input boundary~$U$ and output boundary~$V$) is a molecule.  The
+  result is called an \emph{atom}.
+\end{enumerate}
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+  cell/.style={fill, circle, inner sep=1.5pt},
+  >=stealth,
+  every node/.style={font=\small}
+]
+% (a) Point
+\begin{scope}[shift={(0,0)}]
+  \node[cell, label=below:{$a$}] at (0,0) {};
+  \node[anchor=north] at (0,-0.5) {\footnotesize (a) point};
+\end{scope}
+
+% (b) Arrow (1-globe)
+\begin{scope}[shift={(2,0)}]
+  \node[cell] (a) at (0,0) {};
+  \node[cell] (b) at (1.5,0) {};
+  \draw[->] (a) -- node[above] {$f$} (b);
+  \node[anchor=north] at (0.75,-0.5) {\footnotesize (b) atom: 1-globe};
+\end{scope}
+
+% (c) 2-globe
+\begin{scope}[shift={(5.5,0)}]
+  \node[cell] (a) at (0,0) {};
+  \node[cell] (b) at (2,0) {};
+  \draw[->, bend left=25] (a) to node[above] {$f$} (b);
+  \draw[->, bend right=25] (a) to node[below] {$g$} (b);
+  \node at (1,0) {$\Downarrow\!\alpha$};
+  \node[anchor=north] at (1,-0.7) {\footnotesize (c) atom: 2-globe};
+\end{scope}
+
+% (d) f #_0 g
+\begin{scope}[shift={(0.5,-2.5)}]
+  \node[cell] (a) at (0,0) {};
+  \node[cell] (b) at (1.5,0) {};
+  \node[cell] (c) at (3,0) {};
+  \draw[->] (a) -- node[above] {$f$} (b);
+  \draw[->] (b) -- node[above] {$g$} (c);
+  \node[anchor=north] at (1.5,-0.5) {\footnotesize (d) paste: $f \paste{0} g$};
+\end{scope}
+
+% (e) alpha #_1 beta
+\begin{scope}[shift={(5.5,-2.5)}]
+  \node[cell] (a) at (0,0) {};
+  \node[cell] (b) at (2,0) {};
+  \draw[->, bend left=40] (a) to node[above] {$f$} (b);
+  \draw[->] (a) -- node[fill=white, inner sep=1pt] {$g$} (b);
+  \draw[->, bend right=40] (a) to node[below] {$h$} (b);
+  \node at (0.7,0.35) {\scriptsize$\Downarrow\!\alpha$};
+  \node at (0.7,-0.35) {\scriptsize$\Downarrow\!\beta$};
+  \node[anchor=north] at (1,-1) {\footnotesize (e) paste: $\alpha \paste{1} \beta$};
+\end{scope}
+\end{tikzpicture}
+\caption{Basic molecules.  (a)~A point.  (b)~The 1-globe
+  (atom of two points).  (c)~The 2-globe (atom of two 1-globes).
+  (d)~A composable pair of arrows (paste at dimension~0).
+  (e)~Vertical composition of two 2-cells (paste at dimension~1).}
+\label{fig:molecules:basic}
+\end{figure}
+
+\Cref{fig:molecules:basic} illustrates these constructors.  The
+point~(a) is the base case.  The arrow~(b) is the atom
+$\{a\} \Rightarrow \{b\}$ formed from two points; the 2-globe~(c) is
+the atom $f \Rightarrow g$ formed from two arrows with matching
+endpoints.  Shape~(d) is a paste at dimension~0: two arrows $f$ and $g$
+glued along the shared point where $f$ ends and $g$ begins.  Shape~(e)
+is a paste at dimension~1: two 2-cells $\alpha$ and $\beta$ sharing the
+intermediate arrow~$g$.
+
+% ---------------------------------------------------------------------------
+\subsection{Properties: Pure, Round, and Globular}
+\label{sec:molecules:props}
+% ---------------------------------------------------------------------------
+
+Not all molecules are equally well-behaved.  The key hierarchy is:
+\[
+  \text{globe} \;\subset\; \text{round molecule}
+  \;\subset\; \text{pure molecule}
+  \;\subset\; \text{molecule}
+\]
+
+\paragraph{Globe (atom).}
+A molecule is a \emph{globe} if it has a unique greatest
+element---equivalently, if it is produced by the point or atom
+constructors alone, without pasting.  The $n$-globe is the shape of a
+single $n$-cell with its full boundary.
+
+\paragraph{Round molecule.}
+A molecule is \emph{round} if, at every dimension $k$ below the top, the
+interiors of the input and output $k$-boundaries are disjoint:
+\[
+  \bdy{-}{k}{U} \cap \bdy{+}{k}{U} = \partial_{k-1}(U)
+  \qquad \text{for all } k < \dim(U),
+\]
+where $\partial_{k-1}(U)$ denotes the full $(k{-}1)$-boundary.
+All globes are round; so is any vertical paste
+$U \paste{k} V$ where $k = \dim(U) - 1$.  Roundness matters because the
+atom constructor \emph{requires} its source and target to be round,
+ensuring that the resulting cell has well-defined globular boundaries:
+$\bdy{\alpha}{k}{\bdy{\beta}{n}{U}} = \bdy{\alpha}{k}{U}$ for all
+$k < n$.
+
+\paragraph{Pure molecule.}
+A molecule is \emph{pure} if all its maximal cells (those with no
+cofaces) have the same dimension.  For finite-dimensional molecules,
+roundness implies purity, but not conversely.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+  cell/.style={fill, circle, inner sep=1.5pt},
+  >=stealth,
+  every node/.style={font=\small}
+]
+% (a) Globe
+\begin{scope}[shift={(0,0)}]
+  \node[cell, label=left:{\scriptsize$a$}] (a) at (0,0) {};
+  \node[cell, label=right:{\scriptsize$b$}] (b) at (1.8,0) {};
+  \draw[->, bend left=25] (a) to node[above] {$f$} (b);
+  \draw[->, bend right=25] (a) to node[below] {$g$} (b);
+  \node at (0.9,0) {$\Downarrow\!\alpha$};
+  \node[anchor=north] at (0.9,-0.7) {\footnotesize (a) globe};
+\end{scope}
+
+% (b) Round, not globe
+\begin{scope}[shift={(4,0)}]
+  \node[cell, label=left:{\scriptsize$a$}] (a) at (0,0) {};
+  \node[cell, label=right:{\scriptsize$b$}] (b) at (1.8,0) {};
+  \draw[->, bend left=40] (a) to node[above] {$f$} (b);
+  \draw[->] (a) -- node[fill=white, inner sep=1pt] {$g$} (b);
+  \draw[->, bend right=40] (a) to node[below] {$h$} (b);
+  \node at (0.65,0.35) {\scriptsize$\alpha$};
+  \node at (0.65,-0.35) {\scriptsize$\beta$};
+  \node[anchor=north] at (0.9,-0.85) {\footnotesize (b) round, not globe};
+\end{scope}
+
+% (c) Pure, not round
+\begin{scope}[shift={(8,0)}]
+  \node[cell, label=left:{\scriptsize$a$}] (a) at (0,0) {};
+  \node[cell, label=above:{\scriptsize$b$}] (b) at (1.5,0) {};
+  \node[cell, label=right:{\scriptsize$c$}] (c) at (3,0) {};
+  \draw[->, bend left=20] (a) to node[above] {$f$} (b);
+  \draw[->, bend right=20] (a) to node[below] {$g$} (b);
+  \draw[->, bend left=20] (b) to node[above] {$h$} (c);
+  \draw[->, bend right=20] (b) to node[below] {$k$} (c);
+  \node at (0.6,0) {\scriptsize$\alpha$};
+  \node at (2.4,0) {\scriptsize$\beta$};
+  \node[anchor=north] at (1.5,-0.7) {\footnotesize (c) pure, not round};
+\end{scope}
+
+% (d) Not pure
+\begin{scope}[shift={(4,-3)}]
+  \node[cell, label=left:{\scriptsize$a$}] (a) at (0,0) {};
+  \node[cell, label=above:{\scriptsize$b$}] (b) at (1.5,0) {};
+  \node[cell, label=right:{\scriptsize$c$}] (c) at (3,0) {};
+  \draw[->, bend left=25] (a) to node[above] {$f$} (b);
+  \draw[->, bend right=25] (a) to node[below] {$g$} (b);
+  \draw[->] (b) -- node[above] {$h$} (c);
+  \node at (0.6,0) {\scriptsize$\alpha$};
+  \node[anchor=north] at (1.5,-0.6) {\footnotesize (d) not pure};
+\end{scope}
+\end{tikzpicture}
+\caption{The molecule hierarchy.  (a)~The 2-globe is a globe (one
+  top-dimensional cell).  (b)~Vertical composition $\alpha \paste{1}
+  \beta$ is round but not a globe (two top-dimensional cells).
+  (c)~Horizontal composition $\alpha \paste{0} \beta$ is pure (all
+  maximal cells are 2-dimensional) but not round: the point~$b$ lies
+  in the interior of both the input and output 1-boundaries.
+  (d)~The paste $\alpha \paste{0} h$ is not pure: the maximal cells
+  $\alpha$ and $h$ have dimensions~2 and~1.}
+\label{fig:molecules:hierarchy}
+\end{figure}
+
+\Cref{fig:molecules:hierarchy} illustrates the distinctions.  In~(c),
+the horizontal composite $\alpha \paste{0} \beta$ is pure (both maximal
+cells have dimension~2) but fails roundness: the interior point~$b$ is a
+face of both input-extremal 1-cells ($f$ and $h$) and output-extremal
+1-cells ($g$ and $k$), so it belongs to the interior of both the input
+and output 1-boundaries.  In~(d), the paste $\alpha \paste{0} h$ is not
+pure because $\alpha$ (dimension~2) and $h$ (dimension~1) are both
+maximal.
+
+% ---------------------------------------------------------------------------
+\subsection{Regular Directed Complexes}
+\label{sec:molecules:regular}
+% ---------------------------------------------------------------------------
+
+Molecules are ``locally atoms'': for any element~$x$ of a molecule~$U$,
+the closure $\mathrm{cl}\{x\}$ is an atom.  Turning this local property
+into a definition gives the class of regular directed complexes.
+
+A \emph{regular directed complex} is an oriented graded poset~$P$ such
+that, for all $x \in P$, $\mathrm{cl}\{x\}$ is an atom.  Given such
+a~$P$, the set $\mathit{Mol}/P$ of isomorphism classes of morphisms
+$f \colon U \to P$, with~$U$ ranging over molecules, admits the
+structure of a strict $\omega$-category whose generators are in
+bijection with the elements of~$P$.  A \emph{diagram of shape~$U$
+in~$P$} is such a morphism; it is a \emph{pasting diagram} when $U$ is
+a molecule, and a \emph{cell} when $U$ is an atom.
+
+In full generality, a \emph{directed complex} is a presheaf on the
+category of atoms (equivalently, a $\Gamma$-continuous presheaf on
+finite regular directed complexes and local embeddings).  Every finite
+regular directed complex is representable in this category.
+\textsf{alifib} works with the finite case, constructing regular
+directed complexes cell by cell.
+
+\textsf{alifib} enforces regularity by construction.  Every cell
+declaration falls into one of two cases:
+\begin{itemize}
+  \item A \emph{0-cell} (bare name): $\mathrm{cl}\{x\}$ is a point,
+    which is an atom.
+  \item A \emph{higher cell} ($n : d^- \to d^+$): the interpreter
+    checks that $d^-$ and $d^+$ are round, then constructs
+    $\mathrm{cl}\{n\}$ as the atom $d^- \Rightarrow d^+$.
+\end{itemize}
+Since every cell's closure is an atom, the resulting oriented graded
+poset is always a regular directed complex.
+
+% ---------------------------------------------------------------------------
+\subsection{Examples in \textsf{alifib}}
+\label{sec:molecules:examples}
+% ---------------------------------------------------------------------------
+
+We illustrate how \textsf{alifib} declarations build regular directed
+complexes.  These examples use the concrete syntax informally; the
+formal grammar is given in \cref{sec:syntax}.
+
+\paragraph{A 2-globe.}
+The simplest non-trivial example declares a 2-cell between two
+parallel arrows:
+\begin{minted}{alifib}
+@Type
+TwoGlobe <<= {
+  a, b,
+  f: a -> b,
+  g: a -> b,
+  alpha: f -> g
+}
+\end{minted}
+This produces the regular directed complex in
+\cref{fig:example:complexes}(a), with five cells: two 0-cells $a, b$,
+two 1-cells $f, g : a \to b$, and one 2-cell
+$\alpha : f \Rightarrow g$.  Each declaration corresponds to an atom
+constructor: \texttt{a} and~\texttt{b} are points;
+\texttt{f} and~\texttt{g} are 1-globes $\{a\} \Rightarrow \{b\}$;
+and \texttt{alpha} is the 2-globe $f \Rightarrow g$.
+
+\paragraph{A triangle.}
+A more interesting example declares a 2-cell whose source boundary is
+a composite:
+\begin{minted}{alifib}
+@Type
+Triangle <<= {
+  a, b, c,
+  f: a -> b,
+  g: b -> c,
+  h: a -> c,
+  alpha: f g -> h
+}
+\end{minted}
+Here \texttt{f g} is the implicit paste $f \paste{0} g$ (two arrows
+sharing the point~$b$).  The resulting directed complex
+(\cref{fig:example:complexes}(b)) has seven cells.  The atom
+$\mathrm{cl}\{\alpha\}$ has the non-globular shape
+$(f \paste{0} g) \Rightarrow h$: its input boundary is a composite,
+not a single cell.  Roundness of $f \paste{0} g$ and $h$ is checked
+automatically.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+  cell/.style={fill, circle, inner sep=1.5pt},
+  >=stealth,
+  every node/.style={font=\small}
+]
+% (a) 2-globe
+\begin{scope}[shift={(0,0)}]
+  \node[cell, label=left:{$a$}] (a) at (0,0) {};
+  \node[cell, label=right:{$b$}] (b) at (2.5,0) {};
+  \draw[->, bend left=25] (a) to node[above] {$f$} (b);
+  \draw[->, bend right=25] (a) to node[below] {$g$} (b);
+  \node at (1.25,0) {$\Downarrow\!\alpha$};
+  \node[anchor=north] at (1.25,-0.7) {\footnotesize (a) \texttt{TwoGlobe}};
+\end{scope}
+% (b) Triangle
+\begin{scope}[shift={(6,0)}]
+  \node[cell, label=left:{$a$}] (a) at (0,0) {};
+  \node[cell, label=right:{$c$}] (c) at (3,0) {};
+  \node[cell, label=above:{$b$}] (b) at (1.5,1.2) {};
+  \draw[->] (a) to node[above left=-2pt] {$f$} (b);
+  \draw[->] (b) to node[above right=-2pt] {$g$} (c);
+  \draw[->] (a) to node[below] {$h$} (c);
+  \node at (1.5,0.35) {$\Downarrow\!\alpha$};
+  \node[anchor=north] at (1.5,-0.7) {\footnotesize (b) \texttt{Triangle}};
+\end{scope}
+\end{tikzpicture}
+\caption{Two regular directed complexes declared in \textsf{alifib}.
+  (a)~The 2-globe: five cells, all closures are globes.
+  (b)~A triangle: seven cells; $\mathrm{cl}\{\alpha\}$ has the
+  non-globular atom shape $(f \paste{0} g) \Rightarrow h$.}
+\label{fig:example:complexes}
+\end{figure}
+
+\paragraph{Vocabulary.}
+A \texttt{@Type} block introduces one or more types. The syntax
+$n \;\texttt{<<=}\; \{\ldots\}$ declares a type named~$n$ with a
+complex body.  Inside the body, a bare name declares a 0-cell; a
+name with boundary $n\texttt{: } d^- \texttt{ -> } d^+$ declares a
+higher cell; and juxtaposition of names denotes implicit pasting.
 
 % ===========================================================================
 \section{Abstract Syntax}
@@ -266,8 +643,9 @@ finite maps:
 \]
 
 \begin{itemize}
-  \item $\cells : \GIds \rightharpoonup (\mathbb{N} \times \CData)$ maps
-    global identifiers to their dimension and cell data.
+  \item $\cells : \GIds \rightharpoonup \CData$ maps
+    global identifiers to their cell data. (Dimensions are stored in a
+    separate side-table for efficient dimension-based iteration.)
   \item $\types : \GIds \rightharpoonup (\CData \times \Complex)$ maps
     global identifiers of types to their cell data and associated complex.
   \item $\modules : \ModId \rightharpoonup \Complex$ maps canonical
@@ -346,9 +724,10 @@ module. It bundles four components:
     annotation and a partial map value (a tag-indexed table;
     see \cref{sec:data}).
     The domain is either $\TyDom(\GIds)$ or $\ModDom(\ModId)$.
-  \item $\mathit{locals} : \Namespace \rightharpoonup (\mathbb{N} \times \CData)$
+  \item $\mathit{locals} : \Namespace \rightharpoonup \CData$
     stores locally-scoped cells (populated only during complex body
-    interpretation).
+    interpretation). As with $\cells$, dimensions are maintained in
+    a separate index.
 \end{itemize}
 A complex also maintains a set of all names in use, to detect collisions
 eagerly. When a generator is \emph{declared} in a complex body, it is
@@ -412,8 +791,9 @@ clones contexts before potentially-failing operations.
 
 Before describing the evaluation rules, we define the three data
 structures that the interpreter manipulates: oriented graded posets
-(the combinatorial shapes), diagrams (labelled shapes with paste
-history), and partial maps (structure-preserving maps between them).
+(the combinatorial shapes introduced in \cref{sec:molecules}), diagrams
+(labelled shapes with paste history), and partial maps
+(structure-preserving maps between them).
 
 % ---------------------------------------------------------------------------
 \subsection{Oriented Graded Posets}
