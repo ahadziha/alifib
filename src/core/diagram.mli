@@ -11,11 +11,11 @@ type t = {
   shape: Ogposet.t;
   labels: Id.Tag.t array array;
   tree: sign -> int -> Paste_tree.t;
-}
+} [@@deriving sexp_of]
 
 type cell_data =
   | Zero
-  | Boundary of { boundary_in: t; boundary_out: t }
+  | Boundary of { boundary_in: t; boundary_out: t } [@@deriving sexp_of]
 
 (** {2 Accessors} *)
 val shape : t -> Ogposet.t

@@ -1,17 +1,20 @@
+open Sexplib.Std
+
 module Paste_tree = struct
-  type t = Leaf of Id.Tag.t | Node of int * t * t
+  type t = Leaf of Id.Tag.t | Node of int * t * t [@@deriving sexp_of]
 end
 
-type sign = [ `Input | `Output ]
-type data = { shape: Ogposet.t; labels: Id.Tag.t array array }
+type sign = [ `Input | `Output ] [@@deriving sexp_of]
+type data = { shape: Ogposet.t; labels: Id.Tag.t array array } [@@deriving sexp_of]
 
 type t = {
   shape: Ogposet.t;
   labels: Id.Tag.t array array;
-  tree: sign -> int -> Paste_tree.t;
-}
+  tree: (sign -> int -> Paste_tree.t [@sexp.opaque]);
+} [@@deriving sexp_of]
 
 type cell_data = Zero | Boundary of { boundary_in: t; boundary_out: t }
+  [@@deriving sexp_of]
 type error = Error.t
 type 'a checked = 'a Error.checked
 

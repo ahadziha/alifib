@@ -1,5 +1,6 @@
 (library
  (name alifib_core)
  (wrapped false)
-(modules ogposet diagram morphism complex state)
- (libraries alifib_helper))
+ (modules ogposet diagram morphism complex state)
+ (preprocess (pps ppx_jane))
+ (libraries core alifib_helper))

@@ -1,12 +1,12 @@
 (** {1 Complexes} *)
 
 (** {2 Core types} *)
-type t
+type t [@@deriving sexp_of]
 
-type generator_entry = { tag: Id.Tag.t; dim: int }
-type morphism_domain = Type of Id.Global.t | Module of Id.Module.t
-type morphism_entry = { morphism: Morphism.t; domain: morphism_domain }
-type local_cell_entry = { data: Diagram.cell_data; dim: int }
+type generator_entry = { tag: Id.Tag.t; dim: int } [@@deriving sexp_of]
+type morphism_domain = Type of Id.Global.t | Module of Id.Module.t [@@deriving sexp_of]
+type morphism_entry = { morphism: Morphism.t; domain: morphism_domain } [@@deriving sexp_of]
+type local_cell_entry = { data: Diagram.cell_data; dim: int } [@@deriving sexp_of]
 
 (** {2 Constructors} *)
 val empty : t
