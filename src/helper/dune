@@ -1,4 +1,6 @@
 (library
  (name alifib_helper)
  (wrapped false)
- (modules error id path positions))
+ (preprocess (pps ppx_jane))
+ (libraries core)
+ (modules error id path positions sexp))
