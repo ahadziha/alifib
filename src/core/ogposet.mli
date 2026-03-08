@@ -2,7 +2,7 @@
 
 (** {2 Core types} *)
 
-type t
+type t [@@deriving sexp_of]
 type poset = t
 type sign = [ `Input | `Output | `Both ]
 

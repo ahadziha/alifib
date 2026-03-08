@@ -1,26 +1,34 @@
-module TagTable = Hashtbl.Make (struct
-  type t = Id.Tag.t
+open Sexplib.Std
 
-  let equal = Id.Tag.equal
+module TagTable = struct
+  include Hashtbl.Make (struct
+    type t = Id.Tag.t
 
-  let hash = function
-    | `Local name ->
-        Hashtbl.hash (0, Id.Local.to_string name)
-    | `Global id ->
-        Hashtbl.hash (1, Id.Global.to_int id)
-end)
+    let equal = Id.Tag.equal
 
-module IntMap = Map.Make (Int)
+    let hash = function
+      | `Local name ->
+          Hashtbl.hash (0, Id.Local.to_string name)
+      | `Global id ->
+          Hashtbl.hash (1, Id.Global.to_int id)
+  end)
+
+  let sexp_of_t sexp_of_v h =
+    fold (fun k v acc -> (k, sexp_of_v v) :: acc) h []
+    |> [%sexp_of: (Id.Tag.t * Sexplib.Sexp.t) list]
+end
+
+module IntMap = Sexp.IntMap
 
 type 'a checked = 'a Error.checked
-type cell_data = Diagram.cell_data
-type entry = { dim: int; cell_data: cell_data; image: Diagram.t }
+type cell_data = Diagram.cell_data [@@deriving sexp_of]
+type entry = { dim: int; cell_data: cell_data; image: Diagram.t } [@@deriving sexp_of]
 
 type t = {
   table: entry TagTable.t;
   cellular: bool;
   by_dim: Id.Tag.t list IntMap.t;
-}
+} [@@deriving sexp_of]
 
 let make_entry ~dim ~cell_data ~image = { dim; cell_data; image }
 

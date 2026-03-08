@@ -2,7 +2,7 @@
 
 (** {2 Core types} *)
 module Paste_tree : sig
-  type t = Leaf of Id.Tag.t | Node of int * t * t
+  type t = Leaf of Id.Tag.t | Node of int * t * t [@@deriving sexp_of]
 end
 
 type sign = [ `Input | `Output ]
@@ -11,11 +11,11 @@ type t = {
   shape: Ogposet.t;
   labels: Id.Tag.t array array;
   tree: sign -> int -> Paste_tree.t;
-}
+} [@@deriving sexp_of]
 
 type cell_data =
   | Zero
-  | Boundary of { boundary_in: t; boundary_out: t }
+  | Boundary of { boundary_in: t; boundary_out: t } [@@deriving sexp_of]
 
 (** {2 Accessors} *)
 val shape : t -> Ogposet.t

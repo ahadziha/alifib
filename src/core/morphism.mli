@@ -1,9 +1,9 @@
 (** {1 Morphisms} *)
 
 (** {2 Core types} *)
-type t
+type t [@@deriving sexp_of]
 
-type cell_data = Diagram.cell_data
+type cell_data = Diagram.cell_data [@@deriving sexp_of]
 
 (** {2 Error-handling} *)
 type 'a checked = 'a Error.checked

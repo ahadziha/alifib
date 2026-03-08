@@ -1,9 +1,14 @@
-module IntSet = Set.Make (Int)
+open Sexplib.Std
+
+module IntSet = struct
+  include Set.Make(Int)
+  let sexp_of_t s = [%sexp_of: int list] (elements s)
+end
 
 type intset = IntSet.t
-type sign = [ `Input | `Output | `Both ]
-type grade = IntSet.t array
-type adjacency = grade array
+type sign = [ `Input | `Output | `Both ] [@@deriving sexp_of]
+type grade = IntSet.t array [@@deriving sexp_of]
+type adjacency = grade array [@@deriving sexp_of]
 
 type t = {
   dim: int; (* stored for efficiency *)
@@ -12,7 +17,7 @@ type t = {
   cofaces_in: adjacency;
   cofaces_out: adjacency;
   normal: bool;
-}
+} [@@deriving sexp_of]
 
 type poset = t
 type error = Error.t

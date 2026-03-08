@@ -1,42 +1,22 @@
-module LocalOrd = struct
-  type t = Id.Local.t
+open Sexplib.Std
+open Sexp
 
-  let compare (a : t) (b : t) = Id.Local.compare a b
-end
-
-module TagOrd = struct
-  type t = Id.Tag.t
-
-  let compare (a : t) (b : t) = Id.Tag.compare a b
-end
-
-module IntOrd = struct
-  type t = int
-
-  let compare (a : t) (b : t) = Int.compare a b
-end
-
-module LocalMap = Map.Make (LocalOrd)
-module LocalSet = Set.Make (LocalOrd)
-module TagMap = Map.Make (TagOrd)
-module IntMap = Map.Make (IntOrd)
-
-type generator_entry = { tag: Id.Tag.t; dim: int }
-type morphism_domain = Type of Id.Global.t | Module of Id.Module.t
-type morphism_entry = { morphism: Morphism.t; domain: morphism_domain }
-type local_cell_entry = { data: Diagram.cell_data; dim: int }
+type generator_entry = { tag: Id.Tag.t; dim: int } [@@deriving sexp_of]
+type morphism_domain = Type of Id.Global.t | Module of Id.Module.t [@@deriving sexp_of]
+type morphism_entry = { morphism: Morphism.t; domain: morphism_domain } [@@deriving sexp_of]
+type local_cell_entry = { data: Diagram.cell_data; dim: int } [@@deriving sexp_of]
 
 type generators = {
   by_name: generator_entry LocalMap.t;
   by_tag: Id.Local.t TagMap.t;
   by_dim: LocalSet.t IntMap.t;
   classifiers: Diagram.t LocalMap.t;
-}
+} [@@deriving sexp_of]
 
 type local_cells = {
   by_id: local_cell_entry LocalMap.t;
   by_dim: LocalSet.t IntMap.t;
-}
+} [@@deriving sexp_of]
 
 type t = {
   generators: generators;
@@ -44,7 +24,7 @@ type t = {
   morphisms: morphism_entry LocalMap.t;
   local_cells: local_cells;
   used_names: LocalSet.t;
-}
+} [@@deriving sexp_of]
 
 let empty_generators =
   {
