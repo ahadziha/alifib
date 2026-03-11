@@ -2,7 +2,7 @@ open Format
 
 type mode = Interpret | Ast | Sexp
 
-let usage = "Usage: alifib <input-file> [-o|--output <output-file>] [--ast]"
+let usage = "Usage: alifib <input-file> [-o|--output <output-file>] [--ast|--sexp]"
 let read_file path = In_channel.with_open_bin path In_channel.input_all
 
 let write_file path contents =
