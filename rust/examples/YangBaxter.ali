@@ -1,0 +1,43 @@
+(* Yang-Baxter equation and braid structures *)
+
+@Type
+include Theory,
+let Eq = Theory.Equation,
+
+(* A Yang-Baxter operator. *)
+YB_operator <<= {
+  pt,
+  attach Set :: Theory.Set along [ pt => pt ],
+  let set = Set.set,
+  let id = Set.id,
+  swap : set set -> set set,
+  attach YBE :: Eq along [
+    lhs => (swap set)(set swap)(swap set),
+    rhs => (set swap)(swap set)(set swap)
+  ]
+},
+
+(* Invertible Yang-Baxter operator. *)
+Invertible <<= YB_operator {
+  swap_inv : set set -> set set,
+  attach Left_cancel :: Eq along [
+    lhs => swap_inv swap swap_inv,
+    rhs => swap_inv
+  ],
+  attach Right_cancel :: Eq along [
+    lhs => swap swap_inv swap,
+    rhs => swap
+  ],
+  attach YBE_inv :: Eq along [
+    lhs => (swap_inv set)(set swap_inv)(swap_inv set),
+    rhs => (set swap_inv)(swap_inv set)(set swap_inv)
+  ]
+},
+
+(* Symmetric Yang-Baxter operator. *)
+Symmetric <<= YB_operator {
+  attach Cube :: Eq along [
+    lhs => swap swap swap,
+    rhs => swap
+  ]
+}

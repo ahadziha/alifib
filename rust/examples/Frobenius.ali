@@ -1,0 +1,158 @@
+(* Frobenius semigroups and their modules *)
+
+@Type
+include Theory,
+include Semigroup,
+let Eq = Theory.Equation,
+
+(* Frobenius semigroup *)
+Frobenius <<= {
+  pt,
+  attach Set :: Theory.Set along [ pt => pt ],
+  attach S :: Semigroup.Semigroup along [ Set => Set ],
+  attach C :: Semigroup.Cosemigroup along [ Set => Set ],
+  let set = Set.set,
+  let id = Set.id,
+  let merge = S.merge,
+  let split = C.split,
+  attach Right_split_left_merge :: Eq along [
+    lhs => (set split) (merge set),
+    rhs => merge split
+  ],
+  attach Left_split_right_merge :: Eq along [
+    lhs => (split set) (set merge),
+    rhs => merge split
+  ]
+},
+
+(* Left Frobenius module *)
+Left_module <<= {
+  pt,
+  attach Set :: Theory.Set along [ pt => pt ],
+  attach F :: Frobenius along [ pt => pt ],
+  attach LM :: Semigroup.Left_module along [
+    Set => Set,
+    L => F.S
+  ],
+  attach LC :: Semigroup.Left_comodule along [
+    Set => Set,
+    L => F.C
+  ],
+  attach Left_coact_merge :: Eq along [
+    lhs => (F.set LC.coaction) (F.merge Set.set),
+    rhs => LM.action LC.coaction
+  ],
+  attach Split_left_act :: Eq along [
+    lhs => (F.split Set.set) (F.set LM.action),
+    rhs => LM.action LC.coaction
+  ],
+  let action = LM.action,
+  let coaction = LC.coaction
+},
+
+(* Right Frobenius module *)
+Right_module <<= {
+  pt,
+  attach Set :: Theory.Set along [ pt => pt ],
+  attach F :: Frobenius along [ pt => pt ],
+  attach RM :: Semigroup.Right_module along [
+    Set => Set,
+    R => F.S
+  ],
+  attach RC :: Semigroup.Right_comodule along [
+    Set => Set,
+    R => F.C
+  ],
+  attach Split_right_act :: Eq along [
+    lhs => (Set.set F.split) (RM.action F.set),
+    rhs => RM.action RC.coaction
+  ],
+  attach Right_coact_merge :: Eq along [
+    lhs => (RC.coaction F.set) (Set.set F.merge),
+    rhs => RM.action RC.coaction
+  ],
+  let action = RM.action,
+  let coaction = RC.coaction
+},
+
+(* Frobenius bimodule *)
+Bimodule <<= {
+  pt,
+  attach Set :: Theory.Set along [ pt => pt ],
+  attach LF :: Frobenius along [ pt => pt ],
+  attach RF :: Frobenius along [ pt => pt ],
+  (* LF is a left Frobenius module *)
+  attach LFM :: Left_module along [
+    Set => Set,
+    F => LF
+  ],
+  (* RF is a right Frobenius module *)
+  attach RFM :: Right_module along [
+    Set => Set,
+    F => RF
+  ],
+  (* LF.S and RF.S are a bimodule *)
+  attach BM :: Semigroup.Bimodule along [
+    Set => Set,
+    L => LF.S,
+    R => RF.S,
+    LM => LFM.LM,
+    RM => RFM.RM
+  ],
+  (* LF.C and RF.C are a bicomodule *)
+  attach BC :: Semigroup.Bicomodule along [
+    Set => Set,
+    L => LF.C,
+    R => RF.C,
+    LC => LFM.LC,
+    RC => RFM.RC
+  ],
+  attach Right_coact_left_act :: Eq along [
+    lhs => (LF.set RFM.coaction) (LFM.action RF.set),
+    rhs => LFM.action RFM.coaction
+  ],
+  attach Left_coact_right_act :: Eq along [
+    lhs => (LFM.coaction RF.set) (LF.set RFM.action),
+    rhs => RFM.action LFM.coaction
+  ]
+},
+
+(* Special Frobenius semigroup *)
+Special <<= Frobenius {
+  attach Split_merge :: Eq along [
+    lhs => split merge,
+    rhs => id
+  ]
+},
+
+(* Special left module *)
+Special_left_module <<= Left_module {
+  attach SF :: Special along [ Frobenius => F ],
+  attach Left_coact_left_act :: Eq along [
+    lhs => LC.coaction LM.action,
+    rhs => Set.id
+  ]
+},
+
+(* Special right module *)
+Special_right_module <<= Right_module {
+  attach SF :: Special along [ Frobenius => F ],
+  attach Right_coact_right_act :: Eq along [
+    lhs => RC.coaction RM.action,
+    rhs => Set.id
+  ]
+},
+
+(* Special bimodule *)
+Special_bimodule <<= Bimodule {
+  attach LSF :: Special along [ Frobenius => LF ],
+  attach RSF :: Special along [ Frobenius => RF ],
+  attach LSFM :: Special_left_module along [
+    SF => LSF,
+    Left_module => LFM
+  ],
+  attach RSFM :: Special_right_module along [
+    SF => RSF,
+    Right_module => RFM
+  ]
+}

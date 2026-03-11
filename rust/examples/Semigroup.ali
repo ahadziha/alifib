@@ -1,0 +1,143 @@
+(* Semigroups, cosemigroups and their modules *)
+
+@Type
+include Theory,
+let Eq = Theory.Equation,
+
+(* Semigroup *)
+Semigroup <<= {
+  pt,
+  attach Set :: Theory.Set along [ pt => pt ],
+  let set = Set.set,
+  let id = Set.id,
+  merge: set set -> set,
+  attach Assoc :: Eq along [
+    lhs => (merge set) merge,
+    rhs => (set merge) merge
+  ],
+  attach Left_id_merge :: Eq along [
+    lhs => (id set) merge,
+    rhs => merge
+  ],
+  attach Right_id_merge :: Eq along [
+    lhs => (set id) merge,
+    rhs => merge
+  ],
+  attach Merge_id :: Eq along [
+    lhs => merge id,
+    rhs => merge
+  ]
+},
+
+(* Cosemigroup *)
+Cosemigroup <<= {
+  pt,
+  attach Set :: Theory.Set along [ pt => pt ],
+  let set = Set.set,
+  let id = Set.id,
+  split: set -> set set,
+  attach Assoc :: Eq along [
+    lhs => split (split set),
+    rhs => split (set split)
+  ],
+  attach Id_split :: Eq along [
+    lhs => id split,
+    rhs => split
+  ],
+  attach Split_left_id :: Eq along [
+    lhs => split (id set),
+    rhs => split
+  ],
+  attach Split_right_id :: Eq along [
+    lhs => split (set id),
+    rhs => split
+  ]
+},
+
+(* Left module of a semigroup *)
+Left_module <<= {
+  pt,
+  attach Set :: Theory.Set along [ pt => pt ],
+  attach L :: Semigroup along [ pt => pt ],
+  action: L.set Set.set -> Set.set,
+  attach Merge_left_act :: Eq along [
+    lhs => (L.merge Set.set) action,
+    rhs => (L.set action) action
+  ]
+},
+
+(* Right module of a semigroup *)
+Right_module <<= {
+  pt,
+  attach Set :: Theory.Set along [ pt => pt ],
+  attach R :: Semigroup along [ pt => pt ],
+  action: Set.set R.set -> Set.set,
+  attach Merge_right_act :: Eq along [
+    lhs => (Set.set R.merge) action,
+    rhs => (action R.set) action
+  ]
+},
+
+(* Bimodule of semigroups *)
+Bimodule <<= {
+  pt,
+  attach Set :: Theory.Set along [ pt => pt ],
+  attach L :: Semigroup along [ pt => pt ],
+  attach R :: Semigroup along [ pt => pt ],
+  attach LM :: Left_module along [
+    Set => Set,
+    L => L
+  ],
+  attach RM :: Right_module along [
+    Set => Set,
+    R => R
+  ],
+  attach Left_act_right_act :: Eq along [
+    lhs => (LM.action R.set) RM.action,
+    rhs => (L.set RM.action) LM.action
+  ]
+},
+
+(* Left comodule of a cosemigroup *)
+Left_comodule <<= {
+  pt,
+  attach Set :: Theory.Set along [ pt => pt ],
+  attach L :: Cosemigroup along [ pt => pt ],
+  coaction: Set.set -> L.set Set.set,
+  attach Left_coact_split :: Eq along [
+    lhs => coaction (L.split Set.set),
+    rhs => coaction (L.set coaction)
+  ]
+},
+
+(* Right comodule of a cosemigroup *)
+Right_comodule <<= {
+  pt,
+  attach Set :: Theory.Set along [ pt => pt ],
+  attach R :: Cosemigroup along [ pt => pt ],
+  coaction: Set.set -> Set.set R.set,
+  attach Right_coact_split :: Eq along [
+    lhs => coaction (Set.set R.split),
+    rhs => coaction (coaction R.set)
+  ]
+},
+
+(* Bicomodule of cosemigroups *)
+Bicomodule <<= {
+  pt,
+  attach Set :: Theory.Set along [ pt => pt ],
+  attach L :: Cosemigroup along [ pt => pt ],
+  attach R :: Cosemigroup along [ pt => pt ],
+  attach LC :: Left_comodule along [
+    Set => Set,
+    L => L
+  ],
+  attach RC :: Right_comodule along [
+    Set => Set,
+    R => R
+  ],
+  attach Right_coact_left_coact :: Eq along [
+    lhs => RC.coaction (LC.coaction R.set),
+    rhs => LC.coaction (L.set RC.coaction)
+  ]
+}

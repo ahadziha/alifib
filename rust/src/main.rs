@@ -1,0 +1,207 @@
+mod aux;
+mod core;
+mod interpreter;
+mod language;
+
+use std::fs;
+use std::process;
+use std::time::Instant;
+
+use aux::error::report_load_file_error;
+use aux::loader::Loader;
+use interpreter::{Context, interpret_program};
+use interpreter::state::State;
+use interpreter::types::HoleInfo;
+
+const USAGE: &str = "Usage: alifib <input-file> [-o|--output <output-file>] [--ast] [--bench N]";
+
+#[derive(Clone, Copy)]
+enum Mode {
+    Interpret,
+    Ast,
+}
+
+struct Args {
+    input: String,
+    output: Option<String>,
+    mode: Mode,
+    bench: Option<usize>,
+}
+
+fn parse_args() -> Result<Args, String> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut input = None;
+    let mut output = None;
+    let mut mode = Mode::Interpret;
+    let mut bench = None;
+
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "-o" | "--output" => {
+                output = Some(
+                    iter.next()
+                        .ok_or_else(|| format!("{} requires an argument", arg))?
+                        .clone(),
+                );
+            }
+            "-h" | "--help" => {
+                println!("{}", USAGE);
+                process::exit(0);
+            }
+            "--ast" => mode = Mode::Ast,
+            "--bench" => {
+                let n_str = iter.next()
+                    .ok_or_else(|| "--bench requires a number".to_string())?;
+                let n: usize = n_str.parse()
+                    .map_err(|_| format!("--bench: invalid number '{}'", n_str))?;
+                bench = Some(n);
+            }
+            s if s.starts_with('-') => return Err(format!("Unknown option: {}", s)),
+            s => {
+                if input.is_some() {
+                    return Err("Multiple input files specified".to_string());
+                }
+                input = Some(s.to_string());
+            }
+        }
+    }
+
+    Ok(Args {
+        input: input.ok_or(USAGE)?,
+        output,
+        mode,
+        bench,
+    })
+}
+
+fn write_output(path: Option<&str>, text: &str) -> Result<(), String> {
+    match path {
+        None => {
+            println!("{}", text);
+            Ok(())
+        }
+        Some(p) => fs::write(p, text).map_err(|e| format!("could not write `{}`: {}", p, e)),
+    }
+}
+
+fn run_ast(input: &str, output: Option<&str>) -> bool {
+    let source = match fs::read_to_string(input) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("error: could not read `{}`: {}", input, e);
+            return false;
+        }
+    };
+    let program = match language::parse(&source) {
+        Ok(p) => p,
+        Err(errors) => {
+            language::report_errors(&errors, &source, input);
+            return false;
+        }
+    };
+    if let Err(msg) = write_output(output, &program.to_string()) {
+        eprintln!("error: {}", msg);
+        return false;
+    }
+    true
+}
+
+struct RunResult {
+    context: Context,
+    source: String,
+    canonical_path: String,
+    holes: Vec<HoleInfo>,
+}
+
+fn run_file(loader: &Loader, path: &str) -> Option<RunResult> {
+    let loaded = match loader.load(path) {
+        Ok(f) => f,
+        Err(e) => {
+            report_load_file_error(&e);
+            return None;
+        }
+    };
+
+    let context = Context::new(loaded.canonical_path.clone(), State::empty());
+    let result = interpret_program(&loaded.modules, context, &loaded.program);
+
+    if !result.errors.is_empty() {
+        language::report_errors(&result.errors, &loaded.source, &loaded.canonical_path);
+        return None;
+    }
+
+    Some(RunResult {
+        context: result.context,
+        canonical_path: loaded.canonical_path,
+        holes: result.holes,
+        source: loaded.source,
+    })
+}
+
+fn run_interpreter(input: &str, output: Option<&str>) -> bool {
+    let loader = Loader::default(vec![]);
+    let run = match run_file(&loader, input) {
+        Some(r) => r,
+        None => return false,
+    };
+
+    let text = run.context.state.display();
+    if let Err(msg) = write_output(output, &text) {
+        eprintln!("error: {}", msg);
+        return false;
+    }
+    if !run.holes.is_empty() {
+        language::report_holes(&run.holes, &run.source, &run.canonical_path);
+    }
+    true
+}
+
+fn run_bench(input: &str, n: usize) -> bool {
+    let loader = Loader::default(vec![]);
+
+    // Warmup
+    match run_file(&loader, input) {
+        None => {
+            eprintln!("error: benchmark file failed on warmup");
+            return false;
+        }
+        Some(r) if !r.holes.is_empty() => {
+            eprintln!("error: benchmark file contains holes");
+            return false;
+        }
+        _ => {}
+    }
+
+    let start = Instant::now();
+    for _ in 0..n {
+        run_file(&loader, input);
+    }
+    let elapsed = start.elapsed();
+    let ms_per_run = elapsed.as_secs_f64() * 1000.0 / n as f64;
+    println!("{:.3}", ms_per_run);
+    true
+}
+
+fn main() {
+    let args = match parse_args() {
+        Ok(a) => a,
+        Err(msg) => {
+            eprintln!("{}", msg);
+            process::exit(1);
+        }
+    };
+
+    let ok = if let Some(n) = args.bench {
+        run_bench(&args.input, n)
+    } else {
+        match args.mode {
+            Mode::Ast => run_ast(&args.input, args.output.as_deref()),
+            Mode::Interpret => run_interpreter(&args.input, args.output.as_deref()),
+        }
+    };
+
+    if !ok {
+        process::exit(1);
+    }
+}

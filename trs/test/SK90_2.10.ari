@@ -1,0 +1,15 @@
+; @origtpdbfilename ./TRS/SK90/2.10.trs
+; @xtcfilename "./TRS_Standard/SK90/2.10.xml"
+(format TRS)
+(fun minus 1)
+(fun |0| 0)
+(fun + 2)
+(fun |1| 0)
+(rule (minus |0|) |0|)
+(rule (+ x |0|) x)
+(rule (+ |0| y) y)
+(rule (+ (minus |1|) |1|) |0|)
+(rule (minus (minus x)) x)
+(rule (+ x (minus y)) (minus (+ (minus x) y)))
+(rule (+ x (+ y z)) (+ (+ x y) z))
+(rule (+ (minus (+ x |1|)) |1|) (minus x))

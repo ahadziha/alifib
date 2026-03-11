@@ -1,0 +1,27 @@
+{
+  "name": "alifib",
+  "displayName": "alifib",
+  "description": "Syntax highlighting for .ali files",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "ali",
+        "aliases": ["ali"],
+        "extensions": [".ali"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "ali",
+        "scopeName": "source.ali",
+        "path": "./syntaxes/ali.tmLanguage.json"
+      }
+    ]
+  }
+}

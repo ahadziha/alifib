@@ -1,0 +1,110 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "ali",
+  "scopeName": "source.ali",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#block-header" },
+    { "include": "#keywords" },
+    { "include": "#type-definition" },
+    { "include": "#operators" },
+    { "include": "#number" },
+    { "include": "#hole" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.block.ali",
+      "begin": "\\(\\*",
+      "end": "\\*\\)",
+      "patterns": [
+        { "include": "#comment" }
+      ]
+    },
+    "block-header": {
+      "patterns": [
+        {
+          "match": "(@)(Type)\\b",
+          "captures": {
+            "1": { "name": "punctuation.definition.annotation.ali" },
+            "2": { "name": "keyword.other.type.ali" }
+          }
+        },
+        {
+          "match": "(@)([a-zA-Z_][a-zA-Z0-9_]*(?:\\.[a-zA-Z_][a-zA-Z0-9_]*)*)",
+          "captures": {
+            "1": { "name": "punctuation.definition.annotation.ali" },
+            "2": { "name": "entity.name.type.ali" }
+          }
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.ali",
+          "match": "\\b(attach|along|include|assert)\\b"
+        },
+        {
+          "name": "keyword.other.ali",
+          "match": "\\b(let|def|as)\\b"
+        },
+        {
+          "name": "keyword.other.boundary.ali",
+          "match": "\\b(in|out)\\b"
+        }
+      ]
+    },
+    "type-definition": {
+      "match": "([a-zA-Z_][a-zA-Z0-9_]*)\\s*(<<=)",
+      "captures": {
+        "1": { "name": "entity.name.type.ali" },
+        "2": { "name": "keyword.operator.definition.ali" }
+      }
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.definition.ali",
+          "match": "<<="
+        },
+        {
+          "name": "keyword.operator.scope.ali",
+          "match": "::"
+        },
+        {
+          "name": "keyword.operator.mapsto.ali",
+          "match": "=>"
+        },
+        {
+          "name": "keyword.operator.arrow.ali",
+          "match": "->"
+        },
+        {
+          "name": "keyword.operator.paste.ali",
+          "match": "#"
+        },
+        {
+          "name": "keyword.operator.assignment.ali",
+          "match": "="
+        }
+      ]
+    },
+    "number": {
+      "name": "constant.numeric.ali",
+      "match": "\\b[0-9]+\\b"
+    },
+    "hole": {
+      "name": "constant.language.hole.ali",
+      "match": "\\?"
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.separator.dot.ali",
+          "match": "\\."
+        }
+      ]
+    }
+  }
+}

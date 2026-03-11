@@ -1,0 +1,12 @@
+@Type
+Arrow <<= { s, t, arr : s -> t },
+Graph <<= {
+  attach A :: Arrow,
+  attach B :: Arrow,
+  mid : A.t -> B.s,
+  let total F :: Arrow = [
+    s => A.s,
+    t => B.t,
+    arr => A.arr mid B.arr
+  ]
+}

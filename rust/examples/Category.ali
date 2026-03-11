@@ -1,0 +1,73 @@
+@Type
+(* Equation between morphisms *)
+Eq <<= {
+  dom,
+  cod,
+  lhs: dom -> cod,
+  rhs: dom -> cod,
+  dir: lhs -> rhs,
+  inv: rhs -> lhs
+},
+
+(* Object with identity *)
+Ob <<= {
+  ob,
+  id: ob -> ob,
+  attach Id_id :: Eq along [
+    lhs => id id,
+    rhs => id
+  ]
+},
+
+(* Morphism *)
+Mor <<= {
+  attach Dom :: Ob,
+  attach Cod :: Ob,
+  mor: Dom.ob -> Cod.ob,
+  attach Left_id :: Eq along [
+    lhs => Dom.id mor,
+    rhs => mor
+  ],
+  attach Right_id :: Eq along [
+    lhs => mor Cod.id,
+    rhs => mor
+  ]
+}
+
+(* The identity on an object is a morphism *)
+@Ob
+let Id :: Mor = [
+  Dom => Ob,
+  Cod => Ob,
+  mor => id,
+  Left_id => Id_id,
+  Right_id => Id_id
+]
+
+@Type
+(* Pair of composable morphisms *)
+Pair <<= {
+  attach Fst :: Mor,
+  attach Snd :: Mor along [
+    Dom => Fst.Cod
+  ],
+  let Dom :: Ob = Fst.Dom,
+  let Cod :: Ob = Snd.Cod,
+  let mor = Fst.mor Snd.mor,
+  let Left_id :: Eq = [
+    dir => (Fst.Left_id.dir #0 Snd.Left_id.inv) (Fst.Right_id.dir Snd.mor),
+    inv => (Fst.Left_id.inv #0 Snd.Left_id.inv) (Fst.Dom.id Fst.Right_id.dir Snd.mor)
+  ],
+  let Right_id :: Eq = [
+    dir => (Fst.mor (Snd.Right_id.dir Snd.Left_id.inv)) (Fst.Right_id.dir Snd.mor),
+    inv => (Fst.mor (Snd.Right_id.inv (Snd.Left_id.inv Snd.Cod.id)))
+      (Fst.Right_id.dir Snd.mor Snd.Cod.id)
+  ],
+  let Comp :: Mor = [
+    Dom => Dom,
+    Cod => Cod,
+    mor => mor,
+    Left_id => Left_id,
+    Right_id => Right_id
+  ]
+}

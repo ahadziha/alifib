@@ -1,0 +1,20 @@
+@Type
+Ob <<= {
+  ob,
+  id : ob -> ob,
+  idem : id id -> id
+}
+
+Mor <<= {
+  attach dom :: Ob,
+  attach cod :: Ob,
+  mor : dom.ob -> cod.ob
+}
+
+Pair <<= {
+  attach x :: Ob,
+  attach y :: Ob,
+  attach z :: Ob,
+  attach f :: Mor along [ dom => x, cod => y ],
+  attach g :: Mor along [ dom => y, cod => z ]
+}
