@@ -34,8 +34,7 @@ let parse_args () =
         "Pretty-print the AST instead of running the interpreter" );
       ( "--sexp",
         Arg.Unit (fun () -> mode := Sexp),
-        "Give interpreter output as s-expression"
-        );
+        "Give interpreter output as s-expression" );
     ]
   in
   let anon_fun arg =
