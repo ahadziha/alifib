@@ -1,0 +1,92 @@
+@Type
+
+Equation <<= {
+    pt,
+    dom: pt -> pt,
+    cod: pt -> pt,
+    lhs: dom -> cod,
+    rhs: dom -> cod,
+    dir: lhs -> rhs,
+    inv: rhs -> lhs
+},
+
+Unit <<= {
+    pt,
+    ob: pt -> pt,
+
+    id: ob -> ob,
+    merge: ob ob -> ob,
+    split: ob -> ob ob,
+
+    attach Id_id :: Equation along [
+        lhs => id id,
+        rhs => id
+    ],
+    attach Split_merge :: Equation along [
+        lhs => split merge,
+        rhs => id
+    ]
+},
+
+Endo <<= {
+    attach Unit :: Unit,
+    let ob = Unit.ob,
+    let id = Unit.id,
+    let merge = Unit.merge,
+    let split = Unit.split,
+    
+    endo: ob -> ob,
+
+    attach Id_endo :: Equation along [
+        lhs => id endo,
+        rhs => endo
+    ],
+    attach Endo_id :: Equation along [
+        lhs => endo id,
+        rhs => endo
+    ],
+    attach Endo_split_left :: Equation along [
+        lhs => endo split,
+        rhs => split (endo ob)
+    ],
+    attach Endo_split_right :: Equation along [
+        lhs => endo split,
+        rhs => split (ob endo)
+    ],
+    attach Merge_endo_left :: Equation along [
+        lhs => merge endo,
+        rhs => (endo ob) merge
+    ],
+    attach Merge_endo_right :: Equation along [
+        lhs => merge endo,
+        rhs => (ob endo) merge
+    ]
+},
+
+DoubleEndo <<= {
+    attach Unit :: Unit,
+    attach A :: Endo along [Unit => Unit],
+    attach B :: Endo along [Unit => Unit]
+}
+
+@DoubleEndo
+let Braid :: Equation = [
+    lhs => A.endo B.endo,
+    rhs => B.endo A.endo,
+    dir => (A.Id_endo.inv B.endo)
+        (Unit.Split_merge.inv A.endo B.endo)
+        (Unit.split A.Merge_endo_left.dir B.endo)
+        (Unit.split (A.endo Unit.ob) B.Merge_endo_right.dir)
+        (Unit.split (Unit.ob B.endo) A.Merge_endo_left.inv)
+        (Unit.split B.Merge_endo_right.inv A.endo)
+        (Unit.Split_merge.dir B.endo A.endo)
+        (B.Id_endo.dir A.endo),
+    inv => (B.Id_endo.inv A.endo)
+        (Unit.Split_merge.inv B.endo A.endo)
+        (Unit.split B.Merge_endo_left.dir A.endo)
+        (Unit.split (B.endo Unit.ob) A.Merge_endo_right.dir)
+        (Unit.split (Unit.ob A.endo) B.Merge_endo_left.inv)
+        (Unit.split A.Merge_endo_right.inv B.endo)
+        (Unit.Split_merge.dir A.endo B.endo)
+        (A.Id_endo.dir B.endo)
+]

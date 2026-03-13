@@ -1,0 +1,78 @@
+@Type
+
+Equation <<= {
+    pt,
+    dom: pt -> pt,
+    cod: pt -> pt,
+    lhs: dom -> cod,
+    rhs: dom -> cod,
+    dir: lhs -> rhs,
+    inv: rhs -> lhs
+},
+
+Unit <<= {
+    pt,
+    ob: pt -> pt,
+
+    id: ob -> ob,
+    merge: ob ob -> ob,
+    split: ob -> ob ob,
+
+    attach Id_id :: Equation along [
+        lhs => id id,
+        rhs => id
+    ],
+    attach Split_merge :: Equation along [
+        lhs => split merge,
+        rhs => id
+    ]
+},
+
+Endo <<= {
+    attach Unit :: Unit,
+    let ob = Unit.ob,
+    let id = Unit.id,
+    let merge = Unit.merge,
+    let split = Unit.split,
+    
+    endo: ob -> ob,
+
+    attach Id_endo :: Equation along [
+        lhs => id endo,
+        rhs => endo
+    ],
+    attach Endo_id :: Equation along [
+        lhs => endo id,
+        rhs => endo
+    ],
+    attach Endo_split_left :: Equation along [
+        lhs => endo split,
+        rhs => split (endo ob)
+    ],
+    attach Endo_split_right :: Equation along [
+        lhs => endo split,
+        rhs => split (ob endo)
+    ],
+    attach Merge_endo_left :: Equation along [
+        lhs => merge endo,
+        rhs => (endo ob) merge
+    ],
+    attach Merge_endo_right :: Equation along [
+        lhs => merge endo,
+        rhs => (ob endo) merge
+    ]
+},
+
+DoubleEndo <<= {
+    attach Unit :: Unit,
+    attach A :: Endo along [Unit => Unit],
+    attach B :: Endo along [Unit => Unit]
+}
+
+@DoubleEndo
+let Braid :: Equation = [
+    lhs => A.endo B.endo,
+    rhs => B.endo A.endo,
+    dir => ?,
+    inv => ?
+]
