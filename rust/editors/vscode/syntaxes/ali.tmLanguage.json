@@ -47,7 +47,7 @@
         },
         {
           "name": "keyword.other.ali",
-          "match": "\\b(let|def|as)\\b"
+          "match": "\\b(let|def|as|total)\\b"
         },
         {
           "name": "keyword.other.boundary.ali",
