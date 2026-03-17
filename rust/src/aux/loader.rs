@@ -1,3 +1,4 @@
+use unicode_normalization::UnicodeNormalization;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use super::path;
@@ -98,8 +99,9 @@ impl Loader {
 
     pub fn load(&self, path: &str) -> Result<LoadedFile, LoadFileError> {
         let canonical_path = super::path::canonicalize(path);
-        let source = (self.inner.read_file)(&canonical_path)
-            .map_err(|cause| LoadFileError::Load { path: path.to_owned(), cause })?;
+        let source: String = (self.inner.read_file)(&canonical_path)
+            .map_err(|cause| LoadFileError::Load { path: path.to_owned(), cause })?
+            .nfc().collect::<String>();  /* TODO: This is not the right place to normalize */
         let file_loader = self.inner.with_parent_dir(&canonical_path);
         let program = language::parse(&source)
             .map_err(|errors| LoadFileError::Parse {
@@ -205,6 +207,7 @@ fn resolve_recursive(
     let includes = collect_includes(program);
     for module_name in includes {
         let (canonical_path, contents) = find_file(loader, &module_name)?;
+        let contents = contents.nfc().collect::<String>(); /* TODO: This is not the right place to normalize */
 
         store.resolutions.insert(
             (parent_path.to_owned(), module_name),

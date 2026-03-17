@@ -19,11 +19,7 @@ pub fn lexer<'src>(
         .to_slice()
         .map(Token::Nat);
 
-    let ident_or_kw = any()
-        .filter(|c: &char| c.is_ascii_alphanumeric() || *c == '_')
-        .repeated()
-        .at_least(1)
-        .to_slice()
+    let ident_or_kw = text::unicode::ident()
         .map(|s: &str| match s {
             "include" => Token::Include,
             "attach" => Token::Attach,
@@ -36,13 +32,7 @@ pub fn lexer<'src>(
             "total" => Token::Total,
             "map" => Token::Map,
             "as" => Token::As,
-            _ => {
-                if s.chars().next().unwrap().is_ascii_digit() {
-                    Token::Nat(s)
-                } else {
-                    Token::Ident(s)
-                }
-            }
+            _ => Token::Ident(s)
         });
 
     let symbol = choice((
@@ -65,7 +55,7 @@ pub fn lexer<'src>(
         just('?').to(Token::Question),
     ));
 
-    let token = choice((symbol, ident_or_kw, nat));
+    let token = choice((symbol, nat, ident_or_kw));
 
     token
         .map_with(|tok, e| (tok, e.span()))
