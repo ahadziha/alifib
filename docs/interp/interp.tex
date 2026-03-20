@@ -70,12 +70,9 @@ details (error reporting, span tracking, \texttt{Arc}-based sharing)
 while preserving every semantically meaningful step.
 
 \paragraph{Conventions.}
-We write $\State$ for the global state, $\Complex$ for a complex (the
-local namespace of generators, diagrams, and maps associated with a type
-or module), and $\Namespace$ for the set of names (identifier strings
-from the parser); we use $n$ as a metavariable ranging over
-$\Namespace$. We use $\Downarrow$ for big-step
-evaluation.  Metavariables are colour-coded: \Type{types} in blue,
+Semantic domains and metavariable conventions are collected in
+\cref{fig:domains}.  We use $\Downarrow$ for big-step evaluation.
+Metavariables are colour-coded: \Type{types} in blue,
 \Cell{cells} in brown, \Map{maps} in teal, \Diag{diagrams} in
 purple, \St{state components} in orange, and \Id{identifiers/tags} in
 green.  Keywords appear in $\kw{sans\text{-}serif}$.
@@ -90,20 +87,13 @@ and $f(x)\up$ means it is undefined.
 
 This section recalls the combinatorial framework underlying
 \textsf{alifib}: molecules, regular directed complexes, and diagrams.
-The underlying combinatorial objects are oriented graded posets; the
-implementation-level representation is described in
-\cref{sec:data:ogposet}.
+We describe the abstract objects only; their implementation-level
+representation is given in \cref{sec:data}.
 
-An \emph{oriented graded poset} (ogposet) is a graded set
-$U = U_0 \sqcup U_1 \sqcup \cdots \sqcup U_n$ together with, for each
-element $x \in U_k$ with $k > 0$, two sets of faces: an
-\emph{input boundary} $\bdyin{} x \subseteq U_{k-1}$ and an
-\emph{output boundary} $\bdyout{} x \subseteq U_{k-1}$.
-Intuitively, elements of $U_k$ are $k$-dimensional cells, input faces
-are ``source'' faces, and output faces are ``target'' faces.
-The \emph{$k$-boundary} $\bdy{\pm}{k}{U}$ is the sub-ogposet
-consisting of all cells reachable from the $\pm$-extremal cells at
-dimension~$k$ and below.
+The basic objects are \emph{cells}, which have a dimension $k \geq 0$.
+Each $k$-cell with $k > 0$ has an \emph{input boundary} and an
+\emph{output boundary}, both consisting of $(k{-}1)$-cells.  Input
+faces are ``source'' faces and output faces are ``target'' faces.
 
 % ---------------------------------------------------------------------------
 \subsection{Molecules}
@@ -213,19 +203,13 @@ constructors alone, without pasting.  The $n$-globe is the shape of a
 single $n$-cell with its full boundary.
 
 \paragraph{Round molecule.}
-A molecule is \emph{round} if, at every dimension $k$ below the top, the
-interiors of the input and output $k$-boundaries are disjoint:
-\[
-  \bdy{-}{k}{U} \cap \bdy{+}{k}{U} = \partial_{k-1}(U)
-  \qquad \text{for all } k < \dim(U),
-\]
-where $\partial_{k-1}(U)$ denotes the full $(k{-}1)$-boundary.
-All globes are round; so is any vertical paste
-$U \paste{k} V$ where $k = \dim(U) - 1$.  Roundness matters because the
-atom constructor \emph{requires} its source and target to be round,
-ensuring that the resulting cell has well-defined globular boundaries:
-$\bdy{\alpha}{k}{\bdy{\beta}{n}{U}} = \bdy{\alpha}{k}{U}$ for all
-$k < n$.
+A molecule is \emph{round} if, at every dimension $k$ below the top,
+the interiors of the input and output $k$-boundaries are disjoint:
+no cell appears as both a ``source'' and a ``target'' at the same
+dimension.  All globes are round; so is any vertical paste
+$U \paste{k} V$ where $k = \dim(U) - 1$.  Roundness matters because
+the atom constructor \emph{requires} its source and target to be round,
+ensuring that the resulting cell has well-defined boundaries.
 
 \paragraph{Pure molecule.}
 A molecule is \emph{pure} if all its maximal cells (those with no
@@ -437,6 +421,204 @@ name with boundary $n\texttt{: } d^- \texttt{ -> } d^+$ declares a
 higher cell; and juxtaposition of names denotes implicit pasting.
 
 % ===========================================================================
+\section{Representation}
+\label{sec:data}
+% ===========================================================================
+
+The interpreter represents the abstract objects of
+\cref{sec:molecules} using concrete data structures.  Molecules (the
+shapes of pasting diagrams) become \emph{oriented graded posets}
+(ogposets)---finite graded sets with face and coface maps.  Pasting
+diagrams (morphisms $U \to X$ with $U$ a molecule) become
+\emph{diagrams}---an ogposet shape labelled with tags, together with
+paste trees recording how the diagram was assembled.  Maps of directed
+complexes become \emph{partial maps}---tag-indexed tables of image
+diagrams.  Regular directed complexes themselves become
+\emph{complexes}---namespaces of generators, named diagrams, and maps
+(\cref{sec:state:complex}).
+
+% ---------------------------------------------------------------------------
+\subsection{Oriented Graded Posets}
+\label{sec:data:ogposet}
+% ---------------------------------------------------------------------------
+
+An \emph{oriented graded poset} (ogposet) $G$ consists of:
+\begin{itemize}
+  \item A \emph{dimension} $\dim(G) \in \mathbb{Z}_{\geq -1}$
+    (where $-1$ indicates the empty ogposet).
+  \item For each $0 \leq d \leq \dim(G)$, a finite set of
+    \emph{cells} $G_d$.
+  \item \emph{Face maps}
+    $\bdyin{d}, \bdyout{d} : G_d \to \mathcal{P}(G_{d-1})$
+    giving the input and output $(d{-}1)$-cells on the boundary
+    of each $d$-cell.
+  \item Dually, \emph{coface maps}
+    recording which higher-dimensional cells each cell
+    appears in the boundary of.
+\end{itemize}
+An ogposet represents the unlabelled shape of a molecule or, more
+generally, of any sub-ogposet of a regular directed complex.  In the
+Rust implementation, cells at each dimension are indexed by position
+($0, 1, \ldots$) and face/coface sets are stored as sorted vectors of
+indices.
+
+\paragraph{Operations.}
+\begin{itemize}
+  \item \textbf{Boundary extraction.}
+    $\bdy{\pm}{k}{G}$ extracts the input ($-$) or output ($+$)
+    $k$-boundary of $G$ as a sub-ogposet, together with an
+    \emph{embedding} recording which cells of $G$ appear in the
+    boundary. The embedding consists of a forward map and an
+    inverse map, both indexed by dimension.
+
+  \item \textbf{Normalisation.}
+    $\mathsf{norm}(G)$ produces a canonical reordering of the cells
+    by traversing from the input-extremal cells (those with no input
+    cofaces). Two ogposets are isomorphic if and only if they have
+    the same normal form. Both normalisation and boundary extraction
+    are cached by pointer identity.
+
+  \item \textbf{Isomorphism.}
+    $\mathsf{iso}(G_1, G_2)$ checks whether $G_1 \cong G_2$ by
+    normalising both and comparing the canonical forms, then
+    composing the two embeddings to produce a direct isomorphism
+    $G_1 \to G_2$.
+
+  \item \textbf{Roundness.}
+    $G$ is \emph{round} if the input and output interiors are
+    disjoint at every dimension---a necessary condition for $G$ to
+    serve as the source or target of an atom
+    (\cref{sec:molecules:props}).
+\end{itemize}
+
+% ---------------------------------------------------------------------------
+\subsection{Diagrams}
+\label{sec:data:diagram}
+% ---------------------------------------------------------------------------
+
+Abstractly, a pasting diagram in a directed complex~$X$ is a morphism
+$u \colon U \to X$ where $U$ is a molecule (\cref{sec:molecules:regular}).
+The interpreter represents such a diagram as a triple $\Diag{D}$:
+\begin{itemize}
+  \item A \emph{shape}: an ogposet $G$ (representing the molecule~$U$,
+    shared via reference counting).
+  \item \emph{Labels}:
+    for each dimension $d$, a map
+    $\ell_d : G_d \to \Tag$
+    assigning a tag to every cell in the shape (encoding the morphism
+    $u$ by recording which cell of~$X$ each position maps to).
+  \item \emph{Paste trees}: for each dimension $d$ and sign
+    $s \in \{-,+\}$, a tree recording how the $d$-level structure
+    was built by pasting.
+\end{itemize}
+
+The shape represents the combinatorial structure of the molecule; the
+labels record \emph{which} generators of the directed complex occupy
+each position; the paste trees record \emph{how} the diagram was
+assembled.
+
+\paragraph{Paste trees.}
+A paste tree is defined inductively:
+\[
+  \mathit{PT} \;\Coloneqq\;
+    \mathsf{Leaf}(t) \mid
+    \mathsf{Node}(k, \mathit{PT}_L, \mathit{PT}_R)
+\]
+A $\mathsf{Leaf}(t)$ records a single generator with tag $t$.
+A $\mathsf{Node}(k, L, R)$ records a paste at dimension $k$
+of the sub-diagrams described by the left and right sub-trees.
+A diagram is a \emph{cell} (as opposed to a composite) when its
+top-level paste tree is a single $\mathsf{Leaf}$.
+
+Paste trees serve two purposes. First, they determine how
+$\mathsf{apply}$ traverses a diagram when applying a partial map
+(\cref{sec:data:pmap}). Second, they distinguish structurally
+identical diagrams that were built by different paste sequences,
+which matters for the interpreter's notion of equality.
+
+\paragraph{Operations.}
+\begin{itemize}
+  \item \textbf{Cell construction.}
+    $\CellOf{t}{\mathit{cd}}$ constructs the diagram consisting of a
+    single cell with tag $t$ and cell data $\mathit{cd}$.
+    For a 0-cell, the shape is a single point. For a cell of
+    dimension $k > 0$ with boundaries $\CBdy{d^-}{d^+}$,
+    the shape is built from the shapes of $d^-$ and $d^+$.
+
+  \item \textbf{Boundary.}
+    $\bdy{\pm}{k}{\Diag{D}}$ extracts the $(k)$-boundary
+    by extracting the boundary of the underlying shape and pulling
+    back labels and paste trees through the embedding.
+
+  \item \textbf{Pasting.}
+    $\Diag{D}_1 \paste{k} \Diag{D}_2$ pastes two diagrams at
+    dimension $k$. This requires that the output $k$-boundary of
+    $\Diag{D}_1$ is isomorphic to the input $k$-boundary of
+    $\Diag{D}_2$ (\emph{pastability}). The resulting shape is a
+    pushout of the two underlying ogposets along the shared boundary.
+
+  \item \textbf{Normalisation.}
+    $\mathsf{norm}(\Diag{D})$ normalises the underlying shape and
+    permutes labels accordingly.
+
+  \item \textbf{Equality and isomorphism.}
+    Two diagrams are \emph{equal} if they have identical shapes and
+    matching labels at every position. They are \emph{isomorphic} if
+    there is an isomorphism of the underlying shapes that preserves
+    labels. The interpreter's \texttt{assert} command checks
+    isomorphism.
+\end{itemize}
+
+% ---------------------------------------------------------------------------
+\subsection{Partial Maps}
+\label{sec:data:pmap}
+% ---------------------------------------------------------------------------
+
+Abstractly, a map between regular directed complexes is an
+order-preserving function that covariantly preserves the
+$\omega$-categorical structure (\cref{sec:molecules:regular}).  The
+interpreter represents such a map as a \emph{partial map} $\Map{F}$: a
+finite map $\Tag \rightharpoonup (\CData, \Diag{D})$ sending source
+tags to their cell data and image diagram.  The domain is indexed by
+dimension for ordered iteration.  A Boolean \emph{cellular} flag
+records whether every image is a single cell (top-level paste tree is a
+$\mathsf{Leaf}$).
+
+\paragraph{Operations.}
+\begin{itemize}
+  \item \textbf{Extend.}
+    $\mathsf{extend}(\Map{F}, t, \mathit{cd}, \Diag{D})$ adds a
+    new entry mapping tag $t$ (with cell data $\mathit{cd}$) to
+    image $\Diag{D}$, after validating \emph{boundary compatibility}:
+    for a cell of dimension $k > 0$ with boundaries
+    $\CBdy{d^-}{d^+}$, the map must already be defined on all
+    boundary tags, and applying $\Map{F}$ to $d^-$ and $d^+$ must
+    yield diagrams isomorphic to the corresponding boundaries of
+    $\Diag{D}$.
+
+  \item \textbf{Apply.}
+    $\Map{F}(\Diag{D})$ applies $\Map{F}$ to a diagram by
+    recursing on its paste tree:
+    \begin{itemize}
+      \item For $\mathsf{Leaf}(t)$: return $\Map{F}(t)$ (the image
+        diagram).
+      \item For $\mathsf{Node}(k, L, R)$: recursively apply to $L$
+        and $R$, then paste the results at dimension $k$.
+    \end{itemize}
+    When $\Map{F}$ is cellular, a fast path avoids the paste-tree
+    recursion: since every image is a single cell, it suffices to
+    relabel the diagram's tags in place.
+
+  \item \textbf{Compose.}
+    $\Map{G} \circ \Map{F}$ composes two partial maps by applying
+    $\Map{G}$ to each image in $\Map{F}$'s table.
+
+  \item \textbf{Identity.}
+    $\idmap{\Complex}$ maps every generator tag in $\Complex$ to
+    its own classifier diagram. It is always cellular.
+\end{itemize}
+
+% ===========================================================================
 \section{Abstract Syntax}
 \label{sec:syntax}
 % ===========================================================================
@@ -636,21 +818,73 @@ interactive development.
 \label{sec:state}
 % ===========================================================================
 
-The interpreter maintains a global state $\State$ consisting of three
-finite maps:
+\Cref{fig:domains} lists the semantic domains used in the formal
+rules.  All are finite; the interpreter builds them incrementally.
+
+\begin{figure}[t]
+\fbox{\text{semantic domains}}
+
+\medskip
+\begin{tabular}{@{}l@{\;\;}c@{\;\;}l@{\qquad}l@{}}
+$\State$    & $\in$ & $\mathbf{State}$
+  & global interpreter states \\
+$\Complex$  & $\in$ & $\mathbf{Cpx}$
+  & complexes (namespaces) \\
+$\Diag{D}$  & $\in$ & $\mathbf{Diag}$
+  & diagrams (labelled ogposets with paste trees) \\
+$\Map{F}$   & $\in$ & $\mathbf{PMap}$
+  & partial maps (tag-indexed tables) \\
+$\GId$      & $\in$ & $\GIds = \mathbb{N}$
+  & global identifiers \\
+$n$         & $\in$ & $\Namespace$
+  & names (identifier strings) \\
+$t$         & $\in$ & $\Tag = \TagG{\GId} \mid \TagL{n}$
+  & tags (global or local) \\
+$\mathit{cd}$ & $\in$ & $\CData = \CZero \mid \CBdy{\Diag{D}}{\Diag{D}}$
+  & cell data \\
+$m$         & $\in$ & $\ModId$
+  & module identifiers (canonical file paths) \\
+            & $\in$ & $\mathbf{MapDom} = \TyDom(\GIds) \mid \ModDom(\ModId)$
+  & map domain annotations \\
+\end{tabular}
+\caption{Semantic domains and metavariable conventions.}
+\label{fig:domains}
+\end{figure}
+
+The interpreter maintains a global state $\State \in \mathbf{State}$
+consisting of three finite maps:
 \[
   \State = \langle \cells, \types, \modules \rangle
 \]
 
 \begin{itemize}
-  \item $\cells : \GIds \rightharpoonup \CData$ maps
-    global identifiers to their cell data. (Dimensions are stored in a
+  \item $\cells : \GIds \rightharpoonup \mathbf{CData}$ maps
+    global identifiers of \emph{cell generators} (those declared inside
+    complex bodies) to their cell data.  (Dimensions are stored in a
     separate side-table for efficient dimension-based iteration.)
-  \item $\types : \GIds \rightharpoonup (\CData \times \Complex)$ maps
-    global identifiers of types to their cell data and associated complex.
-  \item $\modules : \ModId \rightharpoonup \Complex$ maps canonical
+  \item $\types : \GIds \rightharpoonup (\mathbf{CData} \times \mathbf{Cpx})$ maps
+    global identifiers of \emph{type declarations} to their cell data and
+    associated complex (namespace).  A type declaration
+    (\texttt{T <<= \{...\}}) introduces a named regular directed complex;
+    its cell data is always $\CZero$ (types are 0-dimensional), so the
+    significant component is the complex.  The distinction from $\cells$
+    is that types carry namespaces, while plain cell generators do not.
+  \item $\modules : \ModId \rightharpoonup \mathbf{Cpx}$ maps canonical
     file paths to module-level complexes.
 \end{itemize}
+
+\noindent
+Complexes are not independent of the state: every complex in the system
+is stored inside $\State.\types$ or $\State.\modules$.  In the judgment
+forms (\cref{fig:judgments}), the parameter~$\Complex$ is a
+\emph{location}: it identifies which complex in the state the
+instruction operates on.  For type-level and local instructions, the
+location is determined by looking up the state (e.g.\
+$\findmod{m}$ or $\findtype{\GId}.\Complex$), and any modifications to
+the location are reflected in the returned~$\State'$.  For complex-body
+instructions, the location is a \emph{working copy} threaded
+separately---the caller is responsible for writing $\Complex'$ back
+into the state when the body is complete.
 
 % ---------------------------------------------------------------------------
 \subsection{Global Identifiers and Tags}
@@ -675,10 +909,8 @@ $\kwinclude$). Global identifiers resolve this: they are the canonical
 identity of a cell. In the Rust implementation, $\GIds$ is a wrapper around
 \texttt{usize} allocated via a global atomic counter.
 
-Every cell in a diagram is labelled not with a name but with a \emph{tag}:
-\[
-  \Tag \Coloneqq \TagG{\GId} \mid \TagL{n}
-\]
+Every cell in a diagram is labelled not with a name but with a
+\emph{tag} (\cref{fig:domains}).
 Global tags $\TagG{\GId}$ reference cells registered in $\State.\cells$
 or $\State.\types$. Local tags $\TagL{n}$ reference cells in a complex's
 local cell store; they are used only inside complex bodies being
@@ -692,10 +924,8 @@ but are not registered in the global state.
 \label{sec:state:celldata}
 % ---------------------------------------------------------------------------
 
-Every cell has associated \emph{cell data} describing its boundary:
-\[
-  \CData \Coloneqq \CZero \mid \CBdy{d^{-}}{d^{+}}
-\]
+Every cell has associated \emph{cell data} $\mathit{cd} \in \CData$
+(\cref{fig:domains}) describing its boundary.
 The symbol $\CZero$ denotes a 0-cell (no boundaries). The form
 $\CBdy{d^{-}}{d^{+}}$ describes a cell of dimension $k > 0$ with
 input boundary $d^{-}$ and output boundary $d^{+}$, both diagrams of
@@ -706,25 +936,27 @@ dimension $k - 1$.
 \label{sec:state:complex}
 % ---------------------------------------------------------------------------
 
-A \emph{complex} $\Complex$ is the namespace associated with a type or
-module. It bundles four components:
+A \emph{complex} $\Complex$ is the interpreter's representation of a
+(finite) regular directed complex, serving as the namespace associated
+with a type or module.  It bundles four components:
 \[
   \Complex = \langle \mathit{gens}, \mathit{diags}, \mathit{maps},
     \mathit{locals} \rangle
 \]
 \begin{itemize}
   \item $\mathit{gens} : \Namespace \rightharpoonup
-    (\Tag \times \mathbb{N} \times \Diag{D})$
+    (\mathbf{Tag} \times \mathbb{N} \times \mathbf{Diag})$
     maps generator names to their tag, dimension, and
     \emph{classifier diagram} (the diagram consisting of that single cell).
-  \item $\mathit{diags} : \Namespace \rightharpoonup \Diag{D}$ maps diagram names
-    to diagram values (labelled ogposets; see \cref{sec:data}).
-  \item $\mathit{maps} : \Namespace \rightharpoonup
-    (\MapDom \times \Map{F})$ maps partial map names to a domain
-    annotation and a partial map value (a tag-indexed table;
+  \item $\mathit{diags} : \Namespace \rightharpoonup \mathbf{Diag}$ maps diagram names
+    to diagram values (representations of pasting diagrams;
     see \cref{sec:data}).
+  \item $\mathit{maps} : \Namespace \rightharpoonup
+    (\mathbf{MapDom} \times \mathbf{PMap})$ maps partial map names to a domain
+    annotation and a partial map value (representing a map of
+    directed complexes; see \cref{sec:data}).
     The domain is either $\TyDom(\GIds)$ or $\ModDom(\ModId)$.
-  \item $\mathit{locals} : \Namespace \rightharpoonup \CData$
+  \item $\mathit{locals} : \Namespace \rightharpoonup \mathbf{CData}$
     stores locally-scoped cells (populated only during complex body
     interpretation). As with $\cells$, dimensions are maintained in
     a separate index.
@@ -748,9 +980,11 @@ Diagram expressions evaluate to \emph{terms}:
   \TermD \Coloneqq \DTerm{\Diag{D}} \mid
   \MTerm{\Map{F}, \Complex_{\mathit{src}}}
 \]
-A diagram term $\DTerm{\Diag{D}}$ carries a concrete diagram. A map
+A diagram term $\DTerm{\Diag{D}}$ carries a diagram (representing a
+pasting diagram in a directed complex).  A map
 term $\MTerm{\Map{F}, \Complex_{\mathit{src}}}$ carries a partial map
-$\Map{F}$ together with a reference to its \emph{source complex}. The
+$\Map{F}$ (representing a map of directed complexes) together with a
+reference to its \emph{source complex}. The
 source complex is essential: it determines the namespace in which further
 dot-access into the map is resolved.
 
@@ -768,204 +1002,57 @@ in the ambient complex). For example, if \texttt{F} is a map from a type
 \label{sec:state:threading}
 % ---------------------------------------------------------------------------
 
-The state $\State$ is threaded through interpretation. The judgment form is:
-\[
-  \IntJ{\State}{\Complex}{\mathit{instr}}{\State'}
-\]
-reading: ``under state $\State$ and location $\Complex$, interpreting
-instruction $\mathit{instr}$ yields a new state $\State'$.'' Instructions
-within a block are processed sequentially: each receives the state produced
-by the previous. Local blocks stop on first error; type blocks and complex
-bodies process all instructions regardless of errors, accumulating
-diagnostics.
+The state $\State$ is threaded through interpretation.
+Instructions within a block are processed sequentially: each receives
+the state produced by the previous.  Local blocks stop on first error;
+type blocks and complex bodies process all instructions regardless of
+errors, accumulating diagnostics.
+
+\Cref{fig:judgments} lists all judgment forms used in the remainder of
+the document.
+
+\begin{figure}[t]
+\fbox{\text{judgment forms}}
+
+\medskip
+\begin{tabular}{@{}l@{\quad}l@{}}
+$\IntJ{\State}{\Complex}{\mathit{instr}}{\State'}$
+  & Interpret instruction $\mathit{instr}$ in state $\State$ at
+    location~$\Complex$; \\
+  & yields updated state $\State'$. \\[6pt]
+$\IntJ{\State}{\Complex}{\mathit{instr}}{(\State', \Complex')}$
+  & Variant for complex-body instructions: also returns \\
+  & the updated complex $\Complex'$. \\[6pt]
+$\EvalD{\State}{\Complex}{\Diagram}{\Diag{D}}$
+  & Evaluate diagram expression $\Diagram$ in state $\State$ at \\
+  & location~$\Complex$; yields a diagram $\Diag{D}$. \\[6pt]
+$\EvalT{\State}{\Complex}{e}{\TermD}$
+  & Evaluate expression $e$ to a term: either \\
+  & $\DTerm{\Diag{D}}$ (diagram) or $\MTerm{\Map{F}, \Complex_S}$ (map). \\[6pt]
+$\EvalM{\State}{\Complex}{(\PMapDef, \Complex_S)}{\Map{F}}$
+  & Evaluate partial map definition $\PMapDef$ in state $\State$ \\
+  & at location~$\Complex$ with source complex $\Complex_S$; \\
+  & yields a partial map $\Map{F}$. \\[6pt]
+$\ResJ{\State}{\Cpx}{(\GId, \Complex)}$
+  & Resolve complex reference $\Cpx$ in state $\State$; \\
+  & yields a type identifier $\GId$ and its complex $\Complex$. \\[6pt]
+$\AddrJ{\State}{\Addr}{\GId}$
+  & Resolve address $\Addr$ in state $\State$; \\
+  & yields the type identifier $\GId$ it refers to. \\[6pt]
+$\AssertJ{\State}{\Complex}{\mathit{assertion}}$
+  & Check assertion in state $\State$ at location~$\Complex$; \\
+  & succeeds (no output) or raises an error.
+\end{tabular}
+\caption{Summary of judgment forms.  The state $\State$ and location
+  $\Complex$ are inputs; the right-hand side of $\Downarrow$ (or
+  $\checkmark$) is the output.}
+\label{fig:judgments}
+\end{figure}
 
 In the Rust implementation, $\State$ is wrapped in \texttt{Arc<State>} and
 mutated via \texttt{Arc::make\_mut}. This copy-on-write discipline is not
 observable in the formal rules but explains why the implementation freely
 clones contexts before potentially-failing operations.
-
-% ===========================================================================
-\section{Data Structures}
-\label{sec:data}
-% ===========================================================================
-
-Before describing the evaluation rules, we define the three data
-structures that the interpreter manipulates: oriented graded posets
-(the combinatorial shapes introduced in \cref{sec:molecules}), diagrams
-(labelled shapes with paste history), and partial maps
-(structure-preserving maps between them).
-
-% ---------------------------------------------------------------------------
-\subsection{Oriented Graded Posets}
-\label{sec:data:ogposet}
-% ---------------------------------------------------------------------------
-
-An \emph{oriented graded poset} (ogposet) $G$ consists of:
-\begin{itemize}
-  \item A \emph{dimension} $\dim(G) \in \mathbb{Z}_{\geq -1}$
-    (where $-1$ indicates the empty ogposet).
-  \item For each $0 \leq d \leq \dim(G)$, a finite set of
-    \emph{cells} $G_d$.
-  \item \emph{Face maps}
-    $\bdyin{d}, \bdyout{d} : G_d \to \mathcal{P}(G_{d-1})$
-    giving the input and output $(d{-}1)$-cells on the boundary
-    of each $d$-cell.
-  \item Dually, \emph{coface maps}
-    recording which higher-dimensional cells each cell
-    appears in the boundary of.
-\end{itemize}
-Ogposets are the unlabelled shapes underlying all diagrams.
-In the Rust implementation, cells at each dimension are indexed by
-position ($0, 1, \ldots$) and face/coface sets are stored as sorted
-vectors of indices.
-
-\paragraph{Operations.}
-\begin{itemize}
-  \item \textbf{Boundary extraction.}
-    $\bdy{\pm}{k}{G}$ extracts the input ($-$) or output ($+$)
-    $k$-boundary of $G$ as a sub-ogposet, together with an
-    \emph{embedding} recording which cells of $G$ appear in the
-    boundary. The embedding consists of a forward map and an
-    inverse map, both indexed by dimension.
-
-  \item \textbf{Normalisation.}
-    $\mathsf{norm}(G)$ produces a canonical reordering of the cells
-    by traversing from the input-extremal cells (those with no input
-    cofaces). Two ogposets are isomorphic if and only if they have
-    the same normal form. Both normalisation and boundary extraction
-    are cached by pointer identity.
-
-  \item \textbf{Isomorphism.}
-    $\mathsf{iso}(G_1, G_2)$ checks whether $G_1 \cong G_2$ by
-    normalising both and comparing the canonical forms, then
-    composing the two embeddings to produce a direct isomorphism
-    $G_1 \to G_2$.
-
-  \item \textbf{Roundness.}
-    $G$ is \emph{round} if the input and output interiors are
-    disjoint at every dimension---a necessary condition for $G$ to be
-    a valid diagram shape.
-\end{itemize}
-
-% ---------------------------------------------------------------------------
-\subsection{Diagrams}
-\label{sec:data:diagram}
-% ---------------------------------------------------------------------------
-
-A \emph{diagram} $\Diag{D}$ consists of three components:
-\begin{itemize}
-  \item A \emph{shape}: an ogposet $G$ (shared via reference counting).
-  \item \emph{Labels}:
-    for each dimension $d$, a map
-    $\ell_d : G_d \to \Tag$
-    assigning a tag to every cell in the shape.
-  \item \emph{Paste trees}: for each dimension $d$ and sign
-    $s \in \{-,+\}$, a tree recording how the $d$-level structure
-    was built by pasting.
-\end{itemize}
-
-The shape gives the combinatorial structure; the labels record
-\emph{which} generators occupy each position; the paste trees record
-\emph{how} the diagram was assembled.
-
-\paragraph{Paste trees.}
-A paste tree is defined inductively:
-\[
-  \mathit{PT} \;\Coloneqq\;
-    \mathsf{Leaf}(t) \mid
-    \mathsf{Node}(k, \mathit{PT}_L, \mathit{PT}_R)
-\]
-A $\mathsf{Leaf}(t)$ records a single generator with tag $t$.
-A $\mathsf{Node}(k, L, R)$ records a paste at dimension $k$
-of the sub-diagrams described by the left and right sub-trees.
-A diagram is a \emph{cell} (as opposed to a composite) when its
-top-level paste tree is a single $\mathsf{Leaf}$.
-
-Paste trees serve two purposes. First, they determine how
-$\mathsf{apply}$ traverses a diagram when applying a partial map
-(\cref{sec:data:pmap}). Second, they distinguish structurally
-identical diagrams that were built by different paste sequences,
-which matters for the interpreter's notion of equality.
-
-\paragraph{Operations.}
-\begin{itemize}
-  \item \textbf{Cell construction.}
-    $\CellOf{t}{\mathit{cd}}$ constructs the diagram consisting of a
-    single cell with tag $t$ and cell data $\mathit{cd}$.
-    For a 0-cell, the shape is a single point. For a cell of
-    dimension $k > 0$ with boundaries $\CBdy{d^-}{d^+}$,
-    the shape is built from the shapes of $d^-$ and $d^+$.
-
-  \item \textbf{Boundary.}
-    $\bdy{\pm}{k}{\Diag{D}}$ extracts the $(k)$-boundary
-    by extracting the boundary of the underlying shape and pulling
-    back labels and paste trees through the embedding.
-
-  \item \textbf{Pasting.}
-    $\Diag{D}_1 \paste{k} \Diag{D}_2$ pastes two diagrams at
-    dimension $k$. This requires that the output $k$-boundary of
-    $\Diag{D}_1$ is isomorphic to the input $k$-boundary of
-    $\Diag{D}_2$ (\emph{pastability}). The resulting shape is a
-    pushout of the two underlying ogposets along the shared boundary.
-
-  \item \textbf{Normalisation.}
-    $\mathsf{norm}(\Diag{D})$ normalises the underlying shape and
-    permutes labels accordingly.
-
-  \item \textbf{Equality and isomorphism.}
-    Two diagrams are \emph{equal} if they have identical shapes and
-    matching labels at every position. They are \emph{isomorphic} if
-    there is an isomorphism of the underlying shapes that preserves
-    labels. The interpreter's \texttt{assert} command checks
-    isomorphism.
-\end{itemize}
-
-% ---------------------------------------------------------------------------
-\subsection{Partial Maps}
-\label{sec:data:pmap}
-% ---------------------------------------------------------------------------
-
-A \emph{partial map} $\Map{F}$ is a finite map
-$\Tag \rightharpoonup (\CData, \Diag{D})$
-sending source tags to their cell data and image diagram.
-The domain is indexed by dimension for ordered iteration.
-A Boolean \emph{cellular} flag records whether every image is a
-single cell (top-level paste tree is a $\mathsf{Leaf}$).
-
-\paragraph{Operations.}
-\begin{itemize}
-  \item \textbf{Extend.}
-    $\mathsf{extend}(\Map{F}, t, \mathit{cd}, \Diag{D})$ adds a
-    new entry mapping tag $t$ (with cell data $\mathit{cd}$) to
-    image $\Diag{D}$, after validating \emph{boundary compatibility}:
-    for a cell of dimension $k > 0$ with boundaries
-    $\CBdy{d^-}{d^+}$, the map must already be defined on all
-    boundary tags, and applying $\Map{F}$ to $d^-$ and $d^+$ must
-    yield diagrams isomorphic to the corresponding boundaries of
-    $\Diag{D}$.
-
-  \item \textbf{Apply.}
-    $\Map{F}(\Diag{D})$ applies $\Map{F}$ to a diagram by
-    recursing on its paste tree:
-    \begin{itemize}
-      \item For $\mathsf{Leaf}(t)$: return $\Map{F}(t)$ (the image
-        diagram).
-      \item For $\mathsf{Node}(k, L, R)$: recursively apply to $L$
-        and $R$, then paste the results at dimension $k$.
-    \end{itemize}
-    When $\Map{F}$ is cellular, a fast path avoids the paste-tree
-    recursion: since every image is a single cell, it suffices to
-    relabel the diagram's tags in place.
-
-  \item \textbf{Compose.}
-    $\Map{G} \circ \Map{F}$ composes two partial maps by applying
-    $\Map{G}$ to each image in $\Map{F}$'s table.
-
-  \item \textbf{Identity.}
-    $\idmap{\Complex}$ maps every generator tag in $\Complex$ to
-    its own classifier diagram. It is always cellular.
-\end{itemize}
-
 % ===========================================================================
 \section{Program Interpretation}
 \label{sec:prog}
@@ -1116,8 +1203,8 @@ As with \textsc{TyLet}, name uniqueness is not checked at the type level.
      \IntJ{\State}{\cdot}{\Prog(m')}{\State_1} \\\\
      \Complex_{m'} = \State_1.\modules(m') \\
      F_{\mathit{id}} = \idmap{\Complex_{m'}} \\
-     \mathit{gs} = \{ (\mathit{alias}.n_g, t_g, D_g) \mid
-       (n_g, t_g, D_g) \in \Complex_{m'}.\mathit{gens},\;
+     \mathit{gs} = \{ (\mathit{alias}.n_g, t_g, k_g, D_g) \mid
+       (n_g, (t_g, k_g, D_g)) \in \Complex_{m'}.\mathit{gens},\;
        n_g \neq \varepsilon \} \\\\
      \State' = \State_1[
        \modules(m).\mathit{gens} \mathbin{{+}{=}} \mathit{gs},\;
@@ -1216,36 +1303,51 @@ in the complex's local cell store.
 \label{sec:cinstr:gen}
 
 \begin{mathpar}
-  \inferrule*[lab=\textsc{CGen}]
+  \inferrule*[lab=\textsc{CGen-Zero}]
     {n \notin \mathit{used}(\Complex) \\
-     \mathit{cd} = \text{(boundary from context)} \\
-     \dim = \text{(inferred from } \mathit{cd}\text{)} \\\\
      \mu = \ModeG \implies
        \GId = \fresh,\;
-       t = \TagG{\GId} \\
+       t = \TagG{\GId},\;
+       \State' = \State[\cells(\GId) \mapsto \CZero] \\
      \mu = \ModeL \implies
-       t = \TagL{n} \\\\
-     D = \CellOf{t}{\mathit{cd}} \\
-     \Complex' = \Complex[\mathit{gens}(n) \mapsto D,\;
+       t = \TagL{n},\;
+       \State' = \State \\\\
+     D = \CellOf{t}{\CZero} \\
+     \Complex' = \Complex[\mathit{gens}(n) \mapsto (t, 0, D),\;
        \mathit{diags}(n) \mapsto D]}
-    {\IntJ{\State}{\Complex}{n : \cdots}{\State', \Complex'}}
+    {\IntJ{\State}{\Complex}{n}{\State', \Complex'}}
+  \and
+  \inferrule*[lab=\textsc{CGen-Cell}]
+    {n \notin \mathit{used}(\Complex) \\
+     \EvalD{\State}{\Complex}{\Diagram^-}{D^-} \\
+     \EvalD{\State}{\Complex}{\Diagram^+}{D^+} \\
+     D^-,\, D^+\;\text{round} \\\\
+     \mathit{cd} = \CBdy{D^-}{D^+} \qquad
+     k = \dim(D^-) + 1 \\
+     \mu = \ModeG \implies
+       \GId = \fresh,\;
+       t = \TagG{\GId},\;
+       \State' = \State[\cells(\GId) \mapsto \mathit{cd}] \\
+     \mu = \ModeL \implies
+       t = \TagL{n},\;
+       \State' = \State \\\\
+     D = \CellOf{t}{\mathit{cd}} \\
+     \Complex' = \Complex[\mathit{gens}(n) \mapsto (t, k, D),\;
+       \mathit{diags}(n) \mapsto D]}
+    {\IntJ{\State}{\Complex}{n : \Diagram^- \to \Diagram^+}{\State', \Complex'}}
 \end{mathpar}
 
-A bare name declares a 0-cell ($\mathit{cd} = \CZero$, $\dim = 0$). A name
-with boundary $n : d^{-} \to d^{+}$ declares an $n$-cell with
-$\mathit{cd} = \CBdy{d^{-}}{d^{+}}$ and
-$\dim = \mathsf{dim}(d^{-}) + 1$, where $d^{-}$ and $d^{+}$ are
-evaluated as diagrams in the current complex.
+\textsc{CGen-Zero} declares a 0-cell (a bare name with no boundary).
+\textsc{CGen-Cell} declares a higher cell: the source and target diagrams
+$\Diagram^-$ and $\Diagram^+$ are evaluated in the current complex, and
+their roundness is checked (this ensures the resulting closure is an
+atom; see \cref{sec:molecules:regular}).
 
 The cell diagram $D = \CellOf{t}{\mathit{cd}}$ is constructed by taking
-the pushout of the input and output boundary embeddings into a common lower
-boundary, then adding one new top-dimensional cell. The resulting
-ogposet (oriented graded poset; see \cref{sec:data})
-has the combined shape of the two boundaries with the new cell on top.
-
-The cell is entered into both $\mathit{gens}$ and $\mathit{diags}$.  In
-$\ModeG$ mode the cell is also registered in $\State.\cells$; in $\ModeL$
-mode it is added to $\Complex.\mathit{locals}$.
+the pushout of the input and output boundary shapes into a common lower
+boundary, then adding one new top-dimensional cell (\cref{sec:data}).
+In $\ModeL$ mode, the cell data is also added to
+$\Complex'.\mathit{locals}(n)$.
 
 \subsection{Complex-Body Let and Def}
 \label{sec:cinstr:let}
@@ -1277,8 +1379,8 @@ uniqueness.
      \Complex_S = \findtype{\GId}.\Complex \\
      n \notin \mathit{used}(\Complex) \\
      F_{\mathit{id}} = \idmap{\Complex_S} \\\\
-     \mathit{gs} = \{ (n.n_g, t_g, D_g) \mid
-       (n_g, t_g, D_g) \in \Complex_S.\mathit{gens},\;
+     \mathit{gs} = \{ (n.n_g, t_g, k_g, D_g) \mid
+       (n_g, (t_g, k_g, D_g)) \in \Complex_S.\mathit{gens},\;
        t_g \notin \Complex \} \\
      \Complex' = \Complex[\mathit{gens} \mathbin{{+}{=}} \mathit{gs},\;
        \mathit{maps}(n) \mapsto (\TyDom(\GId), F_{\mathit{id}})]}
@@ -1305,13 +1407,13 @@ types requires an explicit alias.
      \Complex_A = \findtype{\GId_A}.\Complex \\
      n \notin \mathit{used}(\Complex) \\
      F_0 = \text{(evaluate along map, or } \emptyset \text{ if omitted)} \\\\
-     \text{for each } (n_g, t_g, \dim_g) \in \Complex_A.\mathit{gens}
-       \text{, by ascending dimension, with } F_i(t_g)\up\text{:} \\
+     \text{for each } (n_g, (t_g, k_g, \_)) \in \Complex_A.\mathit{gens}
+       \text{, by ascending } k_g\text{, with } F_i(t_g)\up\text{:} \\
      \quad \GId' = \fresh \qquad
      \mathit{cd}' = \St{\mathsf{bdy}}(F_i, t_g) \qquad
      D' = \CellOf{\TagG{\GId'}}{\mathit{cd}'} \\
      \quad F_{i+1} = F_i[t_g \mapsto D'] \qquad
-     \State_{i+1} = \State_i[\cells(\GId') \mapsto (\dim_g, \mathit{cd}')] \\\\
+     \State_{i+1} = \State_i[\cells(\GId') \mapsto \mathit{cd}'] \\\\
      \Complex' = \Complex[\mathit{gens} \mathbin{{+}{=}} \mathit{new},\;
        \mathit{maps}(n) \mapsto (\TyDom(\GId_A), F_{\mathit{final}})]}
     {\IntJ{\State}{\Complex}{\kwattach\;n \mathbin{::} \Addr\;
@@ -1393,7 +1495,7 @@ definition. Local-block definitions are global in duration.
   \inferrule*[lab=\textsc{Assert-Map}]
     {\EvalT{\State}{\Complex}{\Diagram_1}{\MTerm{F_1, \Complex_S}} \\
      \EvalT{\State}{\Complex}{\Diagram_2}{\MTerm{F_2, \Complex_S}} \\\\
-     \forall (n, t) \in \Complex_S.\mathit{gens}{:}\;
+     \forall (n, (t, \_, \_)) \in \Complex_S.\mathit{gens}{:}\;
        F_1(t)\dn \Leftrightarrow F_2(t)\dn \\
      \forall t\;\text{with } F_1(t)\dn{:}\;
        F_1(t) \cong F_2(t)}
