@@ -37,17 +37,17 @@ pub enum CellData {
 
 /// A diagram: a labelled, oriented graded poset with paste structure.
 ///
-/// `trees[d][sign_idx]` is the paste tree at dimension d for the given sign (0=Input, 1=Output).
+/// `paste_history[d][sign_idx]` is the paste tree at dimension d for the given sign (0=Input, 1=Output).
 #[derive(Debug, Clone)]
 pub struct Diagram {
     pub shape: Arc<Ogposet>,
     pub labels: Vec<Vec<Tag>>,       // labels[dim][pos]
-    pub trees: Vec<[PasteTree; 2]>,  // trees[dim][sign_idx]
+    pub paste_history: Vec<[PasteTree; 2]>,  // paste_history[dim][sign_idx]
 }
 
 impl Diagram {
-    pub fn new(shape: Arc<Ogposet>, labels: Vec<Vec<Tag>>, trees: Vec<[PasteTree; 2]>) -> Self {
-        Self { shape, labels, trees }
+    pub fn new(shape: Arc<Ogposet>, labels: Vec<Vec<Tag>>, paste_history: Vec<[PasteTree; 2]>) -> Self {
+        Self { shape, labels, paste_history }
     }
 
     pub fn dim(&self) -> isize {
@@ -63,7 +63,7 @@ impl Diagram {
     }
 
     pub fn tree(&self, sign: Sign, dim: usize) -> Option<&PasteTree> {
-        self.trees.get(dim).map(|pair| &pair[sign.idx()])
+        self.paste_history.get(dim).map(|pair| &pair[sign.idx()])
     }
 
     /// True if the top-level paste tree is just a single leaf (a genuine cell).
@@ -103,7 +103,7 @@ impl Diagram {
     pub fn boundary(sign: Sign, k: usize, d: &Diagram) -> Result<Diagram, Error> {
         let (_, emb) = ogposet::boundary(sign.as_ogposet_sign(), k, &d.shape);
         let pulled_labels = pullback_labels(d, &emb);
-        let new_trees = boundary_trees(&d.trees, sign, k);
+        let new_trees = boundary_trees(&d.paste_history, sign, k);
         Ok(Diagram::new(Arc::clone(&emb.dom), pulled_labels, new_trees))
     }
 
@@ -113,7 +113,7 @@ impl Diagram {
         let effective_k = if d.shape.dim < 0 { 0 } else { k.min(d.shape.dim as usize) };
         let (shape_norm, emb) = ogposet::boundary_traverse(og_sign, effective_k, &d.shape);
         let pulled_labels = pullback_labels(d, &emb);
-        let new_trees = boundary_trees(&d.trees, sign, k);
+        let new_trees = boundary_trees(&d.paste_history, sign, k);
         Ok(Diagram::new(shape_norm, pulled_labels, new_trees))
     }
 
@@ -124,7 +124,7 @@ impl Diagram {
         }
         let (shape_norm, emb) = ogposet::normalisation(&d.shape);
         let pulled = pullback_labels(d, &emb);
-        Diagram::new(shape_norm, pulled, d.trees.clone())
+        Diagram::new(shape_norm, pulled, d.paste_history.clone())
     }
 
     /// Check whether u and v have parallel boundaries (same boundary shape and labels).
@@ -193,7 +193,7 @@ impl Diagram {
             level.into_iter().map(|opt| opt.expect("all cells should be labelled")).collect()
         }).collect();
 
-        let trees_uv = paste_trees(&u.trees, &v.trees, k, num_dims);
+        let trees_uv = paste_trees(&u.paste_history, &v.paste_history, k, num_dims);
 
         Ok(Diagram::new(shape_uv, labels_uv, trees_uv))
     }
@@ -211,8 +211,8 @@ impl Diagram {
     fn cell0(tag: Tag) -> Result<Diagram, Error> {
         let shape = Arc::new(Ogposet::point());
         let labels = vec![vec![tag.clone()]];
-        let trees = vec![[PasteTree::Leaf(tag.clone()), PasteTree::Leaf(tag)]];
-        Ok(Diagram::new(shape, labels, trees))
+        let paste_history = vec![[PasteTree::Leaf(tag.clone()), PasteTree::Leaf(tag)]];
+        Ok(Diagram::new(shape, labels, paste_history))
     }
 
     fn cell_n(tag: Tag, u: &Diagram, v: &Diagram) -> Result<Diagram, Error> {
@@ -288,15 +288,15 @@ impl Diagram {
         let mut trees_uv: Vec<[PasteTree; 2]> = Vec::new();
         for dim in 0..=(d + 1) {
             if dim < d {
-                let input_tree = u.trees.get(dim).map(|p| p[0].clone())
+                let input_tree = u.paste_history.get(dim).map(|p| p[0].clone())
                     .unwrap_or(PasteTree::Leaf(tag.clone()));
-                let output_tree = u.trees.get(dim).map(|p| p[1].clone())
+                let output_tree = u.paste_history.get(dim).map(|p| p[1].clone())
                     .unwrap_or(PasteTree::Leaf(tag.clone()));
                 trees_uv.push([input_tree, output_tree]);
             } else if dim == d {
-                let input_tree = u.trees.get(d).map(|p| p[0].clone())
+                let input_tree = u.paste_history.get(d).map(|p| p[0].clone())
                     .unwrap_or(PasteTree::Leaf(tag.clone()));
-                let output_tree = v.trees.get(d).map(|p| p[1].clone())
+                let output_tree = v.paste_history.get(d).map(|p| p[1].clone())
                     .unwrap_or(PasteTree::Leaf(tag.clone()));
                 trees_uv.push([input_tree, output_tree]);
             } else {

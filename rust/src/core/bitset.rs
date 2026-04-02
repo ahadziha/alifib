@@ -1,4 +1,11 @@
-/// Dense bitvector for traversal temporaries.
+/// Dense set of integers in a fixed universe `0..N`.
+///
+/// Representation:
+/// - `bits[w]` stores membership for values `w*64 .. w*64+63`.
+/// - value `x` is in the set iff bit `(x % 64)` of `bits[x / 64]` is `1`.
+///
+/// This is used for traversal scratch state where we need fast membership checks
+/// and cheap word-level set operations.
 pub(crate) struct BitSet {
     bits:  Vec<u64>,
     count: usize,
@@ -12,6 +19,7 @@ impl BitSet {
 
     #[inline]
     pub fn insert(&mut self, x: usize) -> bool {
+        // Map x to its storage location: word index + bit mask inside that word.
         let (w, b) = (x / 64, 1u64 << (x % 64));
         if self.bits[w] & b == 0 {
             self.bits[w] |= b;
@@ -24,6 +32,7 @@ impl BitSet {
 
     #[inline]
     pub fn remove(&mut self, x: usize) -> bool {
+        // Same mapping as insert; clear the bit if it is currently set.
         let (w, b) = (x / 64, 1u64 << (x % 64));
         if self.bits[w] & b != 0 {
             self.bits[w] &= !b;
@@ -36,6 +45,7 @@ impl BitSet {
 
     #[inline]
     pub fn contains(&self, x: usize) -> bool {
+        // Out-of-range words are treated as "not present".
         let w = x / 64;
         w < self.bits.len() && self.bits[w] & (1u64 << (x % 64)) != 0
     }
@@ -90,11 +100,13 @@ pub(crate) struct BitSetIter<'a> {
 impl<'a> Iterator for BitSetIter<'a> {
     type Item = usize;
     fn next(&mut self) -> Option<usize> {
+        // Move to next non-empty word.
         while self.word == 0 {
             self.word_idx += 1;
             if self.word_idx >= self.bits.len() { return None; }
             self.word = self.bits[self.word_idx];
         }
+        // Emit lowest set bit, then clear it so the next call finds the next one.
         let tz = self.word.trailing_zeros() as usize;
         self.word &= self.word - 1; // clear lowest set bit
         Some(self.word_idx * 64 + tz)

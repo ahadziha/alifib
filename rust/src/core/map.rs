@@ -161,7 +161,7 @@ impl PMap {
                 level.iter().map(|tag| top_label(tag, &mut cache)).collect()
             }).collect();
 
-            let new_trees: Vec<[PasteTree; 2]> = diagram.trees.iter().map(|[it, ot]| {
+            let new_trees: Vec<[PasteTree; 2]> = diagram.paste_history.iter().map(|[it, ot]| {
                 [map_tree(it, &cache), map_tree(ot, &cache)]
             }).collect();
 
