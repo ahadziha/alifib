@@ -284,26 +284,11 @@ pub fn interpret_d_comp(
                 (None, r)
             }
             PMapBasic::AnonMap { def, target } => {
-                let (ns_opt, target_result) = super::interpreter::interpret_complex(
-                    context,
-                    super::types::Mode::Global,
-                    target,
-                );
-                match ns_opt {
-                    None => (None, target_result),
-                    Some(ns) => {
-                        let (mc_opt, def_result) = super::pmap::interpret_pmap_def(
-                            &target_result.context,
-                            &ns.working_complex,
-                            location,
-                            def,
-                        );
-                        let combined = InterpResult::combine(target_result, def_result);
-                        match mc_opt {
-                            None => (None, combined),
-                            Some(mc) => (Some(Component::Term(Term::MTerm(mc))), combined),
-                        }
-                    }
+                let (mc_opt, result) =
+                    super::pmap::interpret_anon_map_component(context, location, target, def);
+                match mc_opt {
+                    None => (None, result),
+                    Some(mc) => (Some(Component::Term(Term::MTerm(mc))), result),
                 }
             }
             PMapBasic::Paren(inner_pmap) => {

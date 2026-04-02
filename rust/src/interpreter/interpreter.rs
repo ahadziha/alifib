@@ -17,7 +17,7 @@ use super::include::{
 };
 use super::pmap::{check_assert, interpret_address, interpret_def_pmap};
 pub use super::types::{
-    Context, InterpResult, Mode, TypeScope, ensure_name_free, identity_map, make_error,
+    Context, InterpResult, Mode, NameKind, TypeScope, ensure_name_free, identity_map, make_error,
     resolve_root_owner_type_id, resolve_type_complex, unknown_span,
 };
 
@@ -211,7 +211,7 @@ fn interpret_generator_type(context: &Context, generator: &ast::Generator) -> In
         Some(m) => m,
     };
 
-    if let Some(result) = ensure_name_free(context, module_location, &name, name_span, "Generator")
+    if let Some(result) = ensure_name_free(context, module_location, &name, name_span, NameKind::Generator)
     {
         return result;
     }
@@ -410,7 +410,7 @@ fn interpret_c_instr(
                 None => (location, result),
                 Some((name, diagram)) => {
                     if let Some(r) =
-                        ensure_name_free(&result.context, &location, &name, ld.name.span, "Diagram")
+                        ensure_name_free(&result.context, &location, &name, ld.name.span, NameKind::Diagram)
                     {
                         return (location, InterpResult::combine(result, r));
                     }
@@ -429,7 +429,7 @@ fn interpret_c_instr(
                         &location,
                         &name,
                         dp.name.span,
-                        "Partial map",
+                        NameKind::PartialMap,
                     ) {
                         return (location, InterpResult::combine(result, r));
                     }
@@ -461,7 +461,7 @@ fn interpret_generator_instr(
     let name = nwb.name.inner.clone();
     let name_span = nwb.name.span;
 
-    if let Some(result) = ensure_name_free(&context, &location, &name, name_span, "Generator") {
+    if let Some(result) = ensure_name_free(&context, &location, &name, name_span, NameKind::Generator) {
         return (location, result);
     }
 
@@ -587,7 +587,7 @@ fn interpret_local_inst(
                 None => (None, result),
                 Some((name, diagram)) => {
                     if let Some(r) =
-                        ensure_name_free(&result.context, location, &name, ld.name.span, "Diagram")
+                        ensure_name_free(&result.context, location, &name, ld.name.span, NameKind::Diagram)
                     {
                         return (None, InterpResult::combine(result, r));
                     }
@@ -619,7 +619,7 @@ fn interpret_local_inst(
                         location,
                         &name,
                         dp.name.span,
-                        "Partial map",
+                        NameKind::PartialMap,
                     ) {
                         return (None, InterpResult::combine(result, r));
                     }

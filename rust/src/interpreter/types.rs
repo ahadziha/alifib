@@ -71,6 +71,8 @@ pub struct InterpResult {
     pub holes: Vec<HoleInfo>,
 }
 
+pub type Step<T> = (Option<T>, InterpResult);
+
 impl InterpResult {
     pub fn ok(context: Context) -> Self {
         Self {
@@ -155,6 +157,23 @@ pub enum TermPair {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NameKind {
+    Generator,
+    Diagram,
+    PartialMap,
+}
+
+impl NameKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            NameKind::Generator => "Generator",
+            NameKind::Diagram => "Diagram",
+            NameKind::PartialMap => "Partial map",
+        }
+    }
+}
+
 // ---- Error helpers ----
 
 pub fn unknown_span() -> Span {
@@ -168,11 +187,7 @@ pub fn make_error(span: Span, message: impl Into<String>) -> Error {
     }
 }
 
-pub fn fail<T>(
-    context: &Context,
-    span: Span,
-    message: impl Into<String>,
-) -> (Option<T>, InterpResult) {
+pub fn fail<T>(context: &Context, span: Span, message: impl Into<String>) -> Step<T> {
     let mut result = InterpResult::ok(context.clone());
     result.add_error(make_error(span, message));
     (None, result)
@@ -183,18 +198,36 @@ pub fn ensure_name_free(
     location: &Complex,
     name: &str,
     span: Span,
-    kind: &str,
+    kind: NameKind,
 ) -> Option<InterpResult> {
     if location.name_in_use(name) {
         let mut result = InterpResult::ok(context.clone());
         result.add_error(make_error(
             span,
-            format!("{} name already in use: {}", kind, name),
+            format!("{} name already in use: {}", kind.as_str(), name),
         ));
         Some(result)
     } else {
         None
     }
+}
+
+pub fn dim_index(dim: isize) -> usize {
+    dim.max(0) as usize
+}
+
+pub fn sorted_generators(complex: &Complex) -> Vec<(usize, LocalId, Tag)> {
+    let mut generators: Vec<(usize, LocalId, Tag)> = complex
+        .generator_names()
+        .into_iter()
+        .filter_map(|name| {
+            complex
+                .find_generator(&name)
+                .map(|entry| (entry.dim, name, entry.tag.clone()))
+        })
+        .collect();
+    generators.sort_by_key(|(dim, _, _)| *dim);
+    generators
 }
 
 pub fn qualify_name(prefix: &str, name: &str) -> LocalId {
@@ -211,7 +244,7 @@ pub fn resolve_root_owner_type_id(
     context: &Context,
     module_space: &Complex,
     span: Span,
-) -> (Option<GlobalId>, InterpResult) {
+) -> Step<GlobalId> {
     let empty_name: LocalId = String::new();
     let mut result = InterpResult::ok(context.clone());
 
@@ -234,7 +267,7 @@ pub fn resolve_type_complex(
     type_id: GlobalId,
     span: Span,
     missing_prefix: &str,
-) -> (Option<Complex>, InterpResult) {
+) -> Step<Complex> {
     let mut result = InterpResult::ok(context.clone());
     let Some(type_entry) = context.state.find_type(type_id) else {
         result.add_error(make_error(span, format!("{} {}", missing_prefix, type_id)));
@@ -247,7 +280,7 @@ pub fn resolve_map_domain_source(
     context: &Context,
     domain: &MapDomain,
     span: Span,
-) -> (Option<Arc<Complex>>, InterpResult) {
+) -> Step<Arc<Complex>> {
     let mut result = InterpResult::ok(context.clone());
     match domain {
         MapDomain::Type(id) => {

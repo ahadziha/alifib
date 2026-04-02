@@ -37,7 +37,7 @@ pub fn interpret_include_module_instr(
             Some(m) => m,
         };
 
-        if let Some(result) = ensure_name_free(context, location, &alias, span, "Partial map") {
+        if let Some(result) = ensure_name_free(context, location, &alias, span, NameKind::PartialMap) {
             return result;
         }
     }
@@ -138,7 +138,7 @@ pub fn interpret_include_instr(
         location,
         &name,
         span,
-        "Partial map",
+        NameKind::PartialMap,
     ) {
         return (None, InterpResult::combine(include_result, r));
     }
@@ -191,7 +191,7 @@ pub fn interpret_attach_instr(
         location,
         &name,
         attach_stmt.name.span,
-        "Partial map",
+        NameKind::PartialMap,
     ) {
         return (None, InterpResult::combine(attach_result, r));
     }
@@ -224,16 +224,7 @@ pub fn interpret_attach_instr(
         Some(ty) => ty,
     };
 
-    let mut generators: Vec<(usize, LocalId, Tag)> = attachment
-        .generator_names()
-        .into_iter()
-        .filter_map(|n| {
-            attachment
-                .find_generator(&n)
-                .map(|e| (e.dim, n, e.tag.clone()))
-        })
-        .collect();
-    generators.sort_by_key(|(dim, _, _)| *dim);
+    let generators = sorted_generators(&attachment);
 
     let mut current_location = location.clone();
     let mut current_state = Arc::clone(&context_after.state);
