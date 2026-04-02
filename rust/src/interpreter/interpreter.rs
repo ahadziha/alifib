@@ -369,18 +369,18 @@ pub(super) fn interpret_complex(
 fn interpret_c_block(
     context: &Context,
     mode: Mode,
-    initial_location: &Complex,
+    initial_scope: &Complex,
     body: &[Spanned<CInstr>],
 ) -> (Option<Complex>, InterpResult) {
-    let mut current_location: Complex = initial_location.clone();
+    let mut current_scope: Complex = initial_scope.clone();
     let mut current_context: Context = context.clone();
     let mut acc_errors: Vec<crate::language::error::Error> = Vec::new();
     let mut acc_holes: Vec<super::types::HoleInfo> = Vec::new();
 
     for instr in body {
-        let (new_location, instr_result) =
-            interpret_c_instr(current_context, mode, current_location, instr);
-        current_location = new_location;
+        let (new_scope, instr_result) =
+            interpret_c_instr(current_context, mode, current_scope, instr);
+        current_scope = new_scope;
         current_context = instr_result.context;
         acc_errors.extend(instr_result.errors);
         acc_holes.extend(instr_result.holes);
@@ -391,62 +391,62 @@ fn interpret_c_block(
         errors: acc_errors,
         holes: acc_holes,
     };
-    (Some(current_location), acc_result)
+    (Some(current_scope), acc_result)
 }
 
 fn interpret_c_instr(
     context: Context,
     mode: Mode,
-    mut location: Complex,
+    mut scope: Complex,
     instr: &Spanned<CInstr>,
 ) -> (Complex, InterpResult) {
     match &instr.inner {
         CInstr::NameWithBoundary(nwb) => {
-            interpret_generator_instr(context, mode, location, nwb, instr.span)
+            interpret_generator_instr(context, mode, scope, nwb, instr.span)
         }
         CInstr::LetDiag(ld) => {
-            let (out, result) = interpret_let_diag(&context, &location, ld);
+            let (out, result) = interpret_let_diag(&context, &scope, ld);
             match out {
-                None => (location, result),
+                None => (scope, result),
                 Some((name, diagram)) => {
                     if let Some(r) =
-                        ensure_name_free(&result.context, &location, &name, ld.name.span, NameKind::Diagram)
+                        ensure_name_free(&result.context, &scope, &name, ld.name.span, NameKind::Diagram)
                     {
-                        return (location, InterpResult::combine(result, r));
+                        return (scope, InterpResult::combine(result, r));
                     }
-                    location.add_diagram(name, diagram);
-                    (location, result)
+                    scope.add_diagram(name, diagram);
+                    (scope, result)
                 }
             }
         }
         CInstr::DefPMap(dp) => {
-            let (out, result) = interpret_def_pmap(&context, &location, dp);
+            let (out, result) = interpret_def_pmap(&context, &scope, dp);
             match out {
-                None => (location, result),
+                None => (scope, result),
                 Some((name, map, domain)) => {
                     if let Some(r) = ensure_name_free(
                         &result.context,
-                        &location,
+                        &scope,
                         &name,
                         dp.name.span,
                         NameKind::PartialMap,
                     ) {
-                        return (location, InterpResult::combine(result, r));
+                        return (scope, InterpResult::combine(result, r));
                     }
-                    location.add_map(name, domain, map);
-                    (location, result)
+                    scope.add_map(name, domain, map);
+                    (scope, result)
                 }
             }
         }
         CInstr::IncludeStmt(include_stmt) => {
             let (loc_opt, result) =
-                interpret_include_instr(&context, mode, &location, include_stmt, instr.span);
-            (loc_opt.unwrap_or(location), result)
+                interpret_include_instr(&context, mode, &scope, include_stmt, instr.span);
+            (loc_opt.unwrap_or(scope), result)
         }
         CInstr::AttachStmt(attach_stmt) => {
             let (loc_opt, result) =
-                interpret_attach_instr(&context, mode, &location, attach_stmt, instr.span);
-            (loc_opt.unwrap_or(location), result)
+                interpret_attach_instr(&context, mode, &scope, attach_stmt, instr.span);
+            (loc_opt.unwrap_or(scope), result)
         }
     }
 }
@@ -454,24 +454,24 @@ fn interpret_c_instr(
 fn interpret_generator_instr(
     context: Context,
     mode: Mode,
-    mut location: Complex,
+    mut scope: Complex,
     nwb: &NameWithBoundary,
     outer_span: Span,
 ) -> (Complex, InterpResult) {
     let name = nwb.name.inner.clone();
     let name_span = nwb.name.span;
 
-    if let Some(result) = ensure_name_free(&context, &location, &name, name_span, NameKind::Generator) {
-        return (location, result);
+    if let Some(result) = ensure_name_free(&context, &scope, &name, name_span, NameKind::Generator) {
+        return (scope, result);
     }
 
     let (boundaries, mut result) = match &nwb.boundary {
         None => (CellData::Zero, InterpResult::ok(context)),
         Some(bounds) => {
-            let (bopt, r) = interpret_boundaries(&context, &location, bounds);
+            let (bopt, r) = interpret_boundaries(&context, &scope, bounds);
             drop(context);
             match bopt {
-                None => return (location, r),
+                None => return (scope, r),
                 Some(b) => (b, r),
             }
         }
@@ -505,22 +505,22 @@ fn interpret_generator_instr(
                 bounds_span,
                 format!("Failed to create generator cell: {}", e),
             ));
-            return (location, result);
+            return (scope, result);
         }
     };
 
-    location.add_generator(name.clone(), classifier.clone());
-    location.add_diagram(name.clone(), classifier.clone());
+    scope.add_generator(name.clone(), classifier.clone());
+    scope.add_diagram(name.clone(), classifier.clone());
 
     if mode == Mode::Local {
-        location.add_local_cell(name.clone(), dim, boundaries.clone());
+        scope.add_local_cell(name.clone(), dim, boundaries.clone());
     }
 
     if let (Mode::Global, Some(id)) = (mode, new_id_opt) {
         Arc::make_mut(&mut result.context.state).set_cell(id, dim, boundaries);
     }
 
-    (location, result)
+    (scope, result)
 }
 
 // ---- Local blocks ----
@@ -578,16 +578,16 @@ fn interpret_local_inst(
     instr: &Spanned<LocalInst>,
 ) -> (Option<Complex>, InterpResult) {
     let owner_type_id = namespace.owner_type_id;
-    let location = &namespace.working_complex;
+    let scope = &namespace.working_complex;
 
     match &instr.inner {
         LocalInst::LetDiag(ld) => {
-            let (out, result) = interpret_let_diag(context, location, ld);
+            let (out, result) = interpret_let_diag(context, scope, ld);
             match out {
                 None => (None, result),
                 Some((name, diagram)) => {
                     if let Some(r) =
-                        ensure_name_free(&result.context, location, &name, ld.name.span, NameKind::Diagram)
+                        ensure_name_free(&result.context, scope, &name, ld.name.span, NameKind::Diagram)
                     {
                         return (None, InterpResult::combine(result, r));
                     }
@@ -599,24 +599,24 @@ fn interpret_local_inst(
                         ));
                         return (None, r);
                     }
-                    let mut new_location = location.clone();
-                    new_location.add_diagram(name.clone(), diagram.clone());
+                    let mut new_scope = scope.clone();
+                    new_scope.add_diagram(name.clone(), diagram.clone());
                     let mut r = result;
                     r.context
                         .state_mut()
                         .modify_type_complex(owner_type_id, |c| c.add_diagram(name, diagram));
-                    (Some(new_location), r)
+                    (Some(new_scope), r)
                 }
             }
         }
         LocalInst::DefPMap(dp) => {
-            let (out, result) = interpret_def_pmap(context, location, dp);
+            let (out, result) = interpret_def_pmap(context, scope, dp);
             match out {
                 None => (None, result),
                 Some((name, map, domain)) => {
                     if let Some(r) = ensure_name_free(
                         &result.context,
-                        location,
+                        scope,
                         &name,
                         dp.name.span,
                         NameKind::PartialMap,
@@ -631,25 +631,25 @@ fn interpret_local_inst(
                         ));
                         return (None, r);
                     }
-                    let mut new_location = location.clone();
-                    new_location.add_map(name.clone(), domain.clone(), map.clone());
+                    let mut new_scope = scope.clone();
+                    new_scope.add_map(name.clone(), domain.clone(), map.clone());
                     let mut r = result;
                     r.context
                         .state_mut()
                         .modify_type_complex(owner_type_id, |c| c.add_map(name, domain, map));
-                    (Some(new_location), r)
+                    (Some(new_scope), r)
                 }
             }
         }
         LocalInst::AssertStmt(assert_stmt) => {
-            let (term_pair_opt, assert_result) = interpret_assert(context, location, assert_stmt);
+            let (term_pair_opt, assert_result) = interpret_assert(context, scope, assert_stmt);
             let span = instr.span;
             match term_pair_opt {
                 None => (None, assert_result),
                 Some(term_pair) => {
-                    let check_result = check_assert(&assert_result.context, location, &term_pair);
+                    let check_result = check_assert(&assert_result.context, scope, &term_pair);
                     match check_result {
-                        Ok(_) => (Some(location.clone()), assert_result),
+                        Ok(_) => (Some(scope.clone()), assert_result),
                         Err(msg) => {
                             let mut r = assert_result;
                             r.add_error(make_error(span, msg));

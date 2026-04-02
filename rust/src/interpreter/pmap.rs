@@ -105,7 +105,7 @@ pub fn interpret_address(context: &Context, address: &Address, addr_span: Span) 
 
 pub fn interpret_anon_map_component(
     context: &Context,
-    source: &Complex,
+    domain: &Complex,
     target: &Spanned<ast::Complex>,
     def: &Spanned<PMapDef>,
 ) -> Step<MapComponent> {
@@ -115,7 +115,7 @@ pub fn interpret_anon_map_component(
         None => (None, target_result),
         Some(ns) => {
             let (mc_opt, def_result) =
-                interpret_pmap_def(&target_result.context, &ns.working_complex, source, def);
+                interpret_pmap_def(&target_result.context, &ns.working_complex, domain, def);
             (mc_opt, InterpResult::combine(target_result, def_result))
         }
     }
@@ -126,28 +126,28 @@ pub fn interpret_anon_map_component(
 pub fn interpret_pmap(
     context: &Context,
     scope: &Complex,
-    source: &Complex,
+    domain: &Complex,
     pmap: &Spanned<ast::PMap>,
 ) -> Step<MapComponent> {
-    interpret_pmap_inner(context, scope, source, &pmap.inner, pmap.span)
+    interpret_pmap_inner(context, scope, domain, &pmap.inner, pmap.span)
 }
 
 fn interpret_pmap_inner(
     context: &Context,
     scope: &Complex,
-    source: &Complex,
+    domain: &Complex,
     pmap: &ast::PMap,
     span: Span,
 ) -> Step<MapComponent> {
     match pmap {
-        ast::PMap::Basic(basic) => interpret_pmap_basic(context, scope, source, basic, span),
+        ast::PMap::Basic(basic) => interpret_pmap_basic(context, scope, domain, basic, span),
         ast::PMap::Dot { base, rest } => {
-            let (base_opt, base_result) = interpret_pmap_basic(context, scope, source, base, span);
+            let (base_opt, base_result) = interpret_pmap_basic(context, scope, domain, base, span);
             match base_opt {
                 None => (None, base_result),
                 Some(base_comp) => {
                     let (rest_opt, rest_result) =
-                        interpret_pmap(&base_result.context, &*base_comp.domain, source, rest);
+                        interpret_pmap(&base_result.context, &*base_comp.domain, domain, rest);
                     let combined = InterpResult::combine(base_result, rest_result);
                     match rest_opt {
                         None => (None, combined),
@@ -171,7 +171,7 @@ fn interpret_pmap_inner(
 fn interpret_pmap_basic(
     context: &Context,
     scope: &Complex,
-    source: &Complex,
+    domain: &Complex,
     basic: &PMapBasic,
     span: Span,
 ) -> Step<MapComponent> {
@@ -198,9 +198,9 @@ fn interpret_pmap_basic(
             }
         }
         PMapBasic::AnonMap { def, target } => {
-            interpret_anon_map_component(context, source, target, def)
+            interpret_anon_map_component(context, domain, target, def)
         }
-        PMapBasic::Paren(inner) => interpret_pmap(context, scope, source, inner),
+        PMapBasic::Paren(inner) => interpret_pmap(context, scope, domain, inner),
     }
 }
 
@@ -209,19 +209,19 @@ fn interpret_pmap_basic(
 pub fn interpret_pmap_def(
     context: &Context,
     scope: &Complex,
-    source: &Complex,
+    domain: &Complex,
     pmap_def: &Spanned<PMapDef>,
 ) -> Step<MapComponent> {
     match &pmap_def.inner {
-        PMapDef::PMap(pmap) => interpret_pmap_inner(context, scope, source, pmap, pmap_def.span),
-        PMapDef::Ext(ext) => interpret_pmap_ext(context, scope, source, ext, pmap_def.span),
+        PMapDef::PMap(pmap) => interpret_pmap_inner(context, scope, domain, pmap, pmap_def.span),
+        PMapDef::Ext(ext) => interpret_pmap_ext(context, scope, domain, ext, pmap_def.span),
     }
 }
 
 fn interpret_pmap_ext(
     context: &Context,
     scope: &Complex,
-    source: &Complex,
+    domain: &Complex,
     ext: &PMapExt,
     span: Span,
 ) -> Step<MapComponent> {
@@ -232,13 +232,13 @@ fn interpret_pmap_ext(
             (
                 MapComponent {
                     map,
-                    domain: Arc::new(source.clone()),
+                    domain: Arc::new(domain.clone()),
                 },
                 InterpResult::ok(context.clone()),
             )
         }
         Some(prefix) => {
-            let (mc_opt, r) = interpret_pmap(context, scope, source, prefix);
+            let (mc_opt, r) = interpret_pmap(context, scope, domain, prefix);
             match mc_opt {
                 None => return (None, r),
                 Some(mc) => (mc, r),
@@ -322,12 +322,12 @@ fn interpret_pmap_ext(
 fn interpret_pm_clause(
     context: &Context,
     scope: &Complex,
-    source: &Complex,
+    domain: &Complex,
     map: PMap,
     clause: &Spanned<PMapClause>,
     _span: Span,
 ) -> Step<PMap> {
-    let (left_opt, left_result) = interpret_diagram_as_term(context, source, &clause.inner.lhs);
+    let (left_opt, left_result) = interpret_diagram_as_term(context, domain, &clause.inner.lhs);
     match left_opt {
         None => return (None, left_result),
         Some(left_term) => {
@@ -359,7 +359,7 @@ fn interpret_pm_clause(
                     match interpret_assign(
                         &combined.context,
                         map,
-                        source,
+                        domain,
                         scope,
                         &left_term,
                         &right_term,
@@ -382,7 +382,7 @@ fn interpret_pm_clause(
 fn interpret_assign(
     context: &Context,
     map: PMap,
-    source: &Complex,
+    domain: &Complex,
     target: &Complex,
     left: &Term,
     right: &Term,
@@ -390,7 +390,7 @@ fn interpret_assign(
 ) -> Result<PMap, aux::Error> {
     match (left, right) {
         (Term::DTerm(d_left), Term::DTerm(d_right)) => {
-            smart_extend(context, map, source, target, d_left, d_right, span)
+            smart_extend(context, map, domain, target, d_left, d_right, span)
         }
         (Term::MTerm(mc_left), Term::MTerm(mc_right)) => {
             if !Arc::ptr_eq(&mc_left.domain, &mc_right.domain) {
@@ -413,7 +413,7 @@ fn interpret_assign(
                         extended = smart_extend(
                             context,
                             extended,
-                            source,
+                            domain,
                             target,
                             left_image,
                             right_image,
@@ -454,23 +454,23 @@ fn interpret_assign(
 pub fn smart_extend(
     context: &Context,
     map: PMap,
-    source: &Complex,
+    domain: &Complex,
     target: &Complex,
-    source_diag: &Diagram,
+    domain_diag: &Diagram,
     target_diag: &Diagram,
     span: Span,
 ) -> Result<PMap, aux::Error> {
-    if !source_diag.is_cell() {
+    if !domain_diag.is_cell() {
         return Err(aux::Error::new(
             "Left-hand side of map instruction must be a cell",
         ));
     }
-    let d = dim_index(source_diag.dim());
-    let tag = source_diag
+    let d = dim_index(domain_diag.dim());
+    let tag = domain_diag
         .labels
         .get(d)
         .and_then(|r| r.first())
-        .ok_or_else(|| aux::Error::new("Source cell has no top label"))?
+        .ok_or_else(|| aux::Error::new("Domain cell has no top label"))?
         .clone();
 
     if map.is_defined_at(&tag) {
@@ -484,10 +484,10 @@ pub fn smart_extend(
         }
     }
 
-    let cell_data = get_cell_data(context, source, &tag)
+    let cell_data = get_cell_data(context, domain, &tag)
         .ok_or_else(|| aux::Error::new("Cannot find cell data for generator"))?;
 
-    let dim = dim_index(source_diag.dim());
+    let dim = dim_index(domain_diag.dim());
 
     let missing = match &cell_data {
         CellData::Zero => vec![],
@@ -520,7 +520,7 @@ pub fn smart_extend(
             continue;
         }
         let dim_minus_one = dim - 1;
-        let cell_data_focus = get_cell_data(context, source, focus).ok_or_else(|| {
+        let cell_data_focus = get_cell_data(context, domain, focus).ok_or_else(|| {
             aux::Error::new(format!("Cannot find cell data for boundary cell {}", focus))
         })?;
 
@@ -533,26 +533,26 @@ pub fn smart_extend(
             }
         };
 
-        let source_boundary = match (&cell_data, sign) {
+        let domain_boundary = match (&cell_data, sign) {
             (CellData::Boundary { boundary_in, .. }, DiagramSign::Source) => boundary_in.clone(),
             (CellData::Boundary { boundary_out, .. }, DiagramSign::Target) => boundary_out.clone(),
             _ => continue,
         };
 
-        if source_boundary.is_cell() {
-            let sub_source = &source_boundary;
+        if domain_boundary.is_cell() {
+            let sub_domain = &domain_boundary;
             current = smart_extend(
                 context,
                 current,
-                source,
+                domain,
                 target,
-                sub_source,
+                sub_domain,
                 &target_boundary,
                 span,
             )?;
         } else {
             match crate::core::diagram::isomorphism_of(
-                &source_boundary.shape,
+                &domain_boundary.shape,
                 &target_boundary.shape,
             ) {
                 Err(_) => {
@@ -561,8 +561,8 @@ pub fn smart_extend(
                     ));
                 }
                 Ok(embedding) => {
-                    let bd_d = dim_index(source_boundary.dim());
-                    let bd_labels = &source_boundary.labels;
+                    let bd_d = dim_index(domain_boundary.dim());
+                    let bd_labels = &domain_boundary.labels;
                     let target_labels = &target_boundary.labels;
                     let embed_map = &embedding.map;
 
@@ -610,7 +610,7 @@ pub fn smart_extend(
                         .ok_or_else(|| aux::Error::new("Classifier not found for image generator"))?
                         .clone();
 
-                    let focus_source = match source_boundary
+                    let focus_domain = match domain_boundary
                         .labels
                         .get(bd_d)
                         .and_then(|r| r.iter().position(|t| t == focus))
@@ -622,9 +622,9 @@ pub fn smart_extend(
                     current = smart_extend(
                         context,
                         current,
-                        source,
+                        domain,
                         target,
-                        &focus_source,
+                        &focus_domain,
                         &d_focus,
                         span,
                     )?;
@@ -648,20 +648,20 @@ pub fn interpret_def_pmap(
         None => (None, addr_result),
         Some(id) => {
             let context_after = addr_result.context.clone();
-            let (source_opt, source_result) =
+            let (domain_opt, domain_result) =
                 resolve_type_complex(&context_after, id, dp.address.span, "Type not found");
-            let source = match source_opt {
-                None => return (None, InterpResult::combine(addr_result, source_result)),
+            let domain = match domain_opt {
+                None => return (None, InterpResult::combine(addr_result, domain_result)),
                 Some(src) => src,
             };
-            let (mc_opt, m_result) = interpret_pmap_def(&context_after, scope, &source, &dp.value);
+            let (mc_opt, m_result) = interpret_pmap_def(&context_after, scope, &domain, &dp.value);
             let mut combined = InterpResult::combine(addr_result, m_result);
             match mc_opt {
                 None => (None, combined),
                 Some(mc) => {
                     if dp.total {
-                        for gen_name in source.generator_names() {
-                            if let Some(entry) = source.find_generator(&gen_name) {
+                        for gen_name in domain.generator_names() {
+                            if let Some(entry) = domain.find_generator(&gen_name) {
                                 if !mc.map.is_defined_at(&entry.tag) {
                                     combined.add_error(make_error(
                                         dp.name.span,

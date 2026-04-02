@@ -121,7 +121,7 @@ pub fn interpret_include_module_instr(
 pub fn interpret_include_instr(
     context: &Context,
     _mode: Mode,
-    location: &Complex,
+    scope: &Complex,
     include_stmt: &ast::IncludeStmt,
     span: Span,
 ) -> (Option<Complex>, InterpResult) {
@@ -135,7 +135,7 @@ pub fn interpret_include_instr(
 
     if let Some(r) = ensure_name_free(
         &include_result.context,
-        location,
+        scope,
         &name,
         span,
         NameKind::PartialMap,
@@ -150,10 +150,10 @@ pub fn interpret_include_instr(
         Some(ty) => ty,
     };
 
-    let mut new_location = location.clone();
+    let mut new_scope = scope.clone();
     for gen_name in subtype.generator_names() {
         if let Some(gen_entry) = subtype.find_generator(&gen_name) {
-            if new_location.find_generator_by_tag(&gen_entry.tag).is_some() {
+            if new_scope.find_generator_by_tag(&gen_entry.tag).is_some() {
                 continue;
             }
             let classifier = match subtype.classifier(&gen_name) {
@@ -161,24 +161,24 @@ pub fn interpret_include_instr(
                 None => continue,
             };
             let combined = qualify_name(&name, &gen_name);
-            new_location.add_generator(combined, classifier);
+            new_scope.add_generator(combined, classifier);
         }
     }
 
     let inclusion = identity_map(&context_after, &subtype);
-    new_location.add_map(name, MapDomain::Type(id), inclusion);
+    new_scope.add_map(name, MapDomain::Type(id), inclusion);
 
-    (Some(new_location), include_result)
+    (Some(new_scope), include_result)
 }
 
 pub fn interpret_attach_instr(
     context: &Context,
     mode: Mode,
-    location: &Complex,
+    scope: &Complex,
     attach_stmt: &ast::AttachStmt,
     span: Span,
 ) -> (Option<Complex>, InterpResult) {
-    let (attach_out, attach_result) = interpret_attach(context, location, attach_stmt, span);
+    let (attach_out, attach_result) = interpret_attach(context, scope, attach_stmt, span);
     let context_after = attach_result.context.clone();
 
     let (name, map, domain) = match attach_out {
@@ -188,7 +188,7 @@ pub fn interpret_attach_instr(
 
     if let Some(r) = ensure_name_free(
         &attach_result.context,
-        location,
+        scope,
         &name,
         attach_stmt.name.span,
         NameKind::PartialMap,
@@ -226,7 +226,7 @@ pub fn interpret_attach_instr(
 
     let generators = sorted_generators(&attachment);
 
-    let mut current_location = location.clone();
+    let mut current_scope = scope.clone();
     let mut current_state = Arc::clone(&context_after.state);
     let mut current_map = map.clone();
 
@@ -286,25 +286,25 @@ pub fn interpret_attach_instr(
 
         match mode {
             Mode::Global => {
-                current_location.add_generator(combined.clone(), image_classifier.clone())
+                current_scope.add_generator(combined.clone(), image_classifier.clone())
             }
             Mode::Local => {
-                current_location.add_local_cell(
+                current_scope.add_local_cell(
                     combined.clone(),
                     *gen_dim,
                     image_cell_data.clone(),
                 );
-                current_location.add_generator(combined.clone(), image_classifier.clone());
+                current_scope.add_generator(combined.clone(), image_classifier.clone());
             }
         };
 
         current_map.insert_raw(gen_tag.clone(), *gen_dim, gen_cell_data, image_classifier);
     }
 
-    current_location.add_map(name, domain, current_map);
+    current_scope.add_map(name, domain, current_map);
     let mut r = attach_result;
     r.context.state = current_state;
-    (Some(current_location), r)
+    (Some(current_scope), r)
 }
 
 fn interpret_include(
@@ -356,7 +356,7 @@ fn interpret_include(
 
 fn interpret_attach(
     context: &Context,
-    location: &Complex,
+    scope: &Complex,
     attach_stmt: &ast::AttachStmt,
     span: Span,
 ) -> (Option<(LocalId, PMap, MapDomain)>, InterpResult) {
@@ -387,7 +387,7 @@ fn interpret_attach(
                 Some(ty) => ty,
             };
             let (mc_opt, pmap_result) =
-                interpret_pmap_def(&context_after, location, &source, pmap_node);
+                interpret_pmap_def(&context_after, scope, &source, pmap_node);
             let combined = InterpResult::combine(addr_result, pmap_result);
             match mc_opt {
                 None => (None, combined),
