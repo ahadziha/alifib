@@ -147,7 +147,7 @@ fn interpret_pmap_inner(
                 None => (None, base_result),
                 Some(base_comp) => {
                     let (rest_opt, rest_result) =
-                        interpret_pmap(&base_result.context, &*base_comp.source, source, rest);
+                        interpret_pmap(&base_result.context, &*base_comp.domain, source, rest);
                     let combined = InterpResult::combine(base_result, rest_result);
                     match rest_opt {
                         None => (None, combined),
@@ -156,7 +156,7 @@ fn interpret_pmap_inner(
                             (
                                 Some(MapComponent {
                                     map: composed,
-                                    source: rest_comp.source,
+                                    domain: rest_comp.domain,
                                 }),
                                 combined,
                             )
@@ -194,7 +194,7 @@ fn interpret_pmap_basic(
                     (
                         Some(MapComponent {
                             map: entry.map.clone(),
-                            source: domain_arc,
+                            domain: domain_arc,
                         }),
                         base_result,
                     )
@@ -236,7 +236,7 @@ fn interpret_pmap_ext(
             (
                 MapComponent {
                     map,
-                    source: Arc::new(source.clone()),
+                    domain: Arc::new(source.clone()),
                 },
                 InterpResult::ok(context.clone()),
             )
@@ -252,7 +252,7 @@ fn interpret_pmap_ext(
 
     // Apply each clause
     let mut current_map = initial_mc.map;
-    let effective_source = &*initial_mc.source;
+    let effective_source = &*initial_mc.domain;
     let mut acc_result = prefix_result;
 
     for clause in &ext.clauses {
@@ -268,7 +268,7 @@ fn interpret_pmap_ext(
             return (
                 Some(MapComponent {
                     map: current_map,
-                    source: initial_mc.source,
+                    domain: initial_mc.domain,
                 }),
                 acc_result,
             );
@@ -317,7 +317,7 @@ fn interpret_pmap_ext(
     (
         Some(MapComponent {
             map: current_map,
-            source: initial_mc.source,
+            domain: initial_mc.domain,
         }),
         acc_result,
     )
@@ -397,10 +397,10 @@ fn interpret_assign(
             smart_extend(context, map, source, target, d_left, d_right, span)
         }
         (Term::MTerm(mc_left), Term::MTerm(mc_right)) => {
-            if !Arc::ptr_eq(&mc_left.source, &mc_right.source) {
+            if !Arc::ptr_eq(&mc_left.domain, &mc_right.domain) {
                 return Err(aux::Error::new("Not a well-formed assignment"));
             }
-            let src_complex = &*mc_left.source;
+            let src_complex = &*mc_left.domain;
             let generators: Vec<(usize, Tag, LocalId)> = sorted_generators(src_complex)
                 .into_iter()
                 .map(|(dim, name, tag)| (dim, tag, name))
@@ -701,8 +701,8 @@ pub fn check_assert(
                 Err("The diagrams are not equal".into())
             }
         }
-        TermPair::MTermPair { fst, snd, source } => {
-            let generators = sorted_generators(source);
+        TermPair::MTermPair { fst, snd, domain } => {
+            let generators = sorted_generators(domain);
 
             for (_, gen_name, tag) in &generators {
                 let in_first = fst.is_defined_at(tag);

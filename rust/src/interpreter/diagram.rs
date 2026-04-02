@@ -202,7 +202,7 @@ pub fn interpret_d_expr(
                 Some(Term::MTerm(mc)) => {
                     let (comp_opt, comp_result) = interpret_d_comp(
                         &left_result.context,
-                        &*mc.source,
+                        &*mc.domain,
                         &field.inner,
                         field.span,
                     );
@@ -236,7 +236,7 @@ pub fn interpret_d_expr(
                             (
                                 Some(Term::MTerm(MapComponent {
                                     map: composed,
-                                    source: right_mc.source,
+                                    domain: right_mc.domain,
                                 })),
                                 combined,
                             )
@@ -274,7 +274,7 @@ pub fn interpret_d_comp(
                     return (
                         Some(Component::Term(Term::MTerm(MapComponent {
                             map: entry.map.clone(),
-                            source: domain_complex,
+                            domain: domain_complex,
                         }))),
                         base_result,
                     );
@@ -343,7 +343,7 @@ pub fn interpret_assert(
                         Some(TermPair::MTermPair {
                             fst: mc1.map,
                             snd: mc2.map,
-                            source: mc1.source,
+                            domain: mc1.domain,
                         }),
                         combined,
                     ),

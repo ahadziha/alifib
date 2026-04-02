@@ -128,7 +128,7 @@ pub struct TypeScope {
 #[derive(Debug, Clone)]
 pub struct MapComponent {
     pub map: PMap,
-    pub source: Arc<Complex>,
+    pub domain: Arc<Complex>,
 }
 
 #[derive(Debug, Clone)]
@@ -149,7 +149,7 @@ pub enum TermPair {
     MTermPair {
         fst: PMap,
         snd: PMap,
-        source: Arc<Complex>,
+        domain: Arc<Complex>,
     },
     DTermPair {
         fst: Diagram,
