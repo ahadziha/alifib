@@ -195,12 +195,12 @@ pub fn fail<T>(context: &Context, span: Span, message: impl Into<String>) -> Ste
 
 pub fn ensure_name_free(
     context: &Context,
-    location: &Complex,
+    scope: &Complex,
     name: &str,
     span: Span,
     kind: NameKind,
 ) -> Option<InterpResult> {
-    if location.name_in_use(name) {
+    if scope.name_in_use(name) {
         let mut result = InterpResult::ok(context.clone());
         result.add_error(make_error(
             span,

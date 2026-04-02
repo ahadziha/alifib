@@ -179,11 +179,7 @@ fn interpret_pmap_basic(
         PMapBasic::Name(name) => {
             let base_result = InterpResult::ok(context.clone());
             match scope.find_map(name) {
-                None => {
-                    let mut r = base_result;
-                    r.add_error(make_error(span, format!("Partial map not found: `{}`", name)));
-                    (None, r)
-                }
+                None => fail(context, span, format!("Partial map not found: `{}`", name)),
                 Some(entry) => {
                     let (domain_opt, domain_result) =
                         resolve_map_domain_complex(context, &entry.domain, span);
@@ -690,7 +686,7 @@ pub fn interpret_def_pmap(
 
 pub fn check_assert(
     _context: &Context,
-    _location: &Complex,
+    _scope: &Complex,
     pair: &TermPair,
 ) -> Result<(), String> {
     match pair {

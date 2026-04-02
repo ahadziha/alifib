@@ -28,7 +28,7 @@ pub fn interpret_include_module_instr(
 
     let module_id = context.current_module.clone();
     {
-        let location = match context.state.find_module(&module_id) {
+        let scope = match context.state.find_module(&module_id) {
             None => {
                 let mut result = InterpResult::ok(context.clone());
                 result.add_error(make_error(span, "Module not found"));
@@ -37,7 +37,7 @@ pub fn interpret_include_module_instr(
             Some(m) => m,
         };
 
-        if let Some(result) = ensure_name_free(context, location, &alias, span, NameKind::PartialMap) {
+        if let Some(result) = ensure_name_free(context, scope, &alias, span, NameKind::PartialMap) {
             return result;
         }
     }
