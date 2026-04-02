@@ -11,12 +11,12 @@ use std::sync::Arc;
 
 pub fn interpret_diagram(
     context: &Context,
-    location: &Complex,
+    scope: &Complex,
     diagram: &Spanned<ast::Diagram>,
 ) -> (Option<Diagram>, InterpResult) {
     match &diagram.inner {
         ast::Diagram::Principal(exprs) => {
-            interpret_principal(context, location, exprs, diagram.span)
+            interpret_principal(context, scope, exprs, diagram.span)
         }
         ast::Diagram::Paste { lhs, dim, rhs } => {
             let k = match dim.inner.parse::<usize>() {
@@ -30,14 +30,14 @@ pub fn interpret_diagram(
                     return (None, r);
                 }
             };
-            interpret_diagram_paste(context, location, diagram.span, lhs, k, rhs)
+            interpret_diagram_paste(context, scope, diagram.span, lhs, k, rhs)
         }
     }
 }
 
 fn interpret_principal(
     context: &Context,
-    location: &Complex,
+    scope: &Complex,
     exprs: &[Spanned<DExpr>],
     span: Span,
 ) -> (Option<Diagram>, InterpResult) {
@@ -48,7 +48,7 @@ fn interpret_principal(
     }
 
     // Interpret first expression
-    let (first_opt, first_result) = interpret_d_expr(context, location, &exprs[0]);
+    let (first_opt, first_result) = interpret_d_expr(context, scope, &exprs[0]);
     match first_opt {
         None => return (None, first_result),
         Some(Term::MTerm(_)) if exprs.len() == 1 => {
@@ -71,7 +71,7 @@ fn interpret_principal(
             let mut result = first_result;
 
             for expr in &exprs[1..] {
-                let (term_opt, expr_result) = interpret_d_expr(&result.context, location, expr);
+                let (term_opt, expr_result) = interpret_d_expr(&result.context, scope, expr);
                 result = InterpResult::combine(result, expr_result);
                 match term_opt {
                     None => return (None, result),
@@ -104,18 +104,18 @@ fn interpret_principal(
 
 fn interpret_diagram_paste(
     context: &Context,
-    location: &Complex,
+    scope: &Complex,
     span: Span,
     left: &Spanned<ast::Diagram>,
     k: usize,
     right: &[Spanned<DExpr>],
 ) -> (Option<Diagram>, InterpResult) {
     // Process right side first (as in old code)
-    let (right_opt, right_result) = interpret_principal(context, location, right, span);
+    let (right_opt, right_result) = interpret_principal(context, scope, right, span);
     match right_opt {
         None => (None, right_result),
         Some(d_right) => {
-            let (left_opt, left_result) = interpret_diagram(&right_result.context, location, left);
+            let (left_opt, left_result) = interpret_diagram(&right_result.context, scope, left);
             let combined = InterpResult::combine(right_result, left_result);
             match left_opt {
                 None => (None, combined),
@@ -134,12 +134,12 @@ fn interpret_diagram_paste(
 
 pub fn interpret_d_expr(
     context: &Context,
-    location: &Complex,
+    scope: &Complex,
     d_expr: &Spanned<DExpr>,
 ) -> (Option<Term>, InterpResult) {
     match &d_expr.inner {
         DExpr::Component(comp) => {
-            let (comp_opt, result) = interpret_d_comp(context, location, comp, d_expr.span);
+            let (comp_opt, result) = interpret_d_comp(context, scope, comp, d_expr.span);
             match comp_opt {
                 None => (None, result),
                 Some(Component::Hole) => {
@@ -160,12 +160,12 @@ pub fn interpret_d_expr(
             }
         }
         DExpr::Dot { base, field } => {
-            let (left_opt, left_result) = interpret_d_expr(context, location, base);
+            let (left_opt, left_result) = interpret_d_expr(context, scope, base);
             match left_opt {
                 None => (None, left_result),
                 Some(Term::DTerm(diagram)) => {
                     let (comp_opt, comp_result) =
-                        interpret_d_comp(&left_result.context, location, &field.inner, field.span);
+                        interpret_d_comp(&left_result.context, scope, &field.inner, field.span);
                     let combined = InterpResult::combine(left_result, comp_result);
                     match comp_opt {
                         None => (None, combined),
@@ -250,7 +250,7 @@ pub fn interpret_d_expr(
 
 pub fn interpret_d_comp(
     context: &Context,
-    location: &Complex,
+    scope: &Complex,
     d_comp: &DComponent,
     span: Span,
 ) -> (Option<Component>, InterpResult) {
@@ -258,13 +258,13 @@ pub fn interpret_d_comp(
         DComponent::PMap(basic) => match basic {
             PMapBasic::Name(name) => {
                 let base_result = InterpResult::ok(context.clone());
-                if let Some(diagram) = location.find_diagram(name) {
+                if let Some(diagram) = scope.find_diagram(name) {
                     return (
                         Some(Component::Term(Term::DTerm(diagram.clone()))),
                         base_result,
                     );
                 }
-                if let Some(entry) = location.find_map(name) {
+                if let Some(entry) = scope.find_map(name) {
                     let (source_opt, source_result) =
                         resolve_map_domain_source(context, &entry.domain, span);
                     let source = match source_opt {
@@ -285,7 +285,7 @@ pub fn interpret_d_comp(
             }
             PMapBasic::AnonMap { def, target } => {
                 let (mc_opt, result) =
-                    super::pmap::interpret_anon_map_component(context, location, target, def);
+                    super::pmap::interpret_anon_map_component(context, scope, target, def);
                 match mc_opt {
                     None => (None, result),
                     Some(mc) => (Some(Component::Term(Term::MTerm(mc))), result),
@@ -293,7 +293,7 @@ pub fn interpret_d_comp(
             }
             PMapBasic::Paren(inner_pmap) => {
                 let (mc_opt, result) =
-                    super::pmap::interpret_pmap(context, location, location, inner_pmap);
+                    super::pmap::interpret_pmap(context, scope, scope, inner_pmap);
                 match mc_opt {
                     None => (None, result),
                     Some(mc) => (Some(Component::Term(Term::MTerm(mc))), result),
@@ -309,7 +309,7 @@ pub fn interpret_d_comp(
             InterpResult::ok(context.clone()),
         ),
         DComponent::Paren(inner_diag) => {
-            let (d_opt, result) = interpret_diagram(context, location, inner_diag);
+            let (d_opt, result) = interpret_diagram(context, scope, inner_diag);
             match d_opt {
                 None => (None, result),
                 Some(d) => (Some(Component::Term(Term::DTerm(d))), result),
@@ -323,15 +323,15 @@ pub fn interpret_d_comp(
 
 pub fn interpret_assert(
     context: &Context,
-    location: &Complex,
+    scope: &Complex,
     assert_stmt: &crate::language::ast::AssertStmt,
 ) -> (Option<TermPair>, InterpResult) {
-    let (left_opt, left_result) = interpret_diagram_as_term(context, location, &assert_stmt.lhs);
+    let (left_opt, left_result) = interpret_diagram_as_term(context, scope, &assert_stmt.lhs);
     match left_opt {
         None => (None, left_result),
         Some(left_term) => {
             let (right_opt, right_result) =
-                interpret_diagram_as_term(&left_result.context, location, &assert_stmt.rhs);
+                interpret_diagram_as_term(&left_result.context, scope, &assert_stmt.rhs);
             let combined = InterpResult::combine(left_result, right_result);
             match right_opt {
                 None => (None, combined),
@@ -364,12 +364,12 @@ pub fn interpret_assert(
 
 pub fn interpret_diagram_as_term(
     context: &Context,
-    location: &Complex,
+    scope: &Complex,
     diagram: &Spanned<ast::Diagram>,
 ) -> (Option<Term>, InterpResult) {
     match &diagram.inner {
         ast::Diagram::Principal(exprs) => {
-            interpret_principal_as_term(context, location, exprs, diagram.span)
+            interpret_principal_as_term(context, scope, exprs, diagram.span)
         }
         ast::Diagram::Paste { lhs, dim, rhs } => {
             let k = match dim.inner.parse::<usize>() {
@@ -385,7 +385,7 @@ pub fn interpret_diagram_as_term(
             };
             // Right side first
             let (right_opt, right_result) =
-                interpret_principal_as_term(context, location, rhs, diagram.span);
+                interpret_principal_as_term(context, scope, rhs, diagram.span);
             match right_opt {
                 None => (None, right_result),
                 Some(Term::MTerm(_)) => {
@@ -395,7 +395,7 @@ pub fn interpret_diagram_as_term(
                 }
                 Some(Term::DTerm(d_right)) => {
                     let (left_opt, left_result) =
-                        interpret_diagram_as_term(&right_result.context, location, lhs);
+                        interpret_diagram_as_term(&right_result.context, scope, lhs);
                     let combined = InterpResult::combine(right_result, left_result);
                     match left_opt {
                         None => (None, combined),
@@ -424,7 +424,7 @@ pub fn interpret_diagram_as_term(
 
 fn interpret_principal_as_term(
     context: &Context,
-    location: &Complex,
+    scope: &Complex,
     exprs: &[Spanned<DExpr>],
     span: Span,
 ) -> (Option<Term>, InterpResult) {
@@ -434,20 +434,20 @@ fn interpret_principal_as_term(
         return (None, r);
     }
 
-    let (first_opt, first_result) = interpret_d_expr(context, location, &exprs[0]);
+    let (first_opt, first_result) = interpret_d_expr(context, scope, &exprs[0]);
     match first_opt {
         None => {
             let mut result = first_result;
             // If a hole was added and there are more exprs, use right-context
             if !result.holes.is_empty() && exprs.len() > 1 {
                 let (next_opt, next_result) =
-                    interpret_d_expr(&result.context, location, &exprs[1]);
+                    interpret_d_expr(&result.context, scope, &exprs[1]);
                 result = InterpResult::combine(result, next_result);
                 if let Some(Term::DTerm(d_right)) = next_opt {
                     let k = (d_right.dim().max(0) as usize).saturating_sub(1);
                     if let Ok(in_bd) = Diagram::boundary(DiagramSign::Source, k, &d_right) {
                         if let Some(last_hole) = result.holes.last_mut() {
-                            let bd_out = render_diagram(&in_bd, location);
+                            let bd_out = render_diagram(&in_bd, scope);
                             match &mut last_hole.boundary {
                                 Some(existing) => {
                                     existing.boundary_out = bd_out;
@@ -485,7 +485,7 @@ fn interpret_principal_as_term(
 
             for expr in &exprs[1..] {
                 let prev_hole_count = result.holes.len();
-                let (term_opt, expr_result) = interpret_d_expr(&result.context, location, expr);
+                let (term_opt, expr_result) = interpret_d_expr(&result.context, scope, expr);
                 result = InterpResult::combine(result, expr_result);
                 match term_opt {
                     None => {
@@ -495,7 +495,7 @@ fn interpret_principal_as_term(
                             if let Ok(out_bd) = Diagram::boundary(DiagramSign::Target, k, &acc) {
                                 if let Some(last_hole) = result.holes.last_mut() {
                                     last_hole.boundary = Some(HoleBoundaryInfo {
-                                        boundary_in: render_diagram(&out_bd, location),
+                                        boundary_in: render_diagram(&out_bd, scope),
                                         boundary_out: "?".into(),
                                     });
                                 }
@@ -534,15 +534,15 @@ fn interpret_principal_as_term(
 
 pub fn interpret_boundaries(
     context: &Context,
-    location: &Complex,
+    scope: &Complex,
     boundaries: &Spanned<ast::Boundary>,
 ) -> (Option<CellData>, InterpResult) {
-    let (in_opt, src_result) = interpret_diagram(context, location, &boundaries.inner.source);
+    let (in_opt, src_result) = interpret_diagram(context, scope, &boundaries.inner.source);
     match in_opt {
         None => (None, src_result),
         Some(boundary_in) => {
             let (out_opt, tgt_result) =
-                interpret_diagram(&src_result.context, location, &boundaries.inner.target);
+                interpret_diagram(&src_result.context, scope, &boundaries.inner.target);
             let combined = InterpResult::combine(src_result, tgt_result);
             match out_opt {
                 None => (None, combined),
@@ -560,13 +560,13 @@ pub fn interpret_boundaries(
 
 // ---- Render helper ----
 
-pub fn render_diagram(diagram: &Diagram, location: &Complex) -> String {
+pub fn render_diagram(diagram: &Diagram, scope: &Complex) -> String {
     let d = diagram.dim().max(0) as usize;
     match diagram.labels.get(d) {
         Some(top_labels) if !top_labels.is_empty() => top_labels
             .iter()
             .map(|tag| {
-                location
+                scope
                     .find_generator_by_tag(tag)
                     .filter(|n| !n.is_empty())
                     .cloned()
@@ -580,13 +580,13 @@ pub fn render_diagram(diagram: &Diagram, location: &Complex) -> String {
 
 /// Render a source boundary diagram through a partial map. Mapped tags are rendered
 /// via their image's top label; unmapped tags are rendered as `?`.
-pub fn render_boundary_partial(boundary: &Diagram, map: &PMap, location: &Complex) -> String {
+pub fn render_boundary_partial(boundary: &Diagram, map: &PMap, scope: &Complex) -> String {
     let d = boundary.dim().max(0) as usize;
     match boundary.labels.get(d) {
         Some(top_labels) if !top_labels.is_empty() => top_labels
             .iter()
             .map(|tag| match map.image(tag) {
-                Ok(img) => render_diagram(img, location),
+                Ok(img) => render_diagram(img, scope),
                 Err(_) => "?".to_string(),
             })
             .collect::<Vec<_>>()
@@ -599,10 +599,10 @@ pub fn render_boundary_partial(boundary: &Diagram, map: &PMap, location: &Comple
 
 pub fn interpret_let_diag(
     context: &Context,
-    location: &Complex,
+    scope: &Complex,
     ld: &crate::language::ast::LetDiag,
 ) -> (Option<(String, Diagram)>, InterpResult) {
-    let (diag_opt, diag_result) = interpret_diagram(context, location, &ld.value);
+    let (diag_opt, diag_result) = interpret_diagram(context, scope, &ld.value);
     match diag_opt {
         None => (None, diag_result),
         Some(diagram) => {

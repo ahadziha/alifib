@@ -125,24 +125,24 @@ pub fn interpret_anon_map_component(
 
 pub fn interpret_pmap(
     context: &Context,
-    location: &Complex,
+    scope: &Complex,
     source: &Complex,
     pmap: &Spanned<ast::PMap>,
 ) -> Step<MapComponent> {
-    interpret_pmap_inner(context, location, source, &pmap.inner, pmap.span)
+    interpret_pmap_inner(context, scope, source, &pmap.inner, pmap.span)
 }
 
 fn interpret_pmap_inner(
     context: &Context,
-    location: &Complex,
+    scope: &Complex,
     source: &Complex,
     pmap: &ast::PMap,
     span: Span,
 ) -> Step<MapComponent> {
     match pmap {
-        ast::PMap::Basic(basic) => interpret_pmap_basic(context, location, source, basic, span),
+        ast::PMap::Basic(basic) => interpret_pmap_basic(context, scope, source, basic, span),
         ast::PMap::Dot { base, rest } => {
-            let (base_opt, base_result) = interpret_pmap_basic(context, location, source, base, span);
+            let (base_opt, base_result) = interpret_pmap_basic(context, scope, source, base, span);
             match base_opt {
                 None => (None, base_result),
                 Some(base_comp) => {
@@ -170,7 +170,7 @@ fn interpret_pmap_inner(
 
 fn interpret_pmap_basic(
     context: &Context,
-    location: &Complex,
+    scope: &Complex,
     source: &Complex,
     basic: &PMapBasic,
     span: Span,
@@ -178,7 +178,7 @@ fn interpret_pmap_basic(
     match basic {
         PMapBasic::Name(name) => {
             let base_result = InterpResult::ok(context.clone());
-            match location.find_map(name) {
+            match scope.find_map(name) {
                 None => {
                     let mut r = base_result;
                     r.add_error(make_error(span, format!("Partial map not found: `{}`", name)));
@@ -204,7 +204,7 @@ fn interpret_pmap_basic(
         PMapBasic::AnonMap { def, target } => {
             interpret_anon_map_component(context, source, target, def)
         }
-        PMapBasic::Paren(inner) => interpret_pmap(context, location, source, inner),
+        PMapBasic::Paren(inner) => interpret_pmap(context, scope, source, inner),
     }
 }
 
@@ -212,19 +212,19 @@ fn interpret_pmap_basic(
 
 pub fn interpret_pmap_def(
     context: &Context,
-    location: &Complex,
+    scope: &Complex,
     source: &Complex,
     pmap_def: &Spanned<PMapDef>,
 ) -> Step<MapComponent> {
     match &pmap_def.inner {
-        PMapDef::PMap(pmap) => interpret_pmap_inner(context, location, source, pmap, pmap_def.span),
-        PMapDef::Ext(ext) => interpret_pmap_ext(context, location, source, ext, pmap_def.span),
+        PMapDef::PMap(pmap) => interpret_pmap_inner(context, scope, source, pmap, pmap_def.span),
+        PMapDef::Ext(ext) => interpret_pmap_ext(context, scope, source, ext, pmap_def.span),
     }
 }
 
 fn interpret_pmap_ext(
     context: &Context,
-    location: &Complex,
+    scope: &Complex,
     source: &Complex,
     ext: &PMapExt,
     span: Span,
@@ -242,7 +242,7 @@ fn interpret_pmap_ext(
             )
         }
         Some(prefix) => {
-            let (mc_opt, r) = interpret_pmap(context, location, source, prefix);
+            let (mc_opt, r) = interpret_pmap(context, scope, source, prefix);
             match mc_opt {
                 None => return (None, r),
                 Some(mc) => (mc, r),
@@ -258,7 +258,7 @@ fn interpret_pmap_ext(
     for clause in &ext.clauses {
         let ctx = acc_result.context.clone();
         let (m_opt, clause_result) =
-            interpret_pm_clause(&ctx, location, effective_source, current_map, clause, span);
+            interpret_pm_clause(&ctx, scope, effective_source, current_map, clause, span);
         acc_result = InterpResult::combine(acc_result, clause_result);
         match m_opt {
             None => return (None, acc_result),
@@ -286,12 +286,12 @@ fn interpret_pmap_ext(
                 } = &cell_data
                 {
                     let rendered_in = match PMap::apply(&current_map, boundary_in) {
-                        Ok(mi) => render_diagram(&mi, location),
-                        Err(_) => render_boundary_partial(boundary_in, &current_map, location),
+                        Ok(mi) => render_diagram(&mi, scope),
+                        Err(_) => render_boundary_partial(boundary_in, &current_map, scope),
                     };
                     let rendered_out = match PMap::apply(&current_map, boundary_out) {
-                        Ok(mo) => render_diagram(&mo, location),
-                        Err(_) => render_boundary_partial(boundary_out, &current_map, location),
+                        Ok(mo) => render_diagram(&mo, scope),
+                        Err(_) => render_boundary_partial(boundary_out, &current_map, scope),
                     };
                     match &mut hole.boundary {
                         Some(existing) => {
@@ -325,7 +325,7 @@ fn interpret_pmap_ext(
 
 fn interpret_pm_clause(
     context: &Context,
-    location: &Complex,
+    scope: &Complex,
     source: &Complex,
     map: PMap,
     clause: &Spanned<PMapClause>,
@@ -336,7 +336,7 @@ fn interpret_pm_clause(
         None => return (None, left_result),
         Some(left_term) => {
             let (right_opt, right_result) =
-                interpret_diagram_as_term(&left_result.context, location, &clause.inner.rhs);
+                interpret_diagram_as_term(&left_result.context, scope, &clause.inner.rhs);
             let mut combined = InterpResult::combine(left_result, right_result);
             match right_opt {
                 None => {
@@ -364,7 +364,7 @@ fn interpret_pm_clause(
                         &combined.context,
                         map,
                         source,
-                        location,
+                        scope,
                         &left_term,
                         &right_term,
                         clause.span,
@@ -644,7 +644,7 @@ pub fn smart_extend(
 
 pub fn interpret_def_pmap(
     context: &Context,
-    location: &Complex,
+    scope: &Complex,
     dp: &DefPMap,
 ) -> (Option<(LocalId, PMap, MapDomain)>, InterpResult) {
     let (id_opt, addr_result) = interpret_address(context, &dp.address.inner, dp.address.span);
@@ -658,7 +658,7 @@ pub fn interpret_def_pmap(
                 None => return (None, InterpResult::combine(addr_result, source_result)),
                 Some(src) => src,
             };
-            let (mc_opt, m_result) = interpret_pmap_def(&context_after, location, &source, &dp.value);
+            let (mc_opt, m_result) = interpret_pmap_def(&context_after, scope, &source, &dp.value);
             let mut combined = InterpResult::combine(addr_result, m_result);
             match mc_opt {
                 None => (None, combined),
