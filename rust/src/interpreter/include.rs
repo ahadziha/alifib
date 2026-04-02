@@ -1,15 +1,17 @@
 use std::sync::Arc;
-use crate::aux::{GlobalId, LocalId, Tag};
+
 use crate::aux::loader::ModuleStore;
+use crate::aux::{GlobalId, LocalId, Tag};
 use crate::core::{
     complex::{Complex, MapDomain},
     diagram::{CellData, Diagram},
     map::PMap,
 };
-use crate::language::ast::{self, Span, IncludeModule};
-use super::types::*;
+use crate::language::ast::{self, IncludeModule, Span};
+
 use super::interpreter::interpret_program;
 use super::pmap::{interpret_address, interpret_pmap_def};
+use super::types::*;
 
 pub fn interpret_include_module_instr(
     modules: &ModuleStore,
@@ -18,7 +20,9 @@ pub fn interpret_include_module_instr(
     span: Span,
 ) -> InterpResult {
     let module_name: LocalId = include_mod.name.inner.clone();
-    let alias: LocalId = include_mod.alias.as_ref()
+    let alias: LocalId = include_mod
+        .alias
+        .as_ref()
         .map(|a| a.inner.clone())
         .unwrap_or_else(|| module_name.clone());
 
@@ -33,20 +37,19 @@ pub fn interpret_include_module_instr(
             Some(m) => m,
         };
 
-        if location.name_in_use(&alias) {
-            let mut result = InterpResult::ok(context.clone());
-            result.add_error(make_error(span, format!("Partial map name already in use: {}", alias)));
+        if let Some(result) = ensure_name_free(context, location, &alias, span, "Partial map") {
             return result;
         }
     }
 
-    // Look up the pre-resolved module
     let canonical_path = match modules.resolve(&module_id, &module_name) {
         Some(p) => p.to_owned(),
         None => {
             let mut result = InterpResult::ok(context.clone());
-            result.add_error(make_error(span,
-                format!("Module file {}.ali not found in search paths", module_name)));
+            result.add_error(make_error(
+                span,
+                format!("Module file {}.ali not found in search paths", module_name),
+            ));
             return result;
         }
     };
@@ -55,13 +58,14 @@ pub fn interpret_include_module_instr(
         Some(r) => r,
         None => {
             let mut result = InterpResult::ok(context.clone());
-            result.add_error(make_error(span,
-                format!("Resolved module {} not found in store", canonical_path)));
+            result.add_error(make_error(
+                span,
+                format!("Resolved module {} not found in store", canonical_path),
+            ));
             return result;
         }
     };
 
-    // Interpret the included module
     let included_module_id = canonical_path.clone();
     let include_context = Context::new_sharing_state(included_module_id.clone(), context);
     let include_result = interpret_program(modules, include_context, &resolved.program);
@@ -73,7 +77,6 @@ pub fn interpret_include_module_instr(
         return result;
     }
 
-    // Carry forward the state from included module (has all new types/cells)
     result.context.state = Arc::clone(&include_result.context.state);
 
     let included_arc = match result.context.state.find_module_arc(&included_module_id) {
@@ -84,40 +87,33 @@ pub fn interpret_include_module_instr(
         }
     };
 
-    // Collect generator data from included module (refs into Arc, no deep clone)
-    let gen_data: Vec<_> = included_arc.generator_names().into_iter()
+    let gen_data: Vec<_> = included_arc
+        .generator_names()
+        .into_iter()
         .filter(|n| !n.is_empty())
         .filter_map(|gen_name| {
             let gen_entry = included_arc.find_generator(&gen_name)?;
             let classifier = included_arc.classifier(&gen_name)?.clone();
             let tag = gen_entry.tag.clone();
-            let combined_name = if alias.is_empty() {
-                gen_name
-            } else if gen_name.is_empty() {
-                alias.clone()
-            } else {
-                format!("{}.{}", alias, gen_name)
-            };
+            let combined_name = qualify_name(&alias, &gen_name);
             Some((combined_name, tag, classifier))
         })
         .collect();
 
     let inclusion = identity_map(&include_result.context, &included_arc);
 
-    // Mutate the current module in place
-    result.context.state_mut().modify_module(&module_id, |current| {
-        for (combined_name, tag, classifier) in gen_data {
-            if current.find_generator_by_tag(&tag).is_some() {
-                continue;
+    result
+        .context
+        .state_mut()
+        .modify_module(&module_id, |current| {
+            for (combined_name, tag, classifier) in gen_data {
+                if current.find_generator_by_tag(&tag).is_some() {
+                    continue;
+                }
+                current.add_generator(combined_name, classifier);
             }
-            current.add_generator(combined_name, classifier);
-        }
-        current.add_map(
-            alias,
-            MapDomain::Module(included_module_id),
-            inclusion,
-        );
-    });
+            current.add_map(alias, MapDomain::Module(included_module_id), inclusion);
+        });
 
     result
 }
@@ -137,20 +133,21 @@ pub fn interpret_include_instr(
         Some(pair) => pair,
     };
 
-    if location.name_in_use(&name) {
-        let mut r = include_result;
-        r.add_error(make_error(span, format!("Partial map name already in use: {}", name)));
-        return (None, r);
+    if let Some(r) = ensure_name_free(
+        &include_result.context,
+        location,
+        &name,
+        span,
+        "Partial map",
+    ) {
+        return (None, InterpResult::combine(include_result, r));
     }
 
-    let subtype = match context_after.state.find_type(id) {
-        None => {
-            let mut r = include_result;
-            r.add_error(make_error(span,
-                format!("Type {} not found in global record", id)));
-            return (None, r);
-        }
-        Some(te) => (*te.complex).clone(),
+    let (subtype_opt, subtype_result) =
+        resolve_type_complex(&context_after, id, span, "Type not found in global record");
+    let subtype = match subtype_opt {
+        None => return (None, InterpResult::combine(include_result, subtype_result)),
+        Some(ty) => ty,
     };
 
     let mut new_location = location.clone();
@@ -163,10 +160,7 @@ pub fn interpret_include_instr(
                 Some(d) => d.clone(),
                 None => continue,
             };
-            let alias_prefix = name.as_str();
-            let combined = if alias_prefix.is_empty() { gen_name.clone() }
-                else if gen_name.is_empty() { alias_prefix.to_owned() }
-                else { format!("{}.{}", alias_prefix, gen_name) };
+            let combined = qualify_name(&name, &gen_name);
             new_location.add_generator(combined, classifier);
         }
     }
@@ -192,35 +186,52 @@ pub fn interpret_attach_instr(
         Some(triple) => triple,
     };
 
-    if location.name_in_use(&name) {
-        let mut r = attach_result;
-        r.add_error(make_error(attach_stmt.name.span,
-            format!("Partial map name already in use: {}", name)));
-        return (None, r);
+    if let Some(r) = ensure_name_free(
+        &attach_result.context,
+        location,
+        &name,
+        attach_stmt.name.span,
+        "Partial map",
+    ) {
+        return (None, InterpResult::combine(attach_result, r));
     }
 
     let attachment_id = match &domain {
         MapDomain::Type(id) => *id,
         MapDomain::Module(_) => {
             let mut r = attach_result;
-            r.add_error(make_error(unknown_span(), "Unexpected module domain in attach"));
+            r.add_error(make_error(
+                unknown_span(),
+                "Unexpected module domain in attach",
+            ));
             return (None, r);
         }
     };
 
-    let attachment = match context_after.state.find_type(attachment_id) {
+    let (attachment_opt, attachment_result) = resolve_type_complex(
+        &context_after,
+        attachment_id,
+        attach_stmt.name.span,
+        "Type not found in global record",
+    );
+    let attachment = match attachment_opt {
         None => {
-            let mut r = attach_result;
-            r.add_error(make_error(attach_stmt.name.span,
-                format!("Type {} not found in global record", attachment_id)));
-            return (None, r);
+            return (
+                None,
+                InterpResult::combine(attach_result, attachment_result),
+            );
         }
-        Some(te) => (*te.complex).clone(),
+        Some(ty) => ty,
     };
 
-    let mut generators: Vec<(usize, LocalId, Tag)> = attachment.generator_names()
+    let mut generators: Vec<(usize, LocalId, Tag)> = attachment
+        .generator_names()
         .into_iter()
-        .filter_map(|n| attachment.find_generator(&n).map(|e| (e.dim, n, e.tag.clone())))
+        .filter_map(|n| {
+            attachment
+                .find_generator(&n)
+                .map(|e| (e.dim, n, e.tag.clone()))
+        })
         .collect();
     generators.sort_by_key(|(dim, _, _)| *dim);
 
@@ -234,18 +245,19 @@ pub fn interpret_attach_instr(
         }
 
         let gen_cell_data = match gen_tag {
-            Tag::Global(gid) => {
-                match current_state.find_cell(*gid) {
-                    Some(ce) => ce.data.clone(),
-                    None => continue,
-                }
-            }
+            Tag::Global(gid) => match current_state.find_cell(*gid) {
+                Some(ce) => ce.data.clone(),
+                None => continue,
+            },
             Tag::Local(_) => continue,
         };
 
         let image_cell_data = match &gen_cell_data {
             CellData::Zero => CellData::Zero,
-            CellData::Boundary { boundary_in, boundary_out } => {
+            CellData::Boundary {
+                boundary_in,
+                boundary_out,
+            } => {
                 let image_in = match PMap::apply(&current_map, boundary_in) {
                     Ok(d) => d,
                     Err(_) => continue,
@@ -254,20 +266,23 @@ pub fn interpret_attach_instr(
                     Ok(d) => d,
                     Err(_) => continue,
                 };
-                CellData::Boundary { boundary_in: Arc::new(image_in), boundary_out: Arc::new(image_out) }
+                CellData::Boundary {
+                    boundary_in: Arc::new(image_in),
+                    boundary_out: Arc::new(image_out),
+                }
             }
         };
 
-        let base_name = name.as_str();
-        let gen_name_str = gen_name.as_str();
-        let combined = if base_name.is_empty() { gen_name_str.to_owned() }
-            else if gen_name_str.is_empty() { base_name.to_owned() }
-            else { format!("{}.{}", base_name, gen_name_str) };
+        let combined = qualify_name(&name, gen_name);
 
         let image_tag = match mode {
             Mode::Global => {
                 let image_id = GlobalId::fresh();
-                Arc::make_mut(&mut current_state).set_cell(image_id, *gen_dim, image_cell_data.clone());
+                Arc::make_mut(&mut current_state).set_cell(
+                    image_id,
+                    *gen_dim,
+                    image_cell_data.clone(),
+                );
                 Tag::Global(image_id)
             }
             Mode::Local => Tag::Local(combined.clone()),
@@ -279,9 +294,15 @@ pub fn interpret_attach_instr(
         };
 
         match mode {
-            Mode::Global => current_location.add_generator(combined.clone(), image_classifier.clone()),
+            Mode::Global => {
+                current_location.add_generator(combined.clone(), image_classifier.clone())
+            }
             Mode::Local => {
-                current_location.add_local_cell(combined.clone(), *gen_dim, image_cell_data.clone());
+                current_location.add_local_cell(
+                    combined.clone(),
+                    *gen_dim,
+                    image_cell_data.clone(),
+                );
                 current_location.add_generator(combined.clone(), image_classifier.clone());
             }
         };
@@ -300,7 +321,11 @@ fn interpret_include(
     include_stmt: &ast::IncludeStmt,
     span: Span,
 ) -> (Option<(GlobalId, LocalId)>, InterpResult) {
-    let (id_opt, addr_result) = interpret_address(context, &include_stmt.address.inner, include_stmt.address.span);
+    let (id_opt, addr_result) = interpret_address(
+        context,
+        &include_stmt.address.inner,
+        include_stmt.address.span,
+    );
     match id_opt {
         None => (None, addr_result),
         Some(id) => {
@@ -309,14 +334,18 @@ fn interpret_include(
                 None => {
                     let module_id = &context.current_module;
                     let tag = Tag::Global(id);
-                    match context.state.find_module(module_id)
+                    match context
+                        .state
+                        .find_module(module_id)
                         .and_then(|m| m.find_generator_by_tag(&tag))
                     {
                         Some(gen_name) => {
                             if gen_name.contains('.') {
                                 let mut r = addr_result;
-                                r.add_error(make_error(span,
-                                    "Inclusion of non-local types requires an alias"));
+                                r.add_error(make_error(
+                                    span,
+                                    "Inclusion of non-local types requires an alias",
+                                ));
                                 return (None, r);
                             }
                             gen_name.clone()
@@ -340,7 +369,11 @@ fn interpret_attach(
     attach_stmt: &ast::AttachStmt,
     span: Span,
 ) -> (Option<(LocalId, PMap, MapDomain)>, InterpResult) {
-    let (id_opt, addr_result) = interpret_address(context, &attach_stmt.address.inner, attach_stmt.address.span);
+    let (id_opt, addr_result) = interpret_address(
+        context,
+        &attach_stmt.address.inner,
+        attach_stmt.address.span,
+    );
     let context_after = addr_result.context.clone();
 
     let id = match id_opt {
@@ -356,15 +389,14 @@ fn interpret_attach(
             (Some((name, map, MapDomain::Type(id))), addr_result)
         }
         Some(pmap_node) => {
-            let source = match context_after.state.find_type(id) {
-                Some(te) => (*te.complex).clone(),
-                None => {
-                    let mut r = addr_result;
-                    r.add_error(make_error(span, format!("Type {} not found", id)));
-                    return (None, r);
-                }
+            let (source_opt, source_result) =
+                resolve_type_complex(&context_after, id, span, "Type not found");
+            let source = match source_opt {
+                None => return (None, InterpResult::combine(addr_result, source_result)),
+                Some(ty) => ty,
             };
-            let (mc_opt, pmap_result) = interpret_pmap_def(&context_after, location, &source, pmap_node);
+            let (mc_opt, pmap_result) =
+                interpret_pmap_def(&context_after, location, &source, pmap_node);
             let combined = InterpResult::combine(addr_result, pmap_result);
             match mc_opt {
                 None => (None, combined),

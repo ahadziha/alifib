@@ -17,7 +17,8 @@ use super::include::{
 };
 use super::pmap::{check_assert, interpret_address, interpret_def_pmap};
 pub use super::types::{
-    Context, InterpResult, Mode, TypeScope, identity_map, make_error, unknown_span,
+    Context, InterpResult, Mode, TypeScope, ensure_name_free, identity_map, make_error,
+    resolve_root_owner_type_id, resolve_type_complex, unknown_span,
 };
 
 // ---- Semantic helpers ----
@@ -51,45 +52,19 @@ fn resolve_type_scope_by_id(
     span: Span,
     not_found_msg: &str,
 ) -> (Option<TypeScope>, InterpResult) {
-    let mut result = InterpResult::ok(context.clone());
-    let Some(type_entry) = context.state.find_type(owner_type_id) else {
-        result.add_error(make_error(
-            span,
-            format!("{} {}", not_found_msg, owner_type_id),
-        ));
-        return (None, result);
-    };
-    (
-        Some(TypeScope {
-            owner_type_id,
-            working_complex: (*type_entry.complex).clone(),
-        }),
-        result,
-    )
-}
-
-fn resolve_root_owner_type_id(
-    context: &Context,
-    module_space: &Complex,
-    span: Span,
-) -> (Option<GlobalId>, InterpResult) {
-    let empty_name: LocalId = String::new();
-    let mut result = InterpResult::ok(context.clone());
-
-    let Some(root_entry) = module_space.find_generator(&empty_name) else {
-        result.add_error(make_error(span, "Root generator not found"));
-        return (None, result);
-    };
-
-    match root_entry.tag {
-        Tag::Global(id) => (Some(id), result),
-        Tag::Local(_) => {
-            result.add_error(make_error(span, "Root has local tag (unexpected)"));
-            (None, result)
-        }
+    let (complex_opt, complex_result) =
+        resolve_type_complex(context, owner_type_id, span, not_found_msg);
+    match complex_opt {
+        None => (None, complex_result),
+        Some(working_complex) => (
+            Some(TypeScope {
+                owner_type_id,
+                working_complex,
+            }),
+            complex_result,
+        ),
     }
 }
-
 // ---- Main interpreter ----
 
 pub fn interpret_program(
@@ -236,12 +211,8 @@ fn interpret_generator_type(context: &Context, generator: &ast::Generator) -> In
         Some(m) => m,
     };
 
-    if module_location.name_in_use(&name) {
-        let mut result = InterpResult::ok(context.clone());
-        result.add_error(make_error(
-            name_span,
-            format!("Generator name already in use: {}", name),
-        ));
+    if let Some(result) = ensure_name_free(context, module_location, &name, name_span, "Generator")
+    {
         return result;
     }
 
@@ -438,13 +409,10 @@ fn interpret_c_instr(
             match out {
                 None => (location, result),
                 Some((name, diagram)) => {
-                    if location.name_in_use(&name) {
-                        let mut r = result;
-                        r.add_error(make_error(
-                            ld.name.span,
-                            format!("Diagram name already in use: {}", name),
-                        ));
-                        return (location, r);
+                    if let Some(r) =
+                        ensure_name_free(&result.context, &location, &name, ld.name.span, "Diagram")
+                    {
+                        return (location, InterpResult::combine(result, r));
                     }
                     location.add_diagram(name, diagram);
                     (location, result)
@@ -456,13 +424,14 @@ fn interpret_c_instr(
             match out {
                 None => (location, result),
                 Some((name, map, domain)) => {
-                    if location.name_in_use(&name) {
-                        let mut r = result;
-                        r.add_error(make_error(
-                            dp.name.span,
-                            format!("Partial map name already in use: {}", name),
-                        ));
-                        return (location, r);
+                    if let Some(r) = ensure_name_free(
+                        &result.context,
+                        &location,
+                        &name,
+                        dp.name.span,
+                        "Partial map",
+                    ) {
+                        return (location, InterpResult::combine(result, r));
                     }
                     location.add_map(name, domain, map);
                     (location, result)
@@ -492,12 +461,7 @@ fn interpret_generator_instr(
     let name = nwb.name.inner.clone();
     let name_span = nwb.name.span;
 
-    if location.name_in_use(&name) {
-        let mut result = InterpResult::ok(context);
-        result.add_error(make_error(
-            name_span,
-            format!("Generator name already in use: {}", name),
-        ));
+    if let Some(result) = ensure_name_free(&context, &location, &name, name_span, "Generator") {
         return (location, result);
     }
 
@@ -622,13 +586,10 @@ fn interpret_local_inst(
             match out {
                 None => (None, result),
                 Some((name, diagram)) => {
-                    if location.name_in_use(&name) {
-                        let mut r = result;
-                        r.add_error(make_error(
-                            ld.name.span,
-                            format!("Diagram name already in use: {}", name),
-                        ));
-                        return (None, r);
+                    if let Some(r) =
+                        ensure_name_free(&result.context, location, &name, ld.name.span, "Diagram")
+                    {
+                        return (None, InterpResult::combine(result, r));
                     }
                     if diagram.has_local_labels() {
                         let mut r = result;
@@ -653,13 +614,14 @@ fn interpret_local_inst(
             match out {
                 None => (None, result),
                 Some((name, map, domain)) => {
-                    if location.name_in_use(&name) {
-                        let mut r = result;
-                        r.add_error(make_error(
-                            dp.name.span,
-                            format!("Partial map name already in use: {}", name),
-                        ));
-                        return (None, r);
+                    if let Some(r) = ensure_name_free(
+                        &result.context,
+                        location,
+                        &name,
+                        dp.name.span,
+                        "Partial map",
+                    ) {
+                        return (None, InterpResult::combine(result, r));
                     }
                     if map.has_local_labels() {
                         let mut r = result;

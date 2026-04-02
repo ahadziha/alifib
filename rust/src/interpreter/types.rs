@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 
 use super::global_store::GlobalStore;
-use crate::aux::{GlobalId, Tag};
+use crate::aux::{GlobalId, LocalId, Tag};
 use crate::core::{
-    complex::Complex,
+    complex::{Complex, MapDomain},
     diagram::{CellData, Diagram, Sign as DiagramSign},
     map::PMap,
 };
@@ -165,6 +165,105 @@ pub fn make_error(span: Span, message: impl Into<String>) -> Error {
     Error::Runtime {
         message: message.into(),
         span,
+    }
+}
+
+pub fn fail<T>(
+    context: &Context,
+    span: Span,
+    message: impl Into<String>,
+) -> (Option<T>, InterpResult) {
+    let mut result = InterpResult::ok(context.clone());
+    result.add_error(make_error(span, message));
+    (None, result)
+}
+
+pub fn ensure_name_free(
+    context: &Context,
+    location: &Complex,
+    name: &str,
+    span: Span,
+    kind: &str,
+) -> Option<InterpResult> {
+    if location.name_in_use(name) {
+        let mut result = InterpResult::ok(context.clone());
+        result.add_error(make_error(
+            span,
+            format!("{} name already in use: {}", kind, name),
+        ));
+        Some(result)
+    } else {
+        None
+    }
+}
+
+pub fn qualify_name(prefix: &str, name: &str) -> LocalId {
+    if prefix.is_empty() {
+        name.to_owned()
+    } else if name.is_empty() {
+        prefix.to_owned()
+    } else {
+        format!("{}.{}", prefix, name)
+    }
+}
+
+pub fn resolve_root_owner_type_id(
+    context: &Context,
+    module_space: &Complex,
+    span: Span,
+) -> (Option<GlobalId>, InterpResult) {
+    let empty_name: LocalId = String::new();
+    let mut result = InterpResult::ok(context.clone());
+
+    let Some(root_entry) = module_space.find_generator(&empty_name) else {
+        result.add_error(make_error(span, "Root generator not found"));
+        return (None, result);
+    };
+
+    match root_entry.tag {
+        Tag::Global(id) => (Some(id), result),
+        Tag::Local(_) => {
+            result.add_error(make_error(span, "Root has local tag (unexpected)"));
+            (None, result)
+        }
+    }
+}
+
+pub fn resolve_type_complex(
+    context: &Context,
+    type_id: GlobalId,
+    span: Span,
+    missing_prefix: &str,
+) -> (Option<Complex>, InterpResult) {
+    let mut result = InterpResult::ok(context.clone());
+    let Some(type_entry) = context.state.find_type(type_id) else {
+        result.add_error(make_error(span, format!("{} {}", missing_prefix, type_id)));
+        return (None, result);
+    };
+    (Some((*type_entry.complex).clone()), result)
+}
+
+pub fn resolve_map_domain_source(
+    context: &Context,
+    domain: &MapDomain,
+    span: Span,
+) -> (Option<Arc<Complex>>, InterpResult) {
+    let mut result = InterpResult::ok(context.clone());
+    match domain {
+        MapDomain::Type(id) => {
+            let Some(type_entry) = context.state.find_type(*id) else {
+                result.add_error(make_error(span, format!("Type {} not found", id)));
+                return (None, result);
+            };
+            (Some(Arc::clone(&type_entry.complex)), result)
+        }
+        MapDomain::Module(mid) => {
+            let Some(module_arc) = context.state.find_module_arc(mid) else {
+                result.add_error(make_error(span, format!("Module `{}` not found", mid)));
+                return (None, result);
+            };
+            (Some(module_arc), result)
+        }
     }
 }
 

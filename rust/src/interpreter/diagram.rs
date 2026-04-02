@@ -265,30 +265,11 @@ pub fn interpret_d_comp(
                     );
                 }
                 if let Some(entry) = location.find_map(name) {
-                    let source = match &entry.domain {
-                        crate::core::complex::MapDomain::Type(id) => {
-                            match context.state.find_type(*id) {
-                                Some(te) => Arc::clone(&te.complex),
-                                None => {
-                                    let mut r = base_result;
-                                    r.add_error(make_error(span, format!("Type {} not found", id)));
-                                    return (None, r);
-                                }
-                            }
-                        }
-                        crate::core::complex::MapDomain::Module(mid) => {
-                            match context.state.find_module_arc(mid) {
-                                Some(m) => m,
-                                None => {
-                                    let mut r = base_result;
-                                    r.add_error(make_error(
-                                        span,
-                                        format!("Module `{}` not found", mid),
-                                    ));
-                                    return (None, r);
-                                }
-                            }
-                        }
+                    let (source_opt, source_result) =
+                        resolve_map_domain_source(context, &entry.domain, span);
+                    let source = match source_opt {
+                        None => return (None, InterpResult::combine(base_result, source_result)),
+                        Some(src) => src,
                     };
                     return (
                         Some(Component::Term(Term::MTerm(MapComponent {

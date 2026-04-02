@@ -34,25 +34,11 @@ pub fn interpret_address(
 
     let segments: Vec<(Span, String)> = address.iter().map(|n| (n.span, n.inner.clone())).collect();
 
-    let empty_name: LocalId = String::new();
     let base_result = InterpResult::ok(context.clone());
 
     if segments.is_empty() {
-        return match module_space.find_generator(&empty_name) {
-            None => {
-                let mut r = base_result;
-                r.add_error(make_error(addr_span, "Root generator not found"));
-                (None, r)
-            }
-            Some(entry) => match &entry.tag {
-                Tag::Global(id) => (Some(*id), base_result),
-                Tag::Local(_) => {
-                    let mut r = base_result;
-                    r.add_error(make_error(addr_span, "Root has local tag"));
-                    (None, r)
-                }
-            },
-        };
+        let (id_opt, root_result) = resolve_root_owner_type_id(context, &module_space, addr_span);
+        return (id_opt, InterpResult::combine(base_result, root_result));
     }
 
     let last_idx = segments.len() - 1;
@@ -199,26 +185,11 @@ fn interpret_pmap_basic(
                     (None, r)
                 }
                 Some(entry) => {
-                    let source = match &entry.domain {
-                        MapDomain::Type(id) => match context.state.find_type(*id) {
-                            Some(te) => Arc::clone(&te.complex),
-                            None => {
-                                let mut r = base_result;
-                                r.add_error(make_error(span, format!("Type {} not found", id)));
-                                return (None, r);
-                            }
-                        },
-                        MapDomain::Module(mid) => match context.state.find_module_arc(mid) {
-                            Some(m) => m,
-                            None => {
-                                let mut r = base_result;
-                                r.add_error(make_error(
-                                    span,
-                                    format!("Module `{}` not found", mid),
-                                ));
-                                return (None, r);
-                            }
-                        },
+                    let (source_opt, source_result) =
+                        resolve_map_domain_source(context, &entry.domain, span);
+                    let source = match source_opt {
+                        None => return (None, InterpResult::combine(base_result, source_result)),
+                        Some(src) => src,
                     };
                     (
                         Some(MapComponent {
@@ -712,16 +683,11 @@ pub fn interpret_def_pmap(
         None => (None, addr_result),
         Some(id) => {
             let context_after = addr_result.context.clone();
-            let source = match context_after.state.find_type(id) {
-                None => {
-                    let mut r = addr_result;
-                    r.add_error(make_error(
-                        dp.address.span,
-                        format!("Type {} not found", id),
-                    ));
-                    return (None, r);
-                }
-                Some(te) => (*te.complex).clone(),
+            let (source_opt, source_result) =
+                resolve_type_complex(&context_after, id, dp.address.span, "Type not found");
+            let source = match source_opt {
+                None => return (None, InterpResult::combine(addr_result, source_result)),
+                Some(src) => src,
             };
             let (mc_opt, m_result) =
                 interpret_pmap_def(&context_after, location, &source, &dp.value);
