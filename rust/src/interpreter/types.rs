@@ -1,17 +1,14 @@
 #![allow(dead_code)]
 
-use std::sync::Arc;
+use super::global_store::GlobalStore;
 use crate::aux::{GlobalId, Tag};
 use crate::core::{
     complex::Complex,
     diagram::{CellData, Diagram, Sign as DiagramSign},
     map::PMap,
 };
-use super::global_store::GlobalStore;
-use crate::language::{
-    ast::Span,
-    error::Error,
-};
+use crate::language::{ast::Span, error::Error};
+use std::sync::Arc;
 
 // ---- Context ----
 
@@ -23,15 +20,24 @@ pub struct Context {
 
 impl Context {
     pub fn new(module_id: String, state: GlobalStore) -> Self {
-        Self { current_module: module_id, state: Arc::new(state) }
+        Self {
+            current_module: module_id,
+            state: Arc::new(state),
+        }
     }
 
     pub fn new_sharing_state(module_id: String, other: &Context) -> Self {
-        Self { current_module: module_id, state: Arc::clone(&other.state) }
+        Self {
+            current_module: module_id,
+            state: Arc::clone(&other.state),
+        }
     }
 
     pub fn with_state(&self, state: GlobalStore) -> Self {
-        Self { current_module: self.current_module.clone(), state: Arc::new(state) }
+        Self {
+            current_module: self.current_module.clone(),
+            state: Arc::new(state),
+        }
     }
 
     /// Get a mutable reference to the state via Arc::make_mut (copy-on-write).
@@ -67,7 +73,11 @@ pub struct InterpResult {
 
 impl InterpResult {
     pub fn ok(context: Context) -> Self {
-        Self { context, errors: vec![], holes: vec![] }
+        Self {
+            context,
+            errors: vec![],
+            holes: vec![],
+        }
     }
 
     pub fn add_error(&mut self, err: Error) {
@@ -83,7 +93,11 @@ impl InterpResult {
         errors.extend(next.errors);
         let mut holes = prev.holes;
         holes.extend(next.holes);
-        InterpResult { context: next.context, errors, holes }
+        InterpResult {
+            context: next.context,
+            errors,
+            holes,
+        }
     }
 
     pub fn has_errors(&self) -> bool {
@@ -94,14 +108,17 @@ impl InterpResult {
 // ---- Mode ----
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Mode { Global, Local }
+pub enum Mode {
+    Global,
+    Local,
+}
 
 // ---- TypeScope ----
 
 #[derive(Debug, Clone)]
 pub struct TypeScope {
     pub owner_type_id: GlobalId,
-    pub location: Complex,
+    pub working_complex: Complex,
 }
 
 // ---- Term types ----
@@ -127,8 +144,15 @@ pub enum Component {
 
 #[derive(Debug, Clone)]
 pub enum TermPair {
-    MTermPair { fst: PMap, snd: PMap, source: Arc<Complex> },
-    DTermPair { fst: Diagram, snd: Diagram },
+    MTermPair {
+        fst: PMap,
+        snd: PMap,
+        source: Arc<Complex>,
+    },
+    DTermPair {
+        fst: Diagram,
+        snd: Diagram,
+    },
 }
 
 // ---- Error helpers ----
@@ -138,7 +162,10 @@ pub fn unknown_span() -> Span {
 }
 
 pub fn make_error(span: Span, message: impl Into<String>) -> Error {
-    Error::Runtime { message: message.into(), span }
+    Error::Runtime {
+        message: message.into(),
+        span,
+    }
 }
 
 // ---- Cell data lookup ----
@@ -151,7 +178,8 @@ pub fn get_cell_data(context: &Context, source: &Complex, tag: &Tag) -> Option<C
 
 /// Build an identity map for a complex using state for cell data lookup.
 pub fn identity_map(context: &Context, domain: &Complex) -> PMap {
-    let entries: Vec<(Tag, usize, CellData, Diagram)> = domain.generator_names()
+    let entries: Vec<(Tag, usize, CellData, Diagram)> = domain
+        .generator_names()
         .into_iter()
         .filter_map(|name| {
             let gen_entry = domain.find_generator(&name)?;

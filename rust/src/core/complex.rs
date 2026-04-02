@@ -1,7 +1,7 @@
-use std::collections::{HashMap, HashSet};
-use crate::aux::{GlobalId, LocalId, ModuleId, Tag};
 use super::diagram::{CellData, Diagram};
 use super::map::PMap;
+use crate::aux::{GlobalId, LocalId, ModuleId, Tag};
+use std::collections::{HashMap, HashSet};
 
 /// The domain of a map entry: either a type or a module.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,9 +29,13 @@ pub struct LocalCellEntry {
 
 #[derive(Debug, Clone, Default)]
 struct Generators {
+    /// Primary index: generator name -> metadata.
     by_name: HashMap<LocalId, GeneratorEntry>,
+    /// Reverse index: generator tag -> generator name.
     by_tag: HashMap<Tag, LocalId>,
+    /// Dimension index: dim -> generator names in that dim.
     by_dim: HashMap<usize, HashSet<LocalId>>,
+    /// Classifier diagram for each generator name.
     classifiers: HashMap<LocalId, Diagram>,
 }
 
@@ -43,6 +47,12 @@ struct LocalCells {
 
 /// A complex: the environment of generators, diagrams, maps, and local cells
 /// associated with a single type or module.
+///
+/// Invariants (checked in debug builds):
+/// - every generator in `by_name` has matching entries in `by_tag` and `classifiers`
+/// - every `(dim, name)` membership in `by_dim` agrees with `by_name[name].dim`
+/// - every map/diagram name is included in `used_names`
+/// - every local-cell `(dim, name)` membership in `local_cells.by_dim` has a `by_id` entry
 #[derive(Debug, Clone, Default)]
 pub struct Complex {
     generators: Generators,
@@ -60,16 +70,28 @@ impl Complex {
     // ---- Generators ----
 
     pub fn add_generator(&mut self, name: LocalId, classifier: Diagram) {
-        let dim = if classifier.dim() < 0 { 0 } else { classifier.dim() as usize };
+        let dim = if classifier.dim() < 0 {
+            0
+        } else {
+            classifier.dim() as usize
+        };
         let labels = &classifier.labels;
         let top_labels = &labels[dim];
         assert!(!top_labels.is_empty());
         let tag = top_labels[0].clone();
 
         self.generators.by_tag.insert(tag.clone(), name.clone());
-        self.generators.by_dim.entry(dim).or_default().insert(name.clone());
+        self.generators
+            .by_dim
+            .entry(dim)
+            .or_default()
+            .insert(name.clone());
         self.generators.classifiers.insert(name.clone(), classifier);
-        self.generators.by_name.insert(name, GeneratorEntry { tag, dim });
+        self.generators
+            .by_name
+            .insert(name, GeneratorEntry { tag, dim });
+
+        self.assert_invariants();
     }
 
     pub fn find_generator(&self, name: &str) -> Option<&GeneratorEntry> {
@@ -89,7 +111,9 @@ impl Complex {
     }
 
     pub fn generators_in_dim(&self, dim: usize) -> Vec<LocalId> {
-        self.generators.by_dim.get(&dim)
+        self.generators
+            .by_dim
+            .get(&dim)
             .map(|s| s.iter().cloned().collect())
             .unwrap_or_default()
     }
@@ -103,6 +127,7 @@ impl Complex {
     pub fn add_diagram(&mut self, name: LocalId, diagram: Diagram) {
         self.diagrams.insert(name.clone(), diagram);
         self.used_names.insert(name);
+        self.assert_invariants();
     }
 
     pub fn find_diagram(&self, name: &str) -> Option<&Diagram> {
@@ -118,6 +143,7 @@ impl Complex {
     pub fn add_map(&mut self, name: LocalId, domain: MapDomain, map: PMap) {
         self.maps.insert(name.clone(), MapEntry { map, domain });
         self.used_names.insert(name);
+        self.assert_invariants();
     }
 
     pub fn find_map(&self, name: &str) -> Option<&MapEntry> {
@@ -131,8 +157,13 @@ impl Complex {
     // ---- Local cells ----
 
     pub fn add_local_cell(&mut self, name: LocalId, dim: usize, data: CellData) {
-        self.local_cells.by_dim.entry(dim).or_default().insert(name.clone());
+        self.local_cells
+            .by_dim
+            .entry(dim)
+            .or_default()
+            .insert(name.clone());
         self.local_cells.by_id.insert(name, LocalCellEntry { data });
+        self.assert_invariants();
     }
 
     pub fn find_local_cell(&self, name: &str) -> Option<&LocalCellEntry> {
@@ -143,5 +174,47 @@ impl Complex {
 
     pub fn name_in_use(&self, name: &str) -> bool {
         self.used_names.contains(name)
+    }
+
+    fn assert_invariants(&self) {
+        debug_assert_eq!(
+            self.generators.by_name.len(),
+            self.generators.classifiers.len()
+        );
+
+        for (name, generator_entry) in &self.generators.by_name {
+            debug_assert!(self.generators.classifiers.contains_key(name));
+            debug_assert_eq!(self.generators.by_tag.get(&generator_entry.tag), Some(name));
+            debug_assert!(
+                self.generators
+                    .by_dim
+                    .get(&generator_entry.dim)
+                    .is_some_and(|names| names.contains(name))
+            );
+        }
+
+        for (dim, names) in &self.generators.by_dim {
+            for name in names {
+                let Some(generator_entry) = self.generators.by_name.get(name) else {
+                    debug_assert!(false, "generator present in by_dim without by_name entry");
+                    continue;
+                };
+                debug_assert_eq!(generator_entry.dim, *dim);
+            }
+        }
+
+        for name in self.diagrams.keys() {
+            debug_assert!(self.used_names.contains(name));
+        }
+
+        for name in self.maps.keys() {
+            debug_assert!(self.used_names.contains(name));
+        }
+
+        for names in self.local_cells.by_dim.values() {
+            for name in names {
+                debug_assert!(self.local_cells.by_id.contains_key(name));
+            }
+        }
     }
 }

@@ -1,21 +1,72 @@
 #![allow(dead_code)]
 
-use std::sync::Arc;
-use crate::aux::{GlobalId, LocalId, Tag};
 use crate::aux::loader::ModuleStore;
+use crate::aux::{GlobalId, LocalId, Tag};
 use crate::core::{
     complex::{Complex, MapDomain},
     diagram::{CellData, Diagram},
 };
-use crate::language::ast::{self, Span, Spanned, Program, Block, TypeInst, CInstr,
-                            NameWithBoundary, LocalInst};
+use crate::language::ast::{
+    self, Block, CInstr, LocalInst, NameWithBoundary, Program, Span, Spanned, TypeInst,
+};
+use std::sync::Arc;
 
-pub use super::types::{Context, InterpResult, Mode, TypeScope, make_error, unknown_span,
-                        identity_map};
-use super::diagram::{interpret_boundaries, interpret_let_diag, interpret_assert};
-use super::pmap::{interpret_address, interpret_def_pmap, check_assert};
-use super::include::{interpret_include_module_instr, interpret_include_instr,
-                     interpret_attach_instr};
+use super::diagram::{interpret_assert, interpret_boundaries, interpret_let_diag};
+use super::include::{
+    interpret_attach_instr, interpret_include_instr, interpret_include_module_instr,
+};
+use super::pmap::{check_assert, interpret_address, interpret_def_pmap};
+pub use super::types::{
+    Context, InterpResult, Mode, TypeScope, identity_map, make_error, unknown_span,
+};
+
+// ---- Semantic helpers ----
+
+fn resolve_current_module<'a>(context: &'a Context) -> Option<&'a Complex> {
+    context.state.find_module(&context.current_module)
+}
+
+fn apply_module_diagram(context: &mut Context, name: LocalId, diagram: Diagram) {
+    let module_id = context.current_module.clone();
+    context
+        .state_mut()
+        .modify_module(&module_id, |c| c.add_diagram(name, diagram));
+}
+
+fn apply_module_map(
+    context: &mut Context,
+    name: LocalId,
+    domain: MapDomain,
+    map: crate::core::map::PMap,
+) {
+    let module_id = context.current_module.clone();
+    context
+        .state_mut()
+        .modify_module(&module_id, |c| c.add_map(name, domain, map));
+}
+
+fn resolve_type_scope_by_id(
+    context: &Context,
+    owner_type_id: GlobalId,
+    span: Span,
+    not_found_msg: &str,
+) -> (Option<TypeScope>, InterpResult) {
+    let mut result = InterpResult::ok(context.clone());
+    let Some(type_entry) = context.state.find_type(owner_type_id) else {
+        result.add_error(make_error(
+            span,
+            format!("{} {}", not_found_msg, owner_type_id),
+        ));
+        return (None, result);
+    };
+    (
+        Some(TypeScope {
+            owner_type_id,
+            working_complex: (*type_entry.complex).clone(),
+        }),
+        result,
+    )
+}
 
 // ---- Main interpreter ----
 
@@ -39,8 +90,10 @@ pub fn interpret_program(
             Ok(d) => d,
             Err(e) => {
                 let mut r = InterpResult::ok(context);
-                r.add_error(make_error(unknown_span(),
-                    format!("Failed to create empty type cell: {}", e)));
+                r.add_error(make_error(
+                    unknown_span(),
+                    format!("Failed to create empty type cell: {}", e),
+                ));
                 return r;
             }
         };
@@ -64,12 +117,14 @@ pub fn interpret_program(
     result
 }
 
-fn interpret_block(modules: &ModuleStore, context: Context, block: &Spanned<Block>) -> InterpResult {
+fn interpret_block(
+    modules: &ModuleStore,
+    context: Context,
+    block: &Spanned<Block>,
+) -> InterpResult {
     match &block.inner {
         Block::TypeBlock(body) => interpret_block_type(modules, context, body),
-        Block::LocalBlock { complex, body } => {
-            interpret_block_complex(context, complex, body)
-        }
+        Block::LocalBlock { complex, body } => interpret_block_complex(context, complex, body),
     }
 }
 
@@ -108,8 +163,7 @@ fn interpret_type_inst(
     match &instr.inner {
         TypeInst::Generator(generator) => interpret_generator_type(context, generator),
         TypeInst::LetDiag(ld) => {
-            let module_id = &context.current_module;
-            let module_location = match context.state.find_module(module_id) {
+            let module_location = match resolve_current_module(context) {
                 Some(m) => m,
                 None => return InterpResult::ok(context.clone()),
             };
@@ -117,16 +171,14 @@ fn interpret_type_inst(
             match out {
                 None => result,
                 Some((name, diagram)) => {
-                    let module_id2 = result.context.current_module.clone();
                     let mut r = result;
-                    r.context.state_mut().modify_module(&module_id2, |c| c.add_diagram(name, diagram));
+                    apply_module_diagram(&mut r.context, name, diagram);
                     r
                 }
             }
         }
         TypeInst::DefPMap(dp) => {
-            let module_id = &context.current_module;
-            let module_location = match context.state.find_module(module_id) {
+            let module_location = match resolve_current_module(context) {
                 Some(m) => m,
                 None => return InterpResult::ok(context.clone()),
             };
@@ -134,9 +186,8 @@ fn interpret_type_inst(
             match out {
                 None => result,
                 Some((name, map, domain)) => {
-                    let module_id2 = result.context.current_module.clone();
                     let mut r = result;
-                    r.context.state_mut().modify_module(&module_id2, |c| c.add_map(name, domain, map));
+                    apply_module_map(&mut r.context, name, domain, map);
                     r
                 }
             }
@@ -147,18 +198,14 @@ fn interpret_type_inst(
     }
 }
 
-fn interpret_generator_type(
-    context: &Context,
-    generator: &ast::Generator,
-) -> InterpResult {
+fn interpret_generator_type(context: &Context, generator: &ast::Generator) -> InterpResult {
     let name_with_bd = &generator.name;
     let def = &generator.complex;
 
     let name = name_with_bd.inner.name.inner.clone();
     let name_span = name_with_bd.inner.name.span;
 
-    let module_id = &context.current_module;
-    let module_location = match context.state.find_module(module_id) {
+    let module_location = match resolve_current_module(context) {
         None => {
             let mut result = InterpResult::ok(context.clone());
             result.add_error(make_error(name_span, "Module not found"));
@@ -169,8 +216,10 @@ fn interpret_generator_type(
 
     if module_location.name_in_use(&name) {
         let mut result = InterpResult::ok(context.clone());
-        result.add_error(make_error(name_span,
-            format!("Generator name already in use: {}", name)));
+        result.add_error(make_error(
+            name_span,
+            format!("Generator name already in use: {}", name),
+        ));
         return result;
     }
 
@@ -186,8 +235,10 @@ fn interpret_generator_type(
     };
 
     if !matches!(boundaries, CellData::Zero) {
-        result.add_error(make_error(name_span,
-            "Higher cells in @Type blocks are not supported"));
+        result.add_error(make_error(
+            name_span,
+            "Higher cells in @Type blocks are not supported",
+        ));
         return result;
     }
 
@@ -197,7 +248,7 @@ fn interpret_generator_type(
 
     let mut definition_complex = match ns_opt {
         None => return result,
-        Some(ns) => ns.location,
+        Some(ns) => ns.working_complex,
     };
 
     let new_id = GlobalId::fresh();
@@ -205,19 +256,17 @@ fn interpret_generator_type(
     let classifier = match Diagram::cell(tag, &CellData::Zero) {
         Ok(d) => d,
         Err(e) => {
-            result.add_error(make_error(name_span,
-                format!("Failed to create generator cell: {}", e)));
+            result.add_error(make_error(
+                name_span,
+                format!("Failed to create generator cell: {}", e),
+            ));
             return result;
         }
     };
 
     let module_id2 = result.context.current_module.clone();
     let identity = identity_map(&result.context, &definition_complex);
-    definition_complex.add_map(
-        name.clone(),
-        MapDomain::Type(new_id),
-        identity,
-    );
+    definition_complex.add_map(name.clone(), MapDomain::Type(new_id), identity);
 
     {
         let s = result.context.state_mut();
@@ -238,14 +287,15 @@ pub(super) fn interpret_complex(
     mode: Mode,
     complex: &Spanned<ast::Complex>,
 ) -> (Option<TypeScope>, InterpResult) {
-    let module_id = &context.current_module;
     let complex_span = complex.span;
 
-    let module_space = match context.state.find_module(module_id) {
+    let module_space = match resolve_current_module(context) {
         None => {
             let mut result = InterpResult::ok(context.clone());
-            result.add_error(make_error(complex_span,
-                format!("Module `{}` not found", module_id)));
+            result.add_error(make_error(
+                complex_span,
+                format!("Module `{}` not found", context.current_module),
+            ));
             return (None, result);
         }
         Some(m) => m,
@@ -265,65 +315,61 @@ pub(super) fn interpret_complex(
                     Some(entry) => match &entry.tag {
                         Tag::Global(id) => {
                             let owner_type_id = *id;
-                            let type_entry = match context.state.find_type(owner_type_id) {
-                                None => {
-                                    let mut r = InterpResult::ok(context.clone());
-                                    r.add_error(make_error(complex_span,
-                                        format!("Type {} not found", owner_type_id)));
-                                    return (None, r);
-                                }
-                                Some(te) => te,
-                            };
-                            let location = (*type_entry.complex).clone();
-                            let ns = TypeScope { owner_type_id, location };
-                            (Some(ns), InterpResult::ok(context.clone()))
+                            let (scope_opt, scope_result) = resolve_type_scope_by_id(
+                                context,
+                                owner_type_id,
+                                complex_span,
+                                "Type not found:",
+                            );
+                            (scope_opt, scope_result)
                         }
                         Tag::Local(_) => {
                             let mut r = InterpResult::ok(context.clone());
-                            r.add_error(make_error(complex_span, "Root has local tag (unexpected)"));
+                            r.add_error(make_error(
+                                complex_span,
+                                "Root has local tag (unexpected)",
+                            ));
                             (None, r)
                         }
-                    }
+                    },
                 }
             } else {
                 let (root_opt, root_result) = interpret_address(context, addr, complex_span);
-                let mut result = root_result;
+                let result = root_result;
                 let owner_type_id = match root_opt {
                     None => return (None, result),
                     Some(r) => r,
                 };
-                let type_entry = match result.context.state.find_type(owner_type_id) {
-                    None => {
-                        result.add_error(make_error(complex_span,
-                            format!("Type {} not found in global record", owner_type_id)));
-                        return (None, result);
-                    }
-                    Some(te) => te,
-                };
-                let location = (*type_entry.complex).clone();
-                let ns = TypeScope { owner_type_id, location };
-                (Some(ns), result)
+                let (scope_opt, scope_result) = resolve_type_scope_by_id(
+                    &result.context,
+                    owner_type_id,
+                    complex_span,
+                    "Type not found in global record:",
+                );
+                let result = InterpResult::combine(result, scope_result);
+                (scope_opt, result)
             }
         }
         ast::Complex::Block { address, body } => {
             let (root_opt, root_result) = match address {
-                None => {
-                    match module_space.find_generator(&empty_name) {
-                        None => {
+                None => match module_space.find_generator(&empty_name) {
+                    None => {
+                        let mut r = InterpResult::ok(context.clone());
+                        r.add_error(make_error(complex_span, "Root generator not found"));
+                        (None, r)
+                    }
+                    Some(entry) => match &entry.tag {
+                        Tag::Global(id) => (Some(*id), InterpResult::ok(context.clone())),
+                        Tag::Local(_) => {
                             let mut r = InterpResult::ok(context.clone());
-                            r.add_error(make_error(complex_span, "Root generator not found"));
+                            r.add_error(make_error(
+                                complex_span,
+                                "Root has local tag (unexpected)",
+                            ));
                             (None, r)
                         }
-                        Some(entry) => match &entry.tag {
-                            Tag::Global(id) => (Some(*id), InterpResult::ok(context.clone())),
-                            Tag::Local(_) => {
-                                let mut r = InterpResult::ok(context.clone());
-                                r.add_error(make_error(complex_span, "Root has local tag (unexpected)"));
-                                (None, r)
-                            }
-                        }
-                    }
-                }
+                    },
+                },
                 Some(addr) => interpret_address(context, addr, complex_span),
             };
 
@@ -333,23 +379,27 @@ pub(super) fn interpret_complex(
                 Some(r) => r,
             };
 
-            let type_entry = match result.context.state.find_type(owner_type_id) {
-                None => {
-                    result.add_error(make_error(complex_span,
-                        format!("Type {} not found in global record", owner_type_id)));
-                    return (None, result);
-                }
-                Some(te) => te.clone(),
+            let (scope_opt, scope_result) = resolve_type_scope_by_id(
+                &result.context,
+                owner_type_id,
+                complex_span,
+                "Type not found in global record:",
+            );
+            result = InterpResult::combine(result, scope_result);
+            let Some(scope) = scope_opt else {
+                return (None, result);
             };
 
-            let initial_location = (*type_entry.complex).clone();
+            let initial_location = scope.working_complex;
 
-            let (location_opt, block_result) = interpret_c_block(
-                &result.context, mode, &initial_location, body
-            );
+            let (location_opt, block_result) =
+                interpret_c_block(&result.context, mode, &initial_location, body);
             result = InterpResult::combine(result, block_result);
             let location = location_opt.unwrap_or(initial_location);
-            let ns = TypeScope { owner_type_id, location };
+            let ns = TypeScope {
+                owner_type_id,
+                working_complex: location,
+            };
             (Some(ns), result)
         }
     }
@@ -375,7 +425,11 @@ fn interpret_c_block(
         acc_holes.extend(instr_result.holes);
     }
 
-    let acc_result = InterpResult { context: current_context, errors: acc_errors, holes: acc_holes };
+    let acc_result = InterpResult {
+        context: current_context,
+        errors: acc_errors,
+        holes: acc_holes,
+    };
     (Some(current_location), acc_result)
 }
 
@@ -396,8 +450,10 @@ fn interpret_c_instr(
                 Some((name, diagram)) => {
                     if location.name_in_use(&name) {
                         let mut r = result;
-                        r.add_error(make_error(ld.name.span,
-                            format!("Diagram name already in use: {}", name)));
+                        r.add_error(make_error(
+                            ld.name.span,
+                            format!("Diagram name already in use: {}", name),
+                        ));
                         return (location, r);
                     }
                     location.add_diagram(name, diagram);
@@ -412,8 +468,10 @@ fn interpret_c_instr(
                 Some((name, map, domain)) => {
                     if location.name_in_use(&name) {
                         let mut r = result;
-                        r.add_error(make_error(dp.name.span,
-                            format!("Partial map name already in use: {}", name)));
+                        r.add_error(make_error(
+                            dp.name.span,
+                            format!("Partial map name already in use: {}", name),
+                        ));
                         return (location, r);
                     }
                     location.add_map(name, domain, map);
@@ -422,11 +480,13 @@ fn interpret_c_instr(
             }
         }
         CInstr::IncludeStmt(include_stmt) => {
-            let (loc_opt, result) = interpret_include_instr(&context, mode, &location, include_stmt, instr.span);
+            let (loc_opt, result) =
+                interpret_include_instr(&context, mode, &location, include_stmt, instr.span);
             (loc_opt.unwrap_or(location), result)
         }
         CInstr::AttachStmt(attach_stmt) => {
-            let (loc_opt, result) = interpret_attach_instr(&context, mode, &location, attach_stmt, instr.span);
+            let (loc_opt, result) =
+                interpret_attach_instr(&context, mode, &location, attach_stmt, instr.span);
             (loc_opt.unwrap_or(location), result)
         }
     }
@@ -444,8 +504,10 @@ fn interpret_generator_instr(
 
     if location.name_in_use(&name) {
         let mut result = InterpResult::ok(context);
-        result.add_error(make_error(name_span,
-            format!("Generator name already in use: {}", name)));
+        result.add_error(make_error(
+            name_span,
+            format!("Generator name already in use: {}", name),
+        ));
         return (location, result);
     }
 
@@ -464,7 +526,11 @@ fn interpret_generator_instr(
     let dim = match &boundaries {
         CellData::Zero => 0,
         CellData::Boundary { boundary_in, .. } => {
-            if boundary_in.dim() < 0 { 1 } else { (boundary_in.dim() as usize) + 1 }
+            if boundary_in.dim() < 0 {
+                1
+            } else {
+                (boundary_in.dim() as usize) + 1
+            }
         }
     };
 
@@ -476,15 +542,15 @@ fn interpret_generator_instr(
         Mode::Local => (Tag::Local(name.clone()), None),
     };
 
-    let bounds_span = nwb.boundary.as_ref()
-        .map(|b| b.span)
-        .unwrap_or(outer_span);
+    let bounds_span = nwb.boundary.as_ref().map(|b| b.span).unwrap_or(outer_span);
 
     let classifier = match Diagram::cell(tag.clone(), &boundaries) {
         Ok(d) => d,
         Err(e) => {
-            result.add_error(make_error(bounds_span,
-                format!("Failed to create generator cell: {}", e)));
+            result.add_error(make_error(
+                bounds_span,
+                format!("Failed to create generator cell: {}", e),
+            ));
             return (location, result);
         }
     };
@@ -519,11 +585,7 @@ fn interpret_block_complex(
     };
 
     if !body.is_empty() {
-        let (_, local_result) = interpret_local_block(
-            &result.context,
-            &namespace,
-            body,
-        );
+        let (_, local_result) = interpret_local_block(&result.context, &namespace, body);
         result = InterpResult::combine(result, local_result);
     }
 
@@ -543,14 +605,17 @@ fn interpret_local_block(
         let (loc_opt, instr_result) = interpret_local_inst(&ctx, &current_ns, instr);
         acc_result = InterpResult::combine(acc_result, instr_result);
         if let Some(new_loc) = loc_opt {
-            current_ns = TypeScope { owner_type_id: current_ns.owner_type_id, location: new_loc };
+            current_ns = TypeScope {
+                owner_type_id: current_ns.owner_type_id,
+                working_complex: new_loc,
+            };
         }
         if acc_result.has_errors() {
             break;
         }
     }
 
-    (Some(current_ns.location), acc_result)
+    (Some(current_ns.working_complex), acc_result)
 }
 
 fn interpret_local_inst(
@@ -559,7 +624,7 @@ fn interpret_local_inst(
     instr: &Spanned<LocalInst>,
 ) -> (Option<Complex>, InterpResult) {
     let owner_type_id = namespace.owner_type_id;
-    let location = &namespace.location;
+    let location = &namespace.working_complex;
 
     match &instr.inner {
         LocalInst::LetDiag(ld) => {
@@ -569,20 +634,26 @@ fn interpret_local_inst(
                 Some((name, diagram)) => {
                     if location.name_in_use(&name) {
                         let mut r = result;
-                        r.add_error(make_error(ld.name.span,
-                            format!("Diagram name already in use: {}", name)));
+                        r.add_error(make_error(
+                            ld.name.span,
+                            format!("Diagram name already in use: {}", name),
+                        ));
                         return (None, r);
                     }
                     if diagram.has_local_labels() {
                         let mut r = result;
-                        r.add_error(make_error(ld.value.span,
-                            "Named diagrams must contain only global cells"));
+                        r.add_error(make_error(
+                            ld.value.span,
+                            "Named diagrams must contain only global cells",
+                        ));
                         return (None, r);
                     }
                     let mut new_location = location.clone();
                     new_location.add_diagram(name.clone(), diagram.clone());
                     let mut r = result;
-                    r.context.state_mut().modify_type_complex(owner_type_id, |c| c.add_diagram(name, diagram));
+                    r.context
+                        .state_mut()
+                        .modify_type_complex(owner_type_id, |c| c.add_diagram(name, diagram));
                     (Some(new_location), r)
                 }
             }
@@ -594,20 +665,26 @@ fn interpret_local_inst(
                 Some((name, map, domain)) => {
                     if location.name_in_use(&name) {
                         let mut r = result;
-                        r.add_error(make_error(dp.name.span,
-                            format!("Partial map name already in use: {}", name)));
+                        r.add_error(make_error(
+                            dp.name.span,
+                            format!("Partial map name already in use: {}", name),
+                        ));
                         return (None, r);
                     }
                     if map.has_local_labels() {
                         let mut r = result;
-                        r.add_error(make_error(dp.value.span,
-                            "Named maps must only be valued in global cells"));
+                        r.add_error(make_error(
+                            dp.value.span,
+                            "Named maps must only be valued in global cells",
+                        ));
                         return (None, r);
                     }
                     let mut new_location = location.clone();
                     new_location.add_map(name.clone(), domain.clone(), map.clone());
                     let mut r = result;
-                    r.context.state_mut().modify_type_complex(owner_type_id, |c| c.add_map(name, domain, map));
+                    r.context
+                        .state_mut()
+                        .modify_type_complex(owner_type_id, |c| c.add_map(name, domain, map));
                     (Some(new_location), r)
                 }
             }

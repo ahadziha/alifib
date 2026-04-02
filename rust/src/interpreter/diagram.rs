@@ -1,11 +1,11 @@
-use std::sync::Arc;
+use super::types::*;
 use crate::core::{
     complex::Complex,
     diagram::{CellData, Diagram, Sign as DiagramSign},
     map::PMap,
 };
-use crate::language::ast::{self, Span, Spanned, DExpr, DComponent, PMapBasic};
-use super::types::*;
+use crate::language::ast::{self, DComponent, DExpr, PMapBasic, Span, Spanned};
+use std::sync::Arc;
 
 // ---- Diagram interpretation ----
 
@@ -15,14 +15,18 @@ pub fn interpret_diagram(
     diagram: &Spanned<ast::Diagram>,
 ) -> (Option<Diagram>, InterpResult) {
     match &diagram.inner {
-        ast::Diagram::Principal(exprs) => interpret_principal(context, location, exprs, diagram.span),
+        ast::Diagram::Principal(exprs) => {
+            interpret_principal(context, location, exprs, diagram.span)
+        }
         ast::Diagram::Paste { lhs, dim, rhs } => {
             let k = match dim.inner.parse::<usize>() {
                 Ok(n) => n,
                 Err(_) => {
                     let mut r = InterpResult::ok(context.clone());
-                    r.add_error(make_error(dim.span,
-                        format!("Invalid paste dimension: {}", dim.inner)));
+                    r.add_error(make_error(
+                        dim.span,
+                        format!("Invalid paste dimension: {}", dim.inner),
+                    ));
                     return (None, r);
                 }
             };
@@ -82,8 +86,10 @@ fn interpret_principal(
                         match Diagram::paste(k, &acc, &d_right) {
                             Ok(d) => acc = d,
                             Err(e) => {
-                                result.add_error(make_error(span,
-                                    format!("Failed to paste diagrams: {}", e)));
+                                result.add_error(make_error(
+                                    span,
+                                    format!("Failed to paste diagrams: {}", e),
+                                ));
                                 return (None, result);
                             }
                         }
@@ -113,17 +119,14 @@ fn interpret_diagram_paste(
             let combined = InterpResult::combine(right_result, left_result);
             match left_opt {
                 None => (None, combined),
-                Some(d_left) => {
-                    match Diagram::paste(k, &d_left, &d_right) {
-                        Ok(d) => (Some(d), combined),
-                        Err(e) => {
-                            let mut r = combined;
-                            r.add_error(make_error(span,
-                                format!("Failed to paste diagrams: {}", e)));
-                            (None, r)
-                        }
+                Some(d_left) => match Diagram::paste(k, &d_left, &d_right) {
+                    Ok(d) => (Some(d), combined),
+                    Err(e) => {
+                        let mut r = combined;
+                        r.add_error(make_error(span, format!("Failed to paste diagrams: {}", e)));
+                        (None, r)
                     }
-                }
+                },
             }
         }
     }
@@ -141,7 +144,11 @@ pub fn interpret_d_expr(
                 None => (None, result),
                 Some(Component::Hole) => {
                     let mut r = result;
-                    r.add_hole(HoleInfo { span: d_expr.span, boundary: None, source_tag: None });
+                    r.add_hole(HoleInfo {
+                        span: d_expr.span,
+                        boundary: None,
+                        source_tag: None,
+                    });
                     (None, r)
                 }
                 Some(Component::Bd(_)) => {
@@ -157,9 +164,8 @@ pub fn interpret_d_expr(
             match left_opt {
                 None => (None, left_result),
                 Some(Term::DTerm(diagram)) => {
-                    let (comp_opt, comp_result) = interpret_d_comp(
-                        &left_result.context, location, &field.inner, field.span
-                    );
+                    let (comp_opt, comp_result) =
+                        interpret_d_comp(&left_result.context, location, &field.inner, field.span);
                     let combined = InterpResult::combine(left_result, comp_result);
                     match comp_opt {
                         None => (None, combined),
@@ -176,26 +182,40 @@ pub fn interpret_d_expr(
                         }
                         Some(Component::Hole) => {
                             let mut r = combined;
-                            r.add_hole(HoleInfo { span: field.span, boundary: None, source_tag: None });
+                            r.add_hole(HoleInfo {
+                                span: field.span,
+                                boundary: None,
+                                source_tag: None,
+                            });
                             (None, r)
                         }
                         Some(Component::Term(_)) => {
                             let mut r = combined;
-                            r.add_error(make_error(field.span, "Not a well-formed diagram expression"));
+                            r.add_error(make_error(
+                                field.span,
+                                "Not a well-formed diagram expression",
+                            ));
                             (None, r)
                         }
                     }
                 }
                 Some(Term::MTerm(mc)) => {
                     let (comp_opt, comp_result) = interpret_d_comp(
-                        &left_result.context, &*mc.source, &field.inner, field.span
+                        &left_result.context,
+                        &*mc.source,
+                        &field.inner,
+                        field.span,
                     );
                     let combined = InterpResult::combine(left_result, comp_result);
                     match comp_opt {
                         None => (None, combined),
                         Some(Component::Hole) => {
                             let mut r = combined;
-                            r.add_hole(HoleInfo { span: field.span, boundary: None, source_tag: None });
+                            r.add_hole(HoleInfo {
+                                span: field.span,
+                                boundary: None,
+                                source_tag: None,
+                            });
                             (None, r)
                         }
                         Some(Component::Bd(_)) => {
@@ -203,19 +223,23 @@ pub fn interpret_d_expr(
                             r.add_error(make_error(field.span, "Not a diagram or map"));
                             (None, r)
                         }
-                        Some(Component::Term(Term::DTerm(d))) => {
-                            match PMap::apply(&mc.map, &d) {
-                                Ok(d_img) => (Some(Term::DTerm(d_img)), combined),
-                                Err(e) => {
-                                    let mut r = combined;
-                                    r.add_error(make_error(field.span, e.to_string()));
-                                    (None, r)
-                                }
+                        Some(Component::Term(Term::DTerm(d))) => match PMap::apply(&mc.map, &d) {
+                            Ok(d_img) => (Some(Term::DTerm(d_img)), combined),
+                            Err(e) => {
+                                let mut r = combined;
+                                r.add_error(make_error(field.span, e.to_string()));
+                                (None, r)
                             }
-                        }
+                        },
                         Some(Component::Term(Term::MTerm(right_mc))) => {
                             let composed = PMap::compose(&mc.map, &right_mc.map);
-                            (Some(Term::MTerm(MapComponent { map: composed, source: right_mc.source })), combined)
+                            (
+                                Some(Term::MTerm(MapComponent {
+                                    map: composed,
+                                    source: right_mc.source,
+                                })),
+                                combined,
+                            )
                         }
                     }
                 }
@@ -231,76 +255,93 @@ pub fn interpret_d_comp(
     span: Span,
 ) -> (Option<Component>, InterpResult) {
     match d_comp {
-        DComponent::PMap(basic) => {
-            match basic {
-                PMapBasic::Name(name) => {
-                    let base_result = InterpResult::ok(context.clone());
-                    if let Some(diagram) = location.find_diagram(name) {
-                        return (Some(Component::Term(Term::DTerm(diagram.clone()))), base_result);
-                    }
-                    if let Some(entry) = location.find_map(name) {
-                        let source = match &entry.domain {
-                            crate::core::complex::MapDomain::Type(id) => match context.state.find_type(*id) {
+        DComponent::PMap(basic) => match basic {
+            PMapBasic::Name(name) => {
+                let base_result = InterpResult::ok(context.clone());
+                if let Some(diagram) = location.find_diagram(name) {
+                    return (
+                        Some(Component::Term(Term::DTerm(diagram.clone()))),
+                        base_result,
+                    );
+                }
+                if let Some(entry) = location.find_map(name) {
+                    let source = match &entry.domain {
+                        crate::core::complex::MapDomain::Type(id) => {
+                            match context.state.find_type(*id) {
                                 Some(te) => Arc::clone(&te.complex),
                                 None => {
                                     let mut r = base_result;
                                     r.add_error(make_error(span, format!("Type {} not found", id)));
                                     return (None, r);
                                 }
-                            },
-                            crate::core::complex::MapDomain::Module(mid) => match context.state.find_module_arc(mid) {
+                            }
+                        }
+                        crate::core::complex::MapDomain::Module(mid) => {
+                            match context.state.find_module_arc(mid) {
                                 Some(m) => m,
                                 None => {
                                     let mut r = base_result;
-                                    r.add_error(make_error(span, format!("Module `{}` not found", mid)));
+                                    r.add_error(make_error(
+                                        span,
+                                        format!("Module `{}` not found", mid),
+                                    ));
                                     return (None, r);
                                 }
-                            },
-                        };
-                        return (Some(Component::Term(Term::MTerm(MapComponent {
+                            }
+                        }
+                    };
+                    return (
+                        Some(Component::Term(Term::MTerm(MapComponent {
                             map: entry.map.clone(),
                             source,
-                        }))), base_result);
-                    }
-                    let mut r = base_result;
-                    r.add_error(make_error(span, format!("Name `{}` not found", name)));
-                    (None, r)
-                }
-                PMapBasic::AnonMap { def, target } => {
-                    let (ns_opt, target_result) = super::interpreter::interpret_complex(
-                        context, super::types::Mode::Global, target,
+                        }))),
+                        base_result,
                     );
-                    match ns_opt {
-                        None => (None, target_result),
-                        Some(ns) => {
-                            let (mc_opt, def_result) = super::pmap::interpret_pmap_def(
-                                &target_result.context, &ns.location, location, def,
-                            );
-                            let combined = InterpResult::combine(target_result, def_result);
-                            match mc_opt {
-                                None => (None, combined),
-                                Some(mc) => (Some(Component::Term(Term::MTerm(mc))), combined),
-                            }
+                }
+                let mut r = base_result;
+                r.add_error(make_error(span, format!("Name `{}` not found", name)));
+                (None, r)
+            }
+            PMapBasic::AnonMap { def, target } => {
+                let (ns_opt, target_result) = super::interpreter::interpret_complex(
+                    context,
+                    super::types::Mode::Global,
+                    target,
+                );
+                match ns_opt {
+                    None => (None, target_result),
+                    Some(ns) => {
+                        let (mc_opt, def_result) = super::pmap::interpret_pmap_def(
+                            &target_result.context,
+                            &ns.working_complex,
+                            location,
+                            def,
+                        );
+                        let combined = InterpResult::combine(target_result, def_result);
+                        match mc_opt {
+                            None => (None, combined),
+                            Some(mc) => (Some(Component::Term(Term::MTerm(mc))), combined),
                         }
                     }
                 }
-                PMapBasic::Paren(inner_pmap) => {
-                    let (mc_opt, result) = super::pmap::interpret_pmap(
-                        context, location, location, inner_pmap,
-                    );
-                    match mc_opt {
-                        None => (None, result),
-                        Some(mc) => (Some(Component::Term(Term::MTerm(mc))), result),
-                    }
+            }
+            PMapBasic::Paren(inner_pmap) => {
+                let (mc_opt, result) =
+                    super::pmap::interpret_pmap(context, location, location, inner_pmap);
+                match mc_opt {
+                    None => (None, result),
+                    Some(mc) => (Some(Component::Term(Term::MTerm(mc))), result),
                 }
             }
-        }
-        DComponent::In => {
-            (Some(Component::Bd(DiagramSign::Source)), InterpResult::ok(context.clone()))
-        }
-        DComponent::Out => {
-            (Some(Component::Bd(DiagramSign::Target)), InterpResult::ok(context.clone()))
-        }
+        },
+        DComponent::In => (
+            Some(Component::Bd(DiagramSign::Source)),
+            InterpResult::ok(context.clone()),
+        ),
+        DComponent::Out => (
+            Some(Component::Bd(DiagramSign::Target)),
+            InterpResult::ok(context.clone()),
+        ),
         DComponent::Paren(inner_diag) => {
             let (d_opt, result) = interpret_diagram(context, location, inner_diag);
             match d_opt {
@@ -308,9 +349,7 @@ pub fn interpret_d_comp(
                 Some(d) => (Some(Component::Term(Term::DTerm(d))), result),
             }
         }
-        DComponent::Hole => {
-            (Some(Component::Hole), InterpResult::ok(context.clone()))
-        }
+        DComponent::Hole => (Some(Component::Hole), InterpResult::ok(context.clone())),
     }
 }
 
@@ -325,30 +364,33 @@ pub fn interpret_assert(
     match left_opt {
         None => (None, left_result),
         Some(left_term) => {
-            let (right_opt, right_result) = interpret_diagram_as_term(&left_result.context, location, &assert_stmt.rhs);
+            let (right_opt, right_result) =
+                interpret_diagram_as_term(&left_result.context, location, &assert_stmt.rhs);
             let combined = InterpResult::combine(left_result, right_result);
             match right_opt {
                 None => (None, combined),
-                Some(right_term) => {
-                    match (left_term, right_term) {
-                        (Term::DTerm(d1), Term::DTerm(d2)) => {
-                            (Some(TermPair::DTermPair { fst: d1, snd: d2 }), combined)
-                        }
-                        (Term::MTerm(mc1), Term::MTerm(mc2)) => {
-                            (Some(TermPair::MTermPair {
-                                fst: mc1.map,
-                                snd: mc2.map,
-                                source: mc1.source,
-                            }), combined)
-                        }
-                        _ => {
-                            let span = assert_stmt.lhs.span;
-                            let mut r = combined;
-                            r.add_error(make_error(span, "The two sides of the equation are incomparable"));
-                            (None, r)
-                        }
+                Some(right_term) => match (left_term, right_term) {
+                    (Term::DTerm(d1), Term::DTerm(d2)) => {
+                        (Some(TermPair::DTermPair { fst: d1, snd: d2 }), combined)
                     }
-                }
+                    (Term::MTerm(mc1), Term::MTerm(mc2)) => (
+                        Some(TermPair::MTermPair {
+                            fst: mc1.map,
+                            snd: mc2.map,
+                            source: mc1.source,
+                        }),
+                        combined,
+                    ),
+                    _ => {
+                        let span = assert_stmt.lhs.span;
+                        let mut r = combined;
+                        r.add_error(make_error(
+                            span,
+                            "The two sides of the equation are incomparable",
+                        ));
+                        (None, r)
+                    }
+                },
             }
         }
     }
@@ -368,13 +410,16 @@ pub fn interpret_diagram_as_term(
                 Ok(n) => n,
                 Err(_) => {
                     let mut r = InterpResult::ok(context.clone());
-                    r.add_error(make_error(dim.span,
-                        format!("Invalid paste dimension: {}", dim.inner)));
+                    r.add_error(make_error(
+                        dim.span,
+                        format!("Invalid paste dimension: {}", dim.inner),
+                    ));
                     return (None, r);
                 }
             };
             // Right side first
-            let (right_opt, right_result) = interpret_principal_as_term(context, location, rhs, diagram.span);
+            let (right_opt, right_result) =
+                interpret_principal_as_term(context, location, rhs, diagram.span);
             match right_opt {
                 None => (None, right_result),
                 Some(Term::MTerm(_)) => {
@@ -383,7 +428,8 @@ pub fn interpret_diagram_as_term(
                     (None, r)
                 }
                 Some(Term::DTerm(d_right)) => {
-                    let (left_opt, left_result) = interpret_diagram_as_term(&right_result.context, location, lhs);
+                    let (left_opt, left_result) =
+                        interpret_diagram_as_term(&right_result.context, location, lhs);
                     let combined = InterpResult::combine(right_result, left_result);
                     match left_opt {
                         None => (None, combined),
@@ -392,17 +438,17 @@ pub fn interpret_diagram_as_term(
                             r.add_error(make_error(diagram.span, "Not a diagram"));
                             (None, r)
                         }
-                        Some(Term::DTerm(d_left)) => {
-                            match Diagram::paste(k, &d_left, &d_right) {
-                                Ok(d) => (Some(Term::DTerm(d)), combined),
-                                Err(e) => {
-                                    let mut r = combined;
-                                    r.add_error(make_error(diagram.span,
-                                        format!("Failed to paste diagrams: {}", e)));
-                                    (None, r)
-                                }
+                        Some(Term::DTerm(d_left)) => match Diagram::paste(k, &d_left, &d_right) {
+                            Ok(d) => (Some(Term::DTerm(d)), combined),
+                            Err(e) => {
+                                let mut r = combined;
+                                r.add_error(make_error(
+                                    diagram.span,
+                                    format!("Failed to paste diagrams: {}", e),
+                                ));
+                                (None, r)
                             }
-                        }
+                        },
                     }
                 }
             }
@@ -428,7 +474,8 @@ fn interpret_principal_as_term(
             let mut result = first_result;
             // If a hole was added and there are more exprs, use right-context
             if !result.holes.is_empty() && exprs.len() > 1 {
-                let (next_opt, next_result) = interpret_d_expr(&result.context, location, &exprs[1]);
+                let (next_opt, next_result) =
+                    interpret_d_expr(&result.context, location, &exprs[1]);
                 result = InterpResult::combine(result, next_result);
                 if let Some(Term::DTerm(d_right)) = next_opt {
                     let k = (d_right.dim().max(0) as usize).saturating_sub(1);
@@ -436,7 +483,9 @@ fn interpret_principal_as_term(
                         if let Some(last_hole) = result.holes.last_mut() {
                             let bd_out = render_diagram(&in_bd, location);
                             match &mut last_hole.boundary {
-                                Some(existing) => { existing.boundary_out = bd_out; }
+                                Some(existing) => {
+                                    existing.boundary_out = bd_out;
+                                }
                                 None => {
                                     last_hole.boundary = Some(HoleBoundaryInfo {
                                         boundary_in: "?".into(),
@@ -499,8 +548,10 @@ fn interpret_principal_as_term(
                         match Diagram::paste(k, &acc, &d_right) {
                             Ok(d) => acc = d,
                             Err(e) => {
-                                result.add_error(make_error(span,
-                                    format!("Failed to paste diagrams: {}", e)));
+                                result.add_error(make_error(
+                                    span,
+                                    format!("Failed to paste diagrams: {}", e),
+                                ));
                                 return (None, result);
                             }
                         }
@@ -524,13 +575,18 @@ pub fn interpret_boundaries(
     match in_opt {
         None => (None, src_result),
         Some(boundary_in) => {
-            let (out_opt, tgt_result) = interpret_diagram(&src_result.context, location, &boundaries.inner.target);
+            let (out_opt, tgt_result) =
+                interpret_diagram(&src_result.context, location, &boundaries.inner.target);
             let combined = InterpResult::combine(src_result, tgt_result);
             match out_opt {
                 None => (None, combined),
-                Some(boundary_out) => {
-                    (Some(CellData::Boundary { boundary_in: Arc::new(boundary_in), boundary_out: Arc::new(boundary_out) }), combined)
-                }
+                Some(boundary_out) => (
+                    Some(CellData::Boundary {
+                        boundary_in: Arc::new(boundary_in),
+                        boundary_out: Arc::new(boundary_out),
+                    }),
+                    combined,
+                ),
             }
         }
     }
@@ -541,35 +597,34 @@ pub fn interpret_boundaries(
 pub fn render_diagram(diagram: &Diagram, location: &Complex) -> String {
     let d = diagram.dim().max(0) as usize;
     match diagram.labels.get(d) {
-        Some(top_labels) if !top_labels.is_empty() => {
-            top_labels.iter().map(|tag| {
-                location.find_generator_by_tag(tag)
+        Some(top_labels) if !top_labels.is_empty() => top_labels
+            .iter()
+            .map(|tag| {
+                location
+                    .find_generator_by_tag(tag)
                     .filter(|n| !n.is_empty())
                     .cloned()
                     .unwrap_or_else(|| format!("{}", tag))
-            }).collect::<Vec<_>>().join(" ")
-        }
+            })
+            .collect::<Vec<_>>()
+            .join(" "),
         _ => "?".to_string(),
     }
 }
 
 /// Render a source boundary diagram through a partial map. Mapped tags are rendered
 /// via their image's top label; unmapped tags are rendered as `?`.
-pub fn render_boundary_partial(
-    boundary: &Diagram,
-    map: &PMap,
-    location: &Complex,
-) -> String {
+pub fn render_boundary_partial(boundary: &Diagram, map: &PMap, location: &Complex) -> String {
     let d = boundary.dim().max(0) as usize;
     match boundary.labels.get(d) {
-        Some(top_labels) if !top_labels.is_empty() => {
-            top_labels.iter().map(|tag| {
-                match map.image(tag) {
-                    Ok(img) => render_diagram(img, location),
-                    Err(_) => "?".to_string(),
-                }
-            }).collect::<Vec<_>>().join(" ")
-        }
+        Some(top_labels) if !top_labels.is_empty() => top_labels
+            .iter()
+            .map(|tag| match map.image(tag) {
+                Ok(img) => render_diagram(img, location),
+                Err(_) => "?".to_string(),
+            })
+            .collect::<Vec<_>>()
+            .join(" "),
         _ => "?".to_string(),
     }
 }
