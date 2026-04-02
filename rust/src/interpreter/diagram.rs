@@ -265,16 +265,16 @@ pub fn interpret_d_comp(
                     );
                 }
                 if let Some(entry) = scope.find_map(name) {
-                    let (source_opt, source_result) =
-                        resolve_map_domain_source(context, &entry.domain, span);
-                    let source = match source_opt {
-                        None => return (None, InterpResult::combine(base_result, source_result)),
+                    let (domain_opt, domain_result) =
+                        resolve_map_domain_complex(context, &entry.domain, span);
+                    let domain_complex = match domain_opt {
+                        None => return (None, InterpResult::combine(base_result, domain_result)),
                         Some(src) => src,
                     };
                     return (
                         Some(Component::Term(Term::MTerm(MapComponent {
                             map: entry.map.clone(),
-                            source,
+                            source: domain_complex,
                         }))),
                         base_result,
                     );

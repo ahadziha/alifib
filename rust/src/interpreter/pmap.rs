@@ -185,16 +185,16 @@ fn interpret_pmap_basic(
                     (None, r)
                 }
                 Some(entry) => {
-                    let (source_opt, source_result) =
-                        resolve_map_domain_source(context, &entry.domain, span);
-                    let source_arc = match source_opt {
-                        None => return (None, InterpResult::combine(base_result, source_result)),
+                    let (domain_opt, domain_result) =
+                        resolve_map_domain_complex(context, &entry.domain, span);
+                    let domain_arc = match domain_opt {
+                        None => return (None, InterpResult::combine(base_result, domain_result)),
                         Some(src) => src,
                     };
                     (
                         Some(MapComponent {
                             map: entry.map.clone(),
-                            source: source_arc,
+                            source: domain_arc,
                         }),
                         base_result,
                     )

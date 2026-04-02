@@ -276,7 +276,7 @@ pub fn resolve_type_complex(
     (Some((*type_entry.complex).clone()), result)
 }
 
-pub fn resolve_map_domain_source(
+pub fn resolve_map_domain_complex(
     context: &Context,
     domain: &MapDomain,
     span: Span,
