@@ -68,6 +68,28 @@ fn resolve_type_scope_by_id(
     )
 }
 
+fn resolve_root_owner_type_id(
+    context: &Context,
+    module_space: &Complex,
+    span: Span,
+) -> (Option<GlobalId>, InterpResult) {
+    let empty_name: LocalId = String::new();
+    let mut result = InterpResult::ok(context.clone());
+
+    let Some(root_entry) = module_space.find_generator(&empty_name) else {
+        result.add_error(make_error(span, "Root generator not found"));
+        return (None, result);
+    };
+
+    match root_entry.tag {
+        Tag::Global(id) => (Some(id), result),
+        Tag::Local(_) => {
+            result.add_error(make_error(span, "Root has local tag (unexpected)"));
+            (None, result)
+        }
+    }
+}
+
 // ---- Main interpreter ----
 
 pub fn interpret_program(
@@ -301,38 +323,23 @@ pub(super) fn interpret_complex(
         Some(m) => m,
     };
 
-    let empty_name: LocalId = String::new();
-
     match &complex.inner {
         ast::Complex::Address(addr) => {
             if addr.is_empty() {
-                match module_space.find_generator(&empty_name) {
-                    None => {
-                        let mut r = InterpResult::ok(context.clone());
-                        r.add_error(make_error(complex_span, "Root generator not found"));
-                        (None, r)
-                    }
-                    Some(entry) => match &entry.tag {
-                        Tag::Global(id) => {
-                            let owner_type_id = *id;
-                            let (scope_opt, scope_result) = resolve_type_scope_by_id(
-                                context,
-                                owner_type_id,
-                                complex_span,
-                                "Type not found:",
-                            );
-                            (scope_opt, scope_result)
-                        }
-                        Tag::Local(_) => {
-                            let mut r = InterpResult::ok(context.clone());
-                            r.add_error(make_error(
-                                complex_span,
-                                "Root has local tag (unexpected)",
-                            ));
-                            (None, r)
-                        }
-                    },
-                }
+                let (owner_type_id_opt, root_result) =
+                    resolve_root_owner_type_id(context, module_space, complex_span);
+                let owner_type_id = match owner_type_id_opt {
+                    None => return (None, root_result),
+                    Some(id) => id,
+                };
+                let (scope_opt, scope_result) = resolve_type_scope_by_id(
+                    context,
+                    owner_type_id,
+                    complex_span,
+                    "Type not found:",
+                );
+                let result = InterpResult::combine(root_result, scope_result);
+                (scope_opt, result)
             } else {
                 let (root_opt, root_result) = interpret_address(context, addr, complex_span);
                 let result = root_result;
@@ -352,24 +359,7 @@ pub(super) fn interpret_complex(
         }
         ast::Complex::Block { address, body } => {
             let (root_opt, root_result) = match address {
-                None => match module_space.find_generator(&empty_name) {
-                    None => {
-                        let mut r = InterpResult::ok(context.clone());
-                        r.add_error(make_error(complex_span, "Root generator not found"));
-                        (None, r)
-                    }
-                    Some(entry) => match &entry.tag {
-                        Tag::Global(id) => (Some(*id), InterpResult::ok(context.clone())),
-                        Tag::Local(_) => {
-                            let mut r = InterpResult::ok(context.clone());
-                            r.add_error(make_error(
-                                complex_span,
-                                "Root has local tag (unexpected)",
-                            ));
-                            (None, r)
-                        }
-                    },
-                },
+                None => resolve_root_owner_type_id(context, module_space, complex_span),
                 Some(addr) => interpret_address(context, addr, complex_span),
             };
 
