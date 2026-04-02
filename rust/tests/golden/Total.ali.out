@@ -1,0 +1,18 @@
+10 cells, 3 types, 1 modules
+
+* Module /private/tmp/alifib-rust-pre-20260402/rust/examples/Total.ali
+Type <empty>
+  (no cells)
+
+Type Graph
+  [0] A.s, A.t, B.s, B.t
+  [1] A.arr : A.s -> A.t, B.arr : B.s -> B.t, mid : A.t -> B.s
+  Diagrams: mid : A.t -> B.s
+  Maps: A :: Arrow, Graph :: Graph, F :: Arrow, B :: Arrow
+
+Type Arrow
+  [0] s, t
+  [1] arr : s -> t
+  Diagrams: t, arr : s -> t, s
+  Maps: Arrow :: Arrow
+

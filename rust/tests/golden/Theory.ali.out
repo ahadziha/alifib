@@ -1,0 +1,30 @@
+26 cells, 4 types, 1 modules
+
+* Module /private/tmp/alifib-rust-pre-20260402/rust/examples/Theory.ali
+Type <empty>
+  (no cells)
+
+Type Function
+  [0] pt
+  [1] Cod.set : pt -> pt, Dom.set : pt -> pt
+  [2] Cod.id : Cod.set -> Cod.set, Dom.id : Dom.set -> Dom.set, fun : Dom.set -> Cod.set
+  [3] Cod.Id_id.dir : Cod.id Cod.id -> Cod.id, Cod.Id_id.inv : Cod.id -> Cod.id Cod.id, Dom.Id_id.dir : Dom.id Dom.id -> Dom.id, Dom.Id_id.inv : Dom.id -> Dom.id Dom.id, Fun_id.dir : fun Cod.id -> fun, Fun_id.inv : fun -> fun Cod.id, Id_fun.dir : Dom.id fun -> fun, Id_fun.inv : fun -> Dom.id fun
+  Diagrams: pt, dom : pt -> pt, fun : Dom.set -> Cod.set, cod : pt -> pt
+  Maps: Dom :: Set, Function :: Function, Fun_id :: Equation, Cod :: Set, Id_fun :: Equation
+
+Type Equation
+  [0] pt
+  [1] cod : pt -> pt, dom : pt -> pt
+  [2] lhs : dom -> cod, rhs : dom -> cod
+  [3] dir : lhs -> rhs, inv : rhs -> lhs
+  Diagrams: pt, dom : pt -> pt, lhs : dom -> cod, rhs : dom -> cod, dir : lhs -> rhs, inv : rhs -> lhs, cod : pt -> pt
+  Maps: Equation :: Equation
+
+Type Set
+  [0] pt
+  [1] set : pt -> pt
+  [2] id : set -> set
+  [3] Id_id.dir : id id -> id, Id_id.inv : id -> id id
+  Diagrams: pt, set : pt -> pt, id : set -> set
+  Maps: Id_id :: Equation, Id :: Function, Set :: Set
+

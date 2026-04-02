@@ -1,0 +1,11 @@
+1 cells, 2 types, 1 modules
+
+* Module /private/tmp/alifib-rust-pre-20260402/rust/examples/Empty2.ali
+Type <empty>
+  (no cells)
+
+Type C
+  [0] c
+  Diagrams: c
+  Maps: C :: C
+
