@@ -252,13 +252,13 @@ fn interpret_pmap_ext(
 
     // Apply each clause
     let mut current_map = initial_mc.map;
-    let effective_source = &*initial_mc.domain;
+    let effective_domain = &*initial_mc.domain;
     let mut acc_result = prefix_result;
 
     for clause in &ext.clauses {
         let ctx = acc_result.context.clone();
         let (m_opt, clause_result) =
-            interpret_pm_clause(&ctx, scope, effective_source, current_map, clause, span);
+            interpret_pm_clause(&ctx, scope, effective_domain, current_map, clause, span);
         acc_result = InterpResult::combine(acc_result, clause_result);
         match m_opt {
             None => return (None, acc_result),
@@ -279,7 +279,7 @@ fn interpret_pmap_ext(
     let ctx = &acc_result.context;
     for hole in &mut acc_result.holes {
         if let Some(tag) = &hole.source_tag {
-            if let Some(cell_data) = get_cell_data(ctx, effective_source, tag) {
+            if let Some(cell_data) = get_cell_data(ctx, effective_domain, tag) {
                 if let CellData::Boundary {
                     boundary_in,
                     boundary_out,
