@@ -10,7 +10,7 @@ use std::time::Instant;
 use aux::error::report_load_file_error;
 use aux::loader::Loader;
 use interpreter::{Context, interpret_program};
-use interpreter::state::State;
+use interpreter::global_store::GlobalStore;
 use interpreter::types::HoleInfo;
 
 const USAGE: &str = "Usage: alifib <input-file> [-o|--output <output-file>] [--ast] [--bench N]";
@@ -123,7 +123,7 @@ fn run_file(loader: &Loader, path: &str) -> Option<RunResult> {
         }
     };
 
-    let context = Context::new(loaded.canonical_path.clone(), State::empty());
+    let context = Context::new(loaded.canonical_path.clone(), GlobalStore::empty());
     let result = interpret_program(&loaded.modules, context, &loaded.program);
 
     if !result.errors.is_empty() {

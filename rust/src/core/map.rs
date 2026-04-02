@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use crate::aux::{Error, Tag};
-use super::diagram::{CellData, Diagram, PasteTree, Sign};
+use super::diagram::{BoundaryHistory, CellData, Diagram, PasteTree, Sign};
 
 #[derive(Debug, Clone)]
 pub struct Entry {
@@ -106,13 +106,13 @@ impl PMap {
                     let mapped_out = PMap::apply(&f, boundary_out)?;
 
                     let boundary_idx = dim - 1;
-                    let expected_input = Diagram::boundary_normal(Sign::Input, boundary_idx, &image)?;
+                    let expected_input = Diagram::boundary_normal(Sign::Source, boundary_idx, &image)?;
                     let mapped_input = Diagram::normal(&mapped_in);
                     if !Diagram::equal(&mapped_input, &expected_input) {
                         return Err(Error::new("input boundaries do not match"));
                     }
 
-                    let expected_output = Diagram::boundary_normal(Sign::Output, boundary_idx, &image)?;
+                    let expected_output = Diagram::boundary_normal(Sign::Target, boundary_idx, &image)?;
                     let mapped_output = Diagram::normal(&mapped_out);
                     if !Diagram::equal(&mapped_output, &expected_output) {
                         return Err(Error::new("output boundaries do not match"));
@@ -132,7 +132,7 @@ impl PMap {
     /// Apply partial map f to a diagram by following its paste tree structure.
     pub fn apply(f: &PMap, diagram: &Diagram) -> Result<Diagram, Error> {
         let n = if diagram.dim() < 0 { 0 } else { diagram.dim() as usize };
-        let root_tree = match diagram.tree(Sign::Input, n) {
+        let root_tree = match diagram.tree(Sign::Source, n) {
             Some(t) => t.clone(),
             None => return Err(Error::new("diagram has no tree")),
         };
@@ -161,8 +161,11 @@ impl PMap {
                 level.iter().map(|tag| top_label(tag, &mut cache)).collect()
             }).collect();
 
-            let new_trees: Vec<[PasteTree; 2]> = diagram.paste_history.iter().map(|[it, ot]| {
-                [map_tree(it, &cache), map_tree(ot, &cache)]
+            let new_trees: Vec<BoundaryHistory> = diagram.paste_history.iter().map(|h| {
+                BoundaryHistory::from_pair(
+                    map_tree(&h.source, &cache),
+                    map_tree(&h.target, &cache),
+                )
             }).collect();
 
             Ok(Diagram::new(diagram.shape.clone(), new_labels, new_trees))

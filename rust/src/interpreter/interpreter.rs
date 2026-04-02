@@ -10,7 +10,7 @@ use crate::core::{
 use crate::language::ast::{self, Span, Spanned, Program, Block, TypeInst, CInstr,
                             NameWithBoundary, LocalInst};
 
-pub use super::types::{Context, InterpResult, Mode, Namespace, make_error, unknown_span,
+pub use super::types::{Context, InterpResult, Mode, TypeScope, make_error, unknown_span,
                         identity_map};
 use super::diagram::{interpret_boundaries, interpret_let_diag, interpret_assert};
 use super::pmap::{interpret_address, interpret_def_pmap, check_assert};
@@ -31,7 +31,7 @@ pub fn interpret_program(
         return InterpResult::ok(context);
     }
 
-    // Initialize module complex with anonymous root type
+    // Initialize module complex with anonymous owner_type_id type
     let context = {
         let empty_id = GlobalId::fresh();
         let empty_tag = Tag::Global(empty_id);
@@ -237,7 +237,7 @@ pub(super) fn interpret_complex(
     context: &Context,
     mode: Mode,
     complex: &Spanned<ast::Complex>,
-) -> (Option<Namespace>, InterpResult) {
+) -> (Option<TypeScope>, InterpResult) {
     let module_id = &context.current_module;
     let complex_span = complex.span;
 
@@ -264,18 +264,18 @@ pub(super) fn interpret_complex(
                     }
                     Some(entry) => match &entry.tag {
                         Tag::Global(id) => {
-                            let root = *id;
-                            let type_entry = match context.state.find_type(root) {
+                            let owner_type_id = *id;
+                            let type_entry = match context.state.find_type(owner_type_id) {
                                 None => {
                                     let mut r = InterpResult::ok(context.clone());
                                     r.add_error(make_error(complex_span,
-                                        format!("Type {} not found", root)));
+                                        format!("Type {} not found", owner_type_id)));
                                     return (None, r);
                                 }
                                 Some(te) => te,
                             };
                             let location = (*type_entry.complex).clone();
-                            let ns = Namespace { root, location };
+                            let ns = TypeScope { owner_type_id, location };
                             (Some(ns), InterpResult::ok(context.clone()))
                         }
                         Tag::Local(_) => {
@@ -288,20 +288,20 @@ pub(super) fn interpret_complex(
             } else {
                 let (root_opt, root_result) = interpret_address(context, addr, complex_span);
                 let mut result = root_result;
-                let root = match root_opt {
+                let owner_type_id = match root_opt {
                     None => return (None, result),
                     Some(r) => r,
                 };
-                let type_entry = match result.context.state.find_type(root) {
+                let type_entry = match result.context.state.find_type(owner_type_id) {
                     None => {
                         result.add_error(make_error(complex_span,
-                            format!("Type {} not found in global record", root)));
+                            format!("Type {} not found in global record", owner_type_id)));
                         return (None, result);
                     }
                     Some(te) => te,
                 };
                 let location = (*type_entry.complex).clone();
-                let ns = Namespace { root, location };
+                let ns = TypeScope { owner_type_id, location };
                 (Some(ns), result)
             }
         }
@@ -328,15 +328,15 @@ pub(super) fn interpret_complex(
             };
 
             let mut result = root_result;
-            let root = match root_opt {
+            let owner_type_id = match root_opt {
                 None => return (None, result),
                 Some(r) => r,
             };
 
-            let type_entry = match result.context.state.find_type(root) {
+            let type_entry = match result.context.state.find_type(owner_type_id) {
                 None => {
                     result.add_error(make_error(complex_span,
-                        format!("Type {} not found in global record", root)));
+                        format!("Type {} not found in global record", owner_type_id)));
                     return (None, result);
                 }
                 Some(te) => te.clone(),
@@ -349,7 +349,7 @@ pub(super) fn interpret_complex(
             );
             result = InterpResult::combine(result, block_result);
             let location = location_opt.unwrap_or(initial_location);
-            let ns = Namespace { root, location };
+            let ns = TypeScope { owner_type_id, location };
             (Some(ns), result)
         }
     }
@@ -532,7 +532,7 @@ fn interpret_block_complex(
 
 fn interpret_local_block(
     context: &Context,
-    namespace: &Namespace,
+    namespace: &TypeScope,
     body: &[Spanned<LocalInst>],
 ) -> (Option<Complex>, InterpResult) {
     let mut current_ns = namespace.clone();
@@ -543,7 +543,7 @@ fn interpret_local_block(
         let (loc_opt, instr_result) = interpret_local_inst(&ctx, &current_ns, instr);
         acc_result = InterpResult::combine(acc_result, instr_result);
         if let Some(new_loc) = loc_opt {
-            current_ns = Namespace { root: current_ns.root, location: new_loc };
+            current_ns = TypeScope { owner_type_id: current_ns.owner_type_id, location: new_loc };
         }
         if acc_result.has_errors() {
             break;
@@ -555,10 +555,10 @@ fn interpret_local_block(
 
 fn interpret_local_inst(
     context: &Context,
-    namespace: &Namespace,
+    namespace: &TypeScope,
     instr: &Spanned<LocalInst>,
 ) -> (Option<Complex>, InterpResult) {
-    let root = namespace.root;
+    let owner_type_id = namespace.owner_type_id;
     let location = &namespace.location;
 
     match &instr.inner {
@@ -582,7 +582,7 @@ fn interpret_local_inst(
                     let mut new_location = location.clone();
                     new_location.add_diagram(name.clone(), diagram.clone());
                     let mut r = result;
-                    r.context.state_mut().modify_type_complex(root, |c| c.add_diagram(name, diagram));
+                    r.context.state_mut().modify_type_complex(owner_type_id, |c| c.add_diagram(name, diagram));
                     (Some(new_location), r)
                 }
             }
@@ -607,7 +607,7 @@ fn interpret_local_inst(
                     let mut new_location = location.clone();
                     new_location.add_map(name.clone(), domain.clone(), map.clone());
                     let mut r = result;
-                    r.context.state_mut().modify_type_complex(root, |c| c.add_map(name, domain, map));
+                    r.context.state_mut().modify_type_complex(owner_type_id, |c| c.add_map(name, domain, map));
                     (Some(new_location), r)
                 }
             }

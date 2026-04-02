@@ -19,14 +19,14 @@ pub struct CellEntry {
 
 /// The global interpreter state.
 #[derive(Debug, Clone, Default)]
-pub struct State {
+pub struct GlobalStore {
     pub cells: HashMap<GlobalId, CellEntry>,
     pub cells_by_dim: HashMap<usize, Vec<GlobalId>>,
     pub types: HashMap<GlobalId, TypeEntry>,
     pub modules: HashMap<ModuleId, Arc<Complex>>,
 }
 
-impl State {
+impl GlobalStore {
     pub fn empty() -> Self {
         Self::default()
     }
@@ -74,6 +74,17 @@ impl State {
         self.modules.get(id).map(Arc::clone)
     }
 
+    /// Look up cell data for a tag, checking global cells, types, then local cells.
+    pub fn cell_data_for_tag(&self, complex: &Complex, tag: &Tag) -> Option<CellData> {
+        match tag {
+            Tag::Global(gid) => self
+                .find_cell(*gid)
+                .map(|e| e.data.clone())
+                .or_else(|| self.find_type(*gid).map(|e| e.data.clone())),
+            Tag::Local(name) => complex.find_local_cell(name).map(|e| e.data.clone()),
+        }
+    }
+
     /// Pretty-print the state in a human-readable format.
     pub fn display(&self) -> String {
         format!("{}", self)
@@ -97,17 +108,6 @@ fn render_cell(name: &str, data: &CellData, complex: &Complex) -> String {
     }
 }
 
-/// Look up cell data for a tag, checking global cells, types, then local cells.
-fn cell_data_for_tag(state: &State, complex: &Complex, tag: &Tag) -> Option<CellData> {
-    match tag {
-        Tag::Global(gid) => state
-            .find_cell(*gid)
-            .map(|e| e.data.clone())
-            .or_else(|| state.find_type(*gid).map(|e| e.data.clone())),
-        Tag::Local(name) => complex.find_local_cell(name).map(|e| e.data.clone()),
-    }
-}
-
 /// Render a named diagram with its boundary, e.g. `alpha : f g -> h k`.
 fn render_named_diagram(name: &str, diag: &Diagram, complex: &Complex) -> String {
     let label = name_or_empty(name);
@@ -117,8 +117,8 @@ fn render_named_diagram(name: &str, diag: &Diagram, complex: &Complex) -> String
     }
     let k = (d - 1) as usize;
     let (Ok(src), Ok(tgt)) = (
-        Diagram::boundary(Sign::Input, k, diag),
-        Diagram::boundary(Sign::Output, k, diag),
+        Diagram::boundary(Sign::Source, k, diag),
+        Diagram::boundary(Sign::Target, k, diag),
     ) else {
         return label.to_owned();
     };
@@ -143,7 +143,7 @@ fn render_domain(domain: &MapDomain, module_complex: &Complex) -> String {
     }
 }
 
-impl fmt::Display for State {
+impl fmt::Display for GlobalStore {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(
             f,
@@ -206,7 +206,7 @@ impl fmt::Display for State {
                             .iter()
                             .filter_map(|name| {
                                 let entry = tc.find_generator(name)?;
-                                let data = cell_data_for_tag(self, tc, &entry.tag)?;
+                                let data = self.cell_data_for_tag(tc, &entry.tag)?;
                                 Some(render_cell(name, &data, tc))
                             })
                             .collect();

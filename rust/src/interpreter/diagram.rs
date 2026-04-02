@@ -296,10 +296,10 @@ pub fn interpret_d_comp(
             }
         }
         DComponent::In => {
-            (Some(Component::Bd(DiagramSign::Input)), InterpResult::ok(context.clone()))
+            (Some(Component::Bd(DiagramSign::Source)), InterpResult::ok(context.clone()))
         }
         DComponent::Out => {
-            (Some(Component::Bd(DiagramSign::Output)), InterpResult::ok(context.clone()))
+            (Some(Component::Bd(DiagramSign::Target)), InterpResult::ok(context.clone()))
         }
         DComponent::Paren(inner_diag) => {
             let (d_opt, result) = interpret_diagram(context, location, inner_diag);
@@ -432,7 +432,7 @@ fn interpret_principal_as_term(
                 result = InterpResult::combine(result, next_result);
                 if let Some(Term::DTerm(d_right)) = next_opt {
                     let k = (d_right.dim().max(0) as usize).saturating_sub(1);
-                    if let Ok(in_bd) = Diagram::boundary(DiagramSign::Input, k, &d_right) {
+                    if let Ok(in_bd) = Diagram::boundary(DiagramSign::Source, k, &d_right) {
                         if let Some(last_hole) = result.holes.last_mut() {
                             let bd_out = render_diagram(&in_bd, location);
                             match &mut last_hole.boundary {
@@ -477,7 +477,7 @@ fn interpret_principal_as_term(
                         // If a hole was just added, enrich with left-context boundary
                         if result.holes.len() > prev_hole_count {
                             let k = (acc.dim().max(0) as usize).saturating_sub(1);
-                            if let Ok(out_bd) = Diagram::boundary(DiagramSign::Output, k, &acc) {
+                            if let Ok(out_bd) = Diagram::boundary(DiagramSign::Target, k, &acc) {
                                 if let Some(last_hole) = result.holes.last_mut() {
                                     last_hole.boundary = Some(HoleBoundaryInfo {
                                         boundary_in: render_diagram(&out_bd, location),

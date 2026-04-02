@@ -7,7 +7,7 @@ use crate::core::{
     diagram::{CellData, Diagram, Sign as DiagramSign},
     map::PMap,
 };
-use super::state::State;
+use super::global_store::GlobalStore;
 use crate::language::{
     ast::Span,
     error::Error,
@@ -18,11 +18,11 @@ use crate::language::{
 #[derive(Debug, Clone)]
 pub struct Context {
     pub current_module: String,
-    pub state: Arc<State>,
+    pub state: Arc<GlobalStore>,
 }
 
 impl Context {
-    pub fn new(module_id: String, state: State) -> Self {
+    pub fn new(module_id: String, state: GlobalStore) -> Self {
         Self { current_module: module_id, state: Arc::new(state) }
     }
 
@@ -30,12 +30,12 @@ impl Context {
         Self { current_module: module_id, state: Arc::clone(&other.state) }
     }
 
-    pub fn with_state(&self, state: State) -> Self {
+    pub fn with_state(&self, state: GlobalStore) -> Self {
         Self { current_module: self.current_module.clone(), state: Arc::new(state) }
     }
 
     /// Get a mutable reference to the state via Arc::make_mut (copy-on-write).
-    pub fn state_mut(&mut self) -> &mut State {
+    pub fn state_mut(&mut self) -> &mut GlobalStore {
         Arc::make_mut(&mut self.state)
     }
 }
@@ -96,11 +96,11 @@ impl InterpResult {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode { Global, Local }
 
-// ---- Namespace ----
+// ---- TypeScope ----
 
 #[derive(Debug, Clone)]
-pub struct Namespace {
-    pub root: GlobalId,
+pub struct TypeScope {
+    pub owner_type_id: GlobalId,
     pub location: Complex,
 }
 
@@ -146,16 +146,7 @@ pub fn make_error(span: Span, message: impl Into<String>) -> Error {
 /// Look up cell data for a tag, checking both cells and types in state,
 /// and local cells in a complex.
 pub fn get_cell_data(context: &Context, source: &Complex, tag: &Tag) -> Option<CellData> {
-    match tag {
-        Tag::Global(gid) => {
-            context.state.find_cell(*gid)
-                .map(|e| e.data.clone())
-                .or_else(|| context.state.find_type(*gid).map(|e| e.data.clone()))
-        }
-        Tag::Local(name) => {
-            source.find_local_cell(name).map(|e| e.data.clone())
-        }
-    }
+    context.state.cell_data_for_tag(source, tag)
 }
 
 /// Build an identity map for a complex using state for cell data lookup.

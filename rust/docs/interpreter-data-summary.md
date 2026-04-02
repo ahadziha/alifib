@@ -1,6 +1,6 @@
 # Interpreter Data Summary (Q/A)
 
-This is a short, practical summary of what data the interpreter carries, how it is represented, and why.
+This is a short summary of what data the interpreter carries, how it is represented, and why.
 
 ## What is a diagram in this interpreter?
 A diagram is represented as:
@@ -27,7 +27,7 @@ Why not just shape + labels:
 Why not just strings:
 - global IDs are stable across modules/scopes
 - names can collide, alias, or change
-- maps/state can key by stable identity
+- maps/store can key by stable identity
 
 ## What does CellData record?
 `CellData` is boundary specification for a generator:
@@ -49,7 +49,7 @@ Why:
 Why:
 - it is the place where local definitions and lookups live.
 
-## What is in State? (planned rename: GlobalStore)
+## What is in GlobalStore?
 Global registry across interpretation:
 - global cells (`GlobalId -> CellEntry`)
 - cells grouped by dimension
@@ -65,16 +65,16 @@ Because types are referenced from many places (addresses, attach/include, map do
 Why:
 - stable identity independent of local naming/aliasing.
 
-## What is Namespace? (planned rename: TypeScope)
+## What is TypeScope?
 Current working scope during local interpretation:
-- `root` (planned rename: `owner_type_id`)
+- `owner_type_id`
 - `location: Complex`
 
-Why keep `root`:
+Why keep `owner_type_id`:
 - local edits happen on `location`
 - successful changes must be written back to the owning type in global store via `owner_type_id`.
 
-## Is this “everything has global IDs” pattern known?
+## Is this "everything has global IDs" pattern known?
 Yes. Common names:
 - object/entity identity
 - symbol IDs / symbol table keys
@@ -91,9 +91,10 @@ Why:
 - operations (`boundary`, `paste`) consume/produce history at boundary slices.
 
 ## What rename decisions have we made?
-Accepted:
+Done:
 - `State` -> `GlobalStore`
-- `Diagram::trees` -> `Diagram::paste_history` (done)
+- `interpreter/state.rs` -> `interpreter/global_store.rs`
+- `Diagram::trees` -> `Diagram::paste_history`
 - `Sign::Input` -> `Sign::Source`
 - `Sign::Output` -> `Sign::Target`
 - `Namespace` -> `TypeScope`
@@ -108,4 +109,4 @@ Kept:
 - pushout/embedding mechanics in detail
 - full `PMap` internals
 - complete include/attach worked examples
-- strict invariant hardening plan (e.g. tighter constructors/validation)
+- strict invariant hardening plan details beyond current debug checks

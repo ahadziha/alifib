@@ -489,7 +489,7 @@ pub fn smart_extend(
         CellData::Zero => vec![],
         CellData::Boundary { boundary_in, boundary_out } => {
             let mut missing = vec![];
-            for (bd, sign) in &[(boundary_in, DiagramSign::Input), (boundary_out, DiagramSign::Output)] {
+            for (bd, sign) in &[(boundary_in, DiagramSign::Source), (boundary_out, DiagramSign::Target)] {
                 let bd_d = if bd.dim() < 0 { 0 } else { bd.dim() as usize };
                 if let Some(row) = bd.labels.get(bd_d) {
                     for t in row {
@@ -514,13 +514,13 @@ pub fn smart_extend(
             .ok_or_else(|| aux::Error::new(format!("Cannot find cell data for boundary cell {}", focus)))?;
 
         let target_boundary = match sign {
-            DiagramSign::Input => Diagram::boundary(DiagramSign::Input, dim_minus_one, target_diag)?,
-            DiagramSign::Output => Diagram::boundary(DiagramSign::Output, dim_minus_one, target_diag)?,
+            DiagramSign::Source => Diagram::boundary(DiagramSign::Source, dim_minus_one, target_diag)?,
+            DiagramSign::Target => Diagram::boundary(DiagramSign::Target, dim_minus_one, target_diag)?,
         };
 
         let source_boundary = match (&cell_data, sign) {
-            (CellData::Boundary { boundary_in, .. }, DiagramSign::Input) => boundary_in.clone(),
-            (CellData::Boundary { boundary_out, .. }, DiagramSign::Output) => boundary_out.clone(),
+            (CellData::Boundary { boundary_in, .. }, DiagramSign::Source) => boundary_in.clone(),
+            (CellData::Boundary { boundary_out, .. }, DiagramSign::Target) => boundary_out.clone(),
             _ => continue,
         };
 
