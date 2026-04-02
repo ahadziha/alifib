@@ -644,42 +644,42 @@ pub fn interpret_def_pmap(
     dp: &DefPMap,
 ) -> (Option<(LocalId, PMap, MapDomain)>, InterpResult) {
     let (id_opt, addr_result) = interpret_address(context, &dp.address.inner, dp.address.span);
-    match id_opt {
-        None => (None, addr_result),
-        Some(id) => {
-            let context_after = addr_result.context.clone();
-            let (domain_opt, domain_result) =
-                resolve_type_complex(&context_after, id, dp.address.span, "Type not found");
-            let domain = match domain_opt {
-                None => return (None, InterpResult::combine(addr_result, domain_result)),
-                Some(src) => src,
-            };
-            let (mc_opt, m_result) = interpret_pmap_def(&context_after, scope, &domain, &dp.value);
-            let mut combined = InterpResult::combine(addr_result, m_result);
-            match mc_opt {
-                None => (None, combined),
-                Some(mc) => {
-                    if dp.total {
-                        for gen_name in domain.generator_names() {
-                            if let Some(entry) = domain.find_generator(&gen_name) {
-                                if !mc.map.is_defined_at(&entry.tag) {
-                                    combined.add_error(make_error(
-                                        dp.name.span,
-                                        format!(
-                                            "Total map `{}` is not defined on generator `{}`",
-                                            dp.name.inner, gen_name
-                                        ),
-                                    ));
-                                }
-                            }
-                        }
-                    }
-                    let name = dp.name.inner.clone();
-                    (Some((name, mc.map, MapDomain::Type(id))), combined)
+    let Some(id) = id_opt else {
+        return (None, addr_result);
+    };
+
+    let context_after = addr_result.context.clone();
+    let (domain_opt, domain_result) =
+        resolve_type_complex(&context_after, id, dp.address.span, "Type not found");
+    let Some(domain) = domain_opt else {
+        return (None, InterpResult::combine(addr_result, domain_result));
+    };
+
+    let (mc_opt, m_result) = interpret_pmap_def(&context_after, scope, &domain, &dp.value);
+    let mut combined = InterpResult::combine(addr_result, m_result);
+
+    let Some(mc) = mc_opt else {
+        return (None, combined);
+    };
+
+    if dp.total {
+        for gen_name in domain.generator_names() {
+            if let Some(entry) = domain.find_generator(&gen_name) {
+                if !mc.map.is_defined_at(&entry.tag) {
+                    combined.add_error(make_error(
+                        dp.name.span,
+                        format!(
+                            "Total map `{}` is not defined on generator `{}`",
+                            dp.name.inner, gen_name
+                        ),
+                    ));
                 }
             }
         }
     }
+
+    let name = dp.name.inner.clone();
+    (Some((name, mc.map, MapDomain::Type(id))), combined)
 }
 
 // ---- Assert checking ----

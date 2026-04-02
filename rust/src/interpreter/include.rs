@@ -128,9 +128,8 @@ pub fn interpret_include_instr(
     let (include_out, include_result) = interpret_include(context, include_stmt, span);
     let context_after = include_result.context.clone();
 
-    let (id, name) = match include_out {
-        None => return (None, include_result),
-        Some(pair) => pair,
+    let Some((id, name)) = include_out else {
+        return (None, include_result);
     };
 
     if let Some(r) = ensure_name_free(
@@ -145,9 +144,8 @@ pub fn interpret_include_instr(
 
     let (subtype_opt, subtype_result) =
         resolve_type_complex(&context_after, id, span, "Type not found in global record");
-    let subtype = match subtype_opt {
-        None => return (None, InterpResult::combine(include_result, subtype_result)),
-        Some(ty) => ty,
+    let Some(subtype) = subtype_opt else {
+        return (None, InterpResult::combine(include_result, subtype_result));
     };
 
     let mut new_scope = scope.clone();
@@ -181,9 +179,8 @@ pub fn interpret_attach_instr(
     let (attach_out, attach_result) = interpret_attach(context, scope, attach_stmt, span);
     let context_after = attach_result.context.clone();
 
-    let (name, map, domain) = match attach_out {
-        None => return (None, attach_result),
-        Some(triple) => triple,
+    let Some((name, map, domain)) = attach_out else {
+        return (None, attach_result);
     };
 
     if let Some(r) = ensure_name_free(
@@ -214,14 +211,8 @@ pub fn interpret_attach_instr(
         attach_stmt.name.span,
         "Type not found in global record",
     );
-    let attachment = match attachment_opt {
-        None => {
-            return (
-                None,
-                InterpResult::combine(attach_result, attachment_result),
-            );
-        }
-        Some(ty) => ty,
+    let Some(attachment) = attachment_opt else {
+        return (None, InterpResult::combine(attach_result, attachment_result));
     };
 
     let generators = sorted_generators(&attachment);
@@ -367,9 +358,8 @@ fn interpret_attach(
     );
     let context_after = addr_result.context.clone();
 
-    let id = match id_opt {
-        None => return (None, addr_result),
-        Some(i) => i,
+    let Some(id) = id_opt else {
+        return (None, addr_result);
     };
 
     let name = attach_stmt.name.inner.clone();
@@ -380,19 +370,18 @@ fn interpret_attach(
             (Some((name, map, MapDomain::Type(id))), addr_result)
         }
         Some(pmap_node) => {
-            let (source_opt, source_result) =
+            let (domain_opt, domain_result) =
                 resolve_type_complex(&context_after, id, span, "Type not found");
-            let source = match source_opt {
-                None => return (None, InterpResult::combine(addr_result, source_result)),
-                Some(ty) => ty,
+            let Some(domain) = domain_opt else {
+                return (None, InterpResult::combine(addr_result, domain_result));
             };
             let (mc_opt, pmap_result) =
-                interpret_pmap_def(&context_after, scope, &source, pmap_node);
+                interpret_pmap_def(&context_after, scope, &domain, pmap_node);
             let combined = InterpResult::combine(addr_result, pmap_result);
-            match mc_opt {
-                None => (None, combined),
-                Some(mc) => (Some((name, mc.map, MapDomain::Type(id))), combined),
-            }
+            let Some(mc) = mc_opt else {
+                return (None, combined);
+            };
+            (Some((name, mc.map, MapDomain::Type(id))), combined)
         }
     }
 }

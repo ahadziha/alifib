@@ -130,10 +130,7 @@ fn interpret_block_type(
     context: Context,
     body: &[Spanned<TypeInst>],
 ) -> InterpResult {
-    let mut result = InterpResult::ok(context);
-    let type_result = interpret_type_block(modules, &result.context, body);
-    result = InterpResult::combine(result, type_result);
-    result
+    interpret_type_block(modules, &context, body)
 }
 
 fn interpret_type_block(
@@ -160,11 +157,11 @@ fn interpret_type_inst(
     match &instr.inner {
         TypeInst::Generator(generator) => interpret_generator_type(context, generator),
         TypeInst::LetDiag(ld) => {
-            let module_location = match resolve_current_module(context) {
+            let module_scope = match resolve_current_module(context) {
                 Some(m) => m,
                 None => return InterpResult::ok(context.clone()),
             };
-            let (out, result) = interpret_let_diag(context, module_location, ld);
+            let (out, result) = interpret_let_diag(context, module_scope, ld);
             match out {
                 None => result,
                 Some((name, diagram)) => {
@@ -175,11 +172,11 @@ fn interpret_type_inst(
             }
         }
         TypeInst::DefPMap(dp) => {
-            let module_location = match resolve_current_module(context) {
+            let module_scope = match resolve_current_module(context) {
                 Some(m) => m,
                 None => return InterpResult::ok(context.clone()),
             };
-            let (out, result) = interpret_def_pmap(context, module_location, dp);
+            let (out, result) = interpret_def_pmap(context, module_scope, dp);
             match out {
                 None => result,
                 Some((name, map, domain)) => {
@@ -202,7 +199,7 @@ fn interpret_generator_type(context: &Context, generator: &ast::Generator) -> In
     let name = name_with_bd.inner.name.inner.clone();
     let name_span = name_with_bd.inner.name.span;
 
-    let module_location = match resolve_current_module(context) {
+    let module_scope = match resolve_current_module(context) {
         None => {
             let mut result = InterpResult::ok(context.clone());
             result.add_error(make_error(name_span, "Module not found"));
@@ -211,7 +208,7 @@ fn interpret_generator_type(context: &Context, generator: &ast::Generator) -> In
         Some(m) => m,
     };
 
-    if let Some(result) = ensure_name_free(context, module_location, &name, name_span, NameKind::Generator)
+    if let Some(result) = ensure_name_free(context, module_scope, &name, name_span, NameKind::Generator)
     {
         return result;
     }
@@ -219,7 +216,7 @@ fn interpret_generator_type(context: &Context, generator: &ast::Generator) -> In
     let (boundaries, mut result) = match &name_with_bd.inner.boundary {
         None => (CellData::Zero, InterpResult::ok(context.clone())),
         Some(bounds) => {
-            let (bopt, r) = interpret_boundaries(context, module_location, bounds);
+            let (bopt, r) = interpret_boundaries(context, module_scope, bounds);
             match bopt {
                 None => return r,
                 Some(b) => (b, r),
