@@ -51,11 +51,6 @@ fn interpret_principal(
     let (first_opt, first_result) = interpret_d_expr(context, scope, &exprs[0]);
     match first_opt {
         None => return (None, first_result),
-        Some(Term::MTerm(_)) if exprs.len() == 1 => {
-            let mut r = first_result;
-            r.add_error(make_error(exprs[0].span, "Not a diagram"));
-            return (None, r);
-        }
         Some(Term::MTerm(_)) => {
             let mut r = first_result;
             r.add_error(make_error(exprs[0].span, "Not a diagram"));
@@ -537,14 +532,14 @@ pub fn interpret_boundaries(
     scope: &Complex,
     boundaries: &Spanned<ast::Boundary>,
 ) -> (Option<CellData>, InterpResult) {
-    let (in_opt, src_result) = interpret_diagram(context, scope, &boundaries.inner.source);
-    match in_opt {
-        None => (None, src_result),
+    let (source_opt, source_result) = interpret_diagram(context, scope, &boundaries.inner.source);
+    match source_opt {
+        None => (None, source_result),
         Some(boundary_in) => {
-            let (out_opt, tgt_result) =
-                interpret_diagram(&src_result.context, scope, &boundaries.inner.target);
-            let combined = InterpResult::combine(src_result, tgt_result);
-            match out_opt {
+            let (target_opt, target_result) =
+                interpret_diagram(&source_result.context, scope, &boundaries.inner.target);
+            let combined = InterpResult::combine(source_result, target_result);
+            match target_opt {
                 None => (None, combined),
                 Some(boundary_out) => (
                     Some(CellData::Boundary {

@@ -397,19 +397,15 @@ fn interpret_assign(
                 return Err(aux::Error::new("Not a well-formed assignment"));
             }
             let src_complex = &*mc_left.domain;
-            let generators: Vec<(usize, Tag, LocalId)> = sorted_generators(src_complex)
-                .into_iter()
-                .map(|(dim, name, tag)| (dim, tag, name))
-                .collect();
 
             let mut extended = map;
-            for (_dim, tag, name) in &generators {
-                let defined_left = mc_left.map.is_defined_at(tag);
-                let defined_right = mc_right.map.is_defined_at(tag);
+            for (_, gen_name, tag) in sorted_generators(src_complex) {
+                let defined_left = mc_left.map.is_defined_at(&tag);
+                let defined_right = mc_right.map.is_defined_at(&tag);
                 if defined_left && defined_right {
-                    let left_image = mc_left.map.image(tag)?;
+                    let left_image = mc_left.map.image(&tag)?;
                     if left_image.is_cell() {
-                        let right_image = mc_right.map.image(tag)?;
+                        let right_image = mc_right.map.image(&tag)?;
                         extended = smart_extend(
                             context,
                             extended,
@@ -434,12 +430,12 @@ fn interpret_assign(
                 } else if defined_left && !defined_right {
                     return Err(aux::Error::new(format!(
                         "{} is in the domain of definition of the first map, but not the second map",
-                        name
+                        gen_name
                     )));
                 } else if defined_right && !defined_left {
                     return Err(aux::Error::new(format!(
                         "{} is in the domain of definition of the second map, but not the first map",
-                        name
+                        gen_name
                     )));
                 }
             }
@@ -698,11 +694,9 @@ pub fn check_assert(
             }
         }
         TermPair::MTermPair { fst, snd, domain } => {
-            let generators = sorted_generators(domain);
-
-            for (_, gen_name, tag) in &generators {
-                let in_first = fst.is_defined_at(tag);
-                let in_second = snd.is_defined_at(tag);
+            for (_, gen_name, tag) in sorted_generators(domain) {
+                let in_first = fst.is_defined_at(&tag);
+                let in_second = snd.is_defined_at(&tag);
                 if in_first && !in_second {
                     return Err(format!(
                         "`{}` is in the domain of the first map but not the second",
@@ -716,8 +710,8 @@ pub fn check_assert(
                     ));
                 }
                 if in_first {
-                    let img1 = fst.image(tag).map_err(|e| e.to_string())?;
-                    let img2 = snd.image(tag).map_err(|e| e.to_string())?;
+                    let img1 = fst.image(&tag).map_err(|e| e.to_string())?;
+                    let img2 = snd.image(&tag).map_err(|e| e.to_string())?;
                     if !Diagram::isomorphic(img1, img2) {
                         return Err(format!("The maps differ on `{}`", gen_name));
                     }

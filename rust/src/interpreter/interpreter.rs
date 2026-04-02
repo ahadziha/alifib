@@ -79,28 +79,28 @@ pub fn interpret_program(
         return InterpResult::ok(context);
     }
 
-    // Initialize module complex with anonymous owner_type_id type
+    // Initialize module complex with a root (anonymous empty-named) type
     let context = {
-        let empty_id = GlobalId::fresh();
-        let empty_tag = Tag::Global(empty_id);
-        let empty_diagram = match Diagram::cell(empty_tag, &CellData::Zero) {
+        let root_id = GlobalId::fresh();
+        let root_tag = Tag::Global(root_id);
+        let root_diagram = match Diagram::cell(root_tag, &CellData::Zero) {
             Ok(d) => d,
             Err(e) => {
                 let mut r = InterpResult::ok(context);
                 r.add_error(make_error(
                     unknown_span(),
-                    format!("Failed to create empty type cell: {}", e),
+                    format!("Failed to create root type cell: {}", e),
                 ));
                 return r;
             }
         };
-        let empty_name: LocalId = String::new();
+        let root_name: LocalId = String::new();
         let mut module_complex = Complex::empty();
-        module_complex.add_generator(empty_name.clone(), empty_diagram.clone());
-        module_complex.add_diagram(empty_name, empty_diagram);
+        module_complex.add_generator(root_name.clone(), root_diagram.clone());
+        module_complex.add_diagram(root_name, root_diagram);
         {
             let s = Arc::make_mut(&mut context.state);
-            s.set_type(empty_id, CellData::Zero, Complex::empty());
+            s.set_type(root_id, CellData::Zero, Complex::empty());
             s.set_module(module_id.clone(), module_complex);
         }
         context
@@ -120,17 +120,9 @@ fn interpret_block(
     block: &Spanned<Block>,
 ) -> InterpResult {
     match &block.inner {
-        Block::TypeBlock(body) => interpret_block_type(modules, context, body),
+        Block::TypeBlock(body) => interpret_type_block(modules, &context, body),
         Block::LocalBlock { complex, body } => interpret_block_complex(context, complex, body),
     }
-}
-
-fn interpret_block_type(
-    modules: &ModuleStore,
-    context: Context,
-    body: &[Spanned<TypeInst>],
-) -> InterpResult {
-    interpret_type_block(modules, &context, body)
 }
 
 fn interpret_type_block(
@@ -254,14 +246,14 @@ fn interpret_generator_type(context: &Context, generator: &ast::Generator) -> In
         }
     };
 
-    let module_id2 = result.context.current_module.clone();
+    let module_id = result.context.current_module.clone();
     let identity = identity_map(&result.context, &definition_complex);
     definition_complex.add_map(name.clone(), MapDomain::Type(new_id), identity);
 
     {
         let s = result.context.state_mut();
         s.set_type(new_id, CellData::Zero, definition_complex);
-        s.modify_module(&module_id2, |m| {
+        s.modify_module(&module_id, |m| {
             m.add_generator(name.clone(), classifier.clone());
             m.add_diagram(name, classifier);
         });
@@ -555,10 +547,10 @@ fn interpret_local_block(
         let ctx = acc_result.context.clone();
         let (loc_opt, instr_result) = interpret_local_inst(&ctx, &current_ns, instr);
         acc_result = InterpResult::combine(acc_result, instr_result);
-        if let Some(new_loc) = loc_opt {
+        if let Some(new_complex) = loc_opt {
             current_ns = TypeScope {
                 owner_type_id: current_ns.owner_type_id,
-                working_complex: new_loc,
+                working_complex: new_complex,
             };
         }
         if acc_result.has_errors() {
