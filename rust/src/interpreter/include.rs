@@ -66,8 +66,7 @@ pub fn interpret_include_module_instr(
         }
     };
 
-    let included_module_id = canonical_path.clone();
-    let include_context = Context::new_sharing_state(included_module_id.clone(), context);
+    let include_context = Context::new_sharing_state(canonical_path.clone(), context);
     let include_result = interpret_program(modules, include_context, &resolved.program);
 
     let mut result = InterpResult::ok(context.clone());
@@ -79,7 +78,7 @@ pub fn interpret_include_module_instr(
 
     result.context.state = Arc::clone(&include_result.context.state);
 
-    let included_arc = match result.context.state.find_module_arc(&included_module_id) {
+    let included_arc = match result.context.state.find_module_arc(&canonical_path) {
         Some(arc) => arc,
         None => {
             result.add_error(make_error(span, "Included module complex not found"));
@@ -87,7 +86,7 @@ pub fn interpret_include_module_instr(
         }
     };
 
-    let gen_data: Vec<_> = included_arc
+    let imported_generators: Vec<_> = included_arc
         .generator_names()
         .into_iter()
         .filter(|n| !n.is_empty())
@@ -106,13 +105,13 @@ pub fn interpret_include_module_instr(
         .context
         .state_mut()
         .modify_module(&module_id, |current| {
-            for (combined_name, tag, classifier) in gen_data {
+            for (combined_name, tag, classifier) in imported_generators {
                 if current.find_generator_by_tag(&tag).is_some() {
                     continue;
                 }
                 current.add_generator(combined_name, classifier);
             }
-            current.add_map(alias, MapDomain::Module(included_module_id), inclusion);
+            current.add_map(alias, MapDomain::Module(canonical_path), inclusion);
         });
 
     result

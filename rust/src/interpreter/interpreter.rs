@@ -185,11 +185,9 @@ fn interpret_type_inst(
 }
 
 fn interpret_generator_type(context: &Context, generator: &ast::Generator) -> InterpResult {
-    let name_with_bd = &generator.name;
-    let def = &generator.complex;
-
-    let name = name_with_bd.inner.name.inner.clone();
-    let name_span = name_with_bd.inner.name.span;
+    let nwb = &generator.name.inner;
+    let name = nwb.name.inner.clone();
+    let name_span = nwb.name.span;
 
     let module_scope = match resolve_current_module(context) {
         None => {
@@ -205,18 +203,16 @@ fn interpret_generator_type(context: &Context, generator: &ast::Generator) -> In
         return result;
     }
 
-    let (boundaries, mut result) = match &name_with_bd.inner.boundary {
+    let (boundaries, mut result) = match &nwb.boundary {
         None => (CellData::Zero, InterpResult::ok(context.clone())),
         Some(bounds) => {
-            let (bopt, r) = interpret_boundaries(context, module_scope, bounds);
-            match bopt {
-                None => return r,
-                Some(b) => (b, r),
-            }
+            let (cell_data_opt, r) = interpret_boundaries(context, module_scope, bounds);
+            let Some(cell_data) = cell_data_opt else { return r };
+            (cell_data, r)
         }
     };
 
-    if !matches!(boundaries, CellData::Zero) {
+    if matches!(boundaries, CellData::Boundary { .. }) {
         result.add_error(make_error(
             name_span,
             "Higher cells in @Type blocks are not supported",
@@ -225,13 +221,11 @@ fn interpret_generator_type(context: &Context, generator: &ast::Generator) -> In
     }
 
     let ctx = result.context.clone();
-    let (ns_opt, complex_result) = interpret_complex(&ctx, Mode::Global, def);
+    let (ns_opt, complex_result) = interpret_complex(&ctx, Mode::Global, &generator.complex);
     result = InterpResult::combine(result, complex_result);
 
-    let mut definition_complex = match ns_opt {
-        None => return result,
-        Some(ns) => ns.working_complex,
-    };
+    let Some(ns) = ns_opt else { return result };
+    let mut definition_complex = ns.working_complex;
 
     let new_id = GlobalId::fresh();
     let tag = Tag::Global(new_id);
@@ -358,7 +352,7 @@ fn interpret_c_block(
     initial_scope: &Complex,
     body: &[Spanned<CInstr>],
 ) -> (Option<Complex>, InterpResult) {
-    let mut current_scope: Complex = initial_scope.clone();
+    let mut current_scope = initial_scope.clone();
     let mut acc_result = InterpResult::ok(context.clone());
 
     for instr in body {

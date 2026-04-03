@@ -25,7 +25,7 @@ pub fn interpret_address(context: &Context, address: &Address, addr_span: Span) 
             ));
             return (None, r);
         }
-        Some(m) => m.clone(),
+        Some(m) => m,
     };
 
     let segments: Vec<(Span, String)> = address.iter().map(|n| (n.span, n.inner.clone())).collect();
@@ -33,7 +33,7 @@ pub fn interpret_address(context: &Context, address: &Address, addr_span: Span) 
     let base_result = InterpResult::ok(context.clone());
 
     if segments.is_empty() {
-        let (id_opt, root_result) = resolve_root_owner_type_id(context, &module_space, addr_span);
+        let (id_opt, root_result) = resolve_root_owner_type_id(context, module_space, addr_span);
         return (id_opt, InterpResult::combine(base_result, root_result));
     }
 
