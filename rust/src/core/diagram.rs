@@ -388,6 +388,11 @@ impl Diagram {
 
 // ---- Helpers ----
 
+/// Get a paste tree from a history slice at position `k`, falling back to `fallback()`.
+fn hist_tree(hist: &[BoundaryHistory], sign: Sign, k: usize, fallback: impl FnOnce() -> PasteTree) -> PasteTree {
+    hist.get(k).map(|h| h.get(sign).clone()).unwrap_or_else(fallback)
+}
+
 fn labels_equal(a: &[Vec<Tag>], b: &[Vec<Tag>]) -> bool {
     if a.len() != b.len() {
         return false;
@@ -468,10 +473,10 @@ fn paste_histories(
     n: usize,
     num_dims: usize,
 ) -> Vec<BoundaryHistory> {
-    let dummy = |idx: usize| {
+    let dummy = |k: usize| {
         u_hist
-            .get(idx)
-            .or(v_hist.get(idx))
+            .get(k)
+            .or(v_hist.get(k))
             .map(|h| h.source.clone())
             .unwrap_or(PasteTree::Leaf(Tag::Local("?".into())))
     };
@@ -479,53 +484,26 @@ fn paste_histories(
     (0..num_dims)
         .map(|k| {
             if k < n {
-                let source = u_hist
-                    .get(k)
-                    .map(|h| h.source.clone())
-                    .unwrap_or_else(|| dummy(k));
-                let target = u_hist
-                    .get(k)
-                    .map(|h| h.target.clone())
-                    .unwrap_or_else(|| dummy(k));
-                BoundaryHistory::from_pair(source, target)
+                BoundaryHistory::from_pair(
+                    hist_tree(u_hist, Sign::Source, k, || dummy(k)),
+                    hist_tree(u_hist, Sign::Target, k, || dummy(k)),
+                )
             } else if k == n {
-                let source = u_hist
-                    .get(n)
-                    .map(|h| h.source.clone())
-                    .unwrap_or_else(|| dummy(n));
-                let target = v_hist
-                    .get(n)
-                    .map(|h| h.target.clone())
-                    .unwrap_or_else(|| dummy(n));
-                BoundaryHistory::from_pair(source, target)
+                BoundaryHistory::from_pair(
+                    hist_tree(u_hist, Sign::Source, n, || dummy(n)),
+                    hist_tree(v_hist, Sign::Target, n, || dummy(n)),
+                )
             } else {
-                let u_source = u_hist
-                    .get(k)
-                    .map(|h| h.source.clone())
-                    .unwrap_or_else(|| dummy(k));
-                let u_target = u_hist
-                    .get(k)
-                    .map(|h| h.target.clone())
-                    .unwrap_or_else(|| dummy(k));
-                let v_source = v_hist
-                    .get(k)
-                    .map(|h| h.source.clone())
-                    .unwrap_or_else(|| dummy(k));
-                let v_target = v_hist
-                    .get(k)
-                    .map(|h| h.target.clone())
-                    .unwrap_or_else(|| dummy(k));
-
                 BoundaryHistory::from_pair(
                     PasteTree::Node {
                         dim: n,
-                        left: Arc::new(u_source),
-                        right: Arc::new(v_source),
+                        left: Arc::new(hist_tree(u_hist, Sign::Source, k, || dummy(k))),
+                        right: Arc::new(hist_tree(v_hist, Sign::Source, k, || dummy(k))),
                     },
                     PasteTree::Node {
                         dim: n,
-                        left: Arc::new(u_target),
-                        right: Arc::new(v_target),
+                        left: Arc::new(hist_tree(u_hist, Sign::Target, k, || dummy(k))),
+                        right: Arc::new(hist_tree(v_hist, Sign::Target, k, || dummy(k))),
                     },
                 )
             }
@@ -626,36 +604,24 @@ fn build_cell_paste_history(
     source: &[BoundaryHistory],
     target: &[BoundaryHistory],
 ) -> Vec<BoundaryHistory> {
-    let mut out: Vec<BoundaryHistory> = Vec::new();
-
-    for dim in 0..=(d + 1) {
-        if dim < d {
-            let source_t = source
-                .get(dim)
-                .map(|h| h.source.clone())
-                .unwrap_or(PasteTree::Leaf(tag.clone()));
-            let target_t = source
-                .get(dim)
-                .map(|h| h.target.clone())
-                .unwrap_or(PasteTree::Leaf(tag.clone()));
-            out.push(BoundaryHistory::from_pair(source_t, target_t));
-        } else if dim == d {
-            let source_t = source
-                .get(d)
-                .map(|h| h.source.clone())
-                .unwrap_or(PasteTree::Leaf(tag.clone()));
-            let target_t = target
-                .get(d)
-                .map(|h| h.target.clone())
-                .unwrap_or(PasteTree::Leaf(tag.clone()));
-            out.push(BoundaryHistory::from_pair(source_t, target_t));
-        } else {
-            out.push(BoundaryHistory::from_pair(
-                PasteTree::Leaf(tag.clone()),
-                PasteTree::Leaf(tag.clone()),
-            ));
-        }
-    }
-
-    out
+    (0..=(d + 1))
+        .map(|dim| {
+            if dim < d {
+                BoundaryHistory::from_pair(
+                    hist_tree(source, Sign::Source, dim, || PasteTree::Leaf(tag.clone())),
+                    hist_tree(source, Sign::Target, dim, || PasteTree::Leaf(tag.clone())),
+                )
+            } else if dim == d {
+                BoundaryHistory::from_pair(
+                    hist_tree(source, Sign::Source, d, || PasteTree::Leaf(tag.clone())),
+                    hist_tree(target, Sign::Target, d, || PasteTree::Leaf(tag.clone())),
+                )
+            } else {
+                BoundaryHistory::from_pair(
+                    PasteTree::Leaf(tag.clone()),
+                    PasteTree::Leaf(tag.clone()),
+                )
+            }
+        })
+        .collect()
 }

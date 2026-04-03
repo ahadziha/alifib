@@ -467,48 +467,36 @@ fn extend_matching_map_images(
     let mut extended = map;
 
     for (_, generator_name, tag) in sorted_generators(map_domain) {
-        let defined_left = left_map.map.is_defined_at(&tag);
-        let defined_right = right_map.map.is_defined_at(&tag);
-
-        if defined_left && defined_right {
-            let left_image = left_map.map.image(&tag)?;
-            if left_image.is_cell() {
-                let right_image = right_map.map.image(&tag)?;
-                extended = smart_extend(
-                    context,
-                    extended,
-                    domain,
-                    target,
-                    left_image,
-                    right_image,
-                    span,
-                )?;
-            } else {
-                let all_defined = left_image
-                    .labels
-                    .iter()
-                    .flat_map(|row| row.iter())
-                    .all(|tag| extended.is_defined_at(tag));
-                if !all_defined {
-                    return Err(aux::Error::new(
-                        "Failed to extend map (not enough information)",
-                    ));
+        match (left_map.map.is_defined_at(&tag), right_map.map.is_defined_at(&tag)) {
+            (true, true) => {
+                let left_image = left_map.map.image(&tag)?;
+                if left_image.is_cell() {
+                    let right_image = right_map.map.image(&tag)?;
+                    extended = smart_extend(context, extended, domain, target, left_image, right_image, span)?;
+                } else {
+                    let all_defined = left_image
+                        .labels
+                        .iter()
+                        .flat_map(|row| row.iter())
+                        .all(|tag| extended.is_defined_at(tag));
+                    if !all_defined {
+                        return Err(aux::Error::new("Failed to extend map (not enough information)"));
+                    }
                 }
             }
-            continue;
-        }
-
-        if defined_left && !defined_right {
-            return Err(aux::Error::new(format!(
-                "{} is in the domain of definition of the first map, but not the second map",
-                generator_name
-            )));
-        }
-        if defined_right && !defined_left {
-            return Err(aux::Error::new(format!(
-                "{} is in the domain of definition of the second map, but not the first map",
-                generator_name
-            )));
+            (true, false) => {
+                return Err(aux::Error::new(format!(
+                    "{} is in the domain of definition of the first map, but not the second map",
+                    generator_name
+                )));
+            }
+            (false, true) => {
+                return Err(aux::Error::new(format!(
+                    "{} is in the domain of definition of the second map, but not the first map",
+                    generator_name
+                )));
+            }
+            (false, false) => {}
         }
     }
 
@@ -564,17 +552,6 @@ fn boundary_dependencies(
             }
             missing
         }
-    }
-}
-
-fn target_boundary_for_sign(
-    target_diagram: &Diagram,
-    dim_minus_one: usize,
-    sign: DiagramSign,
-) -> Result<Diagram, aux::Error> {
-    match sign {
-        DiagramSign::Source => Diagram::boundary(DiagramSign::Source, dim_minus_one, target_diagram),
-        DiagramSign::Target => Diagram::boundary(DiagramSign::Target, dim_minus_one, target_diagram),
     }
 }
 
@@ -682,7 +659,7 @@ fn extend_missing_boundary_dependencies(
         let focus_cell_data = get_cell_data(context, domain, &focus_tag).ok_or_else(|| {
             aux::Error::new(format!("Cannot find cell data for boundary cell {}", focus_tag))
         })?;
-        let target_boundary = target_boundary_for_sign(target_diagram, source_dim - 1, sign)?;
+        let target_boundary = Diagram::boundary(sign, source_dim - 1, target_diagram)?;
         let source_boundary = match source_boundary_for_sign(source_cell_data, sign) {
             Some(source_boundary) => source_boundary,
             None => continue,
@@ -760,19 +737,11 @@ pub fn smart_extend(
     let cell_data = get_cell_data(context, domain, &tag)
         .ok_or_else(|| aux::Error::new("Cannot find cell data for generator"))?;
 
-    let dim = dim_index(domain_diag.dim());
     let current = extend_missing_boundary_dependencies(
-        context,
-        map,
-        domain,
-        target,
-        &cell_data,
-        dim,
-        target_diag,
-        span,
+        context, map, domain, target, &cell_data, d, target_diag, span,
     )?;
 
-    PMap::extend(current, tag, dim, cell_data, target_diag.clone())
+    PMap::extend(current, tag, d, cell_data, target_diag.clone())
 }
 
 // ---- Partial map naming ----

@@ -1,4 +1,5 @@
 use super::types::*;
+use crate::aux::Tag;
 use crate::core::{
     complex::Complex,
     diagram::{CellData, Diagram, Sign as DiagramSign},
@@ -6,6 +7,25 @@ use crate::core::{
 };
 use crate::language::ast::{self, DComponent, DExpr, PMapBasic, Span, Spanned};
 use std::sync::Arc;
+
+// ---- Helpers ----
+
+fn parse_paste_dim(context: &Context, dim: &Spanned<String>) -> Step<usize> {
+    dim.inner
+        .parse::<usize>()
+        .map(|k| (Some(k), InterpResult::ok(context.clone())))
+        .unwrap_or_else(|_| fail(context, dim.span, format!("Invalid paste dimension: {}", dim.inner)))
+}
+
+fn top_labels_rendered(diagram: &Diagram, f: impl Fn(&Tag) -> String) -> String {
+    let d = diagram.dim().max(0) as usize;
+    match diagram.labels.get(d) {
+        Some(labels) if !labels.is_empty() => {
+            labels.iter().map(f).collect::<Vec<_>>().join(" ")
+        }
+        _ => "?".to_string(),
+    }
+}
 
 // ---- Diagram interpretation ----
 
@@ -98,17 +118,8 @@ pub fn interpret_diagram(
             interpret_principal(context, scope, exprs, diagram.span)
         }
         ast::Diagram::Paste { lhs, dim, rhs } => {
-            let k = match dim.inner.parse::<usize>() {
-                Ok(n) => n,
-                Err(_) => {
-                    let mut r = InterpResult::ok(context.clone());
-                    r.add_error(make_error(
-                        dim.span,
-                        format!("Invalid paste dimension: {}", dim.inner),
-                    ));
-                    return (None, r);
-                }
-            };
+            let (k_opt, k_result) = parse_paste_dim(context, dim);
+            let Some(k) = k_opt else { return (None, k_result); };
             interpret_diagram_paste(context, scope, diagram.span, lhs, k, rhs)
         }
     }
@@ -388,17 +399,8 @@ pub fn interpret_diagram_as_term(
             interpret_principal_as_term(context, scope, exprs, diagram.span)
         }
         ast::Diagram::Paste { lhs, dim, rhs } => {
-            let k = match dim.inner.parse::<usize>() {
-                Ok(n) => n,
-                Err(_) => {
-                    let mut r = InterpResult::ok(context.clone());
-                    r.add_error(make_error(
-                        dim.span,
-                        format!("Invalid paste dimension: {}", dim.inner),
-                    ));
-                    return (None, r);
-                }
-            };
+            let (k_opt, k_result) = parse_paste_dim(context, dim);
+            let Some(k) = k_opt else { return (None, k_result); };
             // Right side first
             let (right_opt, right_result) =
                 interpret_principal_as_term(context, scope, rhs, diagram.span);
@@ -577,38 +579,22 @@ pub fn interpret_boundaries(
 // ---- Render helper ----
 
 pub fn render_diagram(diagram: &Diagram, scope: &Complex) -> String {
-    let d = diagram.dim().max(0) as usize;
-    match diagram.labels.get(d) {
-        Some(top_labels) if !top_labels.is_empty() => top_labels
-            .iter()
-            .map(|tag| {
-                scope
-                    .find_generator_by_tag(tag)
-                    .filter(|n| !n.is_empty())
-                    .cloned()
-                    .unwrap_or_else(|| format!("{}", tag))
-            })
-            .collect::<Vec<_>>()
-            .join(" "),
-        _ => "?".to_string(),
-    }
+    top_labels_rendered(diagram, |tag| {
+        scope
+            .find_generator_by_tag(tag)
+            .filter(|n| !n.is_empty())
+            .cloned()
+            .unwrap_or_else(|| format!("{}", tag))
+    })
 }
 
 /// Render a source boundary diagram through a partial map. Mapped tags are rendered
 /// via their image's top label; unmapped tags are rendered as `?`.
 pub fn render_boundary_partial(boundary: &Diagram, map: &PMap, scope: &Complex) -> String {
-    let d = boundary.dim().max(0) as usize;
-    match boundary.labels.get(d) {
-        Some(top_labels) if !top_labels.is_empty() => top_labels
-            .iter()
-            .map(|tag| match map.image(tag) {
-                Ok(img) => render_diagram(img, scope),
-                Err(_) => "?".to_string(),
-            })
-            .collect::<Vec<_>>()
-            .join(" "),
-        _ => "?".to_string(),
-    }
+    top_labels_rendered(boundary, |tag| match map.image(tag) {
+        Ok(img) => render_diagram(img, scope),
+        Err(_) => "?".to_string(),
+    })
 }
 
 // ---- Diagram naming ----

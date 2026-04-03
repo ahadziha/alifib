@@ -357,9 +357,8 @@ pub fn resolve_complex_owner_type_id(
     span: Span,
 ) -> (Option<GlobalId>, InterpResult) {
     match address {
-        Some(address) if address.is_empty() => resolve_root_owner_type_id(context, module_scope, span),
-        None => resolve_root_owner_type_id(context, module_scope, span),
-        Some(address) => interpret_address(context, address, span),
+        Some(address) if !address.is_empty() => interpret_address(context, address, span),
+        _ => resolve_root_owner_type_id(context, module_scope, span),
     }
 }
 
