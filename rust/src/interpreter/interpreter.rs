@@ -301,20 +301,18 @@ pub(super) fn interpret_complex(
                 let result = InterpResult::combine(root_result, scope_result);
                 (scope_opt, result)
             } else {
-                let (root_opt, root_result) = interpret_address(context, addr, complex_span);
-                let result = root_result;
-                let owner_type_id = match root_opt {
-                    None => return (None, result),
-                    Some(r) => r,
+                let (id_opt, addr_result) = interpret_address(context, addr, complex_span);
+                let owner_type_id = match id_opt {
+                    None => return (None, addr_result),
+                    Some(id) => id,
                 };
                 let (scope_opt, scope_result) = resolve_type_scope_by_id(
-                    &result.context,
+                    &addr_result.context,
                     owner_type_id,
                     complex_span,
                     "Type not found in global record:",
                 );
-                let result = InterpResult::combine(result, scope_result);
-                (scope_opt, result)
+                (scope_opt, InterpResult::combine(addr_result, scope_result))
             }
         }
         ast::Complex::Block { address, body } => {
@@ -340,15 +338,15 @@ pub(super) fn interpret_complex(
                 return (None, result);
             };
 
-            let initial_location = scope.working_complex;
+            let initial_scope = scope.working_complex;
 
-            let (location_opt, block_result) =
-                interpret_c_block(&result.context, mode, &initial_location, body);
+            let (final_scope_opt, block_result) =
+                interpret_c_block(&result.context, mode, &initial_scope, body);
             result = InterpResult::combine(result, block_result);
-            let location = location_opt.unwrap_or(initial_location);
+            let final_scope = final_scope_opt.unwrap_or(initial_scope);
             let ns = TypeScope {
                 owner_type_id,
-                working_complex: location,
+                working_complex: final_scope,
             };
             (Some(ns), result)
         }
@@ -362,24 +360,15 @@ fn interpret_c_block(
     body: &[Spanned<CInstr>],
 ) -> (Option<Complex>, InterpResult) {
     let mut current_scope: Complex = initial_scope.clone();
-    let mut current_context: Context = context.clone();
-    let mut acc_errors: Vec<crate::language::error::Error> = Vec::new();
-    let mut acc_holes: Vec<super::types::HoleInfo> = Vec::new();
+    let mut acc_result = InterpResult::ok(context.clone());
 
     for instr in body {
-        let (new_scope, instr_result) =
-            interpret_c_instr(current_context, mode, current_scope, instr);
+        let ctx = acc_result.context.clone();
+        let (new_scope, instr_result) = interpret_c_instr(ctx, mode, current_scope, instr);
         current_scope = new_scope;
-        current_context = instr_result.context;
-        acc_errors.extend(instr_result.errors);
-        acc_holes.extend(instr_result.holes);
+        acc_result = InterpResult::combine(acc_result, instr_result);
     }
 
-    let acc_result = InterpResult {
-        context: current_context,
-        errors: acc_errors,
-        holes: acc_holes,
-    };
     (Some(current_scope), acc_result)
 }
 
@@ -428,14 +417,14 @@ fn interpret_c_instr(
             }
         }
         CInstr::IncludeStmt(include_stmt) => {
-            let (loc_opt, result) =
+            let (scope_opt, result) =
                 interpret_include_instr(&context, mode, &scope, include_stmt, instr.span);
-            (loc_opt.unwrap_or(scope), result)
+            (scope_opt.unwrap_or(scope), result)
         }
         CInstr::AttachStmt(attach_stmt) => {
-            let (loc_opt, result) =
+            let (scope_opt, result) =
                 interpret_attach_instr(&context, mode, &scope, attach_stmt, instr.span);
-            (loc_opt.unwrap_or(scope), result)
+            (scope_opt.unwrap_or(scope), result)
         }
     }
 }
@@ -635,17 +624,14 @@ fn interpret_local_inst(
             let span = instr.span;
             match term_pair_opt {
                 None => (None, assert_result),
-                Some(term_pair) => {
-                    let check_result = check_assert(&assert_result.context, scope, &term_pair);
-                    match check_result {
-                        Ok(_) => (Some(scope.clone()), assert_result),
-                        Err(msg) => {
-                            let mut r = assert_result;
-                            r.add_error(make_error(span, msg));
-                            (None, r)
-                        }
+                Some(term_pair) => match check_assert(&assert_result.context, scope, &term_pair) {
+                    Ok(()) => (Some(scope.clone()), assert_result),
+                    Err(msg) => {
+                        let mut r = assert_result;
+                        r.add_error(make_error(span, msg));
+                        (None, r)
                     }
-                }
+                },
             }
         }
     }

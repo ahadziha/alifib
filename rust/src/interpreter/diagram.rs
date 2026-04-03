@@ -105,7 +105,6 @@ fn interpret_diagram_paste(
     k: usize,
     right: &[Spanned<DExpr>],
 ) -> (Option<Diagram>, InterpResult) {
-    // Process right side first (as in old code)
     let (right_opt, right_result) = interpret_principal(context, scope, right, span);
     match right_opt {
         None => (None, right_result),

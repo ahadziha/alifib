@@ -396,10 +396,10 @@ fn interpret_assign(
             if !Arc::ptr_eq(&mc_left.domain, &mc_right.domain) {
                 return Err(aux::Error::new("Not a well-formed assignment"));
             }
-            let src_complex = &*mc_left.domain;
+            let map_domain = &*mc_left.domain;
 
             let mut extended = map;
-            for (_, gen_name, tag) in sorted_generators(src_complex) {
+            for (_, gen_name, tag) in sorted_generators(map_domain) {
                 let defined_left = mc_left.map.is_defined_at(&tag);
                 let defined_right = mc_right.map.is_defined_at(&tag);
                 if defined_left && defined_right {
