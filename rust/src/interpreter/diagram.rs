@@ -263,7 +263,7 @@ pub fn interpret_d_comp(
                         resolve_map_domain_complex(context, &entry.domain, span);
                     let domain_complex = match domain_opt {
                         None => return (None, InterpResult::combine(base_result, domain_result)),
-                        Some(src) => src,
+                        Some(domain) => domain,
                     };
                     return (
                         Some(Component::Term(Term::MTerm(MapComponent {

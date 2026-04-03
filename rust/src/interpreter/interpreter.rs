@@ -224,8 +224,8 @@ fn interpret_generator_type(context: &Context, generator: &ast::Generator) -> In
         return result;
     }
 
-    let context_after = result.context.clone();
-    let (ns_opt, complex_result) = interpret_complex(&context_after, Mode::Global, def);
+    let ctx = result.context.clone();
+    let (ns_opt, complex_result) = interpret_complex(&ctx, Mode::Global, def);
     result = InterpResult::combine(result, complex_result);
 
     let mut definition_complex = match ns_opt {
@@ -286,9 +286,9 @@ pub(super) fn interpret_complex(
     match &complex.inner {
         ast::Complex::Address(addr) => {
             if addr.is_empty() {
-                let (owner_type_id_opt, root_result) =
+                let (id_opt, root_result) =
                     resolve_root_owner_type_id(context, module_space, complex_span);
-                let owner_type_id = match owner_type_id_opt {
+                let owner_type_id = match id_opt {
                     None => return (None, root_result),
                     Some(id) => id,
                 };
@@ -298,8 +298,7 @@ pub(super) fn interpret_complex(
                     complex_span,
                     "Type not found:",
                 );
-                let result = InterpResult::combine(root_result, scope_result);
-                (scope_opt, result)
+                (scope_opt, InterpResult::combine(root_result, scope_result))
             } else {
                 let (id_opt, addr_result) = interpret_address(context, addr, complex_span);
                 let owner_type_id = match id_opt {
@@ -316,15 +315,15 @@ pub(super) fn interpret_complex(
             }
         }
         ast::Complex::Block { address, body } => {
-            let (root_opt, root_result) = match address {
+            let (id_opt, id_result) = match address {
                 None => resolve_root_owner_type_id(context, module_space, complex_span),
                 Some(addr) => interpret_address(context, addr, complex_span),
             };
 
-            let mut result = root_result;
-            let owner_type_id = match root_opt {
+            let mut result = id_result;
+            let owner_type_id = match id_opt {
                 None => return (None, result),
-                Some(r) => r,
+                Some(id) => id,
             };
 
             let (scope_opt, scope_result) = resolve_type_scope_by_id(
@@ -494,7 +493,7 @@ fn interpret_generator_instr(
         scope.add_local_cell(name.clone(), dim, boundaries.clone());
     }
 
-    if let (Mode::Global, Some(id)) = (mode, new_id_opt) {
+    if let Some(id) = new_id_opt {
         Arc::make_mut(&mut result.context.state).set_cell(id, dim, boundaries);
     }
 
@@ -511,9 +510,8 @@ fn interpret_block_complex(
     let (ns_opt, complex_result) = interpret_complex(&context, Mode::Global, complex);
     let mut result = complex_result;
 
-    let namespace = match ns_opt {
-        None => return result,
-        Some(ns) => ns,
+    let Some(namespace) = ns_opt else {
+        return result;
     };
 
     if !body.is_empty() {
@@ -534,9 +532,9 @@ fn interpret_local_block(
 
     for instr in body {
         let ctx = acc_result.context.clone();
-        let (loc_opt, instr_result) = interpret_local_inst(&ctx, &current_ns, instr);
+        let (scope_opt, instr_result) = interpret_local_inst(&ctx, &current_ns, instr);
         acc_result = InterpResult::combine(acc_result, instr_result);
-        if let Some(new_complex) = loc_opt {
+        if let Some(new_complex) = scope_opt {
             current_ns = TypeScope {
                 owner_type_id: current_ns.owner_type_id,
                 working_complex: new_complex,
