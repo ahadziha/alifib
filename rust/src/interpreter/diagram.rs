@@ -9,6 +9,85 @@ use std::sync::Arc;
 
 // ---- Diagram interpretation ----
 
+fn add_hole_result(context: &Context, span: Span) -> (Option<Term>, InterpResult) {
+    let mut result = InterpResult::ok(context.clone());
+    result.add_hole(HoleInfo {
+        span,
+        boundary: None,
+        source_tag: None,
+    });
+    (None, result)
+}
+
+fn reject_non_diagram_term(
+    context: &Context,
+    span: Span,
+    message: &str,
+) -> (Option<Diagram>, InterpResult) {
+    let mut result = InterpResult::ok(context.clone());
+    result.add_error(make_error(span, message));
+    (None, result)
+}
+
+fn boundary_term_from_diagram(
+    diagram: &Diagram,
+    sign: DiagramSign,
+    span: Span,
+    result: InterpResult,
+) -> (Option<Term>, InterpResult) {
+    let boundary_dim = (diagram.dim().max(0) as usize).saturating_sub(1);
+    match Diagram::boundary(sign, boundary_dim, diagram) {
+        Ok(boundary) => (Some(Term::DTerm(boundary)), result),
+        Err(error) => {
+            let mut result = result;
+            result.add_error(make_error(span, error.to_string()));
+            (None, result)
+        }
+    }
+}
+
+fn apply_map_component(
+    map_component: &MapComponent,
+    component: Component,
+    span: Span,
+    result: InterpResult,
+) -> (Option<Term>, InterpResult) {
+    match component {
+        Component::Hole => {
+            let mut result = result;
+            result.add_hole(HoleInfo {
+                span,
+                boundary: None,
+                source_tag: None,
+            });
+            (None, result)
+        }
+        Component::Bd(_) => {
+            let mut result = result;
+            result.add_error(make_error(span, "Not a diagram or map"));
+            (None, result)
+        }
+        Component::Term(Term::DTerm(diagram)) => match PMap::apply(&map_component.map, &diagram) {
+            Ok(image_diagram) => (Some(Term::DTerm(image_diagram)), result),
+            Err(error) => {
+                let mut result = result;
+                result.add_error(make_error(span, error.to_string()));
+                (None, result)
+            }
+        },
+        Component::Term(Term::MTerm(component_map)) => {
+            let composed = PMap::compose(&map_component.map, &component_map.map);
+            (
+                Some(Term::MTerm(MapComponent {
+                    map: composed,
+                    domain: component_map.domain,
+                })),
+                result,
+            )
+        }
+    }
+}
+
 pub fn interpret_diagram(
     context: &Context,
     scope: &Complex,
@@ -42,9 +121,7 @@ fn interpret_principal(
     span: Span,
 ) -> (Option<Diagram>, InterpResult) {
     if exprs.is_empty() {
-        let mut r = InterpResult::ok(context.clone());
-        r.add_error(make_error(span, "Empty diagram expression"));
-        return (None, r);
+        return reject_non_diagram_term(context, span, "Empty diagram expression");
     }
 
     // Interpret first expression
@@ -52,9 +129,9 @@ fn interpret_principal(
     match first_opt {
         None => return (None, first_result),
         Some(Term::MTerm(_)) => {
-            let mut r = first_result;
-            r.add_error(make_error(exprs[0].span, "Not a diagram"));
-            return (None, r);
+            let mut result = first_result;
+            result.add_error(make_error(exprs[0].span, "Not a diagram"));
+            return (None, result);
         }
         Some(Term::DTerm(d_first)) => {
             if exprs.len() == 1 {
@@ -136,15 +213,7 @@ pub fn interpret_d_expr(
             let (comp_opt, result) = interpret_d_comp(context, scope, comp, d_expr.span);
             match comp_opt {
                 None => (None, result),
-                Some(Component::Hole) => {
-                    let mut r = result;
-                    r.add_hole(HoleInfo {
-                        span: d_expr.span,
-                        boundary: None,
-                        source_tag: None,
-                    });
-                    (None, r)
-                }
+                Some(Component::Hole) => add_hole_result(&result.context, d_expr.span),
                 Some(Component::Bd(_)) => {
                     let mut r = result;
                     r.add_error(make_error(d_expr.span, "Not a diagram or map"));
@@ -164,25 +233,9 @@ pub fn interpret_d_expr(
                     match comp_opt {
                         None => (None, combined),
                         Some(Component::Bd(sign)) => {
-                            let k = (diagram.dim().max(0) as usize).saturating_sub(1);
-                            match Diagram::boundary(sign, k, &diagram) {
-                                Ok(bd) => (Some(Term::DTerm(bd)), combined),
-                                Err(e) => {
-                                    let mut r = combined;
-                                    r.add_error(make_error(field.span, e.to_string()));
-                                    (None, r)
-                                }
-                            }
+                            boundary_term_from_diagram(&diagram, sign, field.span, combined)
                         }
-                        Some(Component::Hole) => {
-                            let mut r = combined;
-                            r.add_hole(HoleInfo {
-                                span: field.span,
-                                boundary: None,
-                                source_tag: None,
-                            });
-                            (None, r)
-                        }
+                        Some(Component::Hole) => add_hole_result(&combined.context, field.span),
                         Some(Component::Term(_)) => {
                             let mut r = combined;
                             r.add_error(make_error(
@@ -203,38 +256,7 @@ pub fn interpret_d_expr(
                     let combined = InterpResult::combine(left_result, comp_result);
                     match comp_opt {
                         None => (None, combined),
-                        Some(Component::Hole) => {
-                            let mut r = combined;
-                            r.add_hole(HoleInfo {
-                                span: field.span,
-                                boundary: None,
-                                source_tag: None,
-                            });
-                            (None, r)
-                        }
-                        Some(Component::Bd(_)) => {
-                            let mut r = combined;
-                            r.add_error(make_error(field.span, "Not a diagram or map"));
-                            (None, r)
-                        }
-                        Some(Component::Term(Term::DTerm(d))) => match PMap::apply(&mc.map, &d) {
-                            Ok(d_img) => (Some(Term::DTerm(d_img)), combined),
-                            Err(e) => {
-                                let mut r = combined;
-                                r.add_error(make_error(field.span, e.to_string()));
-                                (None, r)
-                            }
-                        },
-                        Some(Component::Term(Term::MTerm(right_mc))) => {
-                            let composed = PMap::compose(&mc.map, &right_mc.map);
-                            (
-                                Some(Term::MTerm(MapComponent {
-                                    map: composed,
-                                    domain: right_mc.domain,
-                                })),
-                                combined,
-                            )
-                        }
+                        Some(component) => apply_map_component(&mc, component, field.span, combined),
                     }
                 }
             }

@@ -13,94 +13,186 @@ use std::sync::Arc;
 
 // ---- Address resolution ----
 
-pub fn interpret_address(context: &Context, address: &Address, addr_span: Span) -> Step<GlobalId> {
-    let module_id = &context.current_module;
+fn render_mapped_boundary(
+    scope: &Complex,
+    map: &PMap,
+    boundary: &Diagram,
+) -> String {
+    match PMap::apply(map, boundary) {
+        Ok(mapped_boundary) => render_diagram(&mapped_boundary, scope),
+        Err(_) => render_boundary_partial(boundary, map, scope),
+    }
+}
 
-    let module_space = match context.state.find_module(module_id) {
-        None => {
-            let mut r = InterpResult::ok(context.clone());
-            r.add_error(make_error(
-                addr_span,
-                format!("Module `{}` not found", module_id),
-            ));
-            return (None, r);
-        }
-        Some(m) => m,
+fn fill_hole_boundary(
+    hole: &mut HoleInfo,
+    scope: &Complex,
+    domain: &Complex,
+    map: &PMap,
+    context: &Context,
+) {
+    let Some(source_tag) = &hole.source_tag else {
+        return;
+    };
+    let Some(cell_data) = get_cell_data(context, domain, source_tag) else {
+        return;
+    };
+    let CellData::Boundary {
+        boundary_in,
+        boundary_out,
+    } = &cell_data
+    else {
+        return;
     };
 
+    let rendered_in = render_mapped_boundary(scope, map, boundary_in);
+    let rendered_out = render_mapped_boundary(scope, map, boundary_out);
+
+    match &mut hole.boundary {
+        Some(existing) => {
+            if existing.boundary_in == "?" {
+                existing.boundary_in = rendered_in;
+            }
+            if existing.boundary_out == "?" {
+                existing.boundary_out = rendered_out;
+            }
+        }
+        None => {
+            hole.boundary = Some(HoleBoundaryInfo {
+                boundary_in: rendered_in,
+                boundary_out: rendered_out,
+            });
+        }
+    }
+}
+
+fn finalize_hole_boundaries(
+    result: &mut InterpResult,
+    scope: &Complex,
+    domain: &Complex,
+    map: &PMap,
+) {
+    let context = result.context.clone();
+    for hole in &mut result.holes {
+        fill_hole_boundary(hole, scope, domain, map, &context);
+    }
+}
+
+fn module_scope_for_address(context: &Context, span: Span) -> Step<Complex> {
+    let module_id = &context.current_module;
+    let mut result = InterpResult::ok(context.clone());
+
+    let Some(module_scope) = context.state.find_module(module_id) else {
+        result.add_error(make_error(
+            span,
+            format!("Module `{}` not found", module_id),
+        ));
+        return (None, result);
+    };
+
+    (Some(module_scope.clone()), result)
+}
+
+fn resolve_address_prefix_scope(
+    context: &Context,
+    initial_scope: Complex,
+    prefix: &[(Span, String)],
+) -> Step<Complex> {
+    let mut current_scope = initial_scope;
+    let mut result = InterpResult::ok(context.clone());
+
+    for (segment_span, segment_name) in prefix {
+        let Some(map_entry) = current_scope.find_map(segment_name) else {
+            result.add_error(make_error(
+                *segment_span,
+                format!("Partial map `{}` not found", segment_name),
+            ));
+            return (None, result);
+        };
+
+        match &map_entry.domain {
+            MapDomain::Module(module_id) => match context.state.find_module(module_id) {
+                Some(module_scope) => current_scope = module_scope.clone(),
+                None => {
+                    result.add_error(make_error(
+                        *segment_span,
+                        format!("Module `{}` not found", module_id),
+                    ));
+                    return (None, result);
+                }
+            },
+            MapDomain::Type(_) => {
+                result.add_error(make_error(
+                    *segment_span,
+                    format!("Domain of `{}` is not a module", segment_name),
+                ));
+                return (None, result);
+            }
+        }
+    }
+
+    (Some(current_scope), result)
+}
+
+fn global_cell_id_for_named_diagram(
+    scope: &Complex,
+    name: &str,
+    name_span: Span,
+    context: &Context,
+) -> Step<GlobalId> {
+    let mut result = InterpResult::ok(context.clone());
+
+    let Some(diagram) = scope.find_diagram(name) else {
+        result.add_error(make_error(name_span, format!("Type `{}` not found", name)));
+        return (None, result);
+    };
+
+    if !diagram.is_cell() {
+        result.add_error(make_error(name_span, format!("`{}` is not a cell", name)));
+        return (None, result);
+    }
+
+    let top_dim = dim_index(diagram.dim());
+    match diagram.labels.get(top_dim).and_then(|row| row.first()) {
+        None => {
+            result.add_error(make_error(name_span, "Cell has no top label"));
+            (None, result)
+        }
+        Some(Tag::Global(id)) => (Some(*id), result),
+        Some(Tag::Local(_)) => {
+            result.add_error(make_error(name_span, "Cell has local tag (unexpected)"));
+            (None, result)
+        }
+    }
+}
+
+pub fn interpret_address(context: &Context, address: &Address, addr_span: Span) -> Step<GlobalId> {
+    let (module_scope, module_result) = module_scope_for_address(context, addr_span);
+    let Some(module_scope) = module_scope else {
+        return (None, module_result);
+    };
     let segments: Vec<(Span, String)> = address.iter().map(|n| (n.span, n.inner.clone())).collect();
 
-    let base_result = InterpResult::ok(context.clone());
-
     if segments.is_empty() {
-        let (id_opt, root_result) = resolve_root_owner_type_id(context, module_space, addr_span);
-        return (id_opt, InterpResult::combine(base_result, root_result));
+        let (id_opt, root_result) = resolve_root_owner_type_id(context, &module_scope, addr_span);
+        return (id_opt, InterpResult::combine(module_result, root_result));
     }
 
     let last_idx = segments.len() - 1;
     let prefix = &segments[..last_idx];
     let (last_span, last_name) = &segments[last_idx];
 
-    let mut current_space = module_space.clone();
-    for (seg_span, seg_name) in prefix {
-        match current_space.find_map(seg_name) {
-            None => {
-                let mut r = base_result;
-                r.add_error(make_error(
-                    *seg_span,
-                    format!("Partial map `{}` not found", seg_name),
-                ));
-                return (None, r);
-            }
-            Some(me) => match &me.domain {
-                MapDomain::Module(mid) => match context.state.find_module(mid) {
-                    Some(m) => current_space = m.clone(),
-                    None => {
-                        let mut r = base_result;
-                        r.add_error(make_error(*seg_span, format!("Module `{}` not found", mid)));
-                        return (None, r);
-                    }
-                },
-                MapDomain::Type(_) => {
-                    let mut r = base_result;
-                    r.add_error(make_error(
-                        *seg_span,
-                        format!("Domain of `{}` is not a module", seg_name),
-                    ));
-                    return (None, r);
-                }
-            },
-        }
-    }
+    let (target_scope, prefix_result) = resolve_address_prefix_scope(context, module_scope, prefix);
+    let Some(target_scope) = target_scope else {
+        return (None, InterpResult::combine(module_result, prefix_result));
+    };
 
-    match current_space.find_diagram(last_name) {
-        None => {
-            let mut r = base_result;
-            r.add_error(make_error(*last_span, format!("Type `{}` not found", last_name)));
-            (None, r)
-        }
-        Some(diagram) => {
-            if !diagram.is_cell() {
-                let mut r = base_result;
-                r.add_error(make_error(*last_span, format!("`{}` is not a cell", last_name)));
-                return (None, r);
-            }
-            let d = dim_index(diagram.dim());
-            match diagram.labels.get(d).and_then(|row| row.first()) {
-                None => {
-                    let mut r = base_result;
-                    r.add_error(make_error(*last_span, "Cell has no top label"));
-                    (None, r)
-                }
-                Some(Tag::Global(id)) => (Some(*id), base_result),
-                Some(Tag::Local(_)) => {
-                    let mut r = base_result;
-                    r.add_error(make_error(*last_span, "Cell has local tag (unexpected)"));
-                    (None, r)
-                }
-            }
-        }
-    }
+    let (id_opt, id_result) =
+        global_cell_id_for_named_diagram(&target_scope, last_name, *last_span, context);
+    (
+        id_opt,
+        InterpResult::combine(InterpResult::combine(module_result, prefix_result), id_result),
+    )
 }
 
 pub fn interpret_anon_map_component(
@@ -218,105 +310,101 @@ pub fn interpret_pmap_def(
     }
 }
 
+fn initial_map_component(
+    context: &Context,
+    scope: &Complex,
+    domain: &Complex,
+    prefix: &Option<Box<Spanned<ast::PMap>>>,
+) -> Step<MapComponent> {
+    match prefix {
+        None => {
+            let map = PMap::empty().unwrap();
+            (
+                Some(MapComponent {
+                    map,
+                    domain: Arc::new(domain.clone()),
+                }),
+                InterpResult::ok(context.clone()),
+            )
+        }
+        Some(prefix) => interpret_pmap(context, scope, domain, prefix),
+    }
+}
+
+fn finish_map_component(map: PMap, domain: Arc<Complex>, result: InterpResult) -> Step<MapComponent> {
+    (Some(MapComponent { map, domain }), result)
+}
+
+fn apply_pmap_clauses(
+    context: &Context,
+    scope: &Complex,
+    domain: &Complex,
+    initial_map: PMap,
+    clauses: &[Spanned<PMapClause>],
+) -> Step<PMap> {
+    let mut map = initial_map;
+    let mut result = InterpResult::ok(context.clone());
+
+    for clause in clauses {
+        let (next_map, clause_result) =
+            interpret_pm_clause(&result.context, scope, domain, map, clause);
+        result = InterpResult::combine(result, clause_result);
+        let Some(updated_map) = next_map else {
+            return (None, result);
+        };
+        map = updated_map;
+        if result.has_errors() {
+            return (Some(map), result);
+        }
+    }
+
+    (Some(map), result)
+}
+
 fn interpret_pmap_ext(
     context: &Context,
     scope: &Complex,
     domain: &Complex,
     ext: &PMapExt,
-    span: Span,
+    _span: Span,
 ) -> Step<MapComponent> {
-    // Start with prefix map or empty map
-    let (initial_mc, prefix_result) = match &ext.prefix {
-        None => {
-            let map = PMap::empty().unwrap();
-            (
-                MapComponent {
-                    map,
-                    domain: Arc::new(domain.clone()),
-                },
-                InterpResult::ok(context.clone()),
-            )
-        }
-        Some(prefix) => {
-            let (mc_opt, r) = interpret_pmap(context, scope, domain, prefix);
-            match mc_opt {
-                None => return (None, r),
-                Some(mc) => (mc, r),
-            }
-        }
+    let (initial_component, prefix_result) = initial_map_component(context, scope, domain, &ext.prefix);
+    let Some(initial_component) = initial_component else {
+        return (None, prefix_result);
     };
 
-    // Apply each clause
-    let mut current_map = initial_mc.map;
-    let effective_domain = &*initial_mc.domain;
-    let mut acc_result = prefix_result;
+    let effective_domain = Arc::clone(&initial_component.domain);
+    let (map_opt, clause_result) = apply_pmap_clauses(
+        &prefix_result.context,
+        scope,
+        &effective_domain,
+        initial_component.map,
+        &ext.clauses,
+    );
+    let Some(current_map) = map_opt else {
+        return (None, InterpResult::combine(prefix_result, clause_result));
+    };
 
-    for clause in &ext.clauses {
-        let ctx = acc_result.context.clone();
-        let (m_opt, clause_result) =
-            interpret_pm_clause(&ctx, scope, effective_domain, current_map, clause, span);
-        acc_result = InterpResult::combine(acc_result, clause_result);
-        match m_opt {
-            None => return (None, acc_result),
-            Some(new_m) => current_map = new_m,
-        }
-        if acc_result.has_errors() {
-            return (
-                Some(MapComponent {
-                    map: current_map,
-                    domain: initial_mc.domain,
-                }),
-                acc_result,
-            );
-        }
+    let mut result = InterpResult::combine(prefix_result, clause_result);
+    finalize_hole_boundaries(&mut result, scope, &effective_domain, &current_map);
+    finish_map_component(current_map, effective_domain, result)
+}
+
+fn mark_last_hole_source_tag(result: &mut InterpResult, source_term: &Term) {
+    let Term::DTerm(source_diagram) = source_term else {
+        return;
+    };
+    if !source_diagram.is_cell() {
+        return;
     }
 
-    // Deferred hole boundary computation: use the map as-is after all clauses.
-    let ctx = &acc_result.context;
-    for hole in &mut acc_result.holes {
-        if let Some(tag) = &hole.source_tag {
-            if let Some(cell_data) = get_cell_data(ctx, effective_domain, tag) {
-                if let CellData::Boundary {
-                    boundary_in,
-                    boundary_out,
-                } = &cell_data
-                {
-                    let rendered_in = match PMap::apply(&current_map, boundary_in) {
-                        Ok(mi) => render_diagram(&mi, scope),
-                        Err(_) => render_boundary_partial(boundary_in, &current_map, scope),
-                    };
-                    let rendered_out = match PMap::apply(&current_map, boundary_out) {
-                        Ok(mo) => render_diagram(&mo, scope),
-                        Err(_) => render_boundary_partial(boundary_out, &current_map, scope),
-                    };
-                    match &mut hole.boundary {
-                        Some(existing) => {
-                            if existing.boundary_in == "?" {
-                                existing.boundary_in = rendered_in;
-                            }
-                            if existing.boundary_out == "?" {
-                                existing.boundary_out = rendered_out;
-                            }
-                        }
-                        None => {
-                            hole.boundary = Some(HoleBoundaryInfo {
-                                boundary_in: rendered_in,
-                                boundary_out: rendered_out,
-                            });
-                        }
-                    }
-                }
-            }
-        }
+    let top_dim = source_diagram.dim().max(0) as usize;
+    let Some(tag) = source_diagram.labels.get(top_dim).and_then(|row| row.first()) else {
+        return;
+    };
+    if let Some(last_hole) = result.holes.last_mut() {
+        last_hole.source_tag = Some(tag.clone());
     }
-
-    (
-        Some(MapComponent {
-            map: current_map,
-            domain: initial_mc.domain,
-        }),
-        acc_result,
-    )
 }
 
 fn interpret_pm_clause(
@@ -325,7 +413,6 @@ fn interpret_pm_clause(
     domain: &Complex,
     map: PMap,
     clause: &Spanned<PMapClause>,
-    _span: Span,
 ) -> Step<PMap> {
     let (left_opt, left_result) = interpret_diagram_as_term(context, domain, &clause.inner.lhs);
     match left_opt {
@@ -339,19 +426,7 @@ fn interpret_pm_clause(
                     if combined.holes.is_empty() {
                         (None, combined)
                     } else {
-                        // RHS was a hole — record source tag for deferred boundary computation
-                        if let Term::DTerm(source_diag) = &left_term {
-                            if source_diag.is_cell() {
-                                let d = source_diag.dim().max(0) as usize;
-                                if let Some(tag) = source_diag.labels.get(d).and_then(|r| r.first())
-                                {
-                                    if let Some(last_hole) = combined.holes.last_mut() {
-                                        last_hole.source_tag = Some(tag.clone());
-                                    }
-                                }
-                            }
-                        }
-                        // Return map unchanged so processing continues
+                        mark_last_hole_source_tag(&mut combined, &left_term);
                         (Some(map), combined)
                     }
                 }
@@ -379,6 +454,67 @@ fn interpret_pm_clause(
 }
 
 /// Handle assignment of a term to another term in a map clause.
+fn extend_matching_map_images(
+    context: &Context,
+    map: PMap,
+    domain: &Complex,
+    target: &Complex,
+    left_map: &MapComponent,
+    right_map: &MapComponent,
+    span: Span,
+) -> Result<PMap, aux::Error> {
+    let map_domain = &*left_map.domain;
+    let mut extended = map;
+
+    for (_, generator_name, tag) in sorted_generators(map_domain) {
+        let defined_left = left_map.map.is_defined_at(&tag);
+        let defined_right = right_map.map.is_defined_at(&tag);
+
+        if defined_left && defined_right {
+            let left_image = left_map.map.image(&tag)?;
+            if left_image.is_cell() {
+                let right_image = right_map.map.image(&tag)?;
+                extended = smart_extend(
+                    context,
+                    extended,
+                    domain,
+                    target,
+                    left_image,
+                    right_image,
+                    span,
+                )?;
+            } else {
+                let all_defined = left_image
+                    .labels
+                    .iter()
+                    .flat_map(|row| row.iter())
+                    .all(|tag| extended.is_defined_at(tag));
+                if !all_defined {
+                    return Err(aux::Error::new(
+                        "Failed to extend map (not enough information)",
+                    ));
+                }
+            }
+            continue;
+        }
+
+        if defined_left && !defined_right {
+            return Err(aux::Error::new(format!(
+                "{} is in the domain of definition of the first map, but not the second map",
+                generator_name
+            )));
+        }
+        if defined_right && !defined_left {
+            return Err(aux::Error::new(format!(
+                "{} is in the domain of definition of the second map, but not the first map",
+                generator_name
+            )));
+        }
+    }
+
+    Ok(extended)
+}
+
 fn interpret_assign(
     context: &Context,
     map: PMap,
@@ -396,53 +532,194 @@ fn interpret_assign(
             if !Arc::ptr_eq(&mc_left.domain, &mc_right.domain) {
                 return Err(aux::Error::new("Not a well-formed assignment"));
             }
-            let map_domain = &*mc_left.domain;
-
-            let mut extended = map;
-            for (_, gen_name, tag) in sorted_generators(map_domain) {
-                let defined_left = mc_left.map.is_defined_at(&tag);
-                let defined_right = mc_right.map.is_defined_at(&tag);
-                if defined_left && defined_right {
-                    let left_image = mc_left.map.image(&tag)?;
-                    if left_image.is_cell() {
-                        let right_image = mc_right.map.image(&tag)?;
-                        extended = smart_extend(
-                            context,
-                            extended,
-                            domain,
-                            target,
-                            left_image,
-                            right_image,
-                            span,
-                        )?;
-                    } else {
-                        let all_defined = left_image
-                            .labels
-                            .iter()
-                            .flat_map(|row| row.iter())
-                            .all(|t| extended.is_defined_at(t));
-                        if !all_defined {
-                            return Err(aux::Error::new(
-                                "Failed to extend map (not enough information)",
-                            ));
-                        }
-                    }
-                } else if defined_left && !defined_right {
-                    return Err(aux::Error::new(format!(
-                        "{} is in the domain of definition of the first map, but not the second map",
-                        gen_name
-                    )));
-                } else if defined_right && !defined_left {
-                    return Err(aux::Error::new(format!(
-                        "{} is in the domain of definition of the second map, but not the first map",
-                        gen_name
-                    )));
-                }
-            }
-            Ok(extended)
+            extend_matching_map_images(context, map, domain, target, mc_left, mc_right, span)
         }
         _ => Err(aux::Error::new("Not a well-formed assignment")),
     }
+}
+
+fn boundary_dependencies(
+    cell_data: &CellData,
+    map: &PMap,
+) -> Vec<(Tag, DiagramSign)> {
+    match cell_data {
+        CellData::Zero => vec![],
+        CellData::Boundary {
+            boundary_in,
+            boundary_out,
+        } => {
+            let mut missing = vec![];
+            for (boundary, sign) in &[
+                (boundary_in, DiagramSign::Source),
+                (boundary_out, DiagramSign::Target),
+            ] {
+                let boundary_dim = dim_index(boundary.dim());
+                if let Some(row) = boundary.labels.get(boundary_dim) {
+                    for tag in row {
+                        if !map.is_defined_at(tag) {
+                            missing.push((tag.clone(), *sign));
+                        }
+                    }
+                }
+            }
+            missing
+        }
+    }
+}
+
+fn target_boundary_for_sign(
+    target_diagram: &Diagram,
+    dim_minus_one: usize,
+    sign: DiagramSign,
+) -> Result<Diagram, aux::Error> {
+    match sign {
+        DiagramSign::Source => Diagram::boundary(DiagramSign::Source, dim_minus_one, target_diagram),
+        DiagramSign::Target => Diagram::boundary(DiagramSign::Target, dim_minus_one, target_diagram),
+    }
+}
+
+fn source_boundary_for_sign(
+    cell_data: &CellData,
+    sign: DiagramSign,
+) -> Option<Arc<Diagram>> {
+    match (cell_data, sign) {
+        (CellData::Boundary { boundary_in, .. }, DiagramSign::Source) => Some(boundary_in.clone()),
+        (CellData::Boundary { boundary_out, .. }, DiagramSign::Target) => Some(boundary_out.clone()),
+        _ => None,
+    }
+}
+
+fn mapped_focus_classifier(
+    focus: &Tag,
+    source_boundary: &Diagram,
+    target_boundary: &Diagram,
+    target: &Complex,
+    focus_cell_data: &CellData,
+) -> Result<Diagram, aux::Error> {
+    let embedding = crate::core::diagram::isomorphism_of(&source_boundary.shape, &target_boundary.shape)
+        .map_err(|_| aux::Error::new("Failed to extend map (boundary shapes don't match)"))?;
+
+    let boundary_dim = dim_index(source_boundary.dim());
+    let boundary_labels = &source_boundary.labels;
+    let target_labels = &target_boundary.labels;
+    let embedding_map = &embedding.map;
+
+    let mut image_tag: Option<Tag> = None;
+    let mut consistent = true;
+
+    if let Some(row) = boundary_labels.get(boundary_dim) {
+        if let Some(map_row) = embedding_map.get(boundary_dim) {
+            for (index, tag) in row.iter().enumerate() {
+                if tag != focus {
+                    continue;
+                }
+                if let Some(&mapped_index) = map_row.get(index) {
+                    if let Some(target_row) = target_labels.get(boundary_dim) {
+                        if let Some(mapped_tag) = target_row.get(mapped_index) {
+                            match &image_tag {
+                                None => image_tag = Some(mapped_tag.clone()),
+                                Some(existing) if existing != mapped_tag => consistent = false,
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if !consistent {
+        return Err(aux::Error::new(
+            "The same generator is mapped to multiple diagrams",
+        ));
+    }
+
+    let mapped_tag =
+        image_tag.ok_or_else(|| aux::Error::new("Failed to extend map (no image found)"))?;
+    let generator_name = target
+        .find_generator_by_tag(&mapped_tag)
+        .ok_or_else(|| aux::Error::new("Image tag not found in target complex"))?
+        .clone();
+    let image_classifier = target
+        .classifier(&generator_name)
+        .ok_or_else(|| aux::Error::new("Classifier not found for image generator"))?
+        .clone();
+
+    let focus_occurs = source_boundary
+        .labels
+        .get(boundary_dim)
+        .and_then(|row| row.iter().position(|tag| tag == focus))
+        .is_some();
+    if !focus_occurs {
+        return Err(aux::Error::new("Failed to extend map (no image found)"));
+    }
+
+    let focus_diagram = Diagram::cell(focus.clone(), focus_cell_data)?;
+    if !focus_diagram.is_cell() {
+        return Err(aux::Error::new("Failed to extend map (no image found)"));
+    }
+
+    Ok(image_classifier)
+}
+
+fn extend_missing_boundary_dependencies(
+    context: &Context,
+    map: PMap,
+    domain: &Complex,
+    target: &Complex,
+    source_cell_data: &CellData,
+    source_dim: usize,
+    target_diagram: &Diagram,
+    span: Span,
+) -> Result<PMap, aux::Error> {
+    let mut current_map = map;
+
+    for (focus_tag, sign) in boundary_dependencies(source_cell_data, &current_map) {
+        if current_map.is_defined_at(&focus_tag) {
+            continue;
+        }
+
+        let focus_cell_data = get_cell_data(context, domain, &focus_tag).ok_or_else(|| {
+            aux::Error::new(format!("Cannot find cell data for boundary cell {}", focus_tag))
+        })?;
+        let target_boundary = target_boundary_for_sign(target_diagram, source_dim - 1, sign)?;
+        let source_boundary = match source_boundary_for_sign(source_cell_data, sign) {
+            Some(source_boundary) => source_boundary,
+            None => continue,
+        };
+
+        current_map = if source_boundary.is_cell() {
+            smart_extend(
+                context,
+                current_map,
+                domain,
+                target,
+                &source_boundary,
+                &target_boundary,
+                span,
+            )?
+        } else {
+            let focus_image = mapped_focus_classifier(
+                &focus_tag,
+                &source_boundary,
+                &target_boundary,
+                target,
+                &focus_cell_data,
+            )?;
+            let focus_diagram = Diagram::cell(focus_tag.clone(), &focus_cell_data)?;
+            smart_extend(
+                context,
+                current_map,
+                domain,
+                target,
+                &focus_diagram,
+                &focus_image,
+                span,
+            )?
+        };
+    }
+
+    Ok(current_map)
 }
 
 /// Smart extension of a map: adds a mapping from a source cell to a target diagram,
@@ -484,155 +761,48 @@ pub fn smart_extend(
         .ok_or_else(|| aux::Error::new("Cannot find cell data for generator"))?;
 
     let dim = dim_index(domain_diag.dim());
-
-    let missing = match &cell_data {
-        CellData::Zero => vec![],
-        CellData::Boundary {
-            boundary_in,
-            boundary_out,
-        } => {
-            let mut missing = vec![];
-            for (bd, sign) in &[
-                (boundary_in, DiagramSign::Source),
-                (boundary_out, DiagramSign::Target),
-            ] {
-                let bd_d = dim_index(bd.dim());
-                if let Some(row) = bd.labels.get(bd_d) {
-                    for t in row {
-                        if !map.is_defined_at(t) {
-                            missing.push((t.clone(), *sign));
-                        }
-                    }
-                }
-            }
-            missing
-        }
-    };
-
-    let mut current = map;
-
-    for (focus, sign) in &missing {
-        if current.is_defined_at(focus) {
-            continue;
-        }
-        let dim_minus_one = dim - 1;
-        let cell_data_focus = get_cell_data(context, domain, focus).ok_or_else(|| {
-            aux::Error::new(format!("Cannot find cell data for boundary cell {}", focus))
-        })?;
-
-        let target_boundary = match sign {
-            DiagramSign::Source => {
-                Diagram::boundary(DiagramSign::Source, dim_minus_one, target_diag)?
-            }
-            DiagramSign::Target => {
-                Diagram::boundary(DiagramSign::Target, dim_minus_one, target_diag)?
-            }
-        };
-
-        let domain_boundary = match (&cell_data, sign) {
-            (CellData::Boundary { boundary_in, .. }, DiagramSign::Source) => boundary_in.clone(),
-            (CellData::Boundary { boundary_out, .. }, DiagramSign::Target) => boundary_out.clone(),
-            _ => continue,
-        };
-
-        if domain_boundary.is_cell() {
-            let sub_domain = &domain_boundary;
-            current = smart_extend(
-                context,
-                current,
-                domain,
-                target,
-                sub_domain,
-                &target_boundary,
-                span,
-            )?;
-        } else {
-            match crate::core::diagram::isomorphism_of(
-                &domain_boundary.shape,
-                &target_boundary.shape,
-            ) {
-                Err(_) => {
-                    return Err(aux::Error::new(
-                        "Failed to extend map (boundary shapes don't match)",
-                    ));
-                }
-                Ok(embedding) => {
-                    let bd_d = dim_index(domain_boundary.dim());
-                    let bd_labels = &domain_boundary.labels;
-                    let target_labels = &target_boundary.labels;
-                    let embed_map = &embedding.map;
-
-                    let mut image_tag: Option<Tag> = None;
-                    let mut consistent = true;
-
-                    if let Some(row) = bd_labels.get(bd_d) {
-                        if let Some(map_row) = embed_map.get(bd_d) {
-                            for (idx, t) in row.iter().enumerate() {
-                                if t == focus {
-                                    if let Some(&mapped_idx) = map_row.get(idx) {
-                                        if let Some(target_row) = target_labels.get(bd_d) {
-                                            if let Some(mapped_t) = target_row.get(mapped_idx) {
-                                                match &image_tag {
-                                                    None => image_tag = Some(mapped_t.clone()),
-                                                    Some(existing) => {
-                                                        if existing != mapped_t {
-                                                            consistent = false;
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if !consistent {
-                        return Err(aux::Error::new(
-                            "The same generator is mapped to multiple diagrams",
-                        ));
-                    }
-
-                    let mapped_tag = image_tag
-                        .ok_or_else(|| aux::Error::new("Failed to extend map (no image found)"))?;
-
-                    let gen_name = target
-                        .find_generator_by_tag(&mapped_tag)
-                        .ok_or_else(|| aux::Error::new("Image tag not found in target complex"))?
-                        .clone();
-                    let d_focus = target
-                        .classifier(&gen_name)
-                        .ok_or_else(|| aux::Error::new("Classifier not found for image generator"))?
-                        .clone();
-
-                    let focus_domain = match domain_boundary
-                        .labels
-                        .get(bd_d)
-                        .and_then(|r| r.iter().position(|t| t == focus))
-                    {
-                        Some(_) => Diagram::cell(focus.clone(), &cell_data_focus)?,
-                        None => continue,
-                    };
-
-                    current = smart_extend(
-                        context,
-                        current,
-                        domain,
-                        target,
-                        &focus_domain,
-                        &d_focus,
-                        span,
-                    )?;
-                }
-            }
-        }
-    }
+    let current = extend_missing_boundary_dependencies(
+        context,
+        map,
+        domain,
+        target,
+        &cell_data,
+        dim,
+        target_diag,
+        span,
+    )?;
 
     PMap::extend(current, tag, dim, cell_data, target_diag.clone())
 }
 
 // ---- Partial map naming ----
+
+fn ensure_total_map_defined(
+    result: &mut InterpResult,
+    domain: &Complex,
+    map: &PMap,
+    map_name: &str,
+    name_span: Span,
+    is_total: bool,
+) {
+    if !is_total {
+        return;
+    }
+
+    for generator_name in domain.generator_names() {
+        if let Some(generator_entry) = domain.find_generator(&generator_name) {
+            if !map.is_defined_at(&generator_entry.tag) {
+                result.add_error(make_error(
+                    name_span,
+                    format!(
+                        "Total map `{}` is not defined on generator `{}`",
+                        map_name, generator_name
+                    ),
+                ));
+            }
+        }
+    }
+}
 
 pub fn interpret_def_pmap(
     context: &Context,
@@ -658,21 +828,7 @@ pub fn interpret_def_pmap(
         return (None, combined);
     };
 
-    if dp.total {
-        for gen_name in domain.generator_names() {
-            if let Some(entry) = domain.find_generator(&gen_name) {
-                if !mc.map.is_defined_at(&entry.tag) {
-                    combined.add_error(make_error(
-                        dp.name.span,
-                        format!(
-                            "Total map `{}` is not defined on generator `{}`",
-                            dp.name.inner, gen_name
-                        ),
-                    ));
-                }
-            }
-        }
-    }
+    ensure_total_map_defined(&mut combined, &domain, &mc.map, &dp.name.inner, dp.name.span, dp.total);
 
     let name = dp.name.inner.clone();
     (Some((name, mc.map, MapDomain::Type(id))), combined)
