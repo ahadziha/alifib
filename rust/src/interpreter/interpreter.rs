@@ -27,6 +27,63 @@ fn resolve_current_module<'a>(context: &'a Context) -> Option<&'a Complex> {
     context.state.find_module(&context.current_module)
 }
 
+fn combine_steps<T>(
+    context: &Context,
+    items: &[T],
+    mut step: impl FnMut(Context, &T) -> InterpResult,
+) -> InterpResult {
+    let mut result = InterpResult::ok(context.clone());
+
+    for item in items {
+        let step_result = step(result.context.clone(), item);
+        result = InterpResult::combine(result, step_result);
+    }
+
+    result
+}
+
+fn combine_scope_steps<T>(
+    context: &Context,
+    mut scope: Complex,
+    items: &[T],
+    mut step: impl FnMut(Context, Complex, &T) -> (Complex, InterpResult),
+) -> (Complex, InterpResult) {
+    let mut result = InterpResult::ok(context.clone());
+
+    for item in items {
+        let (next_scope, step_result) = step(result.context.clone(), scope, item);
+        scope = next_scope;
+        result = InterpResult::combine(result, step_result);
+    }
+
+    (scope, result)
+}
+
+fn combine_local_scope_steps<T>(
+    context: &Context,
+    mut scope: TypeScope,
+    items: &[T],
+    mut step: impl FnMut(&Context, &TypeScope, &T) -> (Option<Complex>, InterpResult),
+) -> (TypeScope, InterpResult) {
+    let mut result = InterpResult::ok(context.clone());
+
+    for item in items {
+        let (next_complex, step_result) = step(&result.context, &scope, item);
+        result = InterpResult::combine(result, step_result);
+        if let Some(working_complex) = next_complex {
+            scope = TypeScope {
+                owner_type_id: scope.owner_type_id,
+                working_complex,
+            };
+        }
+        if result.has_errors() {
+            break;
+        }
+    }
+
+    (scope, result)
+}
+
 fn apply_module_diagram(context: &mut Context, name: LocalId, diagram: Diagram) {
     let module_id = context.current_module.clone();
     context
@@ -46,20 +103,177 @@ fn apply_module_map(
         .modify_module(&module_id, |c| c.add_map(name, domain, map));
 }
 
+fn bind_scope_diagram(
+    mut scope: Complex,
+    result: InterpResult,
+    name_span: Span,
+    binding: Option<(LocalId, Diagram)>,
+) -> (Complex, InterpResult) {
+    let Some((name, diagram)) = binding else {
+        return (scope, result);
+    };
+
+    if let Some(name_result) = ensure_name_free(
+        &result.context,
+        &scope,
+        &name,
+        name_span,
+        NameKind::Diagram,
+    ) {
+        return (scope, InterpResult::combine(result, name_result));
+    }
+
+    scope.add_diagram(name, diagram);
+    (scope, result)
+}
+
+fn bind_scope_map(
+    mut scope: Complex,
+    result: InterpResult,
+    name_span: Span,
+    binding: Option<(LocalId, crate::core::map::PMap, MapDomain)>,
+) -> (Complex, InterpResult) {
+    let Some((name, map, domain)) = binding else {
+        return (scope, result);
+    };
+
+    if let Some(name_result) = ensure_name_free(
+        &result.context,
+        &scope,
+        &name,
+        name_span,
+        NameKind::PartialMap,
+    ) {
+        return (scope, InterpResult::combine(result, name_result));
+    }
+
+    scope.add_map(name, domain, map);
+    (scope, result)
+}
+
+fn bind_module_diagram(result: InterpResult, binding: Option<(LocalId, Diagram)>) -> InterpResult {
+    let Some((name, diagram)) = binding else {
+        return result;
+    };
+
+    let mut result = result;
+    apply_module_diagram(&mut result.context, name, diagram);
+    result
+}
+
+fn bind_module_map(
+    result: InterpResult,
+    binding: Option<(LocalId, crate::core::map::PMap, MapDomain)>,
+) -> InterpResult {
+    let Some((name, map, domain)) = binding else {
+        return result;
+    };
+
+    let mut result = result;
+    apply_module_map(&mut result.context, name, domain, map);
+    result
+}
+
+fn bind_type_diagram(
+    owner_type_id: GlobalId,
+    scope: &Complex,
+    result: InterpResult,
+    name_span: Span,
+    value_span: Span,
+    binding: Option<(LocalId, Diagram)>,
+) -> (Option<Complex>, InterpResult) {
+    let Some((name, diagram)) = binding else {
+        return (None, result);
+    };
+
+    if let Some(name_result) = ensure_name_free(
+        &result.context,
+        scope,
+        &name,
+        name_span,
+        NameKind::Diagram,
+    ) {
+        return (None, InterpResult::combine(result, name_result));
+    }
+
+    if diagram.has_local_labels() {
+        let mut result = result;
+        result.add_error(make_error(
+            value_span,
+            "Named diagrams must contain only global cells",
+        ));
+        return (None, result);
+    }
+
+    let mut updated_scope = scope.clone();
+    updated_scope.add_diagram(name.clone(), diagram.clone());
+
+    let mut result = result;
+    result
+        .context
+        .state_mut()
+        .modify_type_complex(owner_type_id, |c| c.add_diagram(name, diagram));
+
+    (Some(updated_scope), result)
+}
+
+fn bind_type_map(
+    owner_type_id: GlobalId,
+    scope: &Complex,
+    result: InterpResult,
+    name_span: Span,
+    value_span: Span,
+    binding: Option<(LocalId, crate::core::map::PMap, MapDomain)>,
+) -> (Option<Complex>, InterpResult) {
+    let Some((name, map, domain)) = binding else {
+        return (None, result);
+    };
+
+    if let Some(name_result) = ensure_name_free(
+        &result.context,
+        scope,
+        &name,
+        name_span,
+        NameKind::PartialMap,
+    ) {
+        return (None, InterpResult::combine(result, name_result));
+    }
+
+    if map.has_local_labels() {
+        let mut result = result;
+        result.add_error(make_error(
+            value_span,
+            "Named maps must only be valued in global cells",
+        ));
+        return (None, result);
+    }
+
+    let mut updated_scope = scope.clone();
+    updated_scope.add_map(name.clone(), domain.clone(), map.clone());
+
+    let mut result = result;
+    result
+        .context
+        .state_mut()
+        .modify_type_complex(owner_type_id, |c| c.add_map(name, domain, map));
+
+    (Some(updated_scope), result)
+}
+
 fn resolve_type_scope_by_id(
     context: &Context,
     owner_type_id: GlobalId,
     span: Span,
     not_found_msg: &str,
 ) -> (Option<TypeScope>, InterpResult) {
-    let (complex_opt, complex_result) =
+    let (owner_complex, complex_result) =
         resolve_type_complex(context, owner_type_id, span, not_found_msg);
-    match complex_opt {
+    match owner_complex {
         None => (None, complex_result),
-        Some(working_complex) => (
+        Some(type_complex) => (
             Some(TypeScope {
                 owner_type_id,
-                working_complex,
+                working_complex: type_complex,
             }),
             complex_result,
         ),
@@ -106,12 +320,9 @@ pub fn interpret_program(
         context
     };
 
-    let mut result = InterpResult::ok(context);
-    for block in &program.blocks {
-        let block_result = interpret_block(modules, result.context.clone(), block);
-        result = InterpResult::combine(result, block_result);
-    }
-    result
+    combine_steps(&context, &program.blocks, |step_context, block| {
+        interpret_block(modules, step_context, block)
+    })
 }
 
 fn interpret_block(
@@ -130,15 +341,9 @@ fn interpret_type_block(
     context: &Context,
     body: &[Spanned<TypeInst>],
 ) -> InterpResult {
-    let mut acc_result = InterpResult::ok(context.clone());
-
-    for instr in body {
-        let ctx = acc_result.context.clone();
-        let instr_result = interpret_type_inst(modules, &ctx, instr);
-        acc_result = InterpResult::combine(acc_result, instr_result);
-    }
-
-    acc_result
+    combine_steps(context, body, |step_context, instr| {
+        interpret_type_inst(modules, &step_context, instr)
+    })
 }
 
 fn interpret_type_inst(
@@ -150,33 +355,19 @@ fn interpret_type_inst(
         TypeInst::Generator(generator) => interpret_generator_type(context, generator),
         TypeInst::LetDiag(ld) => {
             let module_scope = match resolve_current_module(context) {
-                Some(m) => m,
+                Some(module_scope) => module_scope,
                 None => return InterpResult::ok(context.clone()),
             };
-            let (out, result) = interpret_let_diag(context, module_scope, ld);
-            match out {
-                None => result,
-                Some((name, diagram)) => {
-                    let mut r = result;
-                    apply_module_diagram(&mut r.context, name, diagram);
-                    r
-                }
-            }
+            let (diagram_binding, result) = interpret_let_diag(context, module_scope, ld);
+            bind_module_diagram(result, diagram_binding)
         }
         TypeInst::DefPMap(dp) => {
             let module_scope = match resolve_current_module(context) {
-                Some(m) => m,
+                Some(module_scope) => module_scope,
                 None => return InterpResult::ok(context.clone()),
             };
-            let (out, result) = interpret_def_pmap(context, module_scope, dp);
-            match out {
-                None => result,
-                Some((name, map, domain)) => {
-                    let mut r = result;
-                    apply_module_map(&mut r.context, name, domain, map);
-                    r
-                }
-            }
+            let (map_binding, result) = interpret_def_pmap(context, module_scope, dp);
+            bind_module_map(result, map_binding)
         }
         TypeInst::IncludeModule(include_mod) => {
             interpret_include_module_instr(modules, context, include_mod, instr.span)
@@ -195,10 +386,11 @@ fn interpret_generator_type(context: &Context, generator: &ast::Generator) -> In
             result.add_error(make_error(name_span, "Module not found"));
             return result;
         }
-        Some(m) => m,
+        Some(module_scope) => module_scope,
     };
 
-    if let Some(result) = ensure_name_free(context, module_scope, &name, name_span, NameKind::Generator)
+    if let Some(result) =
+        ensure_name_free(context, module_scope, &name, name_span, NameKind::Generator)
     {
         return result;
     }
@@ -206,9 +398,12 @@ fn interpret_generator_type(context: &Context, generator: &ast::Generator) -> In
     let (boundaries, mut result) = match &nwb.boundary {
         None => (CellData::Zero, InterpResult::ok(context.clone())),
         Some(bounds) => {
-            let (cell_data_opt, r) = interpret_boundaries(context, module_scope, bounds);
-            let Some(cell_data) = cell_data_opt else { return r };
-            (cell_data, r)
+            let (boundary_data, boundary_result) =
+                interpret_boundaries(context, module_scope, bounds);
+            let Some(cell_data) = boundary_data else {
+                return boundary_result;
+            };
+            (cell_data, boundary_result)
         }
     };
 
@@ -221,20 +416,22 @@ fn interpret_generator_type(context: &Context, generator: &ast::Generator) -> In
     }
 
     let ctx = result.context.clone();
-    let (ns_opt, complex_result) = interpret_complex(&ctx, Mode::Global, &generator.complex);
+    let (type_scope, complex_result) = interpret_complex(&ctx, Mode::Global, &generator.complex);
     result = InterpResult::combine(result, complex_result);
 
-    let Some(ns) = ns_opt else { return result };
-    let mut definition_complex = ns.working_complex;
+    let Some(type_scope) = type_scope else {
+        return result;
+    };
+    let mut definition_complex = type_scope.working_complex;
 
     let new_id = GlobalId::fresh();
     let tag = Tag::Global(new_id);
     let classifier = match Diagram::cell(tag, &CellData::Zero) {
-        Ok(d) => d,
-        Err(e) => {
+        Ok(classifier) => classifier,
+        Err(error) => {
             result.add_error(make_error(
                 name_span,
-                format!("Failed to create generator cell: {}", e),
+                format!("Failed to create generator cell: {}", error),
             ));
             return result;
         }
@@ -332,11 +529,9 @@ pub(super) fn interpret_complex(
             };
 
             let initial_scope = scope.working_complex;
-
-            let (final_scope_opt, block_result) =
-                interpret_c_block(&result.context, mode, &initial_scope, body);
+            let (final_scope, block_result) =
+                interpret_c_block(&result.context, mode, initial_scope.clone(), body);
             result = InterpResult::combine(result, block_result);
-            let final_scope = final_scope_opt.unwrap_or(initial_scope);
             let ns = TypeScope {
                 owner_type_id,
                 working_complex: final_scope,
@@ -349,26 +544,18 @@ pub(super) fn interpret_complex(
 fn interpret_c_block(
     context: &Context,
     mode: Mode,
-    initial_scope: &Complex,
+    initial_scope: Complex,
     body: &[Spanned<CInstr>],
-) -> (Option<Complex>, InterpResult) {
-    let mut current_scope = initial_scope.clone();
-    let mut acc_result = InterpResult::ok(context.clone());
-
-    for instr in body {
-        let ctx = acc_result.context.clone();
-        let (new_scope, instr_result) = interpret_c_instr(ctx, mode, current_scope, instr);
-        current_scope = new_scope;
-        acc_result = InterpResult::combine(acc_result, instr_result);
-    }
-
-    (Some(current_scope), acc_result)
+) -> (Complex, InterpResult) {
+    combine_scope_steps(context, initial_scope, body, |step_context, scope, instr| {
+        interpret_c_instr(step_context, mode, scope, instr)
+    })
 }
 
 fn interpret_c_instr(
     context: Context,
     mode: Mode,
-    mut scope: Complex,
+    scope: Complex,
     instr: &Spanned<CInstr>,
 ) -> (Complex, InterpResult) {
     match &instr.inner {
@@ -376,38 +563,12 @@ fn interpret_c_instr(
             interpret_generator_instr(context, mode, scope, nwb, instr.span)
         }
         CInstr::LetDiag(ld) => {
-            let (out, result) = interpret_let_diag(&context, &scope, ld);
-            match out {
-                None => (scope, result),
-                Some((name, diagram)) => {
-                    if let Some(r) =
-                        ensure_name_free(&result.context, &scope, &name, ld.name.span, NameKind::Diagram)
-                    {
-                        return (scope, InterpResult::combine(result, r));
-                    }
-                    scope.add_diagram(name, diagram);
-                    (scope, result)
-                }
-            }
+            let (binding, result) = interpret_let_diag(&context, &scope, ld);
+            bind_scope_diagram(scope, result, ld.name.span, binding)
         }
         CInstr::DefPMap(dp) => {
-            let (out, result) = interpret_def_pmap(&context, &scope, dp);
-            match out {
-                None => (scope, result),
-                Some((name, map, domain)) => {
-                    if let Some(r) = ensure_name_free(
-                        &result.context,
-                        &scope,
-                        &name,
-                        dp.name.span,
-                        NameKind::PartialMap,
-                    ) {
-                        return (scope, InterpResult::combine(result, r));
-                    }
-                    scope.add_map(name, domain, map);
-                    (scope, result)
-                }
-            }
+            let (binding, result) = interpret_def_pmap(&context, &scope, dp);
+            bind_scope_map(scope, result, dp.name.span, binding)
         }
         CInstr::IncludeStmt(include_stmt) => {
             let (scope_opt, result) =
@@ -432,7 +593,8 @@ fn interpret_generator_instr(
     let name = nwb.name.inner.clone();
     let name_span = nwb.name.span;
 
-    if let Some(result) = ensure_name_free(&context, &scope, &name, name_span, NameKind::Generator) {
+    if let Some(result) = ensure_name_free(&context, &scope, &name, name_span, NameKind::Generator)
+    {
         return (scope, result);
     }
 
@@ -501,15 +663,15 @@ fn interpret_block_complex(
     complex: &Spanned<ast::Complex>,
     body: &[Spanned<LocalInst>],
 ) -> InterpResult {
-    let (ns_opt, complex_result) = interpret_complex(&context, Mode::Global, complex);
+    let (scope_opt, complex_result) = interpret_complex(&context, Mode::Global, complex);
     let mut result = complex_result;
 
-    let Some(namespace) = ns_opt else {
+    let Some(scope) = scope_opt else {
         return result;
     };
 
     if !body.is_empty() {
-        let (_, local_result) = interpret_local_block(&result.context, &namespace, body);
+        let (_, local_result) = interpret_local_block(&result.context, scope, body);
         result = InterpResult::combine(result, local_result);
     }
 
@@ -518,28 +680,14 @@ fn interpret_block_complex(
 
 fn interpret_local_block(
     context: &Context,
-    namespace: &TypeScope,
+    initial_scope: TypeScope,
     body: &[Spanned<LocalInst>],
-) -> (Option<Complex>, InterpResult) {
-    let mut current_ns = namespace.clone();
-    let mut acc_result = InterpResult::ok(context.clone());
-
-    for instr in body {
-        let ctx = acc_result.context.clone();
-        let (scope_opt, instr_result) = interpret_local_inst(&ctx, &current_ns, instr);
-        acc_result = InterpResult::combine(acc_result, instr_result);
-        if let Some(new_complex) = scope_opt {
-            current_ns = TypeScope {
-                owner_type_id: current_ns.owner_type_id,
-                working_complex: new_complex,
-            };
-        }
-        if acc_result.has_errors() {
-            break;
-        }
-    }
-
-    (Some(current_ns.working_complex), acc_result)
+) -> (Complex, InterpResult) {
+    let (final_scope, result) =
+        combine_local_scope_steps(context, initial_scope, body, |step_context, scope, instr| {
+            interpret_local_inst(step_context, scope, instr)
+        });
+    (final_scope.working_complex, result)
 }
 
 fn interpret_local_inst(
@@ -552,64 +700,26 @@ fn interpret_local_inst(
 
     match &instr.inner {
         LocalInst::LetDiag(ld) => {
-            let (out, result) = interpret_let_diag(context, scope, ld);
-            match out {
-                None => (None, result),
-                Some((name, diagram)) => {
-                    if let Some(r) =
-                        ensure_name_free(&result.context, scope, &name, ld.name.span, NameKind::Diagram)
-                    {
-                        return (None, InterpResult::combine(result, r));
-                    }
-                    if diagram.has_local_labels() {
-                        let mut r = result;
-                        r.add_error(make_error(
-                            ld.value.span,
-                            "Named diagrams must contain only global cells",
-                        ));
-                        return (None, r);
-                    }
-                    let mut new_scope = scope.clone();
-                    new_scope.add_diagram(name.clone(), diagram.clone());
-                    let mut r = result;
-                    r.context
-                        .state_mut()
-                        .modify_type_complex(owner_type_id, |c| c.add_diagram(name, diagram));
-                    (Some(new_scope), r)
-                }
-            }
+            let (binding, result) = interpret_let_diag(context, scope, ld);
+            bind_type_diagram(
+                owner_type_id,
+                scope,
+                result,
+                ld.name.span,
+                ld.value.span,
+                binding,
+            )
         }
         LocalInst::DefPMap(dp) => {
-            let (out, result) = interpret_def_pmap(context, scope, dp);
-            match out {
-                None => (None, result),
-                Some((name, map, domain)) => {
-                    if let Some(r) = ensure_name_free(
-                        &result.context,
-                        scope,
-                        &name,
-                        dp.name.span,
-                        NameKind::PartialMap,
-                    ) {
-                        return (None, InterpResult::combine(result, r));
-                    }
-                    if map.has_local_labels() {
-                        let mut r = result;
-                        r.add_error(make_error(
-                            dp.value.span,
-                            "Named maps must only be valued in global cells",
-                        ));
-                        return (None, r);
-                    }
-                    let mut new_scope = scope.clone();
-                    new_scope.add_map(name.clone(), domain.clone(), map.clone());
-                    let mut r = result;
-                    r.context
-                        .state_mut()
-                        .modify_type_complex(owner_type_id, |c| c.add_map(name, domain, map));
-                    (Some(new_scope), r)
-                }
-            }
+            let (binding, result) = interpret_def_pmap(context, scope, dp);
+            bind_type_map(
+                owner_type_id,
+                scope,
+                result,
+                dp.name.span,
+                dp.value.span,
+                binding,
+            )
         }
         LocalInst::AssertStmt(assert_stmt) => {
             let (term_pair_opt, assert_result) = interpret_assert(context, scope, assert_stmt);

@@ -132,7 +132,7 @@ impl Diagram {
         if !labels
             .iter()
             .zip(sizes.iter())
-            .all(|(lvl, &n)| lvl.len() == n)
+            .all(|(level_labels, &expected_len)| level_labels.len() == expected_len)
         {
             return false;
         }
@@ -187,19 +187,19 @@ impl Diagram {
             .any(|level| level.iter().any(|t| t.is_local()))
     }
 
-    pub fn equal(u: &Diagram, v: &Diagram) -> bool {
-        Ogposet::equal(&u.shape, &v.shape) && labels_equal(&u.labels, &v.labels)
+    pub fn equal(lhs: &Diagram, rhs: &Diagram) -> bool {
+        Ogposet::equal(&lhs.shape, &rhs.shape) && labels_equal(&lhs.labels, &rhs.labels)
     }
 
-    pub fn isomorphic(u: &Diagram, v: &Diagram) -> bool {
-        if Diagram::equal(u, v) {
+    pub fn isomorphic(lhs: &Diagram, rhs: &Diagram) -> bool {
+        if Diagram::equal(lhs, rhs) {
             return true;
         }
-        match ogposet::isomorphism_of(&u.shape, &v.shape) {
+        match ogposet::isomorphism_of(&lhs.shape, &rhs.shape) {
             Err(_) => false,
             Ok(iso) => {
-                let pulled = pullback_labels(v, &iso);
-                labels_equal(&u.labels, &pulled)
+                let pulled_labels = pullback_labels(rhs, &iso);
+                labels_equal(&lhs.labels, &pulled_labels)
             }
         }
     }

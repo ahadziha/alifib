@@ -40,13 +40,29 @@ def bench_rust(cmd, path, n):
     """Benchmark Rust using its --bench flag (runs N iterations in-process)."""
     result = subprocess.run(
         [cmd, path, "--bench", str(n)],
-        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
     )
-    return float(result.stdout.strip())
+    if result.returncode != 0:
+        return None
+
+    output = result.stdout.strip()
+    if not output:
+        return None
+
+    try:
+        return float(output)
+    except ValueError:
+        return None
 
 
 def best_of_rust(cmd, path, n, batches=3):
-    return min(bench_rust(cmd, path, n) for _ in range(batches))
+    runs = [bench_rust(cmd, path, n) for _ in range(batches)]
+    runs = [run for run in runs if run is not None]
+    if not runs:
+        return None
+    return min(runs)
 
 
 def main():
@@ -84,7 +100,7 @@ def main():
 
     # Header
     if run_ocaml and run_rust:
-        print(f"{'File':<22} {'OCaml(ms)':>10} {'Rust(ms)':>10} {'Ratio':>8}")
+        print(f"{'File':<22} {'OCaml(ms)':>10} {'Rust(ms)':>10} {'Speedup':>8}")
         print("-" * 58)
     elif run_ocaml:
         print(f"{'File':<22} {'OCaml(ms)':>10}")
@@ -106,18 +122,25 @@ def main():
         rust_ms = best_of_rust(RUST_BIN, rust_path, args.n) if run_rust else None
 
         if run_ocaml and run_rust:
-            if ocaml_ms is not None:
-                ratio = rust_ms / ocaml_ms if ocaml_ms > 0 else float("nan")
-                print(f"{name:<22} {ocaml_ms:>10.1f} {rust_ms:>10.1f} {ratio:>7.1f}x")
-            else:
+            if ocaml_ms is not None and rust_ms is not None:
+                speedup = ocaml_ms / rust_ms if rust_ms > 0 else float("nan")
+                print(f"{name:<22} {ocaml_ms:>10.1f} {rust_ms:>10.1f} {speedup:>7.1f}x")
+            elif ocaml_ms is not None:
+                print(f"{name:<22} {ocaml_ms:>10.1f} {'N/A':>10} {'N/A':>8}")
+            elif rust_ms is not None:
                 print(f"{name:<22} {'N/A':>10} {rust_ms:>10.1f} {'N/A':>8}")
+            else:
+                print(f"{name:<22} {'N/A':>10} {'N/A':>10} {'N/A':>8}")
         elif run_ocaml:
             if ocaml_ms is not None:
                 print(f"{name:<22} {ocaml_ms:>10.1f}")
             else:
                 print(f"{name:<22} {'N/A':>10}")
         else:
-            print(f"{name:<22} {rust_ms:>10.1f}")
+            if rust_ms is not None:
+                print(f"{name:<22} {rust_ms:>10.1f}")
+            else:
+                print(f"{name:<22} {'N/A':>10}")
 
 
 if __name__ == "__main__":
