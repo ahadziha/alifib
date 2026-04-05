@@ -26,6 +26,9 @@ impl Context {
         }
     }
 
+    /// Create a Context for a new module that shares global state with `other`.
+    /// Used when interpreting an included module so that types created there
+    /// are visible in the parent module without copying the store.
     pub fn new_sharing_state(module_id: String, other: &Context) -> Self {
         Self {
             current_module: module_id,
@@ -33,6 +36,7 @@ impl Context {
         }
     }
 
+    /// Return a copy of this context with a completely fresh store.
     pub fn with_state(&self, state: GlobalStore) -> Self {
         Self {
             current_module: self.current_module.clone(),

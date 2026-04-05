@@ -149,7 +149,8 @@ impl PMap {
                 if let Some(mapped) = cache.get(tag) {
                     return mapped.clone();
                 }
-                let cell_diag = f.table.get(tag).map(|e| &e.image).unwrap();
+                let cell_diag = f.table.get(tag).map(|e| &e.image)
+                    .expect("tag presence guaranteed by find_undefined()");
                 let d = cell_diag.top_dim();
                 let mapped = cell_diag.labels[d][0].clone();
                 cache.insert(tag.clone(), mapped.clone());

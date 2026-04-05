@@ -21,7 +21,7 @@ pub fn report_errors(errors: &[Error], source: &str, filename: &str) {
                     )
                     .finish()
                     .eprint((filename, Source::from(source)))
-                    .unwrap();
+                    .unwrap_or_else(|e| eprintln!("could not write diagnostic: {}", e));
             }
             Error::Runtime { message, span } => {
                 Report::build(ReportKind::Error, (filename, span.start..span.end))
@@ -33,7 +33,7 @@ pub fn report_errors(errors: &[Error], source: &str, filename: &str) {
                     )
                     .finish()
                     .eprint((filename, Source::from(source)))
-                    .unwrap();
+                    .unwrap_or_else(|e| eprintln!("could not write diagnostic: {}", e));
             }
         }
     }
@@ -54,6 +54,6 @@ pub fn report_holes(holes: &[HoleInfo], source: &str, filename: &str) {
             )
             .finish()
             .eprint((filename, Source::from(source)))
-            .unwrap();
+            .unwrap_or_else(|e| eprintln!("could not write diagnostic: {}", e));
     }
 }

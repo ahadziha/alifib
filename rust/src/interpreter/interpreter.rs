@@ -120,6 +120,9 @@ fn interpret_type_generator(context: &Context, generator: &ast::Generator) -> In
         (None, result) => return result,
     };
 
+    // @Type blocks may only introduce 0-dimensional type generators (objects).
+    // Higher-dimensional generators are declared inside the type complex itself
+    // (i.e., inside the `{ ... }` body), not at the top-level @Type block.
     if matches!(boundaries, CellData::Boundary { .. }) {
         result.add_error(make_error(
             name_span,

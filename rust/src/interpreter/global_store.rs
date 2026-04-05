@@ -55,6 +55,8 @@ impl GlobalStore {
         self.assert_invariants();
     }
 
+    /// Mutate the Complex for a module in place via Arc::make_mut (copy-on-write).
+    /// Silently does nothing if the module id is not found.
     pub fn modify_module(&mut self, id: &str, f: impl FnOnce(&mut Complex)) {
         if let Some(arc) = self.modules.get_mut(id) {
             f(Arc::make_mut(arc));
@@ -62,7 +64,8 @@ impl GlobalStore {
         }
     }
 
-    /// Mutate the Complex of a type entry in place via Arc::make_mut.
+    /// Mutate the Complex of a type entry in place via Arc::make_mut (copy-on-write).
+    /// Silently does nothing if the type id is not found.
     pub fn modify_type_complex(&mut self, id: GlobalId, f: impl FnOnce(&mut Complex)) {
         if let Some(entry) = self.types.get_mut(&id) {
             f(Arc::make_mut(&mut entry.complex));

@@ -333,11 +333,7 @@ impl Diagram {
     fn cell_n(tag: Tag, source: &Diagram, target: &Diagram) -> Result<Diagram, Error> {
         let m = Diagram::parallelism(source, target)?;
 
-        let d = if source.shape.dim < 0 {
-            0
-        } else {
-            source.shape.dim as usize
-        };
+        let d = source.top_dim();
         let Pushout {
             tip: bd_uv,
             inl,
