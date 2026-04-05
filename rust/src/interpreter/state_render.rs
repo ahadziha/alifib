@@ -28,11 +28,9 @@ fn render_cell(name: &str, data: &CellData, complex: &Complex) -> String {
 /// Render a named diagram with its boundary, e.g. `alpha : f g -> h k`.
 fn render_named_diagram(name: &str, diag: &Diagram, complex: &Complex) -> String {
     let label = name_or_empty(name);
-    let d = diag.dim();
-    if d <= 0 {
+    let Some(k) = diag.top_dim().checked_sub(1) else {
         return label.to_owned();
-    }
-    let k = (d - 1) as usize;
+    };
     let (Ok(src), Ok(tgt)) = (
         Diagram::boundary(Sign::Source, k, diag),
         Diagram::boundary(Sign::Target, k, diag),

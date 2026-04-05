@@ -70,11 +70,7 @@ impl Complex {
     // ---- Generators ----
 
     pub fn add_generator(&mut self, name: LocalId, classifier: Diagram) {
-        let dim = if classifier.dim() < 0 {
-            0
-        } else {
-            classifier.dim() as usize
-        };
+        let dim = classifier.top_dim();
         let labels = &classifier.labels;
         let top_labels = &labels[dim];
         assert!(!top_labels.is_empty());

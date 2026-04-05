@@ -213,10 +213,6 @@ pub fn ensure_name_free(
     }
 }
 
-pub fn dim_index(dim: isize) -> usize {
-    dim.max(0) as usize
-}
-
 pub fn sorted_generators(complex: &Complex) -> Vec<(usize, LocalId, Tag)> {
     let mut generators: Vec<(usize, LocalId, Tag)> = complex
         .generator_names()

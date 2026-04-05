@@ -376,7 +376,7 @@ fn resolve_attach(
 
     match &attach_stmt.along {
         None => {
-            let map = PMap::empty().unwrap();
+            let map = PMap::empty();
             (Some((name, map, MapDomain::Type(id))), addr_result)
         }
         Some(pmap_node) => {

@@ -157,6 +157,11 @@ impl Diagram {
         self.history(Dim(dim)).map(|h| h.get(sign))
     }
 
+    /// Returns the top dimension as a `usize`, clamped to 0 for empty diagrams.
+    pub fn top_dim(&self) -> usize {
+        self.dim().max(0) as usize
+    }
+
     /// True if the top-level paste tree is just a single leaf (a genuine cell).
     pub fn is_cell(&self) -> bool {
         if self.shape.dim < 0 {
@@ -239,7 +244,7 @@ impl Diagram {
             return Err(Error::new("second argument is not round"));
         }
 
-        let k = if dim_u < 0 { 0 } else { dim_u as usize };
+        let k = u.top_dim();
         let (bd_u, e_u) = ogposet::boundary_traverse(OgSign::Both, k, &u.shape);
         let (bd_v, e_v) = ogposet::boundary_traverse(OgSign::Both, k, &v.shape);
 
@@ -261,19 +266,8 @@ impl Diagram {
 
     /// Check whether u and v can be pasted at level k.
     pub fn pastability(k: usize, u: &Diagram, v: &Diagram) -> Result<BoundaryMatch, Error> {
-        let dim_u = if u.shape.dim < 0 {
-            0
-        } else {
-            u.shape.dim as usize
-        };
-        let dim_v = if v.shape.dim < 0 {
-            0
-        } else {
-            v.shape.dim as usize
-        };
-
-        let (out_u, e_u) = ogposet::boundary_traverse(OgSign::Output, k.min(dim_u), &u.shape);
-        let (in_v, e_v) = ogposet::boundary_traverse(OgSign::Input, k.min(dim_v), &v.shape);
+        let (out_u, e_u) = ogposet::boundary_traverse(OgSign::Output, k.min(u.top_dim()), &u.shape);
+        let (in_v, e_v) = ogposet::boundary_traverse(OgSign::Input, k.min(v.top_dim()), &v.shape);
 
         if !Ogposet::equal(&out_u, &in_v) {
             return Err(Error::new("shapes of boundaries do not match"));

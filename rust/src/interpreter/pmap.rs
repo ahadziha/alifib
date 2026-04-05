@@ -152,7 +152,7 @@ fn global_cell_id_for_named_diagram(
         return (None, result);
     }
 
-    let top_dim = dim_index(diagram.dim());
+    let top_dim = diagram.top_dim();
     match diagram.labels.get(top_dim).and_then(|row| row.first()) {
         None => {
             result.add_error(make_error(name_span, "Cell has no top label"));
@@ -318,7 +318,7 @@ fn initial_map_component(
 ) -> Step<EvalMap> {
     match prefix {
         None => {
-            let map = PMap::empty().unwrap();
+            let map = PMap::empty();
             (
                 Some(EvalMap {
                     map,
@@ -398,7 +398,7 @@ fn mark_last_hole_source_tag(result: &mut InterpResult, source_term: &Term) {
         return;
     }
 
-    let top_dim = source_diagram.dim().max(0) as usize;
+    let top_dim = source_diagram.top_dim();
     let Some(tag) = source_diagram.labels.get(top_dim).and_then(|row| row.first()) else {
         return;
     };
@@ -541,7 +541,7 @@ fn boundary_dependencies(
                 (boundary_in, DiagramSign::Source),
                 (boundary_out, DiagramSign::Target),
             ] {
-                let boundary_dim = dim_index(boundary.dim());
+                let boundary_dim = boundary.top_dim();
                 if let Some(row) = boundary.labels.get(boundary_dim) {
                     for tag in row {
                         if !map.is_defined_at(tag) {
@@ -571,12 +571,11 @@ fn mapped_focus_classifier(
     source_boundary: &Diagram,
     target_boundary: &Diagram,
     target: &Complex,
-    focus_cell_data: &CellData,
 ) -> Result<Diagram, aux::Error> {
     let embedding = crate::core::diagram::isomorphism_of(&source_boundary.shape, &target_boundary.shape)
         .map_err(|_| aux::Error::new("Failed to extend map (boundary shapes don't match)"))?;
 
-    let boundary_dim = dim_index(source_boundary.dim());
+    let boundary_dim = source_boundary.top_dim();
     let boundary_labels = &source_boundary.labels;
     let target_labels = &target_boundary.labels;
     let embedding_map = &embedding.map;
@@ -621,20 +620,6 @@ fn mapped_focus_classifier(
         .classifier(&generator_name)
         .ok_or_else(|| aux::Error::new("Classifier not found for image generator"))?
         .clone();
-
-    let focus_occurs = source_boundary
-        .labels
-        .get(boundary_dim)
-        .and_then(|row| row.iter().position(|tag| tag == focus))
-        .is_some();
-    if !focus_occurs {
-        return Err(aux::Error::new("Failed to extend map (no image found)"));
-    }
-
-    let focus_diagram = Diagram::cell(focus.clone(), focus_cell_data)?;
-    if !focus_diagram.is_cell() {
-        return Err(aux::Error::new("Failed to extend map (no image found)"));
-    }
 
     Ok(image_classifier)
 }
@@ -681,7 +666,6 @@ fn extend_missing_boundary_dependencies(
                 &source_boundary,
                 &target_boundary,
                 target,
-                &focus_cell_data,
             )?;
             let focus_diagram = Diagram::cell(focus_tag.clone(), &focus_cell_data)?;
             smart_extend(
@@ -715,7 +699,7 @@ pub fn smart_extend(
             "Left-hand side of map instruction must be a cell",
         ));
     }
-    let d = dim_index(domain_diag.dim());
+    let d = domain_diag.top_dim();
     let tag = domain_diag
         .labels
         .get(d)

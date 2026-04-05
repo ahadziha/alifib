@@ -110,7 +110,7 @@ pub fn interpret_items_in_type_scope<T>(
     (scope, result)
 }
 
-pub fn insert_module_diagram(
+fn insert_module_diagram(
     context: &mut Context,
     name: LocalId,
     diagram: Diagram,
@@ -121,7 +121,7 @@ pub fn insert_module_diagram(
         .modify_module(&module_id, |module_scope| module_scope.add_diagram(name, diagram));
 }
 
-pub fn insert_module_map(
+fn insert_module_map(
     context: &mut Context,
     name: LocalId,
     domain: MapDomain,
@@ -312,13 +312,7 @@ pub fn interpret_generator_boundaries(
 pub fn cell_dim(cell_data: &CellData) -> usize {
     match cell_data {
         CellData::Zero => 0,
-        CellData::Boundary { boundary_in, .. } => {
-            if boundary_in.dim() < 0 {
-                1
-            } else {
-                (boundary_in.dim() as usize) + 1
-            }
-        }
+        CellData::Boundary { boundary_in, .. } => boundary_in.top_dim() + 1,
     }
 }
 

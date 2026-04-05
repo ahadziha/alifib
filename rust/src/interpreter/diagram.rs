@@ -18,7 +18,7 @@ fn parse_paste_dim(context: &Context, dim: &Spanned<String>) -> Step<usize> {
 }
 
 fn top_labels_rendered(diagram: &Diagram, f: impl Fn(&Tag) -> String) -> String {
-    let d = diagram.dim().max(0) as usize;
+    let d = diagram.top_dim();
     match diagram.labels.get(d) {
         Some(labels) if !labels.is_empty() => {
             labels.iter().map(f).collect::<Vec<_>>().join(" ")
@@ -45,7 +45,7 @@ fn boundary_term_from_diagram(
     span: Span,
     result: InterpResult,
 ) -> (Option<Term>, InterpResult) {
-    let boundary_dim = (diagram.dim().max(0) as usize).saturating_sub(1);
+    let boundary_dim = diagram.top_dim().saturating_sub(1);
     match Diagram::boundary(sign, boundary_dim, diagram) {
         Ok(boundary) => (Some(Term::Diag(boundary)), result),
         Err(error) => {
@@ -153,8 +153,8 @@ fn interpret_principal(
                         return (None, result);
                     }
                     Some(Term::Diag(d_right)) => {
-                        let k = (acc.dim().max(0) as usize)
-                            .min(d_right.dim().max(0) as usize)
+                        let k = acc.top_dim()
+                            .min(d_right.top_dim())
                             .saturating_sub(1);
                         match Diagram::paste(k, &acc, &d_right) {
                             Ok(d) => acc = d,
@@ -450,7 +450,7 @@ fn interpret_principal_as_term(
                     interpret_d_expr(&result.context, scope, &exprs[1]);
                 result = InterpResult::combine(result, next_result);
                 if let Some(Term::Diag(d_right)) = next_opt {
-                    let k = (d_right.dim().max(0) as usize).saturating_sub(1);
+                    let k = d_right.top_dim().saturating_sub(1);
                     if let Ok(in_bd) = Diagram::boundary(DiagramSign::Source, k, &d_right) {
                         if let Some(last_hole) = result.holes.last_mut() {
                             let bd_out = render_diagram(&in_bd, scope);
@@ -497,7 +497,7 @@ fn interpret_principal_as_term(
                     None => {
                         // If a hole was just added, enrich with left-context boundary
                         if result.holes.len() > prev_hole_count {
-                            let k = (acc.dim().max(0) as usize).saturating_sub(1);
+                            let k = acc.top_dim().saturating_sub(1);
                             if let Ok(out_bd) = Diagram::boundary(DiagramSign::Target, k, &acc) {
                                 if let Some(last_hole) = result.holes.last_mut() {
                                     last_hole.boundary = Some(HoleBoundaryInfo {
@@ -514,8 +514,8 @@ fn interpret_principal_as_term(
                         return (None, result);
                     }
                     Some(Term::Diag(d_right)) => {
-                        let k = (acc.dim().max(0) as usize)
-                            .min(d_right.dim().max(0) as usize)
+                        let k = acc.top_dim()
+                            .min(d_right.top_dim())
                             .saturating_sub(1);
                         match Diagram::paste(k, &acc, &d_right) {
                             Ok(d) => acc = d,

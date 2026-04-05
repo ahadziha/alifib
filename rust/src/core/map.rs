@@ -19,12 +19,12 @@ pub struct PMap {
 
 impl PMap {
     /// Create an empty partial map.
-    pub fn empty() -> Result<PMap, Error> {
-        Ok(PMap {
+    pub fn empty() -> PMap {
+        PMap {
             table: HashMap::new(),
             by_dim: HashMap::new(),
             cellular: true,
-        })
+        }
     }
 
     /// Build a partial map from a list of (tag, dim, cell_data, image) entries.
@@ -131,7 +131,7 @@ impl PMap {
 
     /// Apply partial map f to a diagram by following its paste tree structure.
     pub fn apply(f: &PMap, diagram: &Diagram) -> Result<Diagram, Error> {
-        let n = if diagram.dim() < 0 { 0 } else { diagram.dim() as usize };
+        let n = diagram.top_dim();
         let root_tree = match diagram.tree(Sign::Source, n) {
             Some(t) => t.clone(),
             None => return Err(Error::new("diagram has no tree")),
@@ -150,8 +150,7 @@ impl PMap {
                     return mapped.clone();
                 }
                 let cell_diag = f.table.get(tag).map(|e| &e.image).unwrap();
-                let d = cell_diag.dim();
-                let d = if d < 0 { 0 } else { d as usize };
+                let d = cell_diag.top_dim();
                 let mapped = cell_diag.labels[d][0].clone();
                 cache.insert(tag.clone(), mapped.clone());
                 mapped

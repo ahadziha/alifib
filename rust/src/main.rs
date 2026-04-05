@@ -141,7 +141,7 @@ fn run_interpreter(input: &str, output: Option<&str>) -> bool {
         None => return false,
     };
 
-    let text = run_result.context.state.display();
+    let text = run_result.context.state.to_string();
     if let Err(msg) = write_output(output, &text) {
         eprintln!("error: {}", msg);
         return false;

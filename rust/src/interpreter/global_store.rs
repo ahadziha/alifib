@@ -98,11 +98,6 @@ impl GlobalStore {
         }
     }
 
-    /// Pretty-print the state in a human-readable format.
-    pub fn display(&self) -> String {
-        format!("{}", self)
-    }
-
     fn assert_invariants(&self) {
         for ids in self.cells_by_dim.values() {
             for id in ids {
