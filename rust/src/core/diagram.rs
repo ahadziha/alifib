@@ -12,13 +12,6 @@ pub enum Sign {
 }
 
 impl Sign {
-    pub fn idx(self) -> usize {
-        match self {
-            Self::Source => 0,
-            Self::Target => 1,
-        }
-    }
-
     pub fn as_ogposet_sign(self) -> OgSign {
         match self {
             Self::Source => OgSign::Input,
@@ -29,9 +22,6 @@ impl Sign {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Dim(pub usize);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CellIx(pub usize);
 
 /// The paste-tree records how a diagram was built from paste operations.
 #[derive(Debug, Clone)]
@@ -76,7 +66,6 @@ pub enum CellData {
 
 #[derive(Debug, Clone)]
 pub struct BoundaryMatch {
-    pub shape: Arc<Ogposet>,
     pub left_embedding: Embedding,
     pub right_embedding: Embedding,
 }
@@ -158,10 +147,6 @@ impl Diagram {
 
     pub fn is_normal(&self) -> bool {
         self.shape.is_normal()
-    }
-
-    pub fn label(&self, dim: Dim, pos: CellIx) -> Option<&Tag> {
-        self.labels.get(dim.0).and_then(|level| level.get(pos.0))
     }
 
     pub fn history(&self, dim: Dim) -> Option<&BoundaryHistory> {
@@ -269,7 +254,6 @@ impl Diagram {
         }
 
         Ok(BoundaryMatch {
-            shape: bd_u,
             left_embedding: e_u,
             right_embedding: e_v,
         })
@@ -302,7 +286,6 @@ impl Diagram {
         }
 
         Ok(BoundaryMatch {
-            shape: out_u,
             left_embedding: e_u,
             right_embedding: e_v,
         })
