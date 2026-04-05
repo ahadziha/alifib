@@ -110,29 +110,6 @@ pub fn interpret_items_in_type_scope<T>(
     (scope, result)
 }
 
-fn insert_module_diagram(
-    context: &mut Context,
-    name: LocalId,
-    diagram: Diagram,
-) {
-    let module_id = context.current_module.clone();
-    context
-        .state_mut()
-        .modify_module(&module_id, |module_scope| module_scope.add_diagram(name, diagram));
-}
-
-fn insert_module_map(
-    context: &mut Context,
-    name: LocalId,
-    domain: MapDomain,
-    map: crate::core::map::PMap,
-) {
-    let module_id = context.current_module.clone();
-    context
-        .state_mut()
-        .modify_module(&module_id, |module_scope| module_scope.add_map(name, domain, map));
-}
-
 pub fn insert_complex_diagram_binding(
     mut scope: Complex,
     result: InterpResult,
@@ -185,12 +162,9 @@ pub fn insert_module_diagram_binding(
     result: InterpResult,
     binding: Option<DiagramBinding>,
 ) -> InterpResult {
-    let Some((name, diagram)) = binding else {
-        return result;
-    };
-
+    let Some((name, diagram)) = binding else { return result; };
     let mut result = result;
-    insert_module_diagram(&mut result.context, name, diagram);
+    result.context.modify_current_module(|m| m.add_diagram(name, diagram));
     result
 }
 
@@ -198,12 +172,9 @@ pub fn insert_module_map_binding(
     result: InterpResult,
     binding: Option<MapBinding>,
 ) -> InterpResult {
-    let Some((name, map, domain)) = binding else {
-        return result;
-    };
-
+    let Some((name, map, domain)) = binding else { return result; };
     let mut result = result;
-    insert_module_map(&mut result.context, name, domain, map);
+    result.context.modify_current_module(|m| m.add_map(name, domain, map));
     result
 }
 

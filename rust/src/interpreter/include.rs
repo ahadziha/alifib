@@ -213,13 +213,10 @@ pub fn interpret_include_module_instr(
     let imported_generators = prefixed_generators(&included_arc, &alias, true);
     let inclusion = identity_map(&include_result.context, &included_arc);
 
-    result
-        .context
-        .state_mut()
-        .modify_module(&module_id, |current| {
-            insert_generators_by_tag(current, imported_generators);
-            current.add_map(alias, MapDomain::Module(canonical_path), inclusion);
-        });
+    result.context.modify_current_module(|current| {
+        insert_generators_by_tag(current, imported_generators);
+        current.add_map(alias, MapDomain::Module(canonical_path), inclusion);
+    });
 
     result
 }

@@ -306,7 +306,7 @@ pub fn interpret_pmap_def(
 ) -> Step<EvalMap> {
     match &pmap_def.inner {
         PMapDef::PMap(pmap) => interpret_pmap_inner(context, scope, domain, pmap, pmap_def.span),
-        PMapDef::Ext(ext) => interpret_pmap_ext(context, scope, domain, ext, pmap_def.span),
+        PMapDef::Ext(ext) => interpret_pmap_ext(context, scope, domain, ext),
     }
 }
 
@@ -366,7 +366,6 @@ fn interpret_pmap_ext(
     scope: &Complex,
     domain: &Complex,
     ext: &PMapExt,
-    _span: Span,
 ) -> Step<EvalMap> {
     let (initial_opt, prefix_result) = initial_eval_map(context, scope, domain, &ext.prefix);
     let Some(initial) = initial_opt else {

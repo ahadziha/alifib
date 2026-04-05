@@ -48,6 +48,12 @@ impl Context {
     pub fn state_mut(&mut self) -> &mut GlobalStore {
         Arc::make_mut(&mut self.state)
     }
+
+    /// Mutate the current module's Complex in place.
+    pub fn modify_current_module(&mut self, f: impl FnOnce(&mut Complex)) {
+        let module_id = self.current_module.clone();
+        self.state_mut().modify_module(&module_id, f);
+    }
 }
 
 // ---- Hole info ----

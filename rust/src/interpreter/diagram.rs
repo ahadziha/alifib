@@ -101,108 +101,21 @@ fn apply_map_component(
     }
 }
 
+/// Interpret a diagram expression; partial maps are rejected.
+/// Delegates to `interpret_diagram_as_term` and extracts the `Diagram`.
 pub fn interpret_diagram(
     context: &Context,
     scope: &Complex,
     diagram: &Spanned<ast::Diagram>,
 ) -> (Option<Diagram>, InterpResult) {
-    match &diagram.inner {
-        ast::Diagram::Principal(exprs) => {
-            interpret_principal(context, scope, exprs, diagram.span)
-        }
-        ast::Diagram::Paste { lhs, dim, rhs } => {
-            let (k_opt, k_result) = parse_paste_dim(context, dim);
-            let Some(k) = k_opt else { return (None, k_result); };
-            interpret_diagram_paste(context, scope, diagram.span, lhs, k, rhs)
-        }
-    }
-}
-
-fn interpret_principal(
-    context: &Context,
-    scope: &Complex,
-    exprs: &[Spanned<DExpr>],
-    span: Span,
-) -> (Option<Diagram>, InterpResult) {
-    if exprs.is_empty() {
-        return fail(context, span, "Empty diagram expression");
-    }
-
-    // Interpret first expression
-    let (first_opt, first_result) = interpret_dexpr(context, scope, &exprs[0]);
-    match first_opt {
-        None => return (None, first_result),
+    let (term_opt, result) = interpret_diagram_as_term(context, scope, diagram);
+    match term_opt {
+        None => (None, result),
+        Some(Term::Diag(d)) => (Some(d), result),
         Some(Term::Map(_)) => {
-            let mut result = first_result;
-            result.add_error(make_error(exprs[0].span, "Not a diagram"));
-            return (None, result);
-        }
-        Some(Term::Diag(d_first)) => {
-            if exprs.len() == 1 {
-                return (Some(d_first), first_result);
-            }
-
-            // Fold left-to-right
-            let mut acc = d_first;
-            let mut result = first_result;
-
-            for expr in &exprs[1..] {
-                let (term_opt, expr_result) = interpret_dexpr(&result.context, scope, expr);
-                result = InterpResult::combine(result, expr_result);
-                match term_opt {
-                    None => return (None, result),
-                    Some(Term::Map(_)) => {
-                        result.add_error(make_error(expr.span, "Not a diagram"));
-                        return (None, result);
-                    }
-                    Some(Term::Diag(d_right)) => {
-                        let k = acc.top_dim()
-                            .min(d_right.top_dim())
-                            .saturating_sub(1);
-                        match Diagram::paste(k, &acc, &d_right) {
-                            Ok(d) => acc = d,
-                            Err(e) => {
-                                result.add_error(make_error(
-                                    span,
-                                    format!("Failed to paste diagrams: {}", e),
-                                ));
-                                return (None, result);
-                            }
-                        }
-                    }
-                }
-            }
-
-            (Some(acc), result)
-        }
-    }
-}
-
-fn interpret_diagram_paste(
-    context: &Context,
-    scope: &Complex,
-    span: Span,
-    left: &Spanned<ast::Diagram>,
-    k: usize,
-    right: &[Spanned<DExpr>],
-) -> (Option<Diagram>, InterpResult) {
-    let (right_opt, right_result) = interpret_principal(context, scope, right, span);
-    match right_opt {
-        None => (None, right_result),
-        Some(d_right) => {
-            let (left_opt, left_result) = interpret_diagram(&right_result.context, scope, left);
-            let combined = InterpResult::combine(right_result, left_result);
-            match left_opt {
-                None => (None, combined),
-                Some(d_left) => match Diagram::paste(k, &d_left, &d_right) {
-                    Ok(d) => (Some(d), combined),
-                    Err(e) => {
-                        let mut r = combined;
-                        r.add_error(make_error(span, format!("Failed to paste diagrams: {}", e)));
-                        (None, r)
-                    }
-                },
-            }
+            let mut r = result;
+            r.add_error(make_error(diagram.span, "Expected a diagram, not a partial map"));
+            (None, r)
         }
     }
 }
