@@ -190,47 +190,37 @@ pub fn interpret_dcomponent(
     match d_comp {
         DComponent::PMap(basic) => match basic {
             PMapBasic::Name(name) => {
-                let base_result = InterpResult::ok(context.clone());
                 if let Some(diagram) = scope.find_diagram(name) {
                     return (
                         Some(Component::Value(Term::Diag(diagram.clone()))),
-                        base_result,
+                        InterpResult::ok(context.clone()),
                     );
                 }
                 if let Some(entry) = scope.find_map(name) {
-                    let (domain_opt, domain_result) =
+                    let (domain_opt, result) =
                         resolve_map_domain_complex(context, &entry.domain, span);
-                    let domain_complex = match domain_opt {
-                        None => return (None, InterpResult::combine(base_result, domain_result)),
-                        Some(domain) => domain,
+                    let Some(domain) = domain_opt else {
+                        return (None, result);
                     };
                     return (
                         Some(Component::Value(Term::Map(EvalMap {
                             map: entry.map.clone(),
-                            domain: domain_complex,
+                            domain,
                         }))),
-                        base_result,
+                        InterpResult::ok(context.clone()),
                     );
                 }
-                let mut r = base_result;
-                r.add_error(make_error(span, format!("Name `{}` not found", name)));
-                (None, r)
+                fail(context, span, format!("Name `{}` not found", name))
             }
             PMapBasic::AnonMap { def, target } => {
                 let (eval_map_opt, result) =
                     super::pmap::interpret_anon_map_component(context, scope, target, def);
-                match eval_map_opt {
-                    None => (None, result),
-                    Some(eval_map) => (Some(Component::Value(Term::Map(eval_map))), result),
-                }
+                (eval_map_opt.map(|em| Component::Value(Term::Map(em))), result)
             }
             PMapBasic::Paren(inner_pmap) => {
                 let (eval_map_opt, result) =
                     super::pmap::interpret_pmap(context, scope, scope, inner_pmap);
-                match eval_map_opt {
-                    None => (None, result),
-                    Some(eval_map) => (Some(Component::Value(Term::Map(eval_map))), result),
-                }
+                (eval_map_opt.map(|em| Component::Value(Term::Map(em))), result)
             }
         },
         DComponent::In => (

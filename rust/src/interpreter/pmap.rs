@@ -269,25 +269,14 @@ fn interpret_pmap_basic(
 ) -> Step<EvalMap> {
     match basic {
         PMapBasic::Name(name) => {
-            let base_result = InterpResult::ok(context.clone());
-            match scope.find_map(name) {
-                None => fail(context, span, format!("Partial map not found: `{}`", name)),
-                Some(entry) => {
-                    let (domain_opt, domain_result) =
-                        resolve_map_domain_complex(context, &entry.domain, span);
-                    let domain_arc = match domain_opt {
-                        None => return (None, InterpResult::combine(base_result, domain_result)),
-                        Some(domain) => domain,
-                    };
-                    (
-                        Some(EvalMap {
-                            map: entry.map.clone(),
-                            domain: domain_arc,
-                        }),
-                        base_result,
-                    )
-                }
-            }
+            let Some(entry) = scope.find_map(name) else {
+                return fail(context, span, format!("Partial map not found: `{}`", name));
+            };
+            let (domain_opt, result) = resolve_map_domain_complex(context, &entry.domain, span);
+            let Some(domain) = domain_opt else {
+                return (None, result);
+            };
+            (Some(EvalMap { map: entry.map.clone(), domain }), InterpResult::ok(context.clone()))
         }
         PMapBasic::AnonMap { def, target } => {
             interpret_anon_map_component(context, domain, target, def)
@@ -788,11 +777,7 @@ pub fn interpret_def_pmap(
 
 // ---- Assert checking ----
 
-pub fn check_assert(
-    _context: &Context,
-    _scope: &Complex,
-    pair: &TermPair,
-) -> Result<(), String> {
+pub fn check_assert(pair: &TermPair) -> Result<(), String> {
     match pair {
         TermPair::Diagrams { fst, snd } => {
             if Diagram::isomorphic(fst, snd) {

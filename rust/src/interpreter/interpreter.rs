@@ -76,19 +76,17 @@ fn interpret_type_inst(
     match &instr.inner {
         TypeInst::Generator(generator) => interpret_type_generator(context, generator),
         TypeInst::LetDiag(ld) => {
-            let module_scope = match current_module_scope(context) {
-                Some(module_scope) => module_scope,
-                None => return InterpResult::ok(context.clone()),
+            let Some(scope) = current_module_scope(context) else {
+                return InterpResult::ok(context.clone());
             };
-            let (diagram_binding, result) = interpret_let_diag(context, module_scope, ld);
+            let (diagram_binding, result) = interpret_let_diag(context, scope, ld);
             insert_module_diagram_binding(result, diagram_binding)
         }
         TypeInst::DefPMap(dp) => {
-            let module_scope = match current_module_scope(context) {
-                Some(module_scope) => module_scope,
-                None => return InterpResult::ok(context.clone()),
+            let Some(scope) = current_module_scope(context) else {
+                return InterpResult::ok(context.clone());
             };
-            let (map_binding, result) = interpret_def_pmap(context, module_scope, dp);
+            let (map_binding, result) = interpret_def_pmap(context, scope, dp);
             insert_module_map_binding(result, map_binding)
         }
         TypeInst::IncludeModule(include_mod) => {
@@ -390,18 +388,16 @@ fn interpret_local_inst(
             )
         }
         LocalInst::AssertStmt(assert_stmt) => {
-            let (term_pair_opt, assert_result) = interpret_assert(context, scope, assert_stmt);
-            let span = instr.span;
-            match term_pair_opt {
-                None => (None, assert_result),
-                Some(term_pair) => match check_assert(&assert_result.context, scope, &term_pair) {
-                    Ok(()) => (Some(scope.clone()), assert_result),
-                    Err(msg) => {
-                        let mut r = assert_result;
-                        r.add_error(make_error(span, msg));
-                        (None, r)
-                    }
-                },
+            let (term_pair_opt, mut result) = interpret_assert(context, scope, assert_stmt);
+            let Some(term_pair) = term_pair_opt else {
+                return (None, result);
+            };
+            match check_assert(&term_pair) {
+                Ok(()) => (Some(scope.clone()), result),
+                Err(msg) => {
+                    result.add_error(make_error(instr.span, msg));
+                    (None, result)
+                }
             }
         }
     }
