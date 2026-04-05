@@ -3,13 +3,12 @@ use crate::core::{
     complex::{Complex, MapDomain},
     diagram::{CellData, Diagram},
 };
-use crate::language::ast::{NameWithBoundary, Span, Spanned};
+use crate::language::ast::{Address, NameWithBoundary, Span, Spanned};
 use std::sync::Arc;
 
 use super::diagram::interpret_boundaries;
-use super::pmap::interpret_address;
 use super::types::{
-    Context, InterpResult, NameKind, TypeScope, ensure_name_free, make_error,
+    Context, InterpResult, NameKind, Step, TypeScope, ensure_name_free, make_error,
     resolve_root_owner_type_id, resolve_type_complex, unknown_span,
 };
 
@@ -344,4 +343,124 @@ pub fn resolve_complex_type_scope(
     let (scope, scope_result) =
         resolve_type_scope_by_id(&owner_result.context, owner_type_id, span, not_found_msg);
     (scope, InterpResult::combine(owner_result, scope_result))
+}
+
+// ---- Address resolution ----
+
+fn module_scope_for_address(context: &Context, span: Span) -> Step<Complex> {
+    let module_id = &context.current_module;
+    let mut result = InterpResult::ok(context.clone());
+
+    let Some(module_scope) = context.state.find_module(module_id) else {
+        result.add_error(make_error(
+            span,
+            format!("Module `{}` not found", module_id),
+        ));
+        return (None, result);
+    };
+
+    (Some(module_scope.clone()), result)
+}
+
+fn resolve_address_prefix_scope(
+    context: &Context,
+    initial_scope: Complex,
+    prefix: &[(Span, String)],
+) -> Step<Complex> {
+    let mut current_scope = initial_scope;
+    let mut result = InterpResult::ok(context.clone());
+
+    for (segment_span, segment_name) in prefix {
+        let Some(map_entry) = current_scope.find_map(segment_name) else {
+            result.add_error(make_error(
+                *segment_span,
+                format!("Partial map `{}` not found", segment_name),
+            ));
+            return (None, result);
+        };
+
+        match &map_entry.domain {
+            MapDomain::Module(module_id) => match context.state.find_module(module_id) {
+                Some(module_scope) => current_scope = module_scope.clone(),
+                None => {
+                    result.add_error(make_error(
+                        *segment_span,
+                        format!("Module `{}` not found", module_id),
+                    ));
+                    return (None, result);
+                }
+            },
+            MapDomain::Type(_) => {
+                result.add_error(make_error(
+                    *segment_span,
+                    format!("Domain of `{}` is not a module", segment_name),
+                ));
+                return (None, result);
+            }
+        }
+    }
+
+    (Some(current_scope), result)
+}
+
+fn global_cell_id_for_named_diagram(
+    scope: &Complex,
+    name: &str,
+    name_span: Span,
+    context: &Context,
+) -> Step<GlobalId> {
+    let mut result = InterpResult::ok(context.clone());
+
+    let Some(diagram) = scope.find_diagram(name) else {
+        result.add_error(make_error(name_span, format!("Type `{}` not found", name)));
+        return (None, result);
+    };
+
+    if !diagram.is_cell() {
+        result.add_error(make_error(name_span, format!("`{}` is not a cell", name)));
+        return (None, result);
+    }
+
+    let top_dim = diagram.top_dim();
+    match diagram.labels.get(top_dim).and_then(|row| row.first()) {
+        None => {
+            result.add_error(make_error(name_span, "Cell has no top label"));
+            (None, result)
+        }
+        Some(Tag::Global(id)) => (Some(*id), result),
+        Some(Tag::Local(_)) => {
+            result.add_error(make_error(name_span, "Cell has local tag (unexpected)"));
+            (None, result)
+        }
+    }
+}
+
+/// Resolve an address (dotted path) in the current module scope to a global type ID.
+pub fn interpret_address(context: &Context, address: &Address, addr_span: Span) -> Step<GlobalId> {
+    let (module_scope, module_result) = module_scope_for_address(context, addr_span);
+    let Some(module_scope) = module_scope else {
+        return (None, module_result);
+    };
+    let segments: Vec<(Span, String)> = address.iter().map(|n| (n.span, n.inner.clone())).collect();
+
+    if segments.is_empty() {
+        let (id_opt, root_result) = resolve_root_owner_type_id(context, &module_scope, addr_span);
+        return (id_opt, InterpResult::combine(module_result, root_result));
+    }
+
+    let last_idx = segments.len() - 1;
+    let prefix = &segments[..last_idx];
+    let (last_span, last_name) = &segments[last_idx];
+
+    let (target_scope, prefix_result) = resolve_address_prefix_scope(context, module_scope, prefix);
+    let Some(target_scope) = target_scope else {
+        return (None, InterpResult::combine(module_result, prefix_result));
+    };
+
+    let (id_opt, id_result) =
+        global_cell_id_for_named_diagram(&target_scope, last_name, *last_span, context);
+    (
+        id_opt,
+        InterpResult::combine(InterpResult::combine(module_result, prefix_result), id_result),
+    )
 }

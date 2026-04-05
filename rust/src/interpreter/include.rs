@@ -11,7 +11,8 @@ use crate::language::ast::{self, IncludeModule, Span};
 
 use super::global_store::GlobalStore;
 use super::interpreter::interpret_program;
-use super::pmap::{interpret_address, interpret_pmap_def};
+use super::pmap::interpret_pmap_def;
+use super::scope::interpret_address;
 use super::types::*;
 
 type ImportedGenerator = (LocalId, Tag, Diagram);

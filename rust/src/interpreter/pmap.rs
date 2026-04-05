@@ -1,17 +1,16 @@
 use super::diagram::{interpret_diagram_as_term, render_boundary_partial, render_diagram};
+use super::scope::interpret_address;
 use super::types::*;
-use crate::aux::{self, GlobalId, LocalId, Tag};
+use crate::aux::{self, LocalId, Tag};
 use crate::core::{
     complex::{Complex, MapDomain},
     diagram::{CellData, Diagram, Sign as DiagramSign},
     map::PMap,
 };
-use crate::language::ast::{
-    self, Address, DefPMap, PMapBasic, PMapClause, PMapDef, PMapExt, Span, Spanned,
-};
+use crate::language::ast::{self, DefPMap, PMapBasic, PMapClause, PMapDef, PMapExt, Span, Spanned};
 use std::sync::Arc;
 
-// ---- Address resolution ----
+// ---- Hole boundary rendering ----
 
 fn render_mapped_boundary(
     scope: &Complex,
@@ -78,123 +77,6 @@ fn finalize_hole_boundaries(
     }
 }
 
-fn module_scope_for_address(context: &Context, span: Span) -> Step<Complex> {
-    let module_id = &context.current_module;
-    let mut result = InterpResult::ok(context.clone());
-
-    let Some(module_scope) = context.state.find_module(module_id) else {
-        result.add_error(make_error(
-            span,
-            format!("Module `{}` not found", module_id),
-        ));
-        return (None, result);
-    };
-
-    (Some(module_scope.clone()), result)
-}
-
-fn resolve_address_prefix_scope(
-    context: &Context,
-    initial_scope: Complex,
-    prefix: &[(Span, String)],
-) -> Step<Complex> {
-    let mut current_scope = initial_scope;
-    let mut result = InterpResult::ok(context.clone());
-
-    for (segment_span, segment_name) in prefix {
-        let Some(map_entry) = current_scope.find_map(segment_name) else {
-            result.add_error(make_error(
-                *segment_span,
-                format!("Partial map `{}` not found", segment_name),
-            ));
-            return (None, result);
-        };
-
-        match &map_entry.domain {
-            MapDomain::Module(module_id) => match context.state.find_module(module_id) {
-                Some(module_scope) => current_scope = module_scope.clone(),
-                None => {
-                    result.add_error(make_error(
-                        *segment_span,
-                        format!("Module `{}` not found", module_id),
-                    ));
-                    return (None, result);
-                }
-            },
-            MapDomain::Type(_) => {
-                result.add_error(make_error(
-                    *segment_span,
-                    format!("Domain of `{}` is not a module", segment_name),
-                ));
-                return (None, result);
-            }
-        }
-    }
-
-    (Some(current_scope), result)
-}
-
-fn global_cell_id_for_named_diagram(
-    scope: &Complex,
-    name: &str,
-    name_span: Span,
-    context: &Context,
-) -> Step<GlobalId> {
-    let mut result = InterpResult::ok(context.clone());
-
-    let Some(diagram) = scope.find_diagram(name) else {
-        result.add_error(make_error(name_span, format!("Type `{}` not found", name)));
-        return (None, result);
-    };
-
-    if !diagram.is_cell() {
-        result.add_error(make_error(name_span, format!("`{}` is not a cell", name)));
-        return (None, result);
-    }
-
-    let top_dim = diagram.top_dim();
-    match diagram.labels.get(top_dim).and_then(|row| row.first()) {
-        None => {
-            result.add_error(make_error(name_span, "Cell has no top label"));
-            (None, result)
-        }
-        Some(Tag::Global(id)) => (Some(*id), result),
-        Some(Tag::Local(_)) => {
-            result.add_error(make_error(name_span, "Cell has local tag (unexpected)"));
-            (None, result)
-        }
-    }
-}
-
-pub fn interpret_address(context: &Context, address: &Address, addr_span: Span) -> Step<GlobalId> {
-    let (module_scope, module_result) = module_scope_for_address(context, addr_span);
-    let Some(module_scope) = module_scope else {
-        return (None, module_result);
-    };
-    let segments: Vec<(Span, String)> = address.iter().map(|n| (n.span, n.inner.clone())).collect();
-
-    if segments.is_empty() {
-        let (id_opt, root_result) = resolve_root_owner_type_id(context, &module_scope, addr_span);
-        return (id_opt, InterpResult::combine(module_result, root_result));
-    }
-
-    let last_idx = segments.len() - 1;
-    let prefix = &segments[..last_idx];
-    let (last_span, last_name) = &segments[last_idx];
-
-    let (target_scope, prefix_result) = resolve_address_prefix_scope(context, module_scope, prefix);
-    let Some(target_scope) = target_scope else {
-        return (None, InterpResult::combine(module_result, prefix_result));
-    };
-
-    let (id_opt, id_result) =
-        global_cell_id_for_named_diagram(&target_scope, last_name, *last_span, context);
-    (
-        id_opt,
-        InterpResult::combine(InterpResult::combine(module_result, prefix_result), id_result),
-    )
-}
-
 pub fn interpret_anon_map_component(
     context: &Context,
     domain: &Complex,
@@ -221,10 +103,10 @@ pub fn interpret_pmap(
     domain: &Complex,
     pmap: &Spanned<ast::PMap>,
 ) -> Step<EvalMap> {
-    interpret_pmap_inner(context, scope, domain, &pmap.inner, pmap.span)
+    interpret_pmap_node(context, scope, domain, &pmap.inner, pmap.span)
 }
 
-fn interpret_pmap_inner(
+fn interpret_pmap_node(
     context: &Context,
     scope: &Complex,
     domain: &Complex,
@@ -294,7 +176,7 @@ pub fn interpret_pmap_def(
     pmap_def: &Spanned<PMapDef>,
 ) -> Step<EvalMap> {
     match &pmap_def.inner {
-        PMapDef::PMap(pmap) => interpret_pmap_inner(context, scope, domain, pmap, pmap_def.span),
+        PMapDef::PMap(pmap) => interpret_pmap_node(context, scope, domain, pmap, pmap_def.span),
         PMapDef::Ext(ext) => interpret_pmap_ext(context, scope, domain, ext),
     }
 }
@@ -775,42 +657,3 @@ pub fn interpret_def_pmap(
     (Some((name, eval_map.map, MapDomain::Type(id))), combined)
 }
 
-// ---- Assert checking ----
-
-pub fn check_assert(pair: &TermPair) -> Result<(), String> {
-    match pair {
-        TermPair::Diagrams { fst, snd } => {
-            if Diagram::isomorphic(fst, snd) {
-                Ok(())
-            } else {
-                Err("The diagrams are not equal".into())
-            }
-        }
-        TermPair::Maps { fst, snd, domain } => {
-            for (_, gen_name, tag) in sorted_generators(domain) {
-                let in_first = fst.is_defined_at(&tag);
-                let in_second = snd.is_defined_at(&tag);
-                if in_first && !in_second {
-                    return Err(format!(
-                        "`{}` is in the domain of the first map but not the second",
-                        gen_name
-                    ));
-                }
-                if in_second && !in_first {
-                    return Err(format!(
-                        "`{}` is in the domain of the second map but not the first",
-                        gen_name
-                    ));
-                }
-                if in_first {
-                    let img1 = fst.image(&tag).map_err(|e| e.to_string())?;
-                    let img2 = snd.image(&tag).map_err(|e| e.to_string())?;
-                    if !Diagram::isomorphic(img1, img2) {
-                        return Err(format!("The maps differ on `{}`", gen_name));
-                    }
-                }
-            }
-            Ok(())
-        }
-    }
-}

@@ -11,11 +11,11 @@ use crate::language::ast::{
 };
 use std::sync::Arc;
 
-use super::diagram::{interpret_assert, interpret_let_diag};
+use super::diagram::{check_assert, interpret_assert, interpret_let_diag};
 use super::include::{
     interpret_attach_instr, interpret_include_instr, interpret_include_module_instr,
 };
-use super::pmap::{check_assert, interpret_def_pmap};
+use super::pmap::interpret_def_pmap;
 use super::scope::{
     cell_dim, create_generator_diagram, current_module_scope, initialize_module_context,
     insert_complex_diagram_binding, insert_complex_map_binding, insert_module_diagram_binding,

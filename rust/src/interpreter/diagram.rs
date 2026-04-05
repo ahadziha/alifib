@@ -139,43 +139,47 @@ pub fn interpret_dexpr(
                 Some(Component::Value(t)) => (Some(t), result),
             }
         }
-        DExpr::Dot { base, field } => {
-            let (left_opt, left_result) = interpret_dexpr(context, scope, base);
-            match left_opt {
-                None => (None, left_result),
-                Some(Term::Diag(diagram)) => {
-                    let (comp_opt, comp_result) =
-                        interpret_dcomponent(&left_result.context, scope, &field.inner, field.span);
-                    let combined = InterpResult::combine(left_result, comp_result);
-                    match comp_opt {
-                        None => (None, combined),
-                        Some(Component::Bd(sign)) => {
-                            boundary_term_from_diagram(&diagram, sign, field.span, combined)
-                        }
-                        Some(Component::Hole) => add_hole_result(&combined.context, field.span),
-                        Some(Component::Value(_)) => {
-                            let mut r = combined;
-                            r.add_error(make_error(
-                                field.span,
-                                "Not a well-formed diagram expression",
-                            ));
-                            (None, r)
-                        }
-                    }
+        DExpr::Dot { base, field } => interpret_dot_access(context, scope, base, field),
+    }
+}
+
+fn interpret_dot_access(
+    context: &Context,
+    scope: &Complex,
+    base: &Spanned<DExpr>,
+    field: &Spanned<DComponent>,
+) -> (Option<Term>, InterpResult) {
+    let (left_opt, left_result) = interpret_dexpr(context, scope, base);
+    match left_opt {
+        None => (None, left_result),
+        Some(Term::Diag(diagram)) => {
+            let (comp_opt, comp_result) =
+                interpret_dcomponent(&left_result.context, scope, &field.inner, field.span);
+            let combined = InterpResult::combine(left_result, comp_result);
+            match comp_opt {
+                None => (None, combined),
+                Some(Component::Bd(sign)) => {
+                    boundary_term_from_diagram(&diagram, sign, field.span, combined)
                 }
-                Some(Term::Map(eval_map)) => {
-                    let (comp_opt, comp_result) = interpret_dcomponent(
-                        &left_result.context,
-                        &*eval_map.domain,
-                        &field.inner,
-                        field.span,
-                    );
-                    let combined = InterpResult::combine(left_result, comp_result);
-                    match comp_opt {
-                        None => (None, combined),
-                        Some(component) => apply_map_component(&eval_map, component, field.span, combined),
-                    }
+                Some(Component::Hole) => add_hole_result(&combined.context, field.span),
+                Some(Component::Value(_)) => {
+                    let mut r = combined;
+                    r.add_error(make_error(field.span, "Not a well-formed diagram expression"));
+                    (None, r)
                 }
+            }
+        }
+        Some(Term::Map(eval_map)) => {
+            let (comp_opt, comp_result) = interpret_dcomponent(
+                &left_result.context,
+                &*eval_map.domain,
+                &field.inner,
+                field.span,
+            );
+            let combined = InterpResult::combine(left_result, comp_result);
+            match comp_opt {
+                None => (None, combined),
+                Some(component) => apply_map_component(&eval_map, component, field.span, combined),
             }
         }
     }
@@ -347,99 +351,107 @@ fn interpret_principal_as_term(
     }
 
     let (first_opt, first_result) = interpret_dexpr(context, scope, &exprs[0]);
-    match first_opt {
-        None => {
-            let mut result = first_result;
-            // If a hole was added and there are more exprs, use right-context
-            if !result.holes.is_empty() && exprs.len() > 1 {
-                let (next_opt, next_result) =
-                    interpret_dexpr(&result.context, scope, &exprs[1]);
-                result = InterpResult::combine(result, next_result);
-                if let Some(Term::Diag(d_right)) = next_opt {
-                    let k = d_right.top_dim().saturating_sub(1);
-                    if let Ok(in_bd) = Diagram::boundary(DiagramSign::Source, k, &d_right) {
-                        if let Some(last_hole) = result.holes.last_mut() {
-                            let bd_out = render_diagram(&in_bd, scope);
-                            match &mut last_hole.boundary {
-                                Some(existing) => {
-                                    existing.boundary_out = bd_out;
-                                }
-                                None => {
-                                    last_hole.boundary = Some(HoleBoundaryInfo {
-                                        boundary_in: "?".into(),
-                                        boundary_out: bd_out,
-                                    });
-                                }
-                            }
-                        }
-                    }
+    let Some(first_term) = first_opt else {
+        return enrich_hole_with_right_context(first_result, scope, &exprs[1..]);
+    };
+
+    if exprs.len() == 1 {
+        return (Some(first_term), first_result);
+    }
+
+    // Multiple exprs: first must be a diagram
+    let Term::Diag(d_first) = first_term else {
+        let mut r = first_result;
+        r.add_error(make_error(exprs[0].span, "Not a diagram"));
+        return (None, r);
+    };
+
+    accumulate_paste(d_first, first_result, scope, &exprs[1..], span)
+}
+
+/// When the first expression in a principal diagram fails (typically a hole),
+/// peek at the next expression to fill in the hole's right boundary.
+fn enrich_hole_with_right_context(
+    mut result: InterpResult,
+    scope: &Complex,
+    rest: &[Spanned<DExpr>],
+) -> (Option<Term>, InterpResult) {
+    if result.holes.is_empty() || rest.is_empty() {
+        return (None, result);
+    }
+    let (next_opt, next_result) = interpret_dexpr(&result.context, scope, &rest[0]);
+    result = InterpResult::combine(result, next_result);
+    if let Some(Term::Diag(d_right)) = next_opt {
+        let k = d_right.top_dim().saturating_sub(1);
+        if let Ok(in_bd) = Diagram::boundary(DiagramSign::Source, k, &d_right) {
+            if let Some(last_hole) = result.holes.last_mut() {
+                let bd_out = render_diagram(&in_bd, scope);
+                match &mut last_hole.boundary {
+                    Some(existing) => existing.boundary_out = bd_out,
+                    None => last_hole.boundary = Some(HoleBoundaryInfo {
+                        boundary_in: "?".into(),
+                        boundary_out: bd_out,
+                    }),
                 }
             }
-            return (None, result);
-        }
-        Some(term) => {
-            if exprs.len() == 1 {
-                return (Some(term), first_result);
-            }
-
-            // Multiple exprs: must all be diagrams
-            let d_first = match term {
-                Term::Diag(d) => d,
-                Term::Map(_) => {
-                    let mut r = first_result;
-                    r.add_error(make_error(exprs[0].span, "Not a diagram"));
-                    return (None, r);
-                }
-            };
-
-            let mut acc = d_first;
-            let mut result = first_result;
-
-            for expr in &exprs[1..] {
-                let prev_hole_count = result.holes.len();
-                let (term_opt, expr_result) = interpret_dexpr(&result.context, scope, expr);
-                result = InterpResult::combine(result, expr_result);
-                match term_opt {
-                    None => {
-                        // If a hole was just added, enrich with left-context boundary
-                        if result.holes.len() > prev_hole_count {
-                            let k = acc.top_dim().saturating_sub(1);
-                            if let Ok(out_bd) = Diagram::boundary(DiagramSign::Target, k, &acc) {
-                                if let Some(last_hole) = result.holes.last_mut() {
-                                    last_hole.boundary = Some(HoleBoundaryInfo {
-                                        boundary_in: render_diagram(&out_bd, scope),
-                                        boundary_out: "?".into(),
-                                    });
-                                }
-                            }
-                        }
-                        return (None, result);
-                    }
-                    Some(Term::Map(_)) => {
-                        result.add_error(make_error(expr.span, "Not a diagram"));
-                        return (None, result);
-                    }
-                    Some(Term::Diag(d_right)) => {
-                        let k = acc.top_dim()
-                            .min(d_right.top_dim())
-                            .saturating_sub(1);
-                        match Diagram::paste(k, &acc, &d_right) {
-                            Ok(d) => acc = d,
-                            Err(e) => {
-                                result.add_error(make_error(
-                                    span,
-                                    format!("Failed to paste diagrams: {}", e),
-                                ));
-                                return (None, result);
-                            }
-                        }
-                    }
-                }
-            }
-
-            (Some(Term::Diag(acc)), result)
         }
     }
+    (None, result)
+}
+
+/// Paste a sequence of diagram expressions onto an accumulator, enriching
+/// any hole with the left boundary from the accumulator so far.
+fn accumulate_paste(
+    d_first: Diagram,
+    first_result: InterpResult,
+    scope: &Complex,
+    rest: &[Spanned<DExpr>],
+    outer_span: Span,
+) -> (Option<Term>, InterpResult) {
+    let mut acc = d_first;
+    let mut result = first_result;
+
+    for expr in rest {
+        let prev_hole_count = result.holes.len();
+        let (term_opt, expr_result) = interpret_dexpr(&result.context, scope, expr);
+        result = InterpResult::combine(result, expr_result);
+        match term_opt {
+            None => {
+                // Enrich any newly added hole with the left-context boundary
+                if result.holes.len() > prev_hole_count {
+                    let k = acc.top_dim().saturating_sub(1);
+                    if let Ok(out_bd) = Diagram::boundary(DiagramSign::Target, k, &acc) {
+                        if let Some(last_hole) = result.holes.last_mut() {
+                            last_hole.boundary = Some(HoleBoundaryInfo {
+                                boundary_in: render_diagram(&out_bd, scope),
+                                boundary_out: "?".into(),
+                            });
+                        }
+                    }
+                }
+                return (None, result);
+            }
+            Some(Term::Map(_)) => {
+                result.add_error(make_error(expr.span, "Not a diagram"));
+                return (None, result);
+            }
+            Some(Term::Diag(d_right)) => {
+                let k = acc.top_dim().min(d_right.top_dim()).saturating_sub(1);
+                match Diagram::paste(k, &acc, &d_right) {
+                    Ok(d) => acc = d,
+                    Err(e) => {
+                        result.add_error(make_error(
+                            outer_span,
+                            format!("Failed to paste diagrams: {}", e),
+                        ));
+                        return (None, result);
+                    }
+                }
+            }
+        }
+    }
+
+    (Some(Term::Diag(acc)), result)
 }
 
 // ---- Boundaries ----
@@ -504,6 +516,48 @@ pub fn interpret_let_diag(
         Some(diagram) => {
             let name = ld.name.inner.clone();
             (Some((name, diagram)), diag_result)
+        }
+    }
+}
+
+// ---- Assert checking ----
+
+/// Check that two evaluated terms are equal: diagrams up to isomorphism,
+/// maps pointwise on generators in the domain.
+pub fn check_assert(pair: &TermPair) -> Result<(), String> {
+    match pair {
+        TermPair::Diagrams { fst, snd } => {
+            if Diagram::isomorphic(fst, snd) {
+                Ok(())
+            } else {
+                Err("The diagrams are not equal".into())
+            }
+        }
+        TermPair::Maps { fst, snd, domain } => {
+            for (_, gen_name, tag) in sorted_generators(domain) {
+                let in_first = fst.is_defined_at(&tag);
+                let in_second = snd.is_defined_at(&tag);
+                if in_first && !in_second {
+                    return Err(format!(
+                        "`{}` is in the domain of the first map but not the second",
+                        gen_name
+                    ));
+                }
+                if in_second && !in_first {
+                    return Err(format!(
+                        "`{}` is in the domain of the second map but not the first",
+                        gen_name
+                    ));
+                }
+                if in_first {
+                    let img1 = fst.image(&tag).map_err(|e| e.to_string())?;
+                    let img2 = snd.image(&tag).map_err(|e| e.to_string())?;
+                    if !Diagram::isomorphic(img1, img2) {
+                        return Err(format!("The maps differ on `{}`", gen_name));
+                    }
+                }
+            }
+            Ok(())
         }
     }
 }
