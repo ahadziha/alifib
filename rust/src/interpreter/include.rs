@@ -231,7 +231,7 @@ pub fn interpret_include_instr(
     include_stmt: &ast::IncludeStmt,
     span: Span,
 ) -> (Option<Complex>, InterpResult) {
-    let (include_out, include_result) = interpret_include(context, include_stmt, span);
+    let (include_out, include_result) = resolve_include(context, include_stmt, span);
     let context_after = include_result.context.clone();
 
     let Some((id, name)) = include_out else {
@@ -263,7 +263,7 @@ pub fn interpret_attach_instr(
     attach_stmt: &ast::AttachStmt,
     span: Span,
 ) -> (Option<Complex>, InterpResult) {
-    let (attach_out, attach_result) = interpret_attach(context, scope, attach_stmt, span);
+    let (attach_out, attach_result) = resolve_attach(context, scope, attach_stmt, span);
     let context_after = attach_result.context.clone();
 
     let Some((name, map, domain)) = attach_out else {
@@ -308,7 +308,7 @@ pub fn interpret_attach_instr(
     (Some(current_scope), r)
 }
 
-fn interpret_include(
+fn resolve_include(
     context: &Context,
     include_stmt: &ast::IncludeStmt,
     span: Span,
@@ -355,7 +355,7 @@ fn interpret_include(
     }
 }
 
-fn interpret_attach(
+fn resolve_attach(
     context: &Context,
     scope: &Complex,
     attach_stmt: &ast::AttachStmt,

@@ -176,8 +176,8 @@ fn pp_block(f: &mut fmt::Formatter, block: &Block, d: usize) -> fmt::Result {
             write!(f, "LocalBlock ")?;
             pp_complex_header(f, &complex.inner)?;
             writeln!(f)?;
-            for inst in body {
-                pp_local_inst(f, &inst.inner, d + 1)?;
+            for instr in body {
+                pp_local_inst(f, &instr.inner, d + 1)?;
             }
         }
     }
@@ -204,15 +204,15 @@ fn pp_type_inst(f: &mut fmt::Formatter, inst: &TypeInst, d: usize) -> fmt::Resul
     }
 }
 
-fn pp_cinstr(f: &mut fmt::Formatter, instr: &CInstr, d: usize) -> fmt::Result {
+fn pp_complex_instr(f: &mut fmt::Formatter, instr: &ComplexInstr, d: usize) -> fmt::Result {
     match instr {
-        CInstr::NameWithBoundary(nwb) => {
+        ComplexInstr::NameWithBoundary(nwb) => {
             pad(f, d)?;
             writeln!(f, "{nwb}")
         }
-        CInstr::LetDiag(l) => pp_let_diag(f, l, d),
-        CInstr::DefPMap(p) => pp_def_pmap(f, p, d),
-        CInstr::AttachStmt(a) => {
+        ComplexInstr::LetDiag(l) => pp_let_diag(f, l, d),
+        ComplexInstr::DefPMap(p) => pp_def_pmap(f, p, d),
+        ComplexInstr::AttachStmt(a) => {
             pad(f, d)?;
             write!(f, "attach {} :: {}", a.name.inner, FmtAddress(&a.address.inner))?;
             if let Some(along) = &a.along {
@@ -220,7 +220,7 @@ fn pp_cinstr(f: &mut fmt::Formatter, instr: &CInstr, d: usize) -> fmt::Result {
             }
             writeln!(f)
         }
-        CInstr::IncludeStmt(inc) => {
+        ComplexInstr::IncludeStmt(inc) => {
             pad(f, d)?;
             write!(f, "include {}", FmtAddress(&inc.address.inner))?;
             if let Some(a) = &inc.alias {
@@ -294,7 +294,7 @@ fn pp_complex_tree(f: &mut fmt::Formatter, c: &Complex, d: usize) -> fmt::Result
                 writeln!(f, "{{")?;
             }
             for instr in body {
-                pp_cinstr(f, &instr.inner, d + 1)?;
+                pp_complex_instr(f, &instr.inner, d + 1)?;
             }
             pad(f, d)?;
             writeln!(f, "}}")

@@ -39,16 +39,6 @@ fn add_hole_result(context: &Context, span: Span) -> (Option<Term>, InterpResult
     (None, result)
 }
 
-fn reject_non_diagram_term(
-    context: &Context,
-    span: Span,
-    message: &str,
-) -> (Option<Diagram>, InterpResult) {
-    let mut result = InterpResult::ok(context.clone());
-    result.add_error(make_error(span, message));
-    (None, result)
-}
-
 fn boundary_term_from_diagram(
     diagram: &Diagram,
     sign: DiagramSign,
@@ -57,7 +47,7 @@ fn boundary_term_from_diagram(
 ) -> (Option<Term>, InterpResult) {
     let boundary_dim = (diagram.dim().max(0) as usize).saturating_sub(1);
     match Diagram::boundary(sign, boundary_dim, diagram) {
-        Ok(boundary) => (Some(Term::DTerm(boundary)), result),
+        Ok(boundary) => (Some(Term::Diag(boundary)), result),
         Err(error) => {
             let mut result = result;
             result.add_error(make_error(span, error.to_string()));
@@ -67,7 +57,7 @@ fn boundary_term_from_diagram(
 }
 
 fn apply_map_component(
-    map_component: &MapComponent,
+    eval_map: &EvalMap,
     component: Component,
     span: Span,
     result: InterpResult,
@@ -87,20 +77,20 @@ fn apply_map_component(
             result.add_error(make_error(span, "Not a diagram or map"));
             (None, result)
         }
-        Component::Term(Term::DTerm(diagram)) => match PMap::apply(&map_component.map, &diagram) {
-            Ok(image_diagram) => (Some(Term::DTerm(image_diagram)), result),
+        Component::Value(Term::Diag(diagram)) => match PMap::apply(&eval_map.map, &diagram) {
+            Ok(image_diagram) => (Some(Term::Diag(image_diagram)), result),
             Err(error) => {
                 let mut result = result;
                 result.add_error(make_error(span, error.to_string()));
                 (None, result)
             }
         },
-        Component::Term(Term::MTerm(component_map)) => {
-            let composed = PMap::compose(&map_component.map, &component_map.map);
+        Component::Value(Term::Map(inner_map)) => {
+            let composed = PMap::compose(&eval_map.map, &inner_map.map);
             (
-                Some(Term::MTerm(MapComponent {
+                Some(Term::Map(EvalMap {
                     map: composed,
-                    domain: component_map.domain,
+                    domain: inner_map.domain,
                 })),
                 result,
             )
@@ -132,19 +122,19 @@ fn interpret_principal(
     span: Span,
 ) -> (Option<Diagram>, InterpResult) {
     if exprs.is_empty() {
-        return reject_non_diagram_term(context, span, "Empty diagram expression");
+        return fail(context, span, "Empty diagram expression");
     }
 
     // Interpret first expression
     let (first_opt, first_result) = interpret_d_expr(context, scope, &exprs[0]);
     match first_opt {
         None => return (None, first_result),
-        Some(Term::MTerm(_)) => {
+        Some(Term::Map(_)) => {
             let mut result = first_result;
             result.add_error(make_error(exprs[0].span, "Not a diagram"));
             return (None, result);
         }
-        Some(Term::DTerm(d_first)) => {
+        Some(Term::Diag(d_first)) => {
             if exprs.len() == 1 {
                 return (Some(d_first), first_result);
             }
@@ -158,11 +148,11 @@ fn interpret_principal(
                 result = InterpResult::combine(result, expr_result);
                 match term_opt {
                     None => return (None, result),
-                    Some(Term::MTerm(_)) => {
+                    Some(Term::Map(_)) => {
                         result.add_error(make_error(expr.span, "Not a diagram"));
                         return (None, result);
                     }
-                    Some(Term::DTerm(d_right)) => {
+                    Some(Term::Diag(d_right)) => {
                         let k = (acc.dim().max(0) as usize)
                             .min(d_right.dim().max(0) as usize)
                             .saturating_sub(1);
@@ -230,14 +220,14 @@ pub fn interpret_d_expr(
                     r.add_error(make_error(d_expr.span, "Not a diagram or map"));
                     (None, r)
                 }
-                Some(Component::Term(t)) => (Some(t), result),
+                Some(Component::Value(t)) => (Some(t), result),
             }
         }
         DExpr::Dot { base, field } => {
             let (left_opt, left_result) = interpret_d_expr(context, scope, base);
             match left_opt {
                 None => (None, left_result),
-                Some(Term::DTerm(diagram)) => {
+                Some(Term::Diag(diagram)) => {
                     let (comp_opt, comp_result) =
                         interpret_d_comp(&left_result.context, scope, &field.inner, field.span);
                     let combined = InterpResult::combine(left_result, comp_result);
@@ -247,7 +237,7 @@ pub fn interpret_d_expr(
                             boundary_term_from_diagram(&diagram, sign, field.span, combined)
                         }
                         Some(Component::Hole) => add_hole_result(&combined.context, field.span),
-                        Some(Component::Term(_)) => {
+                        Some(Component::Value(_)) => {
                             let mut r = combined;
                             r.add_error(make_error(
                                 field.span,
@@ -257,17 +247,17 @@ pub fn interpret_d_expr(
                         }
                     }
                 }
-                Some(Term::MTerm(mc)) => {
+                Some(Term::Map(eval_map)) => {
                     let (comp_opt, comp_result) = interpret_d_comp(
                         &left_result.context,
-                        &*mc.domain,
+                        &*eval_map.domain,
                         &field.inner,
                         field.span,
                     );
                     let combined = InterpResult::combine(left_result, comp_result);
                     match comp_opt {
                         None => (None, combined),
-                        Some(component) => apply_map_component(&mc, component, field.span, combined),
+                        Some(component) => apply_map_component(&eval_map, component, field.span, combined),
                     }
                 }
             }
@@ -287,7 +277,7 @@ pub fn interpret_d_comp(
                 let base_result = InterpResult::ok(context.clone());
                 if let Some(diagram) = scope.find_diagram(name) {
                     return (
-                        Some(Component::Term(Term::DTerm(diagram.clone()))),
+                        Some(Component::Value(Term::Diag(diagram.clone()))),
                         base_result,
                     );
                 }
@@ -299,7 +289,7 @@ pub fn interpret_d_comp(
                         Some(domain) => domain,
                     };
                     return (
-                        Some(Component::Term(Term::MTerm(MapComponent {
+                        Some(Component::Value(Term::Map(EvalMap {
                             map: entry.map.clone(),
                             domain: domain_complex,
                         }))),
@@ -315,7 +305,7 @@ pub fn interpret_d_comp(
                     super::pmap::interpret_anon_map_component(context, scope, target, def);
                 match mc_opt {
                     None => (None, result),
-                    Some(mc) => (Some(Component::Term(Term::MTerm(mc))), result),
+                    Some(mc) => (Some(Component::Value(Term::Map(mc))), result),
                 }
             }
             PMapBasic::Paren(inner_pmap) => {
@@ -323,7 +313,7 @@ pub fn interpret_d_comp(
                     super::pmap::interpret_pmap(context, scope, scope, inner_pmap);
                 match mc_opt {
                     None => (None, result),
-                    Some(mc) => (Some(Component::Term(Term::MTerm(mc))), result),
+                    Some(mc) => (Some(Component::Value(Term::Map(mc))), result),
                 }
             }
         },
@@ -339,7 +329,7 @@ pub fn interpret_d_comp(
             let (d_opt, result) = interpret_diagram(context, scope, inner_diag);
             match d_opt {
                 None => (None, result),
-                Some(d) => (Some(Component::Term(Term::DTerm(d))), result),
+                Some(d) => (Some(Component::Value(Term::Diag(d))), result),
             }
         }
         DComponent::Hole => (Some(Component::Hole), InterpResult::ok(context.clone())),
@@ -363,11 +353,11 @@ pub fn interpret_assert(
             match right_opt {
                 None => (None, combined),
                 Some(right_term) => match (left_term, right_term) {
-                    (Term::DTerm(d1), Term::DTerm(d2)) => {
-                        (Some(TermPair::DTermPair { fst: d1, snd: d2 }), combined)
+                    (Term::Diag(d1), Term::Diag(d2)) => {
+                        (Some(TermPair::Diagrams { fst: d1, snd: d2 }), combined)
                     }
-                    (Term::MTerm(mc1), Term::MTerm(mc2)) => (
-                        Some(TermPair::MTermPair {
+                    (Term::Map(mc1), Term::Map(mc2)) => (
+                        Some(TermPair::Maps {
                             fst: mc1.map,
                             snd: mc2.map,
                             domain: mc1.domain,
@@ -406,24 +396,24 @@ pub fn interpret_diagram_as_term(
                 interpret_principal_as_term(context, scope, rhs, diagram.span);
             match right_opt {
                 None => (None, right_result),
-                Some(Term::MTerm(_)) => {
+                Some(Term::Map(_)) => {
                     let mut r = right_result;
                     r.add_error(make_error(diagram.span, "Not a diagram"));
                     (None, r)
                 }
-                Some(Term::DTerm(d_right)) => {
+                Some(Term::Diag(d_right)) => {
                     let (left_opt, left_result) =
                         interpret_diagram_as_term(&right_result.context, scope, lhs);
                     let combined = InterpResult::combine(right_result, left_result);
                     match left_opt {
                         None => (None, combined),
-                        Some(Term::MTerm(_)) => {
+                        Some(Term::Map(_)) => {
                             let mut r = combined;
                             r.add_error(make_error(diagram.span, "Not a diagram"));
                             (None, r)
                         }
-                        Some(Term::DTerm(d_left)) => match Diagram::paste(k, &d_left, &d_right) {
-                            Ok(d) => (Some(Term::DTerm(d)), combined),
+                        Some(Term::Diag(d_left)) => match Diagram::paste(k, &d_left, &d_right) {
+                            Ok(d) => (Some(Term::Diag(d)), combined),
                             Err(e) => {
                                 let mut r = combined;
                                 r.add_error(make_error(
@@ -447,9 +437,7 @@ fn interpret_principal_as_term(
     span: Span,
 ) -> (Option<Term>, InterpResult) {
     if exprs.is_empty() {
-        let mut r = InterpResult::ok(context.clone());
-        r.add_error(make_error(span, "Empty diagram expression"));
-        return (None, r);
+        return fail(context, span, "Empty diagram expression");
     }
 
     let (first_opt, first_result) = interpret_d_expr(context, scope, &exprs[0]);
@@ -461,7 +449,7 @@ fn interpret_principal_as_term(
                 let (next_opt, next_result) =
                     interpret_d_expr(&result.context, scope, &exprs[1]);
                 result = InterpResult::combine(result, next_result);
-                if let Some(Term::DTerm(d_right)) = next_opt {
+                if let Some(Term::Diag(d_right)) = next_opt {
                     let k = (d_right.dim().max(0) as usize).saturating_sub(1);
                     if let Ok(in_bd) = Diagram::boundary(DiagramSign::Source, k, &d_right) {
                         if let Some(last_hole) = result.holes.last_mut() {
@@ -490,8 +478,8 @@ fn interpret_principal_as_term(
 
             // Multiple exprs: must all be diagrams
             let d_first = match term {
-                Term::DTerm(d) => d,
-                Term::MTerm(_) => {
+                Term::Diag(d) => d,
+                Term::Map(_) => {
                     let mut r = first_result;
                     r.add_error(make_error(exprs[0].span, "Not a diagram"));
                     return (None, r);
@@ -521,11 +509,11 @@ fn interpret_principal_as_term(
                         }
                         return (None, result);
                     }
-                    Some(Term::MTerm(_)) => {
+                    Some(Term::Map(_)) => {
                         result.add_error(make_error(expr.span, "Not a diagram"));
                         return (None, result);
                     }
-                    Some(Term::DTerm(d_right)) => {
+                    Some(Term::Diag(d_right)) => {
                         let k = (acc.dim().max(0) as usize)
                             .min(d_right.dim().max(0) as usize)
                             .saturating_sub(1);
@@ -543,7 +531,7 @@ fn interpret_principal_as_term(
                 }
             }
 
-            (Some(Term::DTerm(acc)), result)
+            (Some(Term::Diag(acc)), result)
         }
     }
 }

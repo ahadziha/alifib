@@ -4,9 +4,9 @@ use chumsky::recursive::Recursive;
 use chumsky::span::SimpleSpan;
 
 use super::ast::{
-    Address, AssertStmt, AttachStmt, Block, Boundary, CInstr, Complex, DComponent, DExpr, DefPMap,
-    Diagram, Generator, IncludeModule, IncludeStmt, LetDiag, LocalInst, NameWithBoundary, PMap,
-    PMapBasic, PMapClause, PMapDef, PMapExt, Program, Span, Spanned, TypeInst,
+    Address, AssertStmt, AttachStmt, Block, Boundary, ComplexInstr, Complex, DComponent, DExpr,
+    DefPMap, Diagram, Generator, IncludeModule, IncludeStmt, LetDiag, LocalInst, NameWithBoundary,
+    PMap, PMapBasic, PMapClause, PMapDef, PMapExt, Program, Span, Spanned, TypeInst,
 };
 use super::token::Token;
 
@@ -66,6 +66,56 @@ fn t<'tokens, 'src: 'tokens>(
 // ---------------------------------------------------------------------------
 // Address = Name { "." Name }
 // ---------------------------------------------------------------------------
+
+fn build_boundary<'tokens, 'src: 'tokens>(
+    diagram: RDiagram<'tokens, 'src>,
+) -> impl Parser<'tokens, TokenInput<'tokens, 'src>, Spanned<Boundary>, E<'tokens, 'src>> + Clone + 'tokens
+{
+    diagram
+        .clone()
+        .then_ignore(t(Token::Arrow))
+        .then(diagram)
+        .map_with(|(source, target), e| sp(Boundary { source, target }, cspan(e.span())))
+}
+
+fn build_name_with_boundary<'tokens, 'src: 'tokens>(
+    diagram: RDiagram<'tokens, 'src>,
+) -> impl Parser<'tokens, TokenInput<'tokens, 'src>, Spanned<NameWithBoundary>, E<'tokens, 'src>>
+       + Clone
+       + 'tokens {
+    name()
+        .then(t(Token::Colon).ignore_then(build_boundary(diagram)).or_not())
+        .map_with(|(name, boundary), e| sp(NameWithBoundary { name, boundary }, cspan(e.span())))
+}
+
+fn build_let_or_def<'tokens, 'src: 'tokens, T: 'tokens>(
+    diagram: RDiagram<'tokens, 'src>,
+    pmap_def: RPMapDef<'tokens, 'src>,
+    make_let_diag: impl Fn(LetDiag) -> T + Clone + 'tokens,
+    make_def_pmap: impl Fn(DefPMap) -> T + Clone + 'tokens,
+) -> impl Parser<'tokens, TokenInput<'tokens, 'src>, Spanned<T>, E<'tokens, 'src>> + Clone + 'tokens
+{
+    t(Token::Let)
+        .ignore_then(t(Token::Total).or_not())
+        .then(name())
+        .then(choice((
+            t(Token::DColon)
+                .ignore_then(address())
+                .then_ignore(t(Token::Eq))
+                .then(pmap_def)
+                .map(|(a, v)| LetOrDef::Def(a, v)),
+            t(Token::Eq).ignore_then(diagram).map(LetOrDef::Let),
+        )))
+        .map_with(move |((is_total, name), lod), e| match lod {
+            LetOrDef::Let(value) => {
+                sp(make_let_diag(LetDiag { name, value }), cspan(e.span()))
+            }
+            LetOrDef::Def(address, value) => sp(
+                make_def_pmap(DefPMap { total: is_total.is_some(), name, address, value }),
+                cspan(e.span()),
+            ),
+        })
+}
 
 fn address<'tokens, 'src: 'tokens>()
 -> impl Parser<'tokens, TokenInput<'tokens, 'src>, Spanned<Address>, E<'tokens, 'src>> + Clone {
@@ -140,38 +190,15 @@ fn build_pmap_def<'tokens, 'src: 'tokens>(
     })
 }
 
-/// Build Complex parser: `Address? { CInstr, ... }` | `Address`
+/// Build Complex parser: `Address? { ComplexInstr, ... }` | `Address`
 fn build_complex<'tokens, 'src: 'tokens>(
     diagram: RDiagram<'tokens, 'src>,
     pmap_def: RPMapDef<'tokens, 'src>,
 ) -> RComplex<'tokens, 'src> {
     recursive(move |_| {
-        let let_or_def = t(Token::Let)
-            .ignore_then(t(Token::Total).or_not())
-            .then(name())
-            .then(choice((
-                t(Token::DColon)
-                    .ignore_then(address())
-                    .then_ignore(t(Token::Eq))
-                    .then(pmap_def.clone())
-                    .map(|(a, v)| LetOrDef::Def(a, v)),
-                t(Token::Eq).ignore_then(diagram.clone()).map(LetOrDef::Let),
-            )))
-            .map_with(|((is_total, name), let_or_def), event| match let_or_def {
-                LetOrDef::Let(value) => sp(
-                    CInstr::LetDiag(LetDiag { name, value }),
-                    cspan(event.span()),
-                ),
-                LetOrDef::Def(address, value) => sp(
-                    CInstr::DefPMap(DefPMap {
-                        total: is_total.is_some(),
-                        name,
-                        address,
-                        value,
-                    }),
-                    cspan(event.span()),
-                ),
-            });
+        let let_or_def = build_let_or_def(
+            diagram.clone(), pmap_def.clone(), ComplexInstr::LetDiag, ComplexInstr::DefPMap,
+        );
 
         let attach_stmt = t(Token::Attach)
             .ignore_then(name())
@@ -179,38 +206,18 @@ fn build_complex<'tokens, 'src: 'tokens>(
             .then(address())
             .then(t(Token::Along).ignore_then(pmap_def.clone()).or_not())
             .map_with(|((name, address), along), event| {
-                sp(
-                    CInstr::AttachStmt(AttachStmt {
-                        name,
-                        address,
-                        along,
-                    }),
-                    cspan(event.span()),
-                )
+                sp(ComplexInstr::AttachStmt(AttachStmt { name, address, along }), cspan(event.span()))
             });
 
         let include_stmt = t(Token::Include)
             .ignore_then(address())
             .then(t(Token::As).ignore_then(name()).or_not())
             .map_with(|(address, alias), event| {
-                sp(
-                    CInstr::IncludeStmt(IncludeStmt { address, alias }),
-                    cspan(event.span()),
-                )
+                sp(ComplexInstr::IncludeStmt(IncludeStmt { address, alias }), cspan(event.span()))
             });
 
-        let boundary = diagram
-            .clone()
-            .then_ignore(t(Token::Arrow))
-            .then(diagram.clone())
-            .map_with(|(source, target), e| sp(Boundary { source, target }, cspan(e.span())));
-
-        let nwb = name()
-            .then(t(Token::Colon).ignore_then(boundary).or_not())
-            .map_with(|(name, boundary), e| {
-                sp(NameWithBoundary { name, boundary }, cspan(e.span()))
-            })
-            .map(|s| sp(CInstr::NameWithBoundary(s.inner), s.span));
+        let nwb = build_name_with_boundary(diagram.clone())
+            .map(|s| sp(ComplexInstr::NameWithBoundary(s.inner), s.span));
 
         let cinstr = choice((attach_stmt, include_stmt, let_or_def, nwb));
 
@@ -390,16 +397,7 @@ pub fn program_parser<'tokens, 'src: 'tokens>()
     let pmap_def = build_pmap_def(diagram.clone(), pmap.clone());
     let complex = build_complex(diagram.clone(), pmap_def.clone());
 
-    // --- Boundary & NameWithBoundary ---
-    let boundary = diagram
-        .clone()
-        .then_ignore(t(Token::Arrow))
-        .then(diagram.clone())
-        .map_with(|(source, target), e| sp(Boundary { source, target }, cspan(e.span())));
-
-    let name_with_boundary = name()
-        .then(t(Token::Colon).ignore_then(boundary).or_not())
-        .map_with(|(name, boundary), e| sp(NameWithBoundary { name, boundary }, cspan(e.span())));
+    let name_with_boundary = build_name_with_boundary(diagram.clone());
 
     // --- Local instructions ---
     let assert_stmt = t(Token::Assert)
@@ -407,38 +405,11 @@ pub fn program_parser<'tokens, 'src: 'tokens>()
         .then_ignore(t(Token::Eq))
         .then(diagram.clone())
         .map_with(|(lhs, rhs), e| {
-            sp(
-                LocalInst::AssertStmt(AssertStmt { lhs, rhs }),
-                cspan(e.span()),
-            )
+            sp(LocalInst::AssertStmt(AssertStmt { lhs, rhs }), cspan(e.span()))
         });
 
-    let let_or_def_local = t(Token::Let)
-        .ignore_then(t(Token::Total).or_not())
-        .then(name())
-        .then(choice((
-            t(Token::DColon)
-                .ignore_then(address())
-                .then_ignore(t(Token::Eq))
-                .then(pmap_def.clone())
-                .map(|(a, v)| LetOrDef::Def(a, v)),
-            t(Token::Eq).ignore_then(diagram.clone()).map(LetOrDef::Let),
-        )))
-        .map_with(|((tot, n), lod), e| match lod {
-            LetOrDef::Let(v) => sp(
-                LocalInst::LetDiag(LetDiag { name: n, value: v }),
-                cspan(e.span()),
-            ),
-            LetOrDef::Def(a, v) => sp(
-                LocalInst::DefPMap(DefPMap {
-                    total: tot.is_some(),
-                    name: n,
-                    address: a,
-                    value: v,
-                }),
-                cspan(e.span()),
-            ),
-        });
+    let let_or_def_local =
+        build_let_or_def(diagram.clone(), pmap_def.clone(), LocalInst::LetDiag, LocalInst::DefPMap);
 
     let local_inst = choice((assert_stmt, let_or_def_local));
 
@@ -447,48 +418,18 @@ pub fn program_parser<'tokens, 'src: 'tokens>()
         .then_ignore(t(Token::LArrow))
         .then(complex.clone())
         .map_with(|(name, complex), e| {
-            sp(
-                TypeInst::Generator(Generator { name, complex }),
-                cspan(e.span()),
-            )
+            sp(TypeInst::Generator(Generator { name, complex }), cspan(e.span()))
         });
 
     let include_module = t(Token::Include)
         .ignore_then(name())
         .then(t(Token::As).ignore_then(name()).or_not())
         .map_with(|(name, alias), e| {
-            sp(
-                TypeInst::IncludeModule(IncludeModule { name, alias }),
-                cspan(e.span()),
-            )
+            sp(TypeInst::IncludeModule(IncludeModule { name, alias }), cspan(e.span()))
         });
 
-    let let_or_def_type = t(Token::Let)
-        .ignore_then(t(Token::Total).or_not())
-        .then(name())
-        .then(choice((
-            t(Token::DColon)
-                .ignore_then(address())
-                .then_ignore(t(Token::Eq))
-                .then(pmap_def)
-                .map(|(a, v)| LetOrDef::Def(a, v)),
-            t(Token::Eq).ignore_then(diagram.clone()).map(LetOrDef::Let),
-        )))
-        .map_with(|((tot, n), lod), e| match lod {
-            LetOrDef::Let(v) => sp(
-                TypeInst::LetDiag(LetDiag { name: n, value: v }),
-                cspan(e.span()),
-            ),
-            LetOrDef::Def(a, v) => sp(
-                TypeInst::DefPMap(DefPMap {
-                    total: tot.is_some(),
-                    name: n,
-                    address: a,
-                    value: v,
-                }),
-                cspan(e.span()),
-            ),
-        });
+    let let_or_def_type =
+        build_let_or_def(diagram.clone(), pmap_def, TypeInst::LetDiag, TypeInst::DefPMap);
 
     let type_inst = choice((generator, include_module, let_or_def_type));
 

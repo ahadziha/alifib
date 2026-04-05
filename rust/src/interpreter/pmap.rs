@@ -200,7 +200,7 @@ pub fn interpret_anon_map_component(
     domain: &Complex,
     target: &Spanned<ast::Complex>,
     def: &Spanned<PMapDef>,
-) -> Step<MapComponent> {
+) -> Step<EvalMap> {
     let (ns_opt, target_result) =
         super::interpreter::interpret_complex(context, super::types::Mode::Global, target);
     match ns_opt {
@@ -220,7 +220,7 @@ pub fn interpret_pmap(
     scope: &Complex,
     domain: &Complex,
     pmap: &Spanned<ast::PMap>,
-) -> Step<MapComponent> {
+) -> Step<EvalMap> {
     interpret_pmap_inner(context, scope, domain, &pmap.inner, pmap.span)
 }
 
@@ -230,25 +230,25 @@ fn interpret_pmap_inner(
     domain: &Complex,
     pmap: &ast::PMap,
     span: Span,
-) -> Step<MapComponent> {
+) -> Step<EvalMap> {
     match pmap {
         ast::PMap::Basic(basic) => interpret_pmap_basic(context, scope, domain, basic, span),
         ast::PMap::Dot { base, rest } => {
             let (base_opt, base_result) = interpret_pmap_basic(context, scope, domain, base, span);
             match base_opt {
                 None => (None, base_result),
-                Some(base_comp) => {
+                Some(base_map) => {
                     let (rest_opt, rest_result) =
-                        interpret_pmap(&base_result.context, &*base_comp.domain, domain, rest);
+                        interpret_pmap(&base_result.context, &*base_map.domain, domain, rest);
                     let combined = InterpResult::combine(base_result, rest_result);
                     match rest_opt {
                         None => (None, combined),
-                        Some(rest_comp) => {
-                            let composed = PMap::compose(&base_comp.map, &rest_comp.map);
+                        Some(rest_map) => {
+                            let composed = PMap::compose(&base_map.map, &rest_map.map);
                             (
-                                Some(MapComponent {
+                                Some(EvalMap {
                                     map: composed,
-                                    domain: rest_comp.domain,
+                                    domain: rest_map.domain,
                                 }),
                                 combined,
                             )
@@ -266,7 +266,7 @@ fn interpret_pmap_basic(
     domain: &Complex,
     basic: &PMapBasic,
     span: Span,
-) -> Step<MapComponent> {
+) -> Step<EvalMap> {
     match basic {
         PMapBasic::Name(name) => {
             let base_result = InterpResult::ok(context.clone());
@@ -280,7 +280,7 @@ fn interpret_pmap_basic(
                         Some(domain) => domain,
                     };
                     (
-                        Some(MapComponent {
+                        Some(EvalMap {
                             map: entry.map.clone(),
                             domain: domain_arc,
                         }),
@@ -303,7 +303,7 @@ pub fn interpret_pmap_def(
     scope: &Complex,
     domain: &Complex,
     pmap_def: &Spanned<PMapDef>,
-) -> Step<MapComponent> {
+) -> Step<EvalMap> {
     match &pmap_def.inner {
         PMapDef::PMap(pmap) => interpret_pmap_inner(context, scope, domain, pmap, pmap_def.span),
         PMapDef::Ext(ext) => interpret_pmap_ext(context, scope, domain, ext, pmap_def.span),
@@ -315,12 +315,12 @@ fn initial_map_component(
     scope: &Complex,
     domain: &Complex,
     prefix: &Option<Box<Spanned<ast::PMap>>>,
-) -> Step<MapComponent> {
+) -> Step<EvalMap> {
     match prefix {
         None => {
             let map = PMap::empty().unwrap();
             (
-                Some(MapComponent {
+                Some(EvalMap {
                     map,
                     domain: Arc::new(domain.clone()),
                 }),
@@ -331,8 +331,8 @@ fn initial_map_component(
     }
 }
 
-fn finish_map_component(map: PMap, domain: Arc<Complex>, result: InterpResult) -> Step<MapComponent> {
-    (Some(MapComponent { map, domain }), result)
+fn finish_eval_map(map: PMap, domain: Arc<Complex>, result: InterpResult) -> Step<EvalMap> {
+    (Some(EvalMap { map, domain }), result)
 }
 
 fn apply_pmap_clauses(
@@ -347,7 +347,7 @@ fn apply_pmap_clauses(
 
     for clause in clauses {
         let (next_map, clause_result) =
-            interpret_pm_clause(&result.context, scope, domain, map, clause);
+            interpret_pmap_clause(&result.context, scope, domain, map, clause);
         result = InterpResult::combine(result, clause_result);
         let Some(updated_map) = next_map else {
             return (None, result);
@@ -367,18 +367,18 @@ fn interpret_pmap_ext(
     domain: &Complex,
     ext: &PMapExt,
     _span: Span,
-) -> Step<MapComponent> {
-    let (initial_component, prefix_result) = initial_map_component(context, scope, domain, &ext.prefix);
-    let Some(initial_component) = initial_component else {
+) -> Step<EvalMap> {
+    let (initial_opt, prefix_result) = initial_map_component(context, scope, domain, &ext.prefix);
+    let Some(initial) = initial_opt else {
         return (None, prefix_result);
     };
 
-    let effective_domain = Arc::clone(&initial_component.domain);
+    let effective_domain = Arc::clone(&initial.domain);
     let (map_opt, clause_result) = apply_pmap_clauses(
         &prefix_result.context,
         scope,
         &effective_domain,
-        initial_component.map,
+        initial.map,
         &ext.clauses,
     );
     let Some(current_map) = map_opt else {
@@ -387,11 +387,11 @@ fn interpret_pmap_ext(
 
     let mut result = InterpResult::combine(prefix_result, clause_result);
     finalize_hole_boundaries(&mut result, scope, &effective_domain, &current_map);
-    finish_map_component(current_map, effective_domain, result)
+    finish_eval_map(current_map, effective_domain, result)
 }
 
 fn mark_last_hole_source_tag(result: &mut InterpResult, source_term: &Term) {
-    let Term::DTerm(source_diagram) = source_term else {
+    let Term::Diag(source_diagram) = source_term else {
         return;
     };
     if !source_diagram.is_cell() {
@@ -407,7 +407,7 @@ fn mark_last_hole_source_tag(result: &mut InterpResult, source_term: &Term) {
     }
 }
 
-fn interpret_pm_clause(
+fn interpret_pmap_clause(
     context: &Context,
     scope: &Complex,
     domain: &Complex,
@@ -459,8 +459,8 @@ fn extend_matching_map_images(
     map: PMap,
     domain: &Complex,
     target: &Complex,
-    left_map: &MapComponent,
-    right_map: &MapComponent,
+    left_map: &EvalMap,
+    right_map: &EvalMap,
     span: Span,
 ) -> Result<PMap, aux::Error> {
     let map_domain = &*left_map.domain;
@@ -513,10 +513,10 @@ fn interpret_assign(
     span: Span,
 ) -> Result<PMap, aux::Error> {
     match (left, right) {
-        (Term::DTerm(d_left), Term::DTerm(d_right)) => {
+        (Term::Diag(d_left), Term::Diag(d_right)) => {
             smart_extend(context, map, domain, target, d_left, d_right, span)
         }
-        (Term::MTerm(mc_left), Term::MTerm(mc_right)) => {
+        (Term::Map(mc_left), Term::Map(mc_right)) => {
             if !Arc::ptr_eq(&mc_left.domain, &mc_right.domain) {
                 return Err(aux::Error::new("Not a well-formed assignment"));
             }
@@ -811,14 +811,14 @@ pub fn check_assert(
     pair: &TermPair,
 ) -> Result<(), String> {
     match pair {
-        TermPair::DTermPair { fst, snd } => {
+        TermPair::Diagrams { fst, snd } => {
             if Diagram::isomorphic(fst, snd) {
                 Ok(())
             } else {
                 Err("The diagrams are not equal".into())
             }
         }
-        TermPair::MTermPair { fst, snd, domain } => {
+        TermPair::Maps { fst, snd, domain } => {
             for (_, gen_name, tag) in sorted_generators(domain) {
                 let in_first = fst.is_defined_at(&tag);
                 let in_second = snd.is_defined_at(&tag);

@@ -16,7 +16,7 @@ use interpreter::{Context, interpret_program};
 const USAGE: &str = "Usage: alifib <input-file> [-o|--output <output-file>] [--ast] [--bench N]";
 
 #[derive(Clone, Copy)]
-enum Mode {
+enum RunMode {
     Interpret,
     Ast,
 }
@@ -24,7 +24,7 @@ enum Mode {
 struct Args {
     input: String,
     output: Option<String>,
-    mode: Mode,
+    mode: RunMode,
     bench: Option<usize>,
 }
 
@@ -32,7 +32,7 @@ fn parse_args() -> Result<Args, String> {
     let cli_args: Vec<String> = std::env::args().skip(1).collect();
     let mut input = None;
     let mut output = None;
-    let mut mode = Mode::Interpret;
+    let mut mode = RunMode::Interpret;
     let mut bench = None;
 
     let mut arg_iter = cli_args.iter();
@@ -50,7 +50,7 @@ fn parse_args() -> Result<Args, String> {
                 println!("{}", USAGE);
                 process::exit(0);
             }
-            "--ast" => mode = Mode::Ast,
+            "--ast" => mode = RunMode::Ast,
             "--bench" => {
                 let run_count_str = arg_iter
                     .next()
@@ -207,8 +207,8 @@ fn run(args: Args) -> bool {
     }
 
     match args.mode {
-        Mode::Ast => run_ast(&args.input, args.output.as_deref()),
-        Mode::Interpret => run_interpreter(&args.input, args.output.as_deref()),
+        RunMode::Ast => run_ast(&args.input, args.output.as_deref()),
+        RunMode::Interpret => run_interpreter(&args.input, args.output.as_deref()),
     }
 }
 

@@ -57,7 +57,7 @@ pub enum Complex {
     Address(Address),
     Block {
         address: Option<Address>,
-        body: Vec<Spanned<CInstr>>,
+        body: Vec<Spanned<ComplexInstr>>,
     },
 }
 
@@ -65,7 +65,7 @@ pub enum Complex {
 // Complex instructions
 // ---------------------------------------------------------------------------
 
-pub enum CInstr {
+pub enum ComplexInstr {
     NameWithBoundary(NameWithBoundary),
     LetDiag(LetDiag),
     DefPMap(DefPMap),

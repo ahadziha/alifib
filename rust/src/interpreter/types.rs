@@ -125,33 +125,34 @@ pub struct TypeScope {
 
 // ---- Term types ----
 
+/// A partial map together with its domain complex, the result of evaluating a map expression.
 #[derive(Debug, Clone)]
-pub struct MapComponent {
+pub struct EvalMap {
     pub map: PMap,
     pub domain: Arc<Complex>,
 }
 
 #[derive(Debug, Clone)]
 pub enum Term {
-    MTerm(MapComponent),
-    DTerm(Diagram),
+    Map(EvalMap),
+    Diag(Diagram),
 }
 
 #[derive(Debug, Clone)]
 pub enum Component {
-    Term(Term),
+    Value(Term),
     Hole,
     Bd(DiagramSign),
 }
 
 #[derive(Debug, Clone)]
 pub enum TermPair {
-    MTermPair {
+    Maps {
         fst: PMap,
         snd: PMap,
         domain: Arc<Complex>,
     },
-    DTermPair {
+    Diagrams {
         fst: Diagram,
         snd: Diagram,
     },

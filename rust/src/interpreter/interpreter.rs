@@ -7,7 +7,7 @@ use crate::core::{
     diagram::CellData,
 };
 use crate::language::ast::{
-    self, Block, CInstr, LocalInst, NameWithBoundary, Program, Span, Spanned, TypeInst,
+    self, Block, ComplexInstr, LocalInst, NameWithBoundary, Program, Span, Spanned, TypeInst,
 };
 use std::sync::Arc;
 
@@ -17,7 +17,7 @@ use super::include::{
 };
 use super::pmap::{check_assert, interpret_def_pmap};
 use super::scope::{
-    boundary_dim, create_generator_diagram, current_module_scope, initialize_module_context,
+    cell_dim, create_generator_diagram, current_module_scope, initialize_module_context,
     insert_complex_diagram_binding, insert_complex_map_binding, insert_module_diagram_binding,
     insert_module_map_binding, insert_type_diagram_binding, insert_type_map_binding,
     interpret_generator_boundaries, interpret_items, interpret_items_in_complex_scope,
@@ -54,7 +54,7 @@ fn interpret_block(
 ) -> InterpResult {
     match &block.inner {
         Block::TypeBlock(body) => interpret_type_block(modules, &context, body),
-        Block::LocalBlock { complex, body } => interpret_block_complex(context, complex, body),
+        Block::LocalBlock { complex, body } => interpret_local_block(context, complex, body),
     }
 }
 
@@ -74,7 +74,7 @@ fn interpret_type_inst(
     instr: &Spanned<TypeInst>,
 ) -> InterpResult {
     match &instr.inner {
-        TypeInst::Generator(generator) => interpret_generator_type(context, generator),
+        TypeInst::Generator(generator) => interpret_type_generator(context, generator),
         TypeInst::LetDiag(ld) => {
             let module_scope = match current_module_scope(context) {
                 Some(module_scope) => module_scope,
@@ -97,7 +97,7 @@ fn interpret_type_inst(
     }
 }
 
-fn interpret_generator_type(context: &Context, generator: &ast::Generator) -> InterpResult {
+fn interpret_type_generator(context: &Context, generator: &ast::Generator) -> InterpResult {
     let generator_name = &generator.name.inner;
     let name = generator_name.name.inner.clone();
     let name_span = generator_name.name.span;
@@ -129,10 +129,10 @@ fn interpret_generator_type(context: &Context, generator: &ast::Generator) -> In
     }
 
     let ctx = result.context.clone();
-    let (type_scope, complex_result) = interpret_complex(&ctx, Mode::Global, &generator.complex);
+    let (type_scope_opt, complex_result) = interpret_complex(&ctx, Mode::Global, &generator.complex);
     result = InterpResult::combine(result, complex_result);
 
-    let Some(type_scope) = type_scope else {
+    let Some(type_scope) = type_scope_opt else {
         return result;
     };
     let mut definition_complex = type_scope.working_complex;
@@ -214,7 +214,7 @@ pub(super) fn interpret_complex(
             let owner_type_id = scope.owner_type_id;
             let initial_scope = scope.working_complex;
             let (final_scope, block_result) =
-                interpret_c_block(&result.context, mode, initial_scope.clone(), body);
+                interpret_complex_body(&result.context, mode, initial_scope.clone(), body);
             result = InterpResult::combine(result, block_result);
             let ns = TypeScope {
                 owner_type_id,
@@ -225,41 +225,41 @@ pub(super) fn interpret_complex(
     }
 }
 
-fn interpret_c_block(
+fn interpret_complex_body(
     context: &Context,
     mode: Mode,
     initial_scope: Complex,
-    body: &[Spanned<CInstr>],
+    body: &[Spanned<ComplexInstr>],
 ) -> (Complex, InterpResult) {
     interpret_items_in_complex_scope(context, initial_scope, body, |step_context, scope, instr| {
-        interpret_c_instr(step_context, mode, scope, instr)
+        interpret_complex_instr(step_context, mode, scope, instr)
     })
 }
 
-fn interpret_c_instr(
+fn interpret_complex_instr(
     context: Context,
     mode: Mode,
     scope: Complex,
-    instr: &Spanned<CInstr>,
+    instr: &Spanned<ComplexInstr>,
 ) -> (Complex, InterpResult) {
     match &instr.inner {
-        CInstr::NameWithBoundary(generator_name) => {
-            interpret_generator_instr(context, mode, scope, generator_name, instr.span)
+        ComplexInstr::NameWithBoundary(generator_name) => {
+            interpret_complex_generator(context, mode, scope, generator_name, instr.span)
         }
-        CInstr::LetDiag(ld) => {
+        ComplexInstr::LetDiag(ld) => {
             let (binding, result) = interpret_let_diag(&context, &scope, ld);
             insert_complex_diagram_binding(scope, result, ld.name.span, binding)
         }
-        CInstr::DefPMap(dp) => {
+        ComplexInstr::DefPMap(dp) => {
             let (binding, result) = interpret_def_pmap(&context, &scope, dp);
             insert_complex_map_binding(scope, result, dp.name.span, binding)
         }
-        CInstr::IncludeStmt(include_stmt) => {
+        ComplexInstr::IncludeStmt(include_stmt) => {
             let (scope_opt, result) =
                 interpret_include_instr(&context, mode, &scope, include_stmt, instr.span);
             (scope_opt.unwrap_or(scope), result)
         }
-        CInstr::AttachStmt(attach_stmt) => {
+        ComplexInstr::AttachStmt(attach_stmt) => {
             let (scope_opt, result) =
                 interpret_attach_instr(&context, mode, &scope, attach_stmt, instr.span);
             (scope_opt.unwrap_or(scope), result)
@@ -267,7 +267,7 @@ fn interpret_c_instr(
     }
 }
 
-fn interpret_generator_instr(
+fn interpret_complex_generator(
     context: Context,
     mode: Mode,
     mut scope: Complex,
@@ -287,7 +287,7 @@ fn interpret_generator_instr(
         (None, result) => return (scope, result),
     };
 
-    let dim = boundary_dim(&boundaries);
+    let dim = cell_dim(&boundaries);
 
     let (tag, new_id_opt) = match mode {
         Mode::Global => {
@@ -323,7 +323,7 @@ fn interpret_generator_instr(
 
 // ---- Local blocks ----
 
-fn interpret_block_complex(
+fn interpret_local_block(
     context: Context,
     complex: &Spanned<ast::Complex>,
     body: &[Spanned<LocalInst>],
@@ -336,14 +336,14 @@ fn interpret_block_complex(
     };
 
     if !body.is_empty() {
-        let (_, local_result) = interpret_local_block(&result.context, scope, body);
+        let (_, local_result) = interpret_local_body(&result.context, scope, body);
         result = InterpResult::combine(result, local_result);
     }
 
     result
 }
 
-fn interpret_local_block(
+fn interpret_local_body(
     context: &Context,
     initial_scope: TypeScope,
     body: &[Spanned<LocalInst>],

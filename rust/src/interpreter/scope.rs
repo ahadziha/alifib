@@ -308,8 +308,9 @@ pub fn interpret_generator_boundaries(
     }
 }
 
-pub fn boundary_dim(boundaries: &CellData) -> usize {
-    match boundaries {
+/// Returns the dimension of a cell with the given boundary data.
+pub fn cell_dim(cell_data: &CellData) -> usize {
+    match cell_data {
         CellData::Zero => 0,
         CellData::Boundary { boundary_in, .. } => {
             if boundary_in.dim() < 0 {
