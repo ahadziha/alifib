@@ -23,7 +23,11 @@ impl Sign {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Dim(pub usize);
 
-/// The paste-tree records how a diagram was built from paste operations.
+/// Records how a diagram was built up from paste operations.
+///
+/// - `Leaf(tag)` — a single generating cell, identified by its tag.
+/// - `Node { dim, left, right }` — the result of pasting `left` and `right`
+///   at dimension `dim`.
 #[derive(Debug, Clone)]
 pub enum PasteTree {
     Leaf(Tag),
@@ -34,10 +38,14 @@ pub enum PasteTree {
     },
 }
 
-/// Source/target composition history for a given dimension.
+/// Records which generators appear in the source and target boundaries of a
+/// diagram at one particular dimension.  One `BoundaryHistory` is stored per
+/// dimension in `Diagram::paste_history`.
 #[derive(Debug, Clone)]
 pub struct BoundaryHistory {
+    /// Paste-tree for the source (input) boundary at this dimension.
     pub source: PasteTree,
+    /// Paste-tree for the target (output) boundary at this dimension.
     pub target: PasteTree,
 }
 
@@ -54,16 +62,25 @@ impl BoundaryHistory {
     }
 }
 
-/// Cell data: either a 0-cell (no boundaries) or an n-cell with specified boundaries.
+/// The boundary specification of a cell.
 #[derive(Debug, Clone)]
 pub enum CellData {
+    /// A 0-dimensional cell (a point); has no boundaries.
     Zero,
+    /// An n-cell (n > 0) with explicit source and target boundaries.
     Boundary {
+        /// The source (input) boundary: an (n−1)-diagram.
         boundary_in: Arc<Diagram>,
+        /// The target (output) boundary: an (n−1)-diagram.
         boundary_out: Arc<Diagram>,
     },
 }
 
+/// Witness that two diagrams share matching boundaries.
+///
+/// Returned by `Diagram::parallelism` and `Diagram::pastability`; the two
+/// embeddings map the shared boundary into each diagram respectively and are
+/// used to compute the pushout that merges the pair.
 #[derive(Debug, Clone)]
 pub struct BoundaryMatch {
     pub left_embedding: Embedding,

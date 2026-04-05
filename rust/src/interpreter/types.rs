@@ -12,9 +12,17 @@ use std::sync::Arc;
 
 // ---- Context ----
 
+/// The interpreter's read/write context, threaded through all interpretation steps.
+///
+/// `state` is shared via `Arc` so that modules included into the current module
+/// can be interpreted without copying the store; mutations go through `state_mut`,
+/// which uses `Arc::make_mut` for copy-on-write semantics.
 #[derive(Debug, Clone)]
 pub struct Context {
+    /// Name of the module currently being interpreted.  Used to locate the
+    /// module's `Complex` in the global store.
     pub current_module: String,
+    /// Shared reference to the global persistent state (cells, types, modules).
     pub state: Arc<GlobalStore>,
 }
 
@@ -58,26 +66,43 @@ impl Context {
 
 // ---- Hole info ----
 
+/// Tracks a `?` hole encountered during interpretation.
+///
+/// Holes are created without boundary information and enriched with
+/// `HoleBoundaryInfo` later when a surrounding `pmap` clause provides context.
 #[derive(Debug, Clone)]
 pub struct HoleInfo {
+    /// Source location of the hole.
     pub span: Span,
+    /// Boundary context for the hole; `None` until the enclosing map clause provides it.
     pub boundary: Option<HoleBoundaryInfo>,
     /// Source cell tag, for deferred boundary computation in pmap context.
     pub source_tag: Option<Tag>,
 }
 
+/// The pretty-printed source/target boundary context for a hole.
 #[derive(Debug, Clone)]
 pub struct HoleBoundaryInfo {
+    /// Pretty-printed source (input) boundary of the hole.
     pub boundary_in: String,
+    /// Pretty-printed target (output) boundary of the hole.
     pub boundary_out: String,
 }
 
 // ---- Interpretation result ----
 
+/// The accumulated result of one or more interpretation steps.
+///
+/// Sequential steps are merged with `combine`, which advances the context
+/// while collecting errors and holes from all steps.
 #[derive(Debug, Clone)]
 pub struct InterpResult {
+    /// The updated context after this step.
     pub context: Context,
+    /// Errors encountered during this step.  Interpretation continues past
+    /// errors to collect as many diagnostics as possible.
     pub errors: Vec<Error>,
+    /// Holes (`?`) found during this step, possibly enriched with boundary info.
     pub holes: Vec<HoleInfo>,
 }
 
@@ -119,17 +144,27 @@ impl InterpResult {
 
 // ---- Mode ----
 
+/// Scoping mode for the current interpretation step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
+    /// Definitions are committed to the global store and visible to all modules.
     Global,
+    /// Definitions remain in a temporary local scope inside a type body.
     Local,
 }
 
 // ---- TypeScope ----
 
+/// The local environment being built while interpreting a type body.
+///
+/// After the body is fully interpreted, `working_complex` is committed back
+/// to the `GlobalStore` under `owner_type_id`.
 #[derive(Debug, Clone)]
 pub struct TypeScope {
+    /// GlobalId of the type whose body is being interpreted.
     pub owner_type_id: GlobalId,
+    /// The Complex being accumulated for this type; a mutable local view
+    /// that is written back to the store once the type body is complete.
     pub working_complex: Complex,
 }
 
@@ -142,32 +177,43 @@ pub struct EvalMap {
     pub domain: Arc<Complex>,
 }
 
+/// A fully evaluated expression: either a diagram or a partial map.
 #[derive(Debug, Clone)]
 pub enum Term {
+    /// A partial map together with its domain complex.
     Map(EvalMap),
+    /// A diagram.
     Diag(Diagram),
 }
 
+/// A component produced by the `.in` / `.out` boundary operators.
 #[derive(Debug, Clone)]
 pub enum Component {
+    /// A concrete term (diagram or map).
     Value(Term),
+    /// An unresolved position (`?`) in the diagram.
     Hole,
+    /// A boundary direction requested via `.in` or `.out`.
     Bd(DiagramSign),
 }
 
+/// Two evaluated terms for comparison in an equality assertion.
 #[derive(Debug, Clone)]
 pub enum TermPair {
+    /// Two partial maps with a shared domain complex.
     Maps {
         fst: PMap,
         snd: PMap,
         domain: Arc<Complex>,
     },
+    /// Two diagrams.
     Diagrams {
         fst: Diagram,
         snd: Diagram,
     },
 }
 
+/// The kind of binding being declared, for use in duplicate-name error messages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NameKind {
     Generator,

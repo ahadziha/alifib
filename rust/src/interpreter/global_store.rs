@@ -4,14 +4,21 @@ use crate::core::diagram::CellData;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// A global type cell together with its definition complex.
 #[derive(Debug, Clone)]
 pub struct TypeEntry {
+    /// The boundary specification of the type cell itself
+    /// (typically `Zero` for top-level types).
     pub data: CellData,
+    /// The complex accumulated from the generators, diagrams, and maps
+    /// declared inside this type's body.
     pub complex: Arc<Complex>,
 }
 
+/// A non-type global cell in the interpreter's persistent state.
 #[derive(Debug, Clone)]
 pub struct CellEntry {
+    /// The boundary specification of this cell.
     pub data: CellData,
 }
 

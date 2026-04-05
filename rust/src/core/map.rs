@@ -3,17 +3,29 @@ use std::sync::Arc;
 use crate::aux::{Error, Tag};
 use super::diagram::{BoundaryHistory, CellData, Diagram, PasteTree, Sign};
 
+/// A single entry in a partial map: the source cell's boundary data and its image.
 #[derive(Debug, Clone)]
 pub struct Entry {
+    /// The boundary specification of the source cell being mapped.
     pub cell_data: CellData,
+    /// The diagram this cell maps to.
     pub image: Diagram,
 }
 
-/// A partial map: maps tags (cells) to diagrams.
+/// A partial map: a structure-preserving assignment of diagrams to generating cells.
+///
+/// All entries must satisfy the cellular map condition: if a cell is in the
+/// domain, then every cell in its boundary is too, and images are compatible
+/// with the boundary maps.
 #[derive(Debug, Clone)]
 pub struct PMap {
+    /// Primary index: tag -> (cell data, image diagram).
     table: HashMap<Tag, Entry>,
+    /// Dimension index: dim -> tags in that dimension, in insertion order.
     by_dim: HashMap<usize, Vec<Tag>>,
+    /// True when every image is a single generating cell (not a composite diagram).
+    /// Enables a fast in-place label-remapping path in `apply` instead of
+    /// reconstructing the diagram by pasting.
     pub cellular: bool,
 }
 

@@ -10,20 +10,27 @@ pub enum MapDomain {
     Module(ModuleId),
 }
 
+/// Metadata for a generator within a complex.
 #[derive(Debug, Clone)]
 pub struct GeneratorEntry {
+    /// The tag (Global or Local) that identifies this generator in diagrams and maps.
     pub tag: Tag,
+    /// The dimension of this generator.
     pub dim: usize,
 }
 
+/// A named partial map together with the complex it maps from.
 #[derive(Debug, Clone)]
 pub struct MapEntry {
     pub map: PMap,
+    /// Records whether the domain is a type complex or a module complex.
     pub domain: MapDomain,
 }
 
+/// A locally-scoped cell created during type elaboration, not persisted in the global store.
 #[derive(Debug, Clone)]
 pub struct LocalCellEntry {
+    /// The boundary specification (Zero for 0-cells, Boundary for n-cells).
     pub data: CellData,
 }
 
@@ -41,7 +48,9 @@ struct Generators {
 
 #[derive(Debug, Clone, Default)]
 struct LocalCells {
+    /// Name -> cell entry.
     by_id: HashMap<LocalId, LocalCellEntry>,
+    /// Dimension index: dim -> local cell names in that dimension.
     by_dim: HashMap<usize, HashSet<LocalId>>,
 }
 
