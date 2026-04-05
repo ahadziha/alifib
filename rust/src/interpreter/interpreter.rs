@@ -100,13 +100,10 @@ fn interpret_type_generator(context: &Context, generator: &ast::Generator) -> In
     let name = generator_name.name.inner.clone();
     let name_span = generator_name.name.span;
 
-    let module_scope = match current_module_scope(context) {
-        None => {
-            let mut result = InterpResult::ok(context.clone());
-            result.add_error(make_error(name_span, "Module not found"));
-            return result;
-        }
-        Some(module_scope) => module_scope,
+    let Some(module_scope) = current_module_scope(context) else {
+        let mut result = InterpResult::ok(context.clone());
+        result.add_error(make_error(name_span, "Module not found"));
+        return result;
     };
 
     if let Some(result) = ensure_name_free(context, module_scope, &name, name_span, NameKind::Generator) {
@@ -173,16 +170,10 @@ pub(super) fn interpret_complex(
 ) -> (Option<TypeScope>, InterpResult) {
     let complex_span = complex.span;
 
-    let module_scope = match current_module_scope(context) {
-        None => {
-            let mut result = InterpResult::ok(context.clone());
-            result.add_error(make_error(
-                complex_span,
-                format!("Module `{}` not found", context.current_module),
-            ));
-            return (None, result);
-        }
-        Some(m) => m,
+    let Some(module_scope) = current_module_scope(context) else {
+        let mut result = InterpResult::ok(context.clone());
+        result.add_error(make_error(complex_span, format!("Module `{}` not found", context.current_module)));
+        return (None, result);
     };
 
     match &complex.inner {
@@ -329,18 +320,10 @@ fn interpret_local_block(
     complex: &Spanned<ast::Complex>,
     body: &[Spanned<LocalInst>],
 ) -> InterpResult {
-    let (scope_opt, complex_result) = interpret_complex(&context, Mode::Global, complex);
-    let mut result = complex_result;
-
-    let Some(scope) = scope_opt else {
-        return result;
-    };
-
-    if !body.is_empty() {
-        let (_, local_result) = interpret_local_body(&result.context, scope, body);
-        result = InterpResult::combine(result, local_result);
-    }
-
+    let (scope_opt, mut result) = interpret_complex(&context, Mode::Global, complex);
+    let Some(scope) = scope_opt else { return result; };
+    let (_, local_result) = interpret_local_body(&result.context, scope, body);
+    result = InterpResult::combine(result, local_result);
     result
 }
 

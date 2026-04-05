@@ -108,14 +108,13 @@ pub fn interpret_diagram(
     scope: &Complex,
     diagram: &Spanned<ast::Diagram>,
 ) -> (Option<Diagram>, InterpResult) {
-    let (term_opt, result) = interpret_diagram_as_term(context, scope, diagram);
-    match term_opt {
-        None => (None, result),
-        Some(Term::Diag(d)) => (Some(d), result),
-        Some(Term::Map(_)) => {
-            let mut r = result;
-            r.add_error(make_error(diagram.span, "Expected a diagram, not a partial map"));
-            (None, r)
+    let (term_opt, mut result) = interpret_diagram_as_term(context, scope, diagram);
+    let Some(term) = term_opt else { return (None, result); };
+    match term {
+        Term::Diag(d) => (Some(d), result),
+        Term::Map(_) => {
+            result.add_error(make_error(diagram.span, "Expected a diagram, not a partial map"));
+            (None, result)
         }
     }
 }
@@ -237,10 +236,7 @@ pub fn interpret_dcomponent(
         ),
         DComponent::Paren(inner_diag) => {
             let (d_opt, result) = interpret_diagram(context, scope, inner_diag);
-            match d_opt {
-                None => (None, result),
-                Some(d) => (Some(Component::Value(Term::Diag(d))), result),
-            }
+            (d_opt.map(|d| Component::Value(Term::Diag(d))), result)
         }
         DComponent::Hole => (Some(Component::Hole), InterpResult::ok(context.clone())),
     }
@@ -254,37 +250,22 @@ pub fn interpret_assert(
     assert_stmt: &crate::language::ast::AssertStmt,
 ) -> (Option<TermPair>, InterpResult) {
     let (left_opt, left_result) = interpret_diagram_as_term(context, scope, &assert_stmt.lhs);
-    match left_opt {
-        None => (None, left_result),
-        Some(left_term) => {
-            let (right_opt, right_result) =
-                interpret_diagram_as_term(&left_result.context, scope, &assert_stmt.rhs);
-            let combined = InterpResult::combine(left_result, right_result);
-            match right_opt {
-                None => (None, combined),
-                Some(right_term) => match (left_term, right_term) {
-                    (Term::Diag(d1), Term::Diag(d2)) => {
-                        (Some(TermPair::Diagrams { fst: d1, snd: d2 }), combined)
-                    }
-                    (Term::Map(mc1), Term::Map(mc2)) => (
-                        Some(TermPair::Maps {
-                            fst: mc1.map,
-                            snd: mc2.map,
-                            domain: mc1.domain,
-                        }),
-                        combined,
-                    ),
-                    _ => {
-                        let span = assert_stmt.lhs.span;
-                        let mut r = combined;
-                        r.add_error(make_error(
-                            span,
-                            "The two sides of the equation are incomparable",
-                        ));
-                        (None, r)
-                    }
-                },
-            }
+    let Some(left_term) = left_opt else { return (None, left_result); };
+
+    let (right_opt, right_result) =
+        interpret_diagram_as_term(&left_result.context, scope, &assert_stmt.rhs);
+    let mut combined = InterpResult::combine(left_result, right_result);
+    let Some(right_term) = right_opt else { return (None, combined); };
+
+    match (left_term, right_term) {
+        (Term::Diag(d1), Term::Diag(d2)) => (Some(TermPair::Diagrams { fst: d1, snd: d2 }), combined),
+        (Term::Map(mc1), Term::Map(mc2)) => (
+            Some(TermPair::Maps { fst: mc1.map, snd: mc2.map, domain: mc1.domain }),
+            combined,
+        ),
+        _ => {
+            combined.add_error(make_error(assert_stmt.lhs.span, "The two sides of the equation are incomparable"));
+            (None, combined)
         }
     }
 }
@@ -462,24 +443,17 @@ pub fn interpret_boundaries(
     boundaries: &Spanned<ast::Boundary>,
 ) -> (Option<CellData>, InterpResult) {
     let (source_opt, source_result) = interpret_diagram(context, scope, &boundaries.inner.source);
-    match source_opt {
-        None => (None, source_result),
-        Some(boundary_in) => {
-            let (target_opt, target_result) =
-                interpret_diagram(&source_result.context, scope, &boundaries.inner.target);
-            let combined = InterpResult::combine(source_result, target_result);
-            match target_opt {
-                None => (None, combined),
-                Some(boundary_out) => (
-                    Some(CellData::Boundary {
-                        boundary_in: Arc::new(boundary_in),
-                        boundary_out: Arc::new(boundary_out),
-                    }),
-                    combined,
-                ),
-            }
-        }
-    }
+    let Some(boundary_in) = source_opt else { return (None, source_result); };
+    let (target_opt, target_result) =
+        interpret_diagram(&source_result.context, scope, &boundaries.inner.target);
+    let combined = InterpResult::combine(source_result, target_result);
+    (
+        target_opt.map(|boundary_out| CellData::Boundary {
+            boundary_in: Arc::new(boundary_in),
+            boundary_out: Arc::new(boundary_out),
+        }),
+        combined,
+    )
 }
 
 // ---- Render helper ----
@@ -510,14 +484,8 @@ pub fn interpret_let_diag(
     scope: &Complex,
     ld: &crate::language::ast::LetDiag,
 ) -> (Option<(String, Diagram)>, InterpResult) {
-    let (diag_opt, diag_result) = interpret_diagram(context, scope, &ld.value);
-    match diag_opt {
-        None => (None, diag_result),
-        Some(diagram) => {
-            let name = ld.name.inner.clone();
-            (Some((name, diagram)), diag_result)
-        }
-    }
+    let (diag_opt, result) = interpret_diagram(context, scope, &ld.value);
+    (diag_opt.map(|d| (ld.name.inner.clone(), d)), result)
 }
 
 // ---- Assert checking ----

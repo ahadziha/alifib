@@ -17,15 +17,6 @@ use super::types::*;
 
 type ImportedGenerator = (LocalId, Tag, Diagram);
 
-fn ensure_partial_map_name_available(
-    context: &Context,
-    scope: &Complex,
-    name: &str,
-    span: Span,
-) -> Option<InterpResult> {
-    ensure_name_free(context, scope, name, span, NameKind::PartialMap)
-}
-
 fn prefixed_generators(
     source_scope: &Complex,
     prefix: &str,
@@ -100,18 +91,11 @@ fn extend_scope_with_attached_generators(
             continue;
         }
 
-        let source_cell_data = match generator_tag {
-            Tag::Global(global_id) => match state.find_cell(global_id) {
-                Some(cell_entry) => cell_entry.data.clone(),
-                None => continue,
-            },
-            Tag::Local(_) => continue,
-        };
+        let Tag::Global(global_id) = generator_tag else { continue; };
+        let Some(cell_entry) = state.find_cell(global_id) else { continue; };
+        let source_cell_data = cell_entry.data.clone();
 
-        let image_cell_data = match mapped_cell_data(&map, &source_cell_data) {
-            Some(image_cell_data) => image_cell_data,
-            None => continue,
-        };
+        let Some(image_cell_data) = mapped_cell_data(&map, &source_cell_data) else { continue; };
 
         let qualified_name = qualify_name(prefix, &generator_name);
         let image_tag = match mode {
@@ -123,10 +107,7 @@ fn extend_scope_with_attached_generators(
             Mode::Local => Tag::Local(qualified_name.clone()),
         };
 
-        let image_classifier = match Diagram::cell(image_tag, &image_cell_data) {
-            Ok(image_classifier) => image_classifier,
-            Err(_) => continue,
-        };
+        let Ok(image_classifier) = Diagram::cell(image_tag, &image_cell_data) else { continue; };
 
         if mode == Mode::Local {
             scope.add_local_cell(qualified_name.clone(), generator_dim, image_cell_data.clone());
@@ -162,33 +143,21 @@ pub fn interpret_include_module_instr(
             Some(m) => m,
         };
 
-        if let Some(result) = ensure_partial_map_name_available(context, scope, &alias, span) {
+        if let Some(result) = ensure_name_free(context, scope, &alias, span, NameKind::PartialMap) {
             return result;
         }
     }
 
-    let canonical_path = match modules.resolve(&module_id, &module_name) {
-        Some(p) => p.to_owned(),
-        None => {
-            let mut result = InterpResult::ok(context.clone());
-            result.add_error(make_error(
-                span,
-                format!("Module file {}.ali not found in search paths", module_name),
-            ));
-            return result;
-        }
+    let Some(canonical_path) = modules.resolve(&module_id, &module_name).map(|p| p.to_owned()) else {
+        let mut result = InterpResult::ok(context.clone());
+        result.add_error(make_error(span, format!("Module file {}.ali not found in search paths", module_name)));
+        return result;
     };
 
-    let resolved = match modules.get(&canonical_path) {
-        Some(r) => r,
-        None => {
-            let mut result = InterpResult::ok(context.clone());
-            result.add_error(make_error(
-                span,
-                format!("Resolved module {} not found in store", canonical_path),
-            ));
-            return result;
-        }
+    let Some(resolved) = modules.get(&canonical_path) else {
+        let mut result = InterpResult::ok(context.clone());
+        result.add_error(make_error(span, format!("Resolved module {} not found in store", canonical_path)));
+        return result;
     };
 
     let include_context = Context::new_sharing_state(canonical_path.clone(), context);
@@ -236,7 +205,7 @@ pub fn interpret_include_instr(
         return (None, include_result);
     };
 
-    if let Some(r) = ensure_partial_map_name_available(&include_result.context, scope, &name, span) {
+    if let Some(r) = ensure_name_free(&include_result.context, scope, &name, span, NameKind::PartialMap) {
         return (None, InterpResult::combine(include_result, r));
     }
 
@@ -268,12 +237,7 @@ pub fn interpret_attach_instr(
         return (None, attach_result);
     };
 
-    if let Some(r) = ensure_partial_map_name_available(
-        &attach_result.context,
-        scope,
-        &name,
-        attach_stmt.name.span,
-    ) {
+    if let Some(r) = ensure_name_free(&attach_result.context, scope, &name, attach_stmt.name.span, NameKind::PartialMap) {
         return (None, InterpResult::combine(attach_result, r));
     }
 
@@ -311,46 +275,34 @@ fn resolve_include(
     include_stmt: &ast::IncludeStmt,
     span: Span,
 ) -> (Option<(GlobalId, LocalId)>, InterpResult) {
-    let (id_opt, addr_result) = interpret_address(
+    let (id_opt, mut addr_result) = interpret_address(
         context,
         &include_stmt.address.inner,
         include_stmt.address.span,
     );
-    match id_opt {
-        None => (None, addr_result),
-        Some(id) => {
-            let name = match &include_stmt.alias {
-                Some(alias_node) => alias_node.inner.clone(),
-                None => {
-                    let module_id = &context.current_module;
-                    let tag = Tag::Global(id);
-                    match context
-                        .state
-                        .find_module(module_id)
-                        .and_then(|m| m.find_generator_by_tag(&tag))
-                    {
-                        Some(gen_name) => {
-                            if gen_name.contains('.') {
-                                let mut r = addr_result;
-                                r.add_error(make_error(
-                                    span,
-                                    "Inclusion of non-local types requires an alias",
-                                ));
-                                return (None, r);
-                            }
-                            gen_name.clone()
-                        }
-                        None => {
-                            let mut r = addr_result;
-                            r.add_error(make_error(span, "Could not infer include alias"));
-                            return (None, r);
-                        }
-                    }
-                }
-            };
-            (Some((id, name)), addr_result)
+    let Some(id) = id_opt else { return (None, addr_result); };
+
+    let name = if let Some(alias_node) = &include_stmt.alias {
+        alias_node.inner.clone()
+    } else {
+        let tag = Tag::Global(id);
+        let gen_name = context.state
+            .find_module(&context.current_module)
+            .and_then(|m| m.find_generator_by_tag(&tag));
+        match gen_name {
+            Some(n) if n.contains('.') => {
+                addr_result.add_error(make_error(span, "Inclusion of non-local types requires an alias"));
+                return (None, addr_result);
+            }
+            Some(n) => n.clone(),
+            None => {
+                addr_result.add_error(make_error(span, "Could not infer include alias"));
+                return (None, addr_result);
+            }
         }
-    }
+    };
+
+    (Some((id, name)), addr_result)
 }
 
 fn resolve_attach(

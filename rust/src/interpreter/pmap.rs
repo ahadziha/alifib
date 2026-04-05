@@ -202,10 +202,6 @@ fn initial_eval_map(
     }
 }
 
-fn finish_eval_map(map: PMap, domain: Arc<Complex>, result: InterpResult) -> Step<EvalMap> {
-    (Some(EvalMap { map, domain }), result)
-}
-
 fn apply_pmap_clauses(
     context: &Context,
     scope: &Complex,
@@ -257,7 +253,7 @@ fn interpret_pmap_ext(
 
     let mut result = InterpResult::combine(prefix_result, clause_result);
     finalize_hole_boundaries(&mut result, scope, &effective_domain, &current_map);
-    finish_eval_map(current_map, effective_domain, result)
+    (Some(EvalMap { map: current_map, domain: effective_domain }), result)
 }
 
 fn mark_last_hole_source_tag(result: &mut InterpResult, source_term: &Term) {
@@ -285,40 +281,27 @@ fn interpret_pmap_clause(
     clause: &Spanned<PMapClause>,
 ) -> Step<PMap> {
     let (left_opt, left_result) = interpret_diagram_as_term(context, domain, &clause.inner.lhs);
-    match left_opt {
-        None => return (None, left_result),
-        Some(left_term) => {
-            let (right_opt, right_result) =
-                interpret_diagram_as_term(&left_result.context, scope, &clause.inner.rhs);
-            let mut combined = InterpResult::combine(left_result, right_result);
-            match right_opt {
-                None => {
-                    if combined.holes.is_empty() {
-                        (None, combined)
-                    } else {
-                        mark_last_hole_source_tag(&mut combined, &left_term);
-                        (Some(map), combined)
-                    }
-                }
-                Some(right_term) => {
-                    match interpret_assign(
-                        &combined.context,
-                        map,
-                        domain,
-                        scope,
-                        &left_term,
-                        &right_term,
-                        clause.span,
-                    ) {
-                        Ok(new_m) => (Some(new_m), combined),
-                        Err(e) => {
-                            let mut r = combined;
-                            r.add_error(make_error(clause.span, e.to_string()));
-                            (None, r)
-                        }
-                    }
-                }
-            }
+    let Some(left_term) = left_opt else { return (None, left_result); };
+
+    let (right_opt, right_result) =
+        interpret_diagram_as_term(&left_result.context, scope, &clause.inner.rhs);
+    let mut combined = InterpResult::combine(left_result, right_result);
+
+    let Some(right_term) = right_opt else {
+        // Right side failed. If a hole was recorded, tag it with the left-side source and
+        // return the partially-built map; otherwise the whole clause fails.
+        if combined.holes.is_empty() {
+            return (None, combined);
+        }
+        mark_last_hole_source_tag(&mut combined, &left_term);
+        return (Some(map), combined);
+    };
+
+    match interpret_assign(&combined.context, map, domain, scope, &left_term, &right_term, clause.span) {
+        Ok(new_map) => (Some(new_map), combined),
+        Err(e) => {
+            combined.add_error(make_error(clause.span, e.to_string()));
+            (None, combined)
         }
     }
 }
@@ -446,52 +429,36 @@ fn image_classifier_via_boundary(
         .map_err(|_| aux::Error::new("Failed to extend map (boundary shapes don't match)"))?;
 
     let boundary_dim = source_boundary.top_dim();
-    let boundary_labels = &source_boundary.labels;
-    let target_labels = &target_boundary.labels;
-    let embedding_map = &embedding.map;
+    let (Some(source_row), Some(map_row), Some(target_row)) = (
+        source_boundary.labels.get(boundary_dim),
+        embedding.map.get(boundary_dim),
+        target_boundary.labels.get(boundary_dim),
+    ) else {
+        return Err(aux::Error::new("Failed to extend map (no image found)"));
+    };
 
     let mut image_tag: Option<Tag> = None;
-    let mut consistent = true;
-
-    if let Some(row) = boundary_labels.get(boundary_dim) {
-        if let Some(map_row) = embedding_map.get(boundary_dim) {
-            for (index, tag) in row.iter().enumerate() {
-                if tag != focus {
-                    continue;
-                }
-                if let Some(&mapped_index) = map_row.get(index) {
-                    if let Some(target_row) = target_labels.get(boundary_dim) {
-                        if let Some(mapped_tag) = target_row.get(mapped_index) {
-                            match &image_tag {
-                                None => image_tag = Some(mapped_tag.clone()),
-                                Some(existing) if existing != mapped_tag => consistent = false,
-                                _ => {}
-                            }
-                        }
-                    }
-                }
+    for (index, tag) in source_row.iter().enumerate() {
+        if tag != focus { continue; }
+        let Some(&mapped_index) = map_row.get(index) else { continue; };
+        let Some(mapped_tag) = target_row.get(mapped_index) else { continue; };
+        match &image_tag {
+            None => image_tag = Some(mapped_tag.clone()),
+            Some(existing) if existing != mapped_tag => {
+                return Err(aux::Error::new("The same generator is mapped to multiple diagrams"));
             }
+            _ => {}
         }
     }
 
-    if !consistent {
-        return Err(aux::Error::new(
-            "The same generator is mapped to multiple diagrams",
-        ));
-    }
-
-    let mapped_tag =
-        image_tag.ok_or_else(|| aux::Error::new("Failed to extend map (no image found)"))?;
+    let mapped_tag = image_tag.ok_or_else(|| aux::Error::new("Failed to extend map (no image found)"))?;
     let generator_name = target
         .find_generator_by_tag(&mapped_tag)
         .ok_or_else(|| aux::Error::new("Image tag not found in target complex"))?
         .clone();
-    let image_classifier = target
-        .classifier(&generator_name)
-        .ok_or_else(|| aux::Error::new("Classifier not found for image generator"))?
-        .clone();
-
-    Ok(image_classifier)
+    target.classifier(&generator_name)
+        .ok_or_else(|| aux::Error::new("Classifier not found for image generator"))
+        .cloned()
 }
 
 fn extend_missing_boundary_dependencies(
@@ -515,9 +482,8 @@ fn extend_missing_boundary_dependencies(
             aux::Error::new(format!("Cannot find cell data for boundary cell {}", focus_tag))
         })?;
         let target_boundary = Diagram::boundary(sign, source_dim - 1, target_diagram)?;
-        let source_boundary = match source_boundary_for_sign(source_cell_data, sign) {
-            Some(source_boundary) => source_boundary,
-            None => continue,
+        let Some(source_boundary) = source_boundary_for_sign(source_cell_data, sign) else {
+            continue;
         };
 
         current_map = if source_boundary.is_cell() {
