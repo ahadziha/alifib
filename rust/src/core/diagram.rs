@@ -362,7 +362,7 @@ impl Diagram {
 // ---- Helpers ----
 
 /// Get a paste tree from a history slice at position `k`, falling back to `fallback()`.
-fn hist_tree(hist: &[BoundaryHistory], sign: Sign, k: usize, fallback: impl FnOnce() -> PasteTree) -> PasteTree {
+fn history_tree(hist: &[BoundaryHistory], sign: Sign, k: usize, fallback: impl FnOnce() -> PasteTree) -> PasteTree {
     hist.get(k).map(|h| h.get(sign).clone()).unwrap_or_else(fallback)
 }
 
@@ -458,25 +458,25 @@ fn paste_histories(
         .map(|k| {
             if k < n {
                 BoundaryHistory::from_pair(
-                    hist_tree(u_hist, Sign::Source, k, || dummy(k)),
-                    hist_tree(u_hist, Sign::Target, k, || dummy(k)),
+                    history_tree(u_hist, Sign::Source, k, || dummy(k)),
+                    history_tree(u_hist, Sign::Target, k, || dummy(k)),
                 )
             } else if k == n {
                 BoundaryHistory::from_pair(
-                    hist_tree(u_hist, Sign::Source, n, || dummy(n)),
-                    hist_tree(v_hist, Sign::Target, n, || dummy(n)),
+                    history_tree(u_hist, Sign::Source, n, || dummy(n)),
+                    history_tree(v_hist, Sign::Target, n, || dummy(n)),
                 )
             } else {
                 BoundaryHistory::from_pair(
                     PasteTree::Node {
                         dim: n,
-                        left: Arc::new(hist_tree(u_hist, Sign::Source, k, || dummy(k))),
-                        right: Arc::new(hist_tree(v_hist, Sign::Source, k, || dummy(k))),
+                        left: Arc::new(history_tree(u_hist, Sign::Source, k, || dummy(k))),
+                        right: Arc::new(history_tree(v_hist, Sign::Source, k, || dummy(k))),
                     },
                     PasteTree::Node {
                         dim: n,
-                        left: Arc::new(hist_tree(u_hist, Sign::Target, k, || dummy(k))),
-                        right: Arc::new(hist_tree(v_hist, Sign::Target, k, || dummy(k))),
+                        left: Arc::new(history_tree(u_hist, Sign::Target, k, || dummy(k))),
+                        right: Arc::new(history_tree(v_hist, Sign::Target, k, || dummy(k))),
                     },
                 )
             }
@@ -581,13 +581,13 @@ fn build_cell_paste_history(
         .map(|dim| {
             if dim < d {
                 BoundaryHistory::from_pair(
-                    hist_tree(source, Sign::Source, dim, || PasteTree::Leaf(tag.clone())),
-                    hist_tree(source, Sign::Target, dim, || PasteTree::Leaf(tag.clone())),
+                    history_tree(source, Sign::Source, dim, || PasteTree::Leaf(tag.clone())),
+                    history_tree(source, Sign::Target, dim, || PasteTree::Leaf(tag.clone())),
                 )
             } else if dim == d {
                 BoundaryHistory::from_pair(
-                    hist_tree(source, Sign::Source, d, || PasteTree::Leaf(tag.clone())),
-                    hist_tree(target, Sign::Target, d, || PasteTree::Leaf(tag.clone())),
+                    history_tree(source, Sign::Source, d, || PasteTree::Leaf(tag.clone())),
+                    history_tree(target, Sign::Target, d, || PasteTree::Leaf(tag.clone())),
                 )
             } else {
                 BoundaryHistory::from_pair(

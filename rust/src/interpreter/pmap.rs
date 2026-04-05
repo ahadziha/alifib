@@ -310,7 +310,7 @@ pub fn interpret_pmap_def(
     }
 }
 
-fn initial_map_component(
+fn initial_eval_map(
     context: &Context,
     scope: &Complex,
     domain: &Complex,
@@ -368,7 +368,7 @@ fn interpret_pmap_ext(
     ext: &PMapExt,
     _span: Span,
 ) -> Step<EvalMap> {
-    let (initial_opt, prefix_result) = initial_map_component(context, scope, domain, &ext.prefix);
+    let (initial_opt, prefix_result) = initial_eval_map(context, scope, domain, &ext.prefix);
     let Some(initial) = initial_opt else {
         return (None, prefix_result);
     };
@@ -472,7 +472,7 @@ fn extend_matching_map_images(
                 let left_image = left_map.map.image(&tag)?;
                 if left_image.is_cell() {
                     let right_image = right_map.map.image(&tag)?;
-                    extended = smart_extend(context, extended, domain, target, left_image, right_image, span)?;
+                    extended = extend_map_for_cell(context, extended, domain, target, left_image, right_image, span)?;
                 } else {
                     let all_defined = left_image
                         .labels
@@ -514,7 +514,7 @@ fn interpret_assign(
 ) -> Result<PMap, aux::Error> {
     match (left, right) {
         (Term::Diag(d_left), Term::Diag(d_right)) => {
-            smart_extend(context, map, domain, target, d_left, d_right, span)
+            extend_map_for_cell(context, map, domain, target, d_left, d_right, span)
         }
         (Term::Map(mc_left), Term::Map(mc_right)) => {
             if !Arc::ptr_eq(&mc_left.domain, &mc_right.domain) {
@@ -566,7 +566,7 @@ fn source_boundary_for_sign(
     }
 }
 
-fn mapped_focus_classifier(
+fn image_classifier_via_boundary(
     focus: &Tag,
     source_boundary: &Diagram,
     target_boundary: &Diagram,
@@ -651,7 +651,7 @@ fn extend_missing_boundary_dependencies(
         };
 
         current_map = if source_boundary.is_cell() {
-            smart_extend(
+            extend_map_for_cell(
                 context,
                 current_map,
                 domain,
@@ -661,14 +661,14 @@ fn extend_missing_boundary_dependencies(
                 span,
             )?
         } else {
-            let focus_image = mapped_focus_classifier(
+            let focus_image = image_classifier_via_boundary(
                 &focus_tag,
                 &source_boundary,
                 &target_boundary,
                 target,
             )?;
             let focus_diagram = Diagram::cell(focus_tag.clone(), &focus_cell_data)?;
-            smart_extend(
+            extend_map_for_cell(
                 context,
                 current_map,
                 domain,
@@ -685,7 +685,7 @@ fn extend_missing_boundary_dependencies(
 
 /// Smart extension of a map: adds a mapping from a source cell to a target diagram,
 /// recursively extending for boundary cells as needed.
-pub fn smart_extend(
+pub fn extend_map_for_cell(
     context: &Context,
     map: PMap,
     domain: &Complex,
@@ -774,17 +774,17 @@ pub fn interpret_def_pmap(
         return (None, InterpResult::combine(addr_result, domain_result));
     };
 
-    let (mc_opt, m_result) = interpret_pmap_def(&context_after, scope, &domain, &dp.value);
-    let mut combined = InterpResult::combine(addr_result, m_result);
+    let (eval_map_opt, def_result) = interpret_pmap_def(&context_after, scope, &domain, &dp.value);
+    let mut combined = InterpResult::combine(addr_result, def_result);
 
-    let Some(mc) = mc_opt else {
+    let Some(eval_map) = eval_map_opt else {
         return (None, combined);
     };
 
-    ensure_total_map_defined(&mut combined, &domain, &mc.map, &dp.name.inner, dp.name.span, dp.total);
+    ensure_total_map_defined(&mut combined, &domain, &eval_map.map, &dp.name.inner, dp.name.span, dp.total);
 
     let name = dp.name.inner.clone();
-    (Some((name, mc.map, MapDomain::Type(id))), combined)
+    (Some((name, eval_map.map, MapDomain::Type(id))), combined)
 }
 
 // ---- Assert checking ----

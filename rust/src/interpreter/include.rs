@@ -385,13 +385,13 @@ fn resolve_attach(
             let Some(domain) = domain_opt else {
                 return (None, InterpResult::combine(addr_result, domain_result));
             };
-            let (mc_opt, pmap_result) =
+            let (eval_map_opt, pmap_result) =
                 interpret_pmap_def(&context_after, scope, &domain, pmap_node);
             let combined = InterpResult::combine(addr_result, pmap_result);
-            let Some(mc) = mc_opt else {
+            let Some(eval_map) = eval_map_opt else {
                 return (None, combined);
             };
-            (Some((name, mc.map, MapDomain::Type(id))), combined)
+            (Some((name, eval_map.map, MapDomain::Type(id))), combined)
         }
     }
 }

@@ -129,7 +129,7 @@ fn interpret_principal(
     }
 
     // Interpret first expression
-    let (first_opt, first_result) = interpret_d_expr(context, scope, &exprs[0]);
+    let (first_opt, first_result) = interpret_dexpr(context, scope, &exprs[0]);
     match first_opt {
         None => return (None, first_result),
         Some(Term::Map(_)) => {
@@ -147,7 +147,7 @@ fn interpret_principal(
             let mut result = first_result;
 
             for expr in &exprs[1..] {
-                let (term_opt, expr_result) = interpret_d_expr(&result.context, scope, expr);
+                let (term_opt, expr_result) = interpret_dexpr(&result.context, scope, expr);
                 result = InterpResult::combine(result, expr_result);
                 match term_opt {
                     None => return (None, result),
@@ -207,14 +207,14 @@ fn interpret_diagram_paste(
     }
 }
 
-pub fn interpret_d_expr(
+pub fn interpret_dexpr(
     context: &Context,
     scope: &Complex,
     d_expr: &Spanned<DExpr>,
 ) -> (Option<Term>, InterpResult) {
     match &d_expr.inner {
         DExpr::Component(comp) => {
-            let (comp_opt, result) = interpret_d_comp(context, scope, comp, d_expr.span);
+            let (comp_opt, result) = interpret_dcomponent(context, scope, comp, d_expr.span);
             match comp_opt {
                 None => (None, result),
                 Some(Component::Hole) => add_hole_result(&result.context, d_expr.span),
@@ -227,12 +227,12 @@ pub fn interpret_d_expr(
             }
         }
         DExpr::Dot { base, field } => {
-            let (left_opt, left_result) = interpret_d_expr(context, scope, base);
+            let (left_opt, left_result) = interpret_dexpr(context, scope, base);
             match left_opt {
                 None => (None, left_result),
                 Some(Term::Diag(diagram)) => {
                     let (comp_opt, comp_result) =
-                        interpret_d_comp(&left_result.context, scope, &field.inner, field.span);
+                        interpret_dcomponent(&left_result.context, scope, &field.inner, field.span);
                     let combined = InterpResult::combine(left_result, comp_result);
                     match comp_opt {
                         None => (None, combined),
@@ -251,7 +251,7 @@ pub fn interpret_d_expr(
                     }
                 }
                 Some(Term::Map(eval_map)) => {
-                    let (comp_opt, comp_result) = interpret_d_comp(
+                    let (comp_opt, comp_result) = interpret_dcomponent(
                         &left_result.context,
                         &*eval_map.domain,
                         &field.inner,
@@ -268,7 +268,7 @@ pub fn interpret_d_expr(
     }
 }
 
-pub fn interpret_d_comp(
+pub fn interpret_dcomponent(
     context: &Context,
     scope: &Complex,
     d_comp: &DComponent,
@@ -304,19 +304,19 @@ pub fn interpret_d_comp(
                 (None, r)
             }
             PMapBasic::AnonMap { def, target } => {
-                let (mc_opt, result) =
+                let (eval_map_opt, result) =
                     super::pmap::interpret_anon_map_component(context, scope, target, def);
-                match mc_opt {
+                match eval_map_opt {
                     None => (None, result),
-                    Some(mc) => (Some(Component::Value(Term::Map(mc))), result),
+                    Some(eval_map) => (Some(Component::Value(Term::Map(eval_map))), result),
                 }
             }
             PMapBasic::Paren(inner_pmap) => {
-                let (mc_opt, result) =
+                let (eval_map_opt, result) =
                     super::pmap::interpret_pmap(context, scope, scope, inner_pmap);
-                match mc_opt {
+                match eval_map_opt {
                     None => (None, result),
-                    Some(mc) => (Some(Component::Value(Term::Map(mc))), result),
+                    Some(eval_map) => (Some(Component::Value(Term::Map(eval_map))), result),
                 }
             }
         },
@@ -443,14 +443,14 @@ fn interpret_principal_as_term(
         return fail(context, span, "Empty diagram expression");
     }
 
-    let (first_opt, first_result) = interpret_d_expr(context, scope, &exprs[0]);
+    let (first_opt, first_result) = interpret_dexpr(context, scope, &exprs[0]);
     match first_opt {
         None => {
             let mut result = first_result;
             // If a hole was added and there are more exprs, use right-context
             if !result.holes.is_empty() && exprs.len() > 1 {
                 let (next_opt, next_result) =
-                    interpret_d_expr(&result.context, scope, &exprs[1]);
+                    interpret_dexpr(&result.context, scope, &exprs[1]);
                 result = InterpResult::combine(result, next_result);
                 if let Some(Term::Diag(d_right)) = next_opt {
                     let k = d_right.top_dim().saturating_sub(1);
@@ -494,7 +494,7 @@ fn interpret_principal_as_term(
 
             for expr in &exprs[1..] {
                 let prev_hole_count = result.holes.len();
-                let (term_opt, expr_result) = interpret_d_expr(&result.context, scope, expr);
+                let (term_opt, expr_result) = interpret_dexpr(&result.context, scope, expr);
                 result = InterpResult::combine(result, expr_result);
                 match term_opt {
                     None => {
