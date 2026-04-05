@@ -225,13 +225,8 @@ pub fn ensure_name_free(
 
 pub fn sorted_generators(complex: &Complex) -> Vec<(usize, LocalId, Tag)> {
     let mut generators: Vec<(usize, LocalId, Tag)> = complex
-        .generator_names()
-        .into_iter()
-        .filter_map(|name| {
-            complex
-                .find_generator(&name)
-                .map(|entry| (entry.dim, name, entry.tag.clone()))
-        })
+        .generators_iter()
+        .map(|(name, entry)| (entry.dim, name.clone(), entry.tag.clone()))
         .collect();
     generators.sort_by_key(|(dim, _, _)| *dim);
     generators
@@ -274,13 +269,13 @@ pub fn resolve_type_complex(
     type_id: GlobalId,
     span: Span,
     missing_prefix: &str,
-) -> Step<Complex> {
+) -> Step<Arc<Complex>> {
     let mut result = InterpResult::ok(context.clone());
     let Some(type_entry) = context.state.find_type(type_id) else {
         result.add_error(make_error(span, format!("{} {}", missing_prefix, type_id)));
         return (None, result);
     };
-    (Some((*type_entry.complex).clone()), result)
+    (Some(Arc::clone(&type_entry.complex)), result)
 }
 
 pub fn resolve_map_domain_complex(
@@ -318,14 +313,12 @@ pub fn get_cell_data(context: &Context, source: &Complex, tag: &Tag) -> Option<C
 /// Build an identity map for a complex using state for cell data lookup.
 pub fn identity_map(context: &Context, domain: &Complex) -> PMap {
     let entries: Vec<(Tag, usize, CellData, Diagram)> = domain
-        .generator_names()
-        .into_iter()
-        .filter_map(|name| {
-            let gen_entry = domain.find_generator(&name)?;
+        .generators_iter()
+        .filter_map(|(name, gen_entry)| {
             let tag = gen_entry.tag.clone();
             let dim = gen_entry.dim;
             let cell_data = get_cell_data(context, domain, &tag)?;
-            let image = domain.classifier(&name)?.clone();
+            let image = domain.classifier(name)?.clone();
             Some((tag, dim, cell_data, image))
         })
         .collect();

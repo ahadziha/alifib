@@ -308,7 +308,7 @@ pub fn resolve_type_scope_by_id(
         Some(type_complex) => (
             Some(TypeScope {
                 owner_type_id,
-                working_complex: type_complex,
+                working_complex: (*type_complex).clone(),
             }),
             complex_result,
         ),
@@ -347,11 +347,11 @@ pub fn resolve_complex_type_scope(
 
 // ---- Address resolution ----
 
-fn module_scope_for_address(context: &Context, span: Span) -> Step<Complex> {
+fn module_scope_for_address(context: &Context, span: Span) -> Step<Arc<Complex>> {
     let module_id = &context.current_module;
     let mut result = InterpResult::ok(context.clone());
 
-    let Some(module_scope) = context.state.find_module(module_id) else {
+    let Some(module_arc) = context.state.find_module_arc(module_id) else {
         result.add_error(make_error(
             span,
             format!("Module `{}` not found", module_id),
@@ -359,14 +359,14 @@ fn module_scope_for_address(context: &Context, span: Span) -> Step<Complex> {
         return (None, result);
     };
 
-    (Some(module_scope.clone()), result)
+    (Some(module_arc), result)
 }
 
 fn resolve_address_prefix_scope(
     context: &Context,
-    initial_scope: Complex,
+    initial_scope: Arc<Complex>,
     prefix: &[(Span, String)],
-) -> Step<Complex> {
+) -> Step<Arc<Complex>> {
     let mut current_scope = initial_scope;
     let mut result = InterpResult::ok(context.clone());
 
@@ -380,8 +380,8 @@ fn resolve_address_prefix_scope(
         };
 
         match &map_entry.domain {
-            MapDomain::Module(module_id) => match context.state.find_module(module_id) {
-                Some(module_scope) => current_scope = module_scope.clone(),
+            MapDomain::Module(module_id) => match context.state.find_module_arc(module_id) {
+                Some(module_arc) => current_scope = module_arc,
                 None => {
                     result.add_error(make_error(
                         *segment_span,

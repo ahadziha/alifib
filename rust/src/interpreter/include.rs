@@ -164,9 +164,9 @@ pub fn interpret_include_module_instr(
     let include_result = interpret_program(modules, include_context, &resolved.program);
 
     let mut result = InterpResult::ok(context.clone());
-    result.errors.extend(include_result.errors.clone());
-
-    if include_result.has_errors() {
+    let has_errors = include_result.has_errors();
+    result.errors.extend(include_result.errors);
+    if has_errors {
         return result;
     }
 
@@ -260,7 +260,7 @@ pub fn interpret_attach_instr(
         mode,
         scope.clone(),
         Arc::clone(&context_after.state),
-        map.clone(),
+        map,
         &name,
         &attachment,
     );

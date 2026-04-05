@@ -118,6 +118,10 @@ impl Complex {
         self.generators.by_name.keys().cloned().collect()
     }
 
+    pub fn generators_iter(&self) -> impl Iterator<Item = (&LocalId, &GeneratorEntry)> {
+        self.generators.by_name.iter()
+    }
+
     // ---- Diagrams ----
 
     pub fn add_diagram(&mut self, name: LocalId, diagram: Diagram) {
