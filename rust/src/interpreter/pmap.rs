@@ -85,14 +85,10 @@ pub fn interpret_anon_map_component(
 ) -> Step<EvalMap> {
     let (ns_opt, target_result) =
         super::interpreter::interpret_complex(context, super::types::Mode::Global, target);
-    match ns_opt {
-        None => (None, target_result),
-        Some(ns) => {
-            let (mc_opt, def_result) =
-                interpret_pmap_def(&target_result.context, &ns.working_complex, domain, def);
-            (mc_opt, InterpResult::combine(target_result, def_result))
-        }
-    }
+    let Some(ns) = ns_opt else { return (None, target_result); };
+    let (mc_opt, def_result) =
+        interpret_pmap_def(&target_result.context, &ns.working_complex, domain, def);
+    (mc_opt, InterpResult::combine(target_result, def_result))
 }
 
 // ---- PMap interpretation ----
@@ -117,27 +113,13 @@ fn interpret_pmap_node(
         ast::PMap::Basic(basic) => interpret_pmap_basic(context, scope, domain, basic, span),
         ast::PMap::Dot { base, rest } => {
             let (base_opt, base_result) = interpret_pmap_basic(context, scope, domain, base, span);
-            match base_opt {
-                None => (None, base_result),
-                Some(base_map) => {
-                    let (rest_opt, rest_result) =
-                        interpret_pmap(&base_result.context, &*base_map.domain, domain, rest);
-                    let combined = InterpResult::combine(base_result, rest_result);
-                    match rest_opt {
-                        None => (None, combined),
-                        Some(rest_map) => {
-                            let composed = PMap::compose(&base_map.map, &rest_map.map);
-                            (
-                                Some(EvalMap {
-                                    map: composed,
-                                    domain: rest_map.domain,
-                                }),
-                                combined,
-                            )
-                        }
-                    }
-                }
-            }
+            let Some(base_map) = base_opt else { return (None, base_result); };
+            let (rest_opt, rest_result) =
+                interpret_pmap(&base_result.context, &*base_map.domain, domain, rest);
+            let combined = InterpResult::combine(base_result, rest_result);
+            let Some(rest_map) = rest_opt else { return (None, combined); };
+            let composed = PMap::compose(&base_map.map, &rest_map.map);
+            (Some(EvalMap { map: composed, domain: rest_map.domain }), combined)
         }
     }
 }
@@ -188,16 +170,10 @@ fn initial_eval_map(
     prefix: &Option<Box<Spanned<ast::PMap>>>,
 ) -> Step<EvalMap> {
     match prefix {
-        None => {
-            let map = PMap::empty();
-            (
-                Some(EvalMap {
-                    map,
-                    domain: Arc::new(domain.clone()),
-                }),
-                InterpResult::ok(context.clone()),
-            )
-        }
+        None => (
+            Some(EvalMap { map: PMap::empty(), domain: Arc::new(domain.clone()) }),
+            InterpResult::ok(context.clone()),
+        ),
         Some(prefix) => interpret_pmap(context, scope, domain, prefix),
     }
 }

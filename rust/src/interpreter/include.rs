@@ -113,7 +113,7 @@ fn extend_scope_with_attached_generators(
             scope.add_local_cell(qualified_name.clone(), generator_dim, image_cell_data.clone());
         }
         scope.add_generator(qualified_name, image_classifier.clone());
-        map.insert_raw(generator_tag, generator_dim, source_cell_data, image_classifier);
+        map.insert_raw(Tag::Global(global_id), generator_dim, source_cell_data, image_classifier);
     }
 
     (scope, state, map)
