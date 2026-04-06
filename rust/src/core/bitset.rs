@@ -6,6 +6,7 @@
 ///
 /// This is used for traversal scratch state where we need fast membership checks
 /// and cheap word-level set operations.
+#[derive(Clone)]
 pub(crate) struct BitSet {
     bits:  Vec<u64>,
     count: usize,
@@ -59,10 +60,6 @@ impl BitSet {
             word_idx: 0,
             word: self.bits.first().copied().unwrap_or(0),
         }
-    }
-
-    pub fn clone(&self) -> Self {
-        BitSet { bits: self.bits.clone(), count: self.count }
     }
 
     /// Zero all words and adjust length for a new universe size, reusing allocation.

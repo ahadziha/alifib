@@ -162,7 +162,6 @@ pub fn interpret_include_module_instr(
 
 pub fn interpret_include_instr(
     context: &Context,
-    _mode: Mode,
     scope: &Complex,
     include_stmt: &ast::IncludeStmt,
     span: Span,

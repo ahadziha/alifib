@@ -245,7 +245,7 @@ fn interpret_complex_instr(
         }
         ComplexInstr::IncludeStmt(include_stmt) => {
             let (scope_opt, result) =
-                interpret_include_instr(&context, mode, &scope, include_stmt, instr.span);
+                interpret_include_instr(&context, &scope, include_stmt, instr.span);
             (scope_opt.unwrap_or(scope), result)
         }
         ComplexInstr::AttachStmt(attach_stmt) => {
