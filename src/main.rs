@@ -2,14 +2,17 @@ mod aux;
 mod core;
 mod interpreter;
 mod language;
+mod output;
 
 use std::fs;
 use std::process;
+use std::sync::Arc;
 use std::time::Instant;
 
 use aux::error::report_load_file_error;
 use aux::loader::Loader;
-use interpreter::{Context, InterpResult, interpret_program};
+use interpreter::{Context, interpret_program};
+use output::InterpretedFile;
 
 const USAGE: &str = "Usage: alifib <input-file> [-o|--output <output-file>] [--ast] [--bench N]";
 
@@ -100,13 +103,7 @@ fn parse_program(path: &str, source: &str) -> Result<language::Program, ()> {
     }
 }
 
-struct RunResult {
-    result: InterpResult,
-    source: String,
-    canonical_path: String,
-}
-
-fn execute_file(loader: &Loader, path: &str) -> Option<RunResult> {
+fn execute_file(loader: &Loader, path: &str) -> Option<InterpretedFile> {
     let loaded = match loader.load(path) {
         Ok(f) => f,
         Err(e) => {
@@ -123,27 +120,28 @@ fn execute_file(loader: &Loader, path: &str) -> Option<RunResult> {
         return None;
     }
 
-    Some(RunResult {
-        result,
-        canonical_path: loaded.canonical_path,
+    Some(InterpretedFile {
+        state: Arc::clone(&result.context.state),
+        holes: result.holes,
         source: loaded.source,
+        path: loaded.canonical_path,
     })
 }
 
-fn run_interpreter(input: &str, output: Option<&str>) -> bool {
+fn run_interpreter(input: &str, output_path: Option<&str>) -> bool {
     let loader = Loader::default(vec![]);
-    let run_result = match execute_file(&loader, input) {
-        Some(run_result) => run_result,
+    let file = match execute_file(&loader, input) {
+        Some(file) => file,
         None => return false,
     };
 
-    let text = run_result.result.context.to_string();
-    if let Err(msg) = write_output(output, &text) {
+    let text = file.to_string();
+    if let Err(msg) = write_output(output_path, &text) {
         eprintln!("error: {}", msg);
         return false;
     }
-    if run_result.result.has_holes() {
-        run_result.result.report_holes(&run_result.source, &run_result.canonical_path);
+    if file.has_holes() {
+        file.report_holes();
     }
     true
 }
@@ -157,7 +155,7 @@ fn run_bench(input: &str, n: usize) -> bool {
             eprintln!("error: benchmark file failed on warmup");
             return false;
         }
-        Some(run_result) if run_result.result.has_holes() => {
+        Some(file) if file.has_holes() => {
             eprintln!("error: benchmark file contains holes");
             return false;
         }

@@ -8,7 +8,6 @@ use crate::core::{
     partial_map::PartialMap,
 };
 use crate::language::{ast::Span, error::Error};
-use std::fmt;
 use std::sync::Arc;
 
 // ---- Context ----
@@ -61,13 +60,31 @@ impl Context {
     }
 }
 
-impl fmt::Display for Context {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.state)
-    }
-}
 
 // ---- Hole info ----
+
+/// Structured boundary data for a hole, stored without rendering.
+/// Rendering is deferred to the output module.
+#[derive(Debug, Clone)]
+pub enum HoleBd {
+    /// Boundary context is unknown.
+    Unknown,
+    /// A complete boundary diagram with the complex needed to look up generator names.
+    Full(Diagram, Arc<Complex>),
+    /// A boundary diagram through a partial map (some entries may be unmapped).
+    Partial {
+        boundary: Diagram,
+        map: PartialMap,
+        scope: Arc<Complex>,
+    },
+}
+
+/// The structured source/target boundary context for a hole.
+#[derive(Debug, Clone)]
+pub struct HoleBoundaryInfo {
+    pub boundary_in: HoleBd,
+    pub boundary_out: HoleBd,
+}
 
 /// Tracks a `?` hole encountered during interpretation.
 ///
@@ -87,15 +104,6 @@ impl HoleInfo {
     pub fn new(span: Span) -> Self {
         Self { span, boundary: None, source_tag: None }
     }
-}
-
-/// The pretty-printed source/target boundary context for a hole.
-#[derive(Debug, Clone)]
-pub struct HoleBoundaryInfo {
-    /// Pretty-printed source (input) boundary of the hole.
-    pub boundary_in: String,
-    /// Pretty-printed target (output) boundary of the hole.
-    pub boundary_out: String,
 }
 
 // ---- Interpretation result ----
@@ -154,15 +162,7 @@ impl InterpResult {
         !self.holes.is_empty()
     }
 
-    pub fn report_holes(&self, source: &str, path: &str) {
-        for hole in &self.holes {
-            let message = match &hole.boundary {
-                Some(bd) => format!("{} -> {}", bd.boundary_in, bd.boundary_out),
-                None => "unknown boundary".to_string(),
-            };
-            crate::language::error::report_hole(hole.span, &message, source, path);
-        }
-    }
+
 }
 
 // ---- Mode ----

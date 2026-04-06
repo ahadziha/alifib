@@ -1,4 +1,4 @@
-use super::diagram::{interpret_diagram_as_term, render_boundary_partial, render_diagram};
+use super::diagram::interpret_diagram_as_term;
 use super::scope::interpret_address;
 use super::types::*;
 use crate::aux::{self, LocalId, Tag};
@@ -10,16 +10,16 @@ use crate::core::{
 use crate::language::ast::{self, DefPartialMap, PartialMapBasic, PartialMapClause, PartialMapDef, PartialMapExt, Span, Spanned};
 use std::sync::Arc;
 
-// ---- Hole boundary rendering ----
+// ---- Hole boundary enrichment ----
 
-fn render_mapped_boundary(
-    scope: &Complex,
-    map: &PartialMap,
-    boundary: &Diagram,
-) -> String {
+fn make_hole_bd(scope: &Complex, map: &PartialMap, boundary: &Diagram) -> HoleBd {
     match PartialMap::apply(map, boundary) {
-        Ok(mapped_boundary) => render_diagram(&mapped_boundary, scope),
-        Err(_) => render_boundary_partial(boundary, map, scope),
+        Ok(mapped_boundary) => HoleBd::Full(mapped_boundary, Arc::new(scope.clone())),
+        Err(_) => HoleBd::Partial {
+            boundary: boundary.clone(),
+            map: map.clone(),
+            scope: Arc::new(scope.clone()),
+        },
     }
 }
 
@@ -44,22 +44,22 @@ fn enrich_hole(
         return;
     };
 
-    let rendered_in = render_mapped_boundary(scope, map, boundary_in);
-    let rendered_out = render_mapped_boundary(scope, map, boundary_out);
+    let hbd_in = make_hole_bd(scope, map, boundary_in);
+    let hbd_out = make_hole_bd(scope, map, boundary_out);
 
     match &mut hole.boundary {
         Some(existing) => {
-            if existing.boundary_in == "?" {
-                existing.boundary_in = rendered_in;
+            if matches!(existing.boundary_in, HoleBd::Unknown) {
+                existing.boundary_in = hbd_in;
             }
-            if existing.boundary_out == "?" {
-                existing.boundary_out = rendered_out;
+            if matches!(existing.boundary_out, HoleBd::Unknown) {
+                existing.boundary_out = hbd_out;
             }
         }
         None => {
             hole.boundary = Some(HoleBoundaryInfo {
-                boundary_in: rendered_in,
-                boundary_out: rendered_out,
+                boundary_in: hbd_in,
+                boundary_out: hbd_out,
             });
         }
     }

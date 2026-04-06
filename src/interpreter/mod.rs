@@ -1,10 +1,11 @@
 mod diagram;
 pub mod eval;
-mod global_store;
+pub mod global_store;
 mod include;
 mod partial_map;
 mod scope;
-mod state_render;
 mod types;
 
-pub use eval::{Context, InterpResult, interpret_program};
+pub use eval::{Context, interpret_program};
+pub use global_store::GlobalStore;
+pub use types::{HoleBd, HoleInfo};

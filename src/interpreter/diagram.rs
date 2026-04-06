@@ -1,5 +1,4 @@
 use super::types::*;
-use crate::aux::Tag;
 use crate::core::{
     complex::Complex,
     diagram::{CellData, Diagram, Sign as DiagramSign},
@@ -33,14 +32,6 @@ fn parse_paste_dim(context: &Context, dim: &Spanned<String>) -> Step<usize> {
         .unwrap_or_else(|_| fail(context, dim.span, format!("Invalid paste dimension: {}", dim.inner)))
 }
 
-fn top_labels_rendered(diagram: &Diagram, f: impl Fn(&Tag) -> String) -> String {
-    match diagram.labels_at(diagram.top_dim()) {
-        Some(labels) if !labels.is_empty() => {
-            labels.iter().map(f).collect::<Vec<_>>().join(" ")
-        }
-        _ => "?".to_string(),
-    }
-}
 
 // ---- Diagram interpretation ----
 
@@ -344,11 +335,11 @@ fn enrich_hole_with_right_context(
         let k = d_right.top_dim().saturating_sub(1);
         if let Ok(in_bd) = Diagram::boundary(DiagramSign::Source, k, &d_right)
             && let Some(last_hole) = result.holes.last_mut() {
-            let bd_out = render_diagram(&in_bd, scope);
+            let bd_out = HoleBd::Full(in_bd, Arc::new(scope.clone()));
             match &mut last_hole.boundary {
                 Some(existing) => existing.boundary_out = bd_out,
                 None => last_hole.boundary = Some(HoleBoundaryInfo {
-                    boundary_in: "?".into(),
+                    boundary_in: HoleBd::Unknown,
                     boundary_out: bd_out,
                 }),
             }
@@ -381,8 +372,8 @@ fn accumulate_paste(
                     if let Ok(out_bd) = Diagram::boundary(DiagramSign::Target, k, &acc)
                         && let Some(last_hole) = result.holes.last_mut() {
                         last_hole.boundary = Some(HoleBoundaryInfo {
-                            boundary_in: render_diagram(&out_bd, scope),
-                            boundary_out: "?".into(),
+                            boundary_in: HoleBd::Full(out_bd, Arc::new(scope.clone())),
+                            boundary_out: HoleBd::Unknown,
                         });
                     }
                 }
@@ -430,27 +421,6 @@ pub fn interpret_boundaries(
         }),
         combined,
     )
-}
-
-// ---- Render helper ----
-
-pub fn render_diagram(diagram: &Diagram, scope: &Complex) -> String {
-    top_labels_rendered(diagram, |tag| {
-        scope
-            .find_generator_by_tag(tag)
-            .filter(|n| !n.is_empty())
-            .cloned()
-            .unwrap_or_else(|| format!("{}", tag))
-    })
-}
-
-/// Render a source boundary diagram through a partial map. Mapped tags are rendered
-/// via their image's top label; unmapped tags are rendered as `?`.
-pub fn render_boundary_partial(boundary: &Diagram, map: &PartialMap, scope: &Complex) -> String {
-    top_labels_rendered(boundary, |tag| match map.image(tag) {
-        Ok(img) => render_diagram(img, scope),
-        Err(_) => "?".to_string(),
-    })
 }
 
 // ---- Diagram naming ----
