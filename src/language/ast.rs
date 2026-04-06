@@ -6,6 +6,13 @@ pub struct Span {
     pub end: usize,
 }
 
+impl Span {
+    /// A synthetic span with no source location, for programmatically constructed AST nodes.
+    pub fn synthetic() -> Self {
+        Self { start: 0, end: 0 }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Spanned<T> {
     pub inner: T,

@@ -1,0 +1,11 @@
+[package]
+name = "trs-rs"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "ari2ali-rs"
+path = "src/main.rs"
+
+[dependencies]
+alifib = { path = ".." }
