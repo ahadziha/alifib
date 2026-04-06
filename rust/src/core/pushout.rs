@@ -1,15 +1,27 @@
 use std::sync::Arc;
-use super::intset::{self, IntSet};
 use super::embeddings::{Embedding, NO_PREIMAGE};
+use super::intset::{self, IntSet};
+use super::ogposet::Ogposet;
 
+/// The result of a pushout computation: the colimit ogposet and the two
+/// canonical injections into it.
+///
+/// Given embeddings `f: A → B` and `g: A → C` with common domain, the pushout
+/// is an ogposet `tip = B +_A C` together with:
+/// - `inl: B → tip` — the left injection
+/// - `inr: C → tip` — the right injection
+///
+/// such that `inl ∘ f = inr ∘ g`.
 pub(super) struct Pushout {
     pub(super) tip: Arc<Ogposet>,
     pub(super) inl: Embedding,
     pub(super) inr: Embedding,
 }
-use super::ogposet::Ogposet;
 
-/// Pushout of f and g along their common domain.
+/// Compute the pushout of `f: A → B` and `g: A → C` along their common domain.
+///
+/// Routes to [`attach`] with the larger codomain as the base to minimise the
+/// number of new cells that need to be allocated.
 pub(super) fn pushout(f: &Embedding, g: &Embedding) -> Pushout {
     let b = &f.cod;
     let c = &g.cod;
@@ -22,6 +34,14 @@ pub(super) fn pushout(f: &Embedding, g: &Embedding) -> Pushout {
     }
 }
 
+/// Core pushout algorithm, assuming `f.cod` is at least as large as `g.cod`.
+///
+/// Constructs the pushout by starting with `B = f.cod` as the base and merging
+/// in the cells of `C = g.cod` one dimension at a time.  For each cell of `C`:
+/// - if it has a preimage under `g`, it is identified with the corresponding
+///   cell of `B` via `f`;
+/// - otherwise it is a new cell and is appended to the tip, with its faces
+///   translated into the tip's indexing.
 fn attach(f: &Embedding, g: &Embedding) -> Pushout {
     let b = &f.cod;
     let c = &g.cod;
