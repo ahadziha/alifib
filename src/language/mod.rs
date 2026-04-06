@@ -1,5 +1,6 @@
 pub mod ast;
 mod ast_fmt;
+mod ast_print;
 pub mod error;
 mod lexer;
 mod parser;
@@ -9,6 +10,7 @@ use chumsky::input::Input as _;
 use chumsky::prelude::*;
 
 pub use ast::Program;
+pub use ast_print::print_program;
 pub use error::Error;
 
 use ast::Span;
