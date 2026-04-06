@@ -93,29 +93,37 @@ pub fn interpret_anon_map_component(
 
 // ---- PMap interpretation ----
 
+/// Bundled context for evaluating partial map expressions.
+/// Packages the three parameters that travel together through every internal
+/// evaluation function: the interpreter state, the lexical scope for name
+/// resolution, and the complex being mapped from.
+#[derive(Clone, Copy)]
+struct PMapCtx<'a> {
+    context: &'a Context,
+    /// Lexical environment: where diagram and map names are resolved.
+    scope: &'a Complex,
+    /// The complex being mapped from (the domain of definition).
+    domain: &'a Complex,
+}
+
 pub fn interpret_pmap(
     context: &Context,
     scope: &Complex,
     domain: &Complex,
     pmap: &Spanned<ast::PMap>,
 ) -> Step<EvalMap> {
-    eval_pmap(context, scope, domain, &pmap.inner, pmap.span)
+    eval_pmap(&PMapCtx { context, scope, domain }, &pmap.inner, pmap.span)
 }
 
-fn eval_pmap(
-    context: &Context,
-    scope: &Complex,
-    domain: &Complex,
-    pmap: &ast::PMap,
-    span: Span,
-) -> Step<EvalMap> {
+fn eval_pmap(ctx: &PMapCtx<'_>, pmap: &ast::PMap, span: Span) -> Step<EvalMap> {
     match pmap {
-        ast::PMap::Basic(basic) => eval_pmap_basic(context, scope, domain, basic, span),
+        ast::PMap::Basic(basic) => eval_pmap_basic(ctx, basic, span),
         ast::PMap::Dot { base, rest } => {
-            let (base_opt, base_result) = eval_pmap_basic(context, scope, domain, base, span);
+            let (base_opt, base_result) = eval_pmap_basic(ctx, base, span);
             let Some(base_map) = base_opt else { return (None, base_result); };
+            // Dot traversal: the new lookup scope is the base map's domain.
             let (rest_opt, rest_result) =
-                interpret_pmap(&base_result.context, &base_map.domain, domain, rest);
+                interpret_pmap(&base_result.context, &base_map.domain, ctx.domain, rest);
             let combined = InterpResult::combine(base_result, rest_result);
             let Some(rest_map) = rest_opt else { return (None, combined); };
             let composed = PMap::compose(&base_map.map, &rest_map.map);
@@ -124,28 +132,22 @@ fn eval_pmap(
     }
 }
 
-fn eval_pmap_basic(
-    context: &Context,
-    scope: &Complex,
-    domain: &Complex,
-    basic: &PMapBasic,
-    span: Span,
-) -> Step<EvalMap> {
+fn eval_pmap_basic(ctx: &PMapCtx<'_>, basic: &PMapBasic, span: Span) -> Step<EvalMap> {
     match basic {
         PMapBasic::Name(name) => {
-            let Some(entry) = scope.find_map(name) else {
-                return fail(context, span, format!("Partial map not found: `{}`", name));
+            let Some(entry) = ctx.scope.find_map(name) else {
+                return fail(ctx.context, span, format!("Partial map not found: `{}`", name));
             };
-            let (domain_opt, result) = resolve_map_domain_complex(context, &entry.domain, span);
+            let (domain_opt, result) = resolve_map_domain_complex(ctx.context, &entry.domain, span);
             let Some(domain) = domain_opt else {
                 return (None, result);
             };
-            (Some(EvalMap { map: entry.map.clone(), domain }), InterpResult::ok(context.clone()))
+            (Some(EvalMap { map: entry.map.clone(), domain }), InterpResult::ok(ctx.context.clone()))
         }
         PMapBasic::AnonMap { def, target } => {
-            interpret_anon_map_component(context, domain, target, def)
+            interpret_anon_map_component(ctx.context, ctx.domain, target, def)
         }
-        PMapBasic::Paren(inner) => interpret_pmap(context, scope, domain, inner),
+        PMapBasic::Paren(inner) => interpret_pmap(ctx.context, ctx.scope, ctx.domain, inner),
     }
 }
 
@@ -157,40 +159,34 @@ pub fn interpret_pmap_def(
     domain: &Complex,
     pmap_def: &Spanned<PMapDef>,
 ) -> Step<EvalMap> {
+    let ctx = PMapCtx { context, scope, domain };
     match &pmap_def.inner {
-        PMapDef::PMap(pmap) => eval_pmap(context, scope, domain, pmap, pmap_def.span),
-        PMapDef::Ext(ext) => interpret_pmap_ext(context, scope, domain, ext),
+        PMapDef::PMap(pmap) => eval_pmap(&ctx, pmap, pmap_def.span),
+        PMapDef::Ext(ext) => interpret_pmap_ext(&ctx, ext),
     }
 }
 
-fn initial_eval_map(
-    context: &Context,
-    scope: &Complex,
-    domain: &Complex,
-    prefix: &Option<Box<Spanned<ast::PMap>>>,
-) -> Step<EvalMap> {
+fn initial_eval_map(ctx: &PMapCtx<'_>, prefix: &Option<Box<Spanned<ast::PMap>>>) -> Step<EvalMap> {
     match prefix {
         None => (
-            Some(EvalMap { map: PMap::empty(), domain: Arc::new(domain.clone()) }),
-            InterpResult::ok(context.clone()),
+            Some(EvalMap { map: PMap::empty(), domain: Arc::new(ctx.domain.clone()) }),
+            InterpResult::ok(ctx.context.clone()),
         ),
-        Some(prefix) => interpret_pmap(context, scope, domain, prefix),
+        Some(prefix) => interpret_pmap(ctx.context, ctx.scope, ctx.domain, prefix),
     }
 }
 
 fn eval_pmap_clauses(
-    context: &Context,
-    scope: &Complex,
-    domain: &Complex,
+    ctx: &PMapCtx<'_>,
     initial_map: PMap,
     clauses: &[Spanned<PMapClause>],
 ) -> Step<PMap> {
     let mut map = initial_map;
-    let mut result = InterpResult::ok(context.clone());
+    let mut result = InterpResult::ok(ctx.context.clone());
 
     for clause in clauses {
-        let (next_map, clause_result) =
-            interpret_pmap_clause(&result.context, scope, domain, map, clause);
+        let step_ctx = PMapCtx { context: &result.context, ..*ctx };
+        let (next_map, clause_result) = interpret_pmap_clause(&step_ctx, map, clause);
         result = InterpResult::combine(result, clause_result);
         let Some(updated_map) = next_map else {
             return (None, result);
@@ -204,31 +200,21 @@ fn eval_pmap_clauses(
     (Some(map), result)
 }
 
-fn interpret_pmap_ext(
-    context: &Context,
-    scope: &Complex,
-    domain: &Complex,
-    ext: &PMapExt,
-) -> Step<EvalMap> {
-    let (initial_opt, prefix_result) = initial_eval_map(context, scope, domain, &ext.prefix);
+fn interpret_pmap_ext(ctx: &PMapCtx<'_>, ext: &PMapExt) -> Step<EvalMap> {
+    let (initial_opt, prefix_result) = initial_eval_map(ctx, &ext.prefix);
     let Some(initial) = initial_opt else {
         return (None, prefix_result);
     };
 
     let effective_domain = Arc::clone(&initial.domain);
-    let (map_opt, clause_result) = eval_pmap_clauses(
-        &prefix_result.context,
-        scope,
-        &effective_domain,
-        initial.map,
-        &ext.clauses,
-    );
+    let clauses_ctx = PMapCtx { context: &prefix_result.context, domain: &effective_domain, ..*ctx };
+    let (map_opt, clause_result) = eval_pmap_clauses(&clauses_ctx, initial.map, &ext.clauses);
     let Some(current_map) = map_opt else {
         return (None, InterpResult::combine(prefix_result, clause_result));
     };
 
     let mut result = InterpResult::combine(prefix_result, clause_result);
-    enrich_holes(&mut result, scope, &effective_domain, &current_map);
+    enrich_holes(&mut result, ctx.scope, &effective_domain, &current_map);
     (Some(EvalMap { map: current_map, domain: effective_domain }), result)
 }
 
@@ -249,18 +235,12 @@ fn mark_last_hole_source_tag(result: &mut InterpResult, source_term: &Term) {
     }
 }
 
-fn interpret_pmap_clause(
-    context: &Context,
-    scope: &Complex,
-    domain: &Complex,
-    map: PMap,
-    clause: &Spanned<PMapClause>,
-) -> Step<PMap> {
-    let (left_opt, left_result) = interpret_diagram_as_term(context, domain, &clause.inner.lhs);
+fn interpret_pmap_clause(ctx: &PMapCtx<'_>, map: PMap, clause: &Spanned<PMapClause>) -> Step<PMap> {
+    let (left_opt, left_result) = interpret_diagram_as_term(ctx.context, ctx.domain, &clause.inner.lhs);
     let Some(left_term) = left_opt else { return (None, left_result); };
 
     let (right_opt, right_result) =
-        interpret_diagram_as_term(&left_result.context, scope, &clause.inner.rhs);
+        interpret_diagram_as_term(&left_result.context, ctx.scope, &clause.inner.rhs);
     let mut combined = InterpResult::combine(left_result, right_result);
 
     let Some(right_term) = right_opt else {
@@ -273,7 +253,7 @@ fn interpret_pmap_clause(
         return (Some(map), combined);
     };
 
-    match interpret_assign(&combined.context, map, domain, scope, &left_term, &right_term) {
+    match interpret_assign(&combined.context, map, ctx.domain, ctx.scope, &left_term, &right_term) {
         Ok(new_map) => (Some(new_map), combined),
         Err(e) => {
             combined.add_error(make_error(clause.span, e.to_string()));
