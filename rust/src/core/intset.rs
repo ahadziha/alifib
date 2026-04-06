@@ -1,3 +1,11 @@
+//! Sorted-vector integer sets for per-cell face/coface data.
+//!
+//! [`IntSet`] is a type alias for `Vec<usize>` kept in sorted, deduplicated
+//! order.  Face/coface sets are always small (typically 1–8 elements), so a
+//! contiguous sorted vector is faster than any tree- or hash-based alternative:
+//! single allocation, no pointer chasing, and O(n+m) merge operations that
+//! exploit the sortedness invariant.
+
 /// Sorted `Vec<usize>` for long-lived, per-cell face/coface sets.
 /// These are always small (bounded by local cell connectivity, typically 1-8 elements)
 /// so a contiguous sorted Vec is cheaper than BTreeSet: one allocation, no pointer chasing.

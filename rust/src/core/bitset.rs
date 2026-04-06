@@ -1,3 +1,11 @@
+//! Dense bitset for mutable scratch state in the traversal algorithm.
+//!
+//! [`BitSet`] stores membership for a fixed universe `0..N` in packed `u64`
+//! words.  It is used exclusively in `ogposet::traverse`, where several scratch
+//! sets are pre-allocated once and then reused across loop iterations via
+//! [`BitSet::reset`] and [`BitSet::copy_from`], avoiding per-iteration heap
+//! allocation in the hot path.
+
 /// Dense set of integers in a fixed universe `0..N`.
 ///
 /// Representation:
@@ -13,14 +21,15 @@ pub(crate) struct BitSet {
 }
 
 impl BitSet {
+    /// Allocate a bitset for the universe `0..universe`, with all bits clear.
     pub fn new(universe: usize) -> Self {
         let words = universe.div_ceil(64);
         BitSet { bits: vec![0u64; words], count: 0 }
     }
 
+    /// Insert `x`; returns `true` if `x` was not already present.
     #[inline]
     pub fn insert(&mut self, x: usize) -> bool {
-        // Map x to its storage location: word index + bit mask inside that word.
         let (w, b) = (x / 64, 1u64 << (x % 64));
         if self.bits[w] & b == 0 {
             self.bits[w] |= b;
@@ -31,9 +40,9 @@ impl BitSet {
         }
     }
 
+    /// Remove `x`; returns `true` if `x` was present.
     #[inline]
     pub fn remove(&mut self, x: usize) -> bool {
-        // Same mapping as insert; clear the bit if it is currently set.
         let (w, b) = (x / 64, 1u64 << (x % 64));
         if self.bits[w] & b != 0 {
             self.bits[w] &= !b;
@@ -44,16 +53,19 @@ impl BitSet {
         }
     }
 
+    /// True if `x` is in the set; safe to call with out-of-range values.
     #[inline]
     pub fn contains(&self, x: usize) -> bool {
-        // Out-of-range words are treated as "not present".
         let w = x / 64;
         w < self.bits.len() && self.bits[w] & (1u64 << (x % 64)) != 0
     }
 
+    /// True if no elements are present.
     pub fn is_empty(&self) -> bool { self.count == 0 }
+    /// Number of elements currently in the set.
     pub fn len(&self) -> usize { self.count }
 
+    /// Iterate over set members in ascending order.
     pub fn iter(&self) -> BitSetIter<'_> {
         BitSetIter {
             bits: &self.bits,
@@ -88,6 +100,7 @@ impl BitSet {
     }
 }
 
+/// Iterator over the members of a [`BitSet`], yielding values in ascending order.
 pub(crate) struct BitSetIter<'a> {
     bits:     &'a [u64],
     word_idx: usize,
