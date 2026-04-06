@@ -202,6 +202,9 @@ fn run(args: Args) -> bool {
     }
 }
 
+#[cfg(test)]
+mod tests;
+
 fn main() {
     let args = match parse_args() {
         Ok(args) => args,
