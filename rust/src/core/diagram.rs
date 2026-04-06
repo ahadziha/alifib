@@ -251,7 +251,7 @@ impl Diagram {
         if Diagram::equal(lhs, rhs) {
             return true;
         }
-        match ogposet::isomorphism_of(&lhs.shape, &rhs.shape) {
+        match ogposet::find_isomorphism(&lhs.shape, &rhs.shape) {
             Err(_) => false,
             Ok(iso) => {
                 let pulled_labels = pullback_labels(rhs, &iso);
@@ -263,7 +263,7 @@ impl Diagram {
     /// Given two diagrams whose top-level shapes are isomorphic, find the image
     /// of `focus` (a label in `source`) in `target` under that shape isomorphism.
     pub fn map_tag_via_shape_iso(source: &Diagram, target: &Diagram, focus: &Tag) -> Result<Tag, Error> {
-        let iso = ogposet::isomorphism_of(&source.shape, &target.shape)
+        let iso = ogposet::find_isomorphism(&source.shape, &target.shape)
             .map_err(|_| Error::new("boundary shapes don't match"))?;
         let dim = source.top_dim();
         let (Some(source_row), Some(map_row), Some(target_row)) = (

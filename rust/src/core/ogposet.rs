@@ -7,7 +7,7 @@
 //! - [`boundary`] — extract the sub-ogposet on the sign-side k-boundary
 //! - [`boundary_traverse`] — normalised boundary (memoised)
 //! - [`normalisation`] — canonical cell ordering (memoised)
-//! - [`isomorphism_of`] — decide shape isomorphism via canonical forms
+//! - [`find_isomorphism`] — decide shape isomorphism via canonical forms
 //! - [`traverse`] — general sub-ogposet traversal (drives all of the above)
 
 use std::sync::Arc;
@@ -586,7 +586,7 @@ pub(super) fn boundary_traverse(sign: Sign, k: usize, g: &Arc<Ogposet>) -> (Arc<
 /// The algorithm normalises both shapes and checks that their canonical forms
 /// are structurally equal.  If so, the isomorphism is recovered by composing
 /// the normalisation embedding of `u` with the inverse of `v`'s.
-pub(super) fn isomorphism_of(u: &Arc<Ogposet>, v: &Arc<Ogposet>) -> Result<Embedding, Error> {
+pub(super) fn find_isomorphism(u: &Arc<Ogposet>, v: &Arc<Ogposet>) -> Result<Embedding, Error> {
     let failure = |msg: &str| Err(Error::new(msg));
 
     if u.dim != v.dim { return failure("dimensions do not match"); }
