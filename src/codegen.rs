@@ -345,6 +345,15 @@ impl Program {
         interpret_program(context, &ast)
     }
 
+    /// Serialise to `.ali` source text using the round-trip pretty-printer.
+    ///
+    /// Output is guaranteed to re-parse to an equivalent program.
+    /// Prefer this over [`to_ali`](Self::to_ali) when the output will be read by humans or
+    /// fed back into the parser.
+    pub fn print_ali(&self) -> String {
+        crate::language::print_program(&self.clone().into_ast())
+    }
+
     /// Serialise to `.ali` source text (useful for debugging and snapshot tests).
     pub fn to_ali(&self) -> String {
         let mut out = String::from("@Type\n");
