@@ -153,9 +153,10 @@ impl ModuleResolutions {
 pub struct ModuleStore {
     modules: HashMap<String, ResolvedModule>,
     resolutions: ModuleResolutions,
-    /// Canonical paths of dependency modules in topological order (leaves
-    /// first, root excluded).  Populated in post-order by `resolve_recursive`.
-    topo: Vec<String>,
+    /// Canonical paths of dependency modules in the order they must be
+    /// interpreted (leaves first, root excluded).  Populated in post-order
+    /// by `resolve_recursive`.
+    dep_order: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -171,7 +172,7 @@ impl ModuleStore {
         ModuleStore {
             modules: HashMap::new(),
             resolutions: ModuleResolutions::empty(),
-            topo: Vec::new(),
+            dep_order: Vec::new(),
         }
     }
 
@@ -184,22 +185,22 @@ impl ModuleStore {
     }
 
     fn insert_module(&mut self, canonical_path: String, program: Program, source: String) {
-        self.topo.push(canonical_path.clone());
+        self.dep_order.push(canonical_path.clone());
         self.modules.insert(canonical_path, ResolvedModule { program, source });
     }
 
     /// Consume this store and split it into the resolution mappings (needed
     /// during interpretation) and an ordered list of dependency modules
-    /// (needed for the topo-order pre-interpretation loop).
+    /// (needed for the dep_order-order pre-interpretation loop).
     pub fn into_parts(self) -> (ModuleResolutions, Vec<(String, ResolvedModule)>) {
-        let ModuleStore { mut modules, resolutions, topo } = self;
-        let topo_modules = topo.into_iter()
+        let ModuleStore { mut modules, resolutions, dep_order } = self;
+        let dep_order_modules = dep_order.into_iter()
             .filter_map(|path| {
                 let module = modules.remove(&path)?;
                 Some((path, module))
             })
             .collect();
-        (resolutions, topo_modules)
+        (resolutions, dep_order_modules)
     }
 }
 
