@@ -1,6 +1,10 @@
 use super::diagram::interpret_diagram_as_term;
 use super::scope::interpret_address;
-use super::types::*;
+use super::types::{
+    Context, EvalMap, HoleBd, HoleBoundaryInfo, HoleInfo, InterpResult, Step, Term,
+    fail, get_cell_data, make_error, make_error_from_core, resolve_map_domain_complex,
+    resolve_type_complex, sorted_generators,
+};
 use crate::aux::{self, LocalId, Tag};
 use crate::core::{
     complex::{Complex, MapDomain},
@@ -12,6 +16,9 @@ use std::sync::Arc;
 
 // ---- Hole boundary enrichment ----
 
+/// Construct a hole boundary descriptor by applying a partial map to a boundary diagram.
+///
+/// Returns `HoleBd::Full` if the map is total on the boundary, `HoleBd::Partial` otherwise.
 fn make_hole_bd(scope: &Complex, map: &PartialMap, boundary: &Diagram) -> HoleBd {
     match PartialMap::apply(map, boundary) {
         Ok(mapped_boundary) => HoleBd::Full(mapped_boundary, Arc::new(scope.clone())),
@@ -23,6 +30,9 @@ fn make_hole_bd(scope: &Complex, map: &PartialMap, boundary: &Diagram) -> HoleBd
     }
 }
 
+/// Fill in boundary context for a hole using the source cell's boundary data and the map so far.
+///
+/// Only acts when the hole has a `source_tag` and that tag has boundary data in the domain.
 fn enrich_hole(
     hole: &mut HoleInfo,
     scope: &Complex,
@@ -65,6 +75,7 @@ fn enrich_hole(
     }
 }
 
+/// Enrich all holes in a result with boundary information from the given partial map.
 fn enrich_holes(
     result: &mut InterpResult,
     scope: &Complex,
@@ -77,6 +88,7 @@ fn enrich_holes(
     }
 }
 
+/// Interpret an anonymous map component (inline map definition with an explicit target complex).
 pub fn interpret_anon_map_component(
     context: &Context,
     domain: &Complex,
@@ -94,6 +106,7 @@ pub fn interpret_anon_map_component(
 // ---- PartialMap interpretation ----
 
 /// Bundled context for evaluating partial map expressions.
+///
 /// Packages the three parameters that travel together through every internal
 /// evaluation function: the interpreter state, the lexical scope for name
 /// resolution, and the complex being mapped from.
@@ -106,6 +119,7 @@ struct PartialMapCtx<'a> {
     domain: &'a Complex,
 }
 
+/// Interpret a partial map expression, resolving it against the given scope and domain.
 pub fn interpret_partial_map(
     context: &Context,
     scope: &Complex,
@@ -115,6 +129,9 @@ pub fn interpret_partial_map(
     eval_partial_map(&PartialMapCtx { context, scope, domain }, &partial_map.inner, partial_map.span)
 }
 
+/// Evaluate a partial map AST node, dispatching basic vs. dot-access forms.
+///
+/// A dot-access `base.rest` evaluates `base`, then looks up `rest` in the base map's domain.
 fn eval_partial_map(ctx: &PartialMapCtx<'_>, partial_map: &ast::PartialMap, span: Span) -> Step<EvalMap> {
     match partial_map {
         ast::PartialMap::Basic(basic) => eval_partial_map_basic(ctx, basic, span),
@@ -132,6 +149,7 @@ fn eval_partial_map(ctx: &PartialMapCtx<'_>, partial_map: &ast::PartialMap, span
     }
 }
 
+/// Evaluate a basic partial map expression: name lookup, anonymous map, or parenthesized form.
 fn eval_partial_map_basic(ctx: &PartialMapCtx<'_>, basic: &PartialMapBasic, span: Span) -> Step<EvalMap> {
     match basic {
         PartialMapBasic::Name(name) => {
@@ -153,6 +171,7 @@ fn eval_partial_map_basic(ctx: &PartialMapCtx<'_>, basic: &PartialMapBasic, span
 
 // ---- PartialMapDef / PartialMapExt interpretation ----
 
+/// Interpret a partial map definition: either a direct map expression or an extension block.
 pub fn interpret_pmap_def(
     context: &Context,
     scope: &Complex,
@@ -166,6 +185,9 @@ pub fn interpret_pmap_def(
     }
 }
 
+/// Produce the starting map for an extension block.
+///
+/// If a prefix map is given, evaluate it; otherwise start from the empty map on the domain.
 fn initial_eval_map(ctx: &PartialMapCtx<'_>, prefix: &Option<Box<Spanned<ast::PartialMap>>>) -> Step<EvalMap> {
     match prefix {
         None => (
@@ -176,6 +198,9 @@ fn initial_eval_map(ctx: &PartialMapCtx<'_>, prefix: &Option<Box<Spanned<ast::Pa
     }
 }
 
+/// Evaluate a sequence of partial map clauses, extending the map after each one.
+///
+/// Returns early if any clause fails to produce an updated map.
 fn eval_pmap_clauses(
     ctx: &PartialMapCtx<'_>,
     initial_map: PartialMap,
@@ -200,6 +225,10 @@ fn eval_pmap_clauses(
     (Some(map), result)
 }
 
+/// Interpret an extension-style partial map (`{ prefix? clause* }`).
+///
+/// Evaluates the optional prefix, then each clause in order, enriching any holes
+/// with boundary context once all clauses are processed.
 fn interpret_partial_map_ext(ctx: &PartialMapCtx<'_>, ext: &PartialMapExt) -> Step<EvalMap> {
     let (initial_opt, prefix_result) = initial_eval_map(ctx, &ext.prefix);
     let Some(initial) = initial_opt else {
@@ -218,6 +247,9 @@ fn interpret_partial_map_ext(ctx: &PartialMapCtx<'_>, ext: &PartialMapExt) -> St
     (Some(EvalMap { map: current_map, domain: effective_domain }), result)
 }
 
+/// Tag the most recently added hole with the source cell, for deferred boundary enrichment.
+///
+/// Only acts when the source term is a single cell diagram with a top label.
 fn mark_last_hole_source_tag(result: &mut InterpResult, source_term: &Term) {
     let Term::Diag(source_diagram) = source_term else {
         return;
@@ -234,6 +266,10 @@ fn mark_last_hole_source_tag(result: &mut InterpResult, source_term: &Term) {
     }
 }
 
+/// Interpret a single clause `lhs => rhs` in a partial map extension block.
+///
+/// Evaluates both sides, then calls `interpret_assign` to extend the map.
+/// If the right side fails with a hole, the source tag is recorded on that hole.
 fn interpret_partial_map_clause(ctx: &PartialMapCtx<'_>, map: PartialMap, clause: &Spanned<PartialMapClause>) -> Step<PartialMap> {
     let (left_opt, left_result) = interpret_diagram_as_term(ctx.context, ctx.domain, &clause.inner.lhs);
     let Some(left_term) = left_opt else { return (None, left_result); };
@@ -261,7 +297,7 @@ fn interpret_partial_map_clause(ctx: &PartialMapCtx<'_>, map: PartialMap, clause
     }
 }
 
-/// Handle assignment of a term to another term in a map clause.
+/// Match two evaluated map terms pointwise, extending the map for each generator in the shared domain.
 fn extend_matching_map_images(
     context: &Context,
     map: PartialMap,
@@ -302,6 +338,7 @@ fn extend_matching_map_images(
     Ok(extended)
 }
 
+/// Process a `lhs => rhs` assignment, dispatching on whether the terms are diagrams or maps.
 fn interpret_assign(
     context: &Context,
     map: PartialMap,
@@ -324,6 +361,7 @@ fn interpret_assign(
     }
 }
 
+/// Collect the boundary cell tags not yet defined in the map, together with their sign.
 fn boundary_dependencies(cell_data: &CellData, map: &PartialMap) -> Vec<(Tag, DiagramSign)> {
     let CellData::Boundary { boundary_in, boundary_out } = cell_data else {
         return vec![];
@@ -341,6 +379,7 @@ fn boundary_dependencies(cell_data: &CellData, map: &PartialMap) -> Vec<(Tag, Di
         .collect()
 }
 
+/// Extract the source or target boundary from cell data, or `None` for a 0-cell.
 fn boundary_of_sign(
     cell_data: &CellData,
     sign: DiagramSign,
@@ -352,6 +391,10 @@ fn boundary_of_sign(
     }
 }
 
+/// Determine the image classifier for a boundary cell by shape isomorphism.
+///
+/// Maps `focus` through the isomorphism between `source_boundary` and `target_boundary`,
+/// then looks up the resulting tag's classifier in `target`.
 fn image_classifier_via_boundary(
     focus: &Tag,
     source_boundary: &Diagram,
@@ -429,6 +472,9 @@ pub fn extend_map_for_cell(
 
 // ---- Partial map naming ----
 
+/// Verify that every generator in the domain is mapped; report an error for each gap.
+///
+/// Only checks if `is_total` is `true`.
 fn check_map_totality(
     result: &mut InterpResult,
     domain: &Complex,
@@ -451,6 +497,7 @@ fn check_map_totality(
     }
 }
 
+/// Interpret a named partial map definition, producing the `(name, map, domain)` triple for binding.
 pub fn interpret_def_pmap(
     context: &Context,
     scope: &Complex,
@@ -480,4 +527,3 @@ pub fn interpret_def_pmap(
     let name = dp.name.inner.clone();
     (Some((name, eval_map.map, MapDomain::Type(id))), combined)
 }
-

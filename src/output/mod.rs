@@ -84,7 +84,7 @@ impl InterpretedFile {
         let resolutions = Arc::new(resolutions);
 
         // Phase 3a: interpret dependency modules in topological order (leaves first).
-        let mut prev_state = Arc::new(GlobalStore::empty());
+        let mut prev_state = Arc::new(GlobalStore::default());
         for (dep_path, dep_module) in &topo_modules {
             let dep_context = Context::new_with_resolutions(
                 dep_path.clone(),
@@ -241,16 +241,12 @@ impl fmt::Display for GlobalStore {
         writeln!(
             f,
             "{} cells, {} types, {} modules",
-            self.cells.len(),
-            self.types.len(),
-            self.modules.len(),
+            self.cells_count(),
+            self.types_count(),
+            self.modules_count(),
         )?;
 
-        let mut module_entries: Vec<_> = self
-            .modules
-            .iter()
-            .map(|(id, arc)| (id.as_str(), &**arc))
-            .collect();
+        let mut module_entries: Vec<_> = self.modules_iter().collect();
         module_entries.sort_by_key(|(id, _)| *id);
 
         for (module_id, module_complex) in &module_entries {

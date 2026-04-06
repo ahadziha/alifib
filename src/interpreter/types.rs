@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use super::global_store::GlobalStore;
 use crate::aux::{GlobalId, LocalId, Tag};
 use crate::aux::loader::ModuleResolutions;
@@ -31,10 +29,11 @@ pub struct Context {
 }
 
 impl Context {
+    /// Create a context with an empty global store and no module resolutions.
     pub fn new_empty(module_id: String) -> Self {
         Self {
             current_module: module_id,
-            state: Arc::new(GlobalStore::empty()),
+            state: Arc::new(GlobalStore::default()),
             resolutions: Arc::new(ModuleResolutions::empty()),
         }
     }
@@ -49,7 +48,7 @@ impl Context {
         Self { current_module: module_id, state, resolutions }
     }
 
-    /// Create a Context for a new module that shares global state and resolutions
+    /// Create a context for a new module that shares global state and resolutions
     /// with `other`.
     pub fn new_sharing_state(module_id: String, other: &Context) -> Self {
         Self {
@@ -59,12 +58,12 @@ impl Context {
         }
     }
 
-    /// Get a mutable reference to the state via Arc::make_mut (copy-on-write).
+    /// Get a mutable reference to the state via `Arc::make_mut` (copy-on-write).
     pub fn state_mut(&mut self) -> &mut GlobalStore {
         Arc::make_mut(&mut self.state)
     }
 
-    /// Mutate the current module's Complex in place.
+    /// Mutate the current module's `Complex` in place via the global store.
     pub fn modify_current_module(&mut self, f: impl FnOnce(&mut Complex)) {
         let module_id = self.current_module.clone();
         self.state_mut().modify_module(&module_id, f);
@@ -93,7 +92,9 @@ pub enum HoleBd {
 /// The structured source/target boundary context for a hole.
 #[derive(Debug, Clone)]
 pub struct HoleBoundaryInfo {
+    /// Boundary on the source (input) side of the hole.
     pub boundary_in: HoleBd,
+    /// Boundary on the target (output) side of the hole.
     pub boundary_out: HoleBd,
 }
 
@@ -112,6 +113,7 @@ pub struct HoleInfo {
 }
 
 impl HoleInfo {
+    /// Create a hole record at the given source location, with no boundary information yet.
     pub fn new(span: Span) -> Self {
         Self { span, boundary: None, source_tag: None }
     }
@@ -123,6 +125,7 @@ impl HoleInfo {
 ///
 /// Sequential steps are merged with `combine`, which advances the context
 /// while collecting errors and holes from all steps.
+#[must_use = "interpreter results carry errors and holes that must be propagated"]
 #[derive(Debug, Clone)]
 pub struct InterpResult {
     /// The updated context after this step.
@@ -134,9 +137,14 @@ pub struct InterpResult {
     pub holes: Vec<HoleInfo>,
 }
 
+/// A failable interpretation step: an optional produced value paired with an `InterpResult`.
+///
+/// A `None` value indicates that the step failed (errors will be in the result).
+/// A `Some(v)` value means the step succeeded; the result still carries any holes.
 pub type Step<T> = (Option<T>, InterpResult);
 
 impl InterpResult {
+    /// Create a successful result with no errors or holes.
     pub fn ok(context: Context) -> Self {
         Self {
             context,
@@ -145,14 +153,17 @@ impl InterpResult {
         }
     }
 
+    /// Append an error to this result.
     pub fn add_error(&mut self, err: Error) {
         self.errors.push(err);
     }
 
+    /// Append a hole record to this result.
     pub fn add_hole(&mut self, hole: HoleInfo) {
         self.holes.push(hole);
     }
 
+    /// Merge two sequential results: concatenate errors and holes, advance to `next`'s context.
     pub fn combine(prev: InterpResult, next: InterpResult) -> InterpResult {
         let mut errors = prev.errors;
         errors.extend(next.errors);
@@ -165,15 +176,15 @@ impl InterpResult {
         }
     }
 
+    /// Returns `true` if any errors have been recorded.
     pub fn has_errors(&self) -> bool {
         !self.errors.is_empty()
     }
 
+    /// Returns `true` if any holes have been recorded.
     pub fn has_holes(&self) -> bool {
         !self.holes.is_empty()
     }
-
-
 }
 
 // ---- Mode ----
@@ -195,19 +206,21 @@ pub enum Mode {
 /// to the `GlobalStore` under `owner_type_id`.
 #[derive(Debug, Clone)]
 pub struct TypeScope {
-    /// GlobalId of the type whose body is being interpreted.
+    /// Global ID of the type whose body is being interpreted.
     pub owner_type_id: GlobalId,
-    /// The Complex being accumulated for this type; a mutable local view
+    /// The `Complex` being accumulated for this type; a mutable local view
     /// that is written back to the store once the type body is complete.
     pub working_complex: Complex,
 }
 
 // ---- Term types ----
 
-/// A partial map together with its domain complex, the result of evaluating a map expression.
+/// A partial map together with its domain complex, produced by evaluating a map expression.
 #[derive(Debug, Clone)]
 pub struct EvalMap {
+    /// The evaluated partial map.
     pub map: PartialMap,
+    /// The complex that is the domain of definition for `map`.
     pub domain: Arc<Complex>,
 }
 
@@ -220,7 +233,10 @@ pub enum Term {
     Diag(Diagram),
 }
 
-/// A component produced by the `.in` / `.out` boundary operators.
+/// A component produced by name lookup, `.in`/`.out`, or a hole position.
+///
+/// Used as an intermediate representation before a component is placed in
+/// a diagram context that resolves it to a concrete `Term`.
 #[derive(Debug, Clone)]
 pub enum Component {
     /// A concrete term (diagram or map).
@@ -250,12 +266,16 @@ pub enum TermPair {
 /// The kind of binding being declared, for use in duplicate-name error messages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NameKind {
+    /// A generator declaration.
     Generator,
+    /// A `let` diagram binding.
     Diagram,
+    /// A partial map definition.
     PartialMap,
 }
 
 impl NameKind {
+    /// Returns the human-readable label for this kind, used in error messages.
     pub fn as_str(self) -> &'static str {
         match self {
             NameKind::Generator => "Generator",
@@ -267,10 +287,7 @@ impl NameKind {
 
 // ---- Error helpers ----
 
-pub fn unknown_span() -> Span {
-    Span { start: 0, end: 0 }
-}
-
+/// Construct a runtime error at the given span with the provided message.
 pub fn make_error(span: Span, message: impl Into<String>) -> Error {
     Error::Runtime {
         message: message.into(),
@@ -279,6 +296,7 @@ pub fn make_error(span: Span, message: impl Into<String>) -> Error {
     }
 }
 
+/// Wrap a core-level error into a language-level runtime error at the given span.
 pub fn make_error_from_core(span: Span, error: crate::aux::Error) -> Error {
     Error::Runtime {
         message: error.message,
@@ -287,16 +305,21 @@ pub fn make_error_from_core(span: Span, error: crate::aux::Error) -> Error {
     }
 }
 
+/// Create an `InterpResult` containing a single error at the given span.
 pub fn error_result(context: &Context, span: Span, message: impl Into<String>) -> InterpResult {
     let mut result = InterpResult::ok(context.clone());
     result.add_error(make_error(span, message));
     result
 }
 
+/// Create a failed `Step` with no value and a single error at the given span.
 pub fn fail<T>(context: &Context, span: Span, message: impl Into<String>) -> Step<T> {
     (None, error_result(context, span, message))
 }
 
+/// Check that `name` is not already in use in `scope`.
+///
+/// Returns `Some(error_result)` if the name is already taken, `None` if it is free.
 pub fn ensure_name_free(
     context: &Context,
     scope: &Complex,
@@ -311,6 +334,7 @@ pub fn ensure_name_free(
     }
 }
 
+/// Collect all generators from a complex, sorted ascending by dimension.
 pub fn sorted_generators(complex: &Complex) -> Vec<(usize, LocalId, Tag)> {
     let mut generators: Vec<(usize, LocalId, Tag)> = complex
         .generators_iter()
@@ -320,6 +344,9 @@ pub fn sorted_generators(complex: &Complex) -> Vec<(usize, LocalId, Tag)> {
     generators
 }
 
+/// Join a prefix and a name with a `.` separator, handling empty components.
+///
+/// If either part is empty, returns the other unchanged; otherwise returns `"prefix.name"`.
 pub fn qualify_name(prefix: &str, name: &str) -> LocalId {
     if prefix.is_empty() {
         name.to_owned()
@@ -330,6 +357,7 @@ pub fn qualify_name(prefix: &str, name: &str) -> LocalId {
     }
 }
 
+/// Find the global ID of the root (unnamed) generator in a module scope.
 pub fn resolve_root_owner_type_id(
     context: &Context,
     module_space: &Complex,
@@ -352,6 +380,9 @@ pub fn resolve_root_owner_type_id(
     }
 }
 
+/// Look up the definition complex for a type by its global ID.
+///
+/// `missing_prefix` is prepended to the ID in the error message when the type is not found.
 pub fn resolve_type_complex(
     context: &Context,
     type_id: GlobalId,
@@ -366,6 +397,7 @@ pub fn resolve_type_complex(
     (Some(Arc::clone(&type_entry.complex)), result)
 }
 
+/// Resolve a map domain (type or module) to its defining complex.
 pub fn resolve_map_domain_complex(
     context: &Context,
     domain: &MapDomain,
@@ -398,7 +430,7 @@ pub fn get_cell_data(context: &Context, source: &Complex, tag: &Tag) -> Option<C
     context.state.cell_data_for_tag(source, tag)
 }
 
-/// Build an identity map for a complex using state for cell data lookup.
+/// Build an identity partial map for a complex using the state for cell data lookup.
 pub fn identity_map(context: &Context, domain: &Complex) -> PartialMap {
     let entries: Vec<(Tag, usize, CellData, Diagram)> = domain
         .generators_iter()

@@ -1,4 +1,8 @@
-use super::types::*;
+use super::types::{
+    Component, Context, EvalMap, HoleBd, HoleBoundaryInfo, HoleInfo, InterpResult, Step,
+    Term, TermPair, fail, make_error, make_error_from_core, resolve_map_domain_complex,
+    sorted_generators,
+};
 use crate::core::{
     complex::Complex,
     diagram::{CellData, Diagram, Sign as DiagramSign},
@@ -9,7 +13,7 @@ use std::sync::Arc;
 
 // ---- Helpers ----
 
-/// Extract a `Diagram` from an `Option<Term>`, failing with an error if it's a map.
+/// Extract a `Diagram` from an `Option<Term>`, recording an error if it is a map.
 fn require_diagram_term(
     term: Option<Term>,
     mut result: InterpResult,
@@ -25,6 +29,7 @@ fn require_diagram_term(
     }
 }
 
+/// Parse a dimension string into a `usize`, failing with an error on invalid input.
 fn parse_paste_dim(context: &Context, dim: &Spanned<String>) -> Step<usize> {
     dim.inner
         .parse::<usize>()
@@ -35,6 +40,7 @@ fn parse_paste_dim(context: &Context, dim: &Spanned<String>) -> Step<usize> {
 
 // ---- Diagram interpretation ----
 
+/// Compute a boundary term from a diagram at one dimension below its top.
 fn boundary_term_from_diagram(
     diagram: &Diagram,
     sign: DiagramSign,
@@ -51,6 +57,10 @@ fn boundary_term_from_diagram(
     }
 }
 
+/// Apply a partial map to a component, producing the image term.
+///
+/// Diagrams are mapped by `PartialMap::apply`; inner maps are composed.
+/// A hole produces a recorded `HoleInfo`; a boundary direction is an error.
 fn apply_map_component(
     eval_map: &EvalMap,
     component: Component,
@@ -86,8 +96,9 @@ fn apply_map_component(
     }
 }
 
-/// Interpret a diagram expression; partial maps are rejected.
-/// Delegates to `interpret_diagram_as_term` and extracts the `Diagram`.
+/// Interpret a diagram expression, rejecting partial maps.
+///
+/// Delegates to [`interpret_diagram_as_term`] and extracts the `Diagram`.
 pub fn interpret_diagram(
     context: &Context,
     scope: &Complex,
@@ -104,6 +115,7 @@ pub fn interpret_diagram(
     }
 }
 
+/// Interpret a diagram expression, which may be a component or a dot-access chain.
 pub fn interpret_dexpr(
     context: &Context,
     scope: &Complex,
@@ -129,6 +141,10 @@ pub fn interpret_dexpr(
     }
 }
 
+/// Interpret a dot-access expression: `expr.field`.
+///
+/// If `expr` evaluates to a diagram, `field` must be `.in` or `.out` (a boundary selector).
+/// If `expr` evaluates to a partial map, `field` is applied as a map component.
 fn interpret_dot_access(
     context: &Context,
     scope: &Complex,
@@ -175,6 +191,8 @@ fn interpret_dot_access(
     }
 }
 
+/// Interpret a single diagram component: name lookup, anonymous map, parenthesized
+/// subexpression, `.in`/`.out` boundary selector, or a hole `?`.
 pub fn interpret_dcomponent(
     context: &Context,
     scope: &Complex,
@@ -213,6 +231,7 @@ pub fn interpret_dcomponent(
 
 // ---- Assert ----
 
+/// Evaluate both sides of an assertion statement and pair them for equality checking.
 pub fn interpret_assert(
     context: &Context,
     scope: &Complex,
@@ -239,6 +258,10 @@ pub fn interpret_assert(
     }
 }
 
+/// Interpret a diagram AST node as a term (diagram or map).
+///
+/// Dispatches on whether the node is an explicit paste (`*k`) or an implicit
+/// juxtaposition sequence.
 pub fn interpret_diagram_as_term(
     context: &Context,
     scope: &Complex,
@@ -288,6 +311,7 @@ fn interpret_paste(
 }
 
 /// Interpret a juxtaposition sequence of diagram expressions.
+///
 /// A single expression evaluates to its term; multiple expressions are
 /// implicitly pasted at the highest compatible dimension.
 fn interpret_sequence_as_term(
@@ -348,8 +372,10 @@ fn enrich_hole_with_right_context(
     (None, result)
 }
 
-/// Paste a sequence of diagram expressions onto an accumulator, enriching
-/// any hole with the left boundary from the accumulator so far.
+/// Paste a sequence of diagram expressions onto an accumulator.
+///
+/// Any newly introduced hole is enriched with the left boundary of the accumulator
+/// at the point where the hole appears.
 fn accumulate_paste(
     d_first: Diagram,
     first_result: InterpResult,
@@ -404,6 +430,7 @@ fn accumulate_paste(
 
 // ---- Boundaries ----
 
+/// Interpret a source/target boundary pair and wrap the result as `CellData::Boundary`.
 pub fn interpret_boundaries(
     context: &Context,
     scope: &Complex,
@@ -425,6 +452,7 @@ pub fn interpret_boundaries(
 
 // ---- Diagram naming ----
 
+/// Interpret a `let` diagram binding, producing a `(name, diagram)` pair.
 pub fn interpret_let_diag(
     context: &Context,
     scope: &Complex,
@@ -437,7 +465,7 @@ pub fn interpret_let_diag(
 // ---- Assert checking ----
 
 /// Check that two evaluated terms are equal: diagrams up to isomorphism,
-/// maps pointwise on generators in the domain.
+/// maps pointwise on all generators in the domain.
 pub fn check_assert(pair: &TermPair) -> Result<(), String> {
     match pair {
         TermPair::Diagrams { fst, snd } => {

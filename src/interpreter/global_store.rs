@@ -29,23 +29,21 @@ pub struct CellEntry {
 /// - every type/module id is unique in its table
 #[derive(Debug, Clone, Default)]
 pub struct GlobalStore {
-    pub cells: HashMap<GlobalId, CellEntry>,
-    pub cells_by_dim: HashMap<usize, Vec<GlobalId>>,
-    pub types: HashMap<GlobalId, TypeEntry>,
-    pub modules: HashMap<ModuleId, Arc<Complex>>,
+    pub(crate) cells: HashMap<GlobalId, CellEntry>,
+    pub(crate) cells_by_dim: HashMap<usize, Vec<GlobalId>>,
+    pub(crate) types: HashMap<GlobalId, TypeEntry>,
+    pub(crate) modules: HashMap<ModuleId, Arc<Complex>>,
 }
 
 impl GlobalStore {
-    pub fn empty() -> Self {
-        Self::default()
-    }
-
+    /// Register a non-type cell with the given dimension and boundary data.
     pub fn set_cell(&mut self, id: GlobalId, dim: usize, data: CellData) {
         self.cells_by_dim.entry(dim).or_default().push(id);
         self.cells.insert(id, CellEntry { data });
         self.assert_invariants();
     }
 
+    /// Register a type cell with its boundary data and definition complex.
     pub fn set_type(&mut self, id: GlobalId, data: CellData, complex: Complex) {
         self.types.insert(
             id,
@@ -57,12 +55,14 @@ impl GlobalStore {
         self.assert_invariants();
     }
 
+    /// Register a module with its complex.
     pub fn set_module(&mut self, id: ModuleId, complex: Complex) {
         self.modules.insert(id, Arc::new(complex));
         self.assert_invariants();
     }
 
-    /// Mutate the Complex for a module in place via Arc::make_mut (copy-on-write).
+    /// Mutate the `Complex` for a module in place via `Arc::make_mut` (copy-on-write).
+    ///
     /// Silently does nothing if the module id is not found.
     pub fn modify_module(&mut self, id: &str, f: impl FnOnce(&mut Complex)) {
         if let Some(arc) = self.modules.get_mut(id) {
@@ -71,7 +71,8 @@ impl GlobalStore {
         }
     }
 
-    /// Mutate the Complex of a type entry in place via Arc::make_mut (copy-on-write).
+    /// Mutate the `Complex` of a type entry in place via `Arc::make_mut` (copy-on-write).
+    ///
     /// Silently does nothing if the type id is not found.
     pub fn modify_type_complex(&mut self, id: GlobalId, f: impl FnOnce(&mut Complex)) {
         if let Some(entry) = self.types.get_mut(&id) {
@@ -80,19 +81,24 @@ impl GlobalStore {
         }
     }
 
+    /// Look up a non-type cell by its global ID.
     pub fn find_cell(&self, id: GlobalId) -> Option<&CellEntry> {
         self.cells.get(&id)
     }
 
+    /// Look up a type entry by its global ID.
     pub fn find_type(&self, id: GlobalId) -> Option<&TypeEntry> {
         self.types.get(&id)
     }
 
+    /// Look up a module's complex by its string ID, returning a reference.
     pub fn find_module(&self, id: &str) -> Option<&Complex> {
         self.modules.get(id).map(|arc| &**arc)
     }
 
-    /// Returns a cloned Arc so callers can cheaply share the module complex.
+    /// Look up a module's complex by its string ID, returning a cloned `Arc`.
+    ///
+    /// The `Arc` lets callers cheaply share the module complex without cloning the data.
     pub fn find_module_arc(&self, id: &str) -> Option<Arc<Complex>> {
         self.modules.get(id).map(Arc::clone)
     }
@@ -108,6 +114,27 @@ impl GlobalStore {
         }
     }
 
+    /// Returns the number of non-type cells in the store.
+    pub fn cells_count(&self) -> usize {
+        self.cells.len()
+    }
+
+    /// Returns the number of types in the store.
+    pub fn types_count(&self) -> usize {
+        self.types.len()
+    }
+
+    /// Returns the number of modules in the store.
+    pub fn modules_count(&self) -> usize {
+        self.modules.len()
+    }
+
+    /// Returns an iterator over `(module_id, module_complex)` pairs, in unspecified order.
+    pub fn modules_iter(&self) -> impl Iterator<Item = (&str, &Complex)> {
+        self.modules.iter().map(|(id, arc)| (id.as_str(), &**arc))
+    }
+
+    /// Debug-only check that every ID in `cells_by_dim` exists in `cells`.
     fn assert_invariants(&self) {
         for ids in self.cells_by_dim.values() {
             for id in ids {

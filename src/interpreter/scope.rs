@@ -9,16 +9,21 @@ use std::sync::Arc;
 use super::diagram::interpret_boundaries;
 use super::types::{
     Context, InterpResult, NameKind, Step, TypeScope, ensure_name_free, make_error,
-    make_error_from_core, resolve_root_owner_type_id, resolve_type_complex, unknown_span,
+    make_error_from_core, resolve_root_owner_type_id, resolve_type_complex,
 };
 
+/// A named diagram binding produced by a `let` statement: `(name, diagram)`.
 pub type DiagramBinding = (LocalId, Diagram);
+
+/// A named map binding produced by a `map` definition: `(name, partial_map, domain)`.
 pub type MapBinding = (LocalId, crate::core::partial_map::PartialMap, MapDomain);
 
+/// Look up the current module's complex in the global store.
 pub fn current_module_scope(context: &Context) -> Option<&Complex> {
     context.state.find_module(&context.current_module)
 }
 
+/// Ensure the current module exists in the store, creating it with a fresh root generator if absent.
 pub fn initialize_module_context(mut context: Context) -> InterpResult {
     let module_id = context.current_module.clone();
     if context.state.find_module(&module_id).is_some() {
@@ -30,7 +35,7 @@ pub fn initialize_module_context(mut context: Context) -> InterpResult {
         Ok(root_diagram) => root_diagram,
         Err(error) => {
             let mut result = InterpResult::ok(context);
-            result.add_error(make_error_from_core(unknown_span(), error));
+            result.add_error(make_error_from_core(Span::synthetic(), error));
             return result;
         }
     };
@@ -49,6 +54,7 @@ pub fn initialize_module_context(mut context: Context) -> InterpResult {
     InterpResult::ok(context)
 }
 
+/// Interpret a sequence of items, threading context through each step.
 pub fn interpret_items<T>(
     context: &Context,
     items: &[T],
@@ -64,6 +70,7 @@ pub fn interpret_items<T>(
     result
 }
 
+/// Interpret a sequence of items, threading both context and a mutable complex scope.
 pub fn interpret_items_in_complex_scope<T>(
     context: &Context,
     mut scope: Complex,
@@ -81,6 +88,12 @@ pub fn interpret_items_in_complex_scope<T>(
     (scope, result)
 }
 
+/// Interpret a sequence of items inside a type scope, threading scope through each step.
+///
+/// Unlike [`interpret_items`] and [`interpret_items_in_complex_scope`], this function
+/// **breaks early on the first error**. Later instructions depend on the scope being in
+/// a consistent state, which an earlier error may have invalidated; continuing past it
+/// risks misleading cascading errors.
 pub fn interpret_items_in_type_scope<T>(
     context: &Context,
     mut scope: TypeScope,
@@ -106,6 +119,7 @@ pub fn interpret_items_in_type_scope<T>(
     (scope, result)
 }
 
+/// Insert a named binding into a complex scope after verifying the name is free.
 fn insert_complex_binding(
     mut scope: Complex,
     result: InterpResult,
@@ -121,6 +135,7 @@ fn insert_complex_binding(
     (scope, result)
 }
 
+/// Insert a diagram binding into a complex scope.
 pub fn insert_complex_diagram_binding(
     scope: Complex,
     result: InterpResult,
@@ -133,6 +148,7 @@ pub fn insert_complex_diagram_binding(
     })
 }
 
+/// Insert a map binding into a complex scope.
 pub fn insert_complex_map_binding(
     scope: Complex,
     result: InterpResult,
@@ -145,6 +161,7 @@ pub fn insert_complex_map_binding(
     })
 }
 
+/// Insert a diagram binding into the current module's complex.
 pub fn insert_module_diagram_binding(
     result: InterpResult,
     binding: Option<DiagramBinding>,
@@ -155,6 +172,7 @@ pub fn insert_module_diagram_binding(
     result
 }
 
+/// Insert a map binding into the current module's complex.
 pub fn insert_module_map_binding(
     result: InterpResult,
     binding: Option<MapBinding>,
@@ -165,6 +183,10 @@ pub fn insert_module_map_binding(
     result
 }
 
+/// Insert a diagram binding into both the local type scope and the global store's type complex.
+///
+/// Fails if the name is already in use, or if the diagram contains local labels
+/// (named diagrams must only reference global cells).
 pub fn insert_type_diagram_binding(
     owner_type_id: GlobalId,
     scope: &Complex,
@@ -187,6 +209,10 @@ pub fn insert_type_diagram_binding(
     (Some(updated_scope), result)
 }
 
+/// Insert a map binding into both the local type scope and the global store's type complex.
+///
+/// Fails if the name is already in use, or if the map is valued in local cells
+/// (named maps must only reference global cells).
 pub fn insert_type_map_binding(
     owner_type_id: GlobalId,
     scope: &Complex,
@@ -209,6 +235,9 @@ pub fn insert_type_map_binding(
     (Some(updated_scope), result)
 }
 
+/// Interpret the optional boundary annotation of a generator declaration.
+///
+/// Returns `CellData::Zero` if no boundary is specified (a 0-dimensional generator).
 pub fn interpret_generator_boundaries(
     context: &Context,
     scope: &Complex,
@@ -228,6 +257,7 @@ pub fn cell_dim(cell_data: &CellData) -> usize {
     }
 }
 
+/// Create a cell diagram for a generator, wrapping core errors as language errors at `span`.
 pub fn create_generator_diagram(
     span: Span,
     tag: Tag,
@@ -237,6 +267,7 @@ pub fn create_generator_diagram(
         .map_err(|error| make_error_from_core(span, error))
 }
 
+/// Open a type scope by looking up the type's complex in the global store.
 pub fn open_type_scope(
     context: &Context,
     owner_type_id: GlobalId,
@@ -257,6 +288,9 @@ pub fn open_type_scope(
     }
 }
 
+/// Resolve the owner type ID from an optional dotted-path address.
+///
+/// If `address` is `None` or empty, falls back to the root generator of the module scope.
 pub fn resolve_owner_type_id(
     context: &Context,
     module_scope: &Complex,
@@ -269,6 +303,7 @@ pub fn resolve_owner_type_id(
     }
 }
 
+/// Resolve an address to a type scope: resolve the owner ID, then open its complex.
 pub fn resolve_type_scope(
     context: &Context,
     module_scope: &Complex,
@@ -289,6 +324,7 @@ pub fn resolve_type_scope(
 
 // ---- Address resolution ----
 
+/// Get an `Arc` reference to the current module's complex, failing if it is not in the store.
 fn current_module_arc(context: &Context, span: Span) -> Step<Arc<Complex>> {
     let module_id = &context.current_module;
     let mut result = InterpResult::ok(context.clone());
@@ -301,6 +337,9 @@ fn current_module_arc(context: &Context, span: Span) -> Step<Arc<Complex>> {
     (Some(module_arc), result)
 }
 
+/// Walk a dotted address prefix, resolving each segment through module maps.
+///
+/// Each segment must name a map whose domain is a module; the scope advances into that module.
 fn resolve_address_prefix_scope(
     context: &Context,
     initial_scope: Arc<Complex>,
@@ -342,6 +381,9 @@ fn resolve_address_prefix_scope(
     (Some(current_scope), result)
 }
 
+/// Look up the global type ID for a named diagram in a complex scope.
+///
+/// The diagram must be a cell with a global tag.
 fn type_id_of_named_diagram(
     scope: &Complex,
     name: &str,
@@ -373,7 +415,7 @@ fn type_id_of_named_diagram(
     }
 }
 
-/// Resolve an address (dotted path) in the current module scope to a global type ID.
+/// Resolve a dotted-path address in the current module scope to a global type ID.
 pub fn interpret_address(context: &Context, address: &Address, addr_span: Span) -> Step<GlobalId> {
     let (module_scope, module_result) = current_module_arc(context, addr_span);
     let Some(module_scope) = module_scope else {

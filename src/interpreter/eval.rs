@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use crate::aux::{GlobalId, Tag};
 use crate::core::{
     complex::{Complex, MapDomain},
@@ -24,8 +22,13 @@ use super::scope::{
 };
 pub use super::types::{Context, InterpResult};
 use super::types::{Mode, NameKind, TypeScope, ensure_name_free, error_result, identity_map, make_error};
+
 // ---- Main interpreter ----
 
+/// Interpret a parsed program in the given context, returning the accumulated result.
+///
+/// Initialises the current module if needed, then interprets each top-level block
+/// in order, threading context through all steps.
 pub fn interpret_program(
     context: Context,
     program: &Program,
@@ -40,6 +43,7 @@ pub fn interpret_program(
     })
 }
 
+/// Dispatch a top-level block to the appropriate handler (type block or local block).
 fn interpret_block(
     context: Context,
     block: &Spanned<Block>,
@@ -50,6 +54,7 @@ fn interpret_block(
     }
 }
 
+/// Interpret the instructions in a `@Type` block sequentially.
 fn interpret_type_block(
     context: &Context,
     body: &[Spanned<TypeInst>],
@@ -59,6 +64,7 @@ fn interpret_type_block(
     })
 }
 
+/// Interpret a single instruction inside a `@Type` block.
 fn interpret_type_inst(
     context: &Context,
     instr: &Spanned<TypeInst>,
@@ -85,6 +91,10 @@ fn interpret_type_inst(
     }
 }
 
+/// Interpret a generator declaration at the `@Type` level.
+///
+/// Only 0-dimensional (object) generators are allowed here; higher-dimensional
+/// generators must appear inside a type body block.
 fn interpret_type_generator(context: &Context, generator: &ast::Generator) -> InterpResult {
     let generator_name = &generator.name.inner;
     let name = generator_name.name.inner.clone();
@@ -151,6 +161,10 @@ fn interpret_type_generator(context: &Context, generator: &ast::Generator) -> In
 
 // ---- Complex resolution ----
 
+/// Resolve and optionally extend a complex (type body), returning the resulting type scope.
+///
+/// A complex may be an address (lookup an existing type) or an address plus a block
+/// (extend the type's complex with new generators and definitions).
 pub(super) fn interpret_complex(
     context: &Context,
     mode: Mode,
@@ -203,6 +217,7 @@ pub(super) fn interpret_complex(
     }
 }
 
+/// Interpret the body of a complex block, threading scope through each instruction.
 fn interpret_complex_body(
     context: &Context,
     mode: Mode,
@@ -214,6 +229,7 @@ fn interpret_complex_body(
     })
 }
 
+/// Interpret one instruction inside a complex body.
 fn interpret_complex_instr(
     context: Context,
     mode: Mode,
@@ -245,6 +261,8 @@ fn interpret_complex_instr(
     }
 }
 
+/// Declare a new generator inside a complex, minting a fresh global ID in `Global` mode
+/// or a local tag in `Local` mode.
 fn interpret_complex_generator(
     context: Context,
     mode: Mode,
@@ -301,6 +319,7 @@ fn interpret_complex_generator(
 
 // ---- Local blocks ----
 
+/// Interpret a `@Local` block: resolve its complex, then process the body statements.
 fn interpret_local_block(
     context: Context,
     complex: &Spanned<ast::Complex>,
@@ -312,6 +331,7 @@ fn interpret_local_block(
     InterpResult::combine(result, local_result)
 }
 
+/// Interpret the body of a local block, threading the type scope through each instruction.
 fn interpret_local_body(
     context: &Context,
     initial_scope: TypeScope,
@@ -324,6 +344,7 @@ fn interpret_local_body(
     (final_scope.working_complex, result)
 }
 
+/// Interpret a single instruction inside a `@Local` block.
 fn interpret_local_inst(
     context: &Context,
     type_scope: &TypeScope,

@@ -11,10 +11,17 @@ use crate::language::ast::{self, IncludeModule, Span};
 use super::global_store::GlobalStore;
 use super::partial_map::interpret_pmap_def;
 use super::scope::interpret_address;
-use super::types::*;
+use super::types::{
+    Context, InterpResult, Mode, NameKind, ensure_name_free, error_result, identity_map,
+    make_error, qualify_name, resolve_type_complex, sorted_generators,
+};
 
+/// A generator to import: `(qualified_name, tag, classifier_diagram)`.
 type ImportedGenerator = (LocalId, Tag, Diagram);
 
+/// Collect generators from a complex, prefixing each name with `prefix`.
+///
+/// If `skip_empty_name` is `true`, the unnamed root generator is excluded.
 fn prefixed_generators(
     source_scope: &Complex,
     prefix: &str,
@@ -31,6 +38,7 @@ fn prefixed_generators(
         .collect()
 }
 
+/// Insert generators into a complex, skipping any whose tag is already present.
 fn insert_generators_by_tag(scope: &mut Complex, generators: impl IntoIterator<Item = ImportedGenerator>) {
     for (qualified_name, tag, classifier) in generators {
         if scope.find_generator_by_tag(&tag).is_some() {
@@ -40,6 +48,7 @@ fn insert_generators_by_tag(scope: &mut Complex, generators: impl IntoIterator<I
     }
 }
 
+/// Apply a partial map to cell boundary data, returning `None` if the map is incomplete.
 fn mapped_cell_data(map: &PartialMap, source_cell_data: &CellData) -> Option<CellData> {
     match source_cell_data {
         CellData::Zero => Some(CellData::Zero),
@@ -57,6 +66,11 @@ fn mapped_cell_data(map: &PartialMap, source_cell_data: &CellData) -> Option<Cel
     }
 }
 
+/// Add unmapped generators from `attachment_scope` into `scope`.
+///
+/// In `Global` mode, each new generator gets a fresh global ID registered in the store.
+/// In `Local` mode, generators are added as local cells.
+/// Returns the updated scope, state, and extended map.
 fn extend_scope_with_attached_generators(
     mode: Mode,
     mut scope: Complex,
@@ -79,7 +93,7 @@ fn extend_scope_with_attached_generators(
         let qualified_name = qualify_name(prefix, &generator_name);
         let image_tag = match mode {
             Mode::Global => {
-                let image_id = GlobalId::fresh();
+                let image_id = crate::aux::GlobalId::fresh();
                 Arc::make_mut(&mut state).set_cell(image_id, generator_dim, image_cell_data.clone());
                 Tag::Global(image_id)
             }
@@ -98,6 +112,10 @@ fn extend_scope_with_attached_generators(
     (scope, state, map)
 }
 
+/// Interpret an `include module` instruction at the top level.
+///
+/// Imports generators from a pre-interpreted module (looked up by resolved path)
+/// and registers an identity inclusion map under the given alias.
 pub fn interpret_include_module_instr(
     context: &Context,
     include_mod: &IncludeModule,
@@ -141,6 +159,10 @@ pub fn interpret_include_module_instr(
     result
 }
 
+/// Interpret an `include` instruction inside a complex body.
+///
+/// Looks up the included type, imports its generators with the given alias as a prefix,
+/// and registers an identity inclusion map.
 pub fn interpret_include_instr(
     context: &Context,
     scope: &Complex,
@@ -172,6 +194,10 @@ pub fn interpret_include_instr(
     (Some(new_scope), include_result)
 }
 
+/// Interpret an `attach` instruction inside a complex body.
+///
+/// Attaches a type along an optional partial map, extending the scope with freshly
+/// created image generators for any unmapped generators in the attachment type.
 pub fn interpret_attach_instr(
     context: &Context,
     mode: Mode,
@@ -192,7 +218,7 @@ pub fn interpret_attach_instr(
 
     let attachment_id = match domain {
         MapDomain::Type(id) => id,
-        MapDomain::Module(_) => return (None, error_result(&attach_result.context, unknown_span(), "Unexpected module domain in attach")),
+        MapDomain::Module(_) => return (None, error_result(&attach_result.context, Span::synthetic(), "Unexpected module domain in attach")),
     };
 
     let (attachment_opt, attachment_result) = resolve_type_complex(
@@ -219,6 +245,9 @@ pub fn interpret_attach_instr(
     (Some(current_scope), r)
 }
 
+/// Resolve the address and alias for an include statement.
+///
+/// Returns the `(GlobalId, alias_name)` pair, or `None` on error.
 fn resolve_include(
     context: &Context,
     include_stmt: &ast::IncludeStmt,
@@ -254,6 +283,9 @@ fn resolve_include(
     (Some((id, name)), addr_result)
 }
 
+/// Resolve the address, name, and optional map for an attach statement.
+///
+/// Returns `(name, partial_map, domain)`, or `None` on error.
 fn resolve_attach(
     context: &Context,
     scope: &Complex,
