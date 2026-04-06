@@ -32,8 +32,3 @@ impl Embedding {
     }
 }
 
-pub struct Pushout {
-    pub tip: Arc<Ogposet>,
-    pub inl: Embedding,
-    pub inr: Embedding,
-}

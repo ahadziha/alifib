@@ -1,4 +1,5 @@
-use super::embeddings::{Embedding, NO_PREIMAGE, Pushout};
+use super::embeddings::{Embedding, NO_PREIMAGE};
+use super::pushout::Pushout;
 use super::ogposet::{self, Ogposet, Sign as OgSign};
 use crate::aux::{Error, Tag};
 use std::sync::Arc;

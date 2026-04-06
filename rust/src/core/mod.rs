@@ -5,5 +5,5 @@ mod embeddings;
 mod intset;
 pub mod map;
 mod ogposet;
-pub(crate) mod pushout;
+mod pushout;
 

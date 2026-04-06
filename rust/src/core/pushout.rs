@@ -1,10 +1,16 @@
 use std::sync::Arc;
 use super::intset::{self, IntSet};
-use super::embeddings::{Embedding, Pushout, NO_PREIMAGE};
+use super::embeddings::{Embedding, NO_PREIMAGE};
+
+pub(super) struct Pushout {
+    pub(super) tip: Arc<Ogposet>,
+    pub(super) inl: Embedding,
+    pub(super) inr: Embedding,
+}
 use super::ogposet::Ogposet;
 
 /// Pushout of f and g along their common domain.
-pub(crate) fn pushout(f: &Embedding, g: &Embedding) -> Pushout {
+pub(super) fn pushout(f: &Embedding, g: &Embedding) -> Pushout {
     let b = &f.cod;
     let c = &g.cod;
     let size_sum = |x: &Ogposet| x.sizes().iter().sum::<usize>();
