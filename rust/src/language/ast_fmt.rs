@@ -50,7 +50,7 @@ impl fmt::Display for DExpr {
 impl fmt::Display for Diagram {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::Principal(exprs) => {
+            Self::PrincipalPaste(exprs) => {
                 for (i, e) in exprs.iter().enumerate() {
                     if i > 0 {
                         f.write_str(" ")?;
@@ -174,7 +174,7 @@ fn pp_block(f: &mut fmt::Formatter, block: &Block, d: usize) -> fmt::Result {
         Block::LocalBlock { complex, body } => {
             pad(f, d)?;
             write!(f, "LocalBlock ")?;
-            pp_complex_header(f, &complex.inner)?;
+            write!(f, "{}", complex.inner)?;
             writeln!(f)?;
             for instr in body {
                 pp_local_inst(f, &instr.inner, d + 1)?;
@@ -265,18 +265,6 @@ fn pp_def_pmap(f: &mut fmt::Formatter, p: &DefPMap, d: usize) -> fmt::Result {
             FmtAddress(&p.address.inner),
             p.value.inner
         )
-    }
-}
-
-fn pp_complex_header(f: &mut fmt::Formatter, c: &Complex) -> fmt::Result {
-    match c {
-        Complex::Address(addr) => write!(f, "{}", FmtAddress(addr)),
-        Complex::Block { address, body } => {
-            if let Some(addr) = address {
-                write!(f, "{} ", FmtAddress(addr))?;
-            }
-            write!(f, "{{...{} items}}", body.len())
-        }
     }
 }
 

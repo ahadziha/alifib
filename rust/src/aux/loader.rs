@@ -150,6 +150,18 @@ impl ModuleStore {
     pub fn get(&self, canonical_path: &str) -> Option<&ResolvedModule> {
         self.modules.get(canonical_path)
     }
+
+    fn has_module(&self, canonical_path: &str) -> bool {
+        self.modules.contains_key(canonical_path)
+    }
+
+    fn register_resolution(&mut self, parent_path: &str, module_name: String, canonical_path: String) {
+        self.resolutions.insert((parent_path.to_owned(), module_name), canonical_path);
+    }
+
+    fn insert_module(&mut self, canonical_path: String, program: Program) {
+        self.modules.insert(canonical_path, ResolvedModule { program });
+    }
 }
 
 fn find_file(loader: &FileLoader, module_name: &str) -> Result<(String, String), ResolveError> {
@@ -206,12 +218,9 @@ fn resolve_recursive(
     for module_name in includes {
         let (canonical_path, contents) = find_file(loader, &module_name)?;
 
-        store.resolutions.insert(
-            (parent_path.to_owned(), module_name),
-            canonical_path.clone(),
-        );
+        store.register_resolution(parent_path, module_name, canonical_path.clone());
 
-        if store.modules.contains_key(&canonical_path) {
+        if store.has_module(&canonical_path) {
             continue;
         }
 
@@ -219,21 +228,16 @@ fn resolve_recursive(
             return Err(ResolveError::Cycle { path: canonical_path });
         }
 
-        let program = match language::parse(&contents) {
-            Ok(p) => p,
-            Err(errors) => {
-                return Err(ResolveError::ParseError {
-                    path: canonical_path,
-                    source: contents,
-                    errors,
-                });
-            }
-        };
+        let program = language::parse(&contents).map_err(|errors| ResolveError::ParseError {
+            path: canonical_path.clone(),
+            source: contents,
+            errors,
+        })?;
 
         let child_loader = loader.with_parent_dir(&canonical_path);
         resolve_recursive(&child_loader, &canonical_path, &program, store, resolving)?;
 
-        store.modules.insert(canonical_path, ResolvedModule { program });
+        store.insert_module(canonical_path, program);
     }
     Ok(())
 }

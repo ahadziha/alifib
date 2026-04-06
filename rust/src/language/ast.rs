@@ -132,8 +132,8 @@ pub struct DefPMap {
 // ---------------------------------------------------------------------------
 
 pub enum Diagram {
-    /// Implicit pasting (juxtaposition)
-    Principal(Vec<Spanned<DExpr>>),
+    /// Implicit pasting: a principal sequence of diagram expressions (no explicit #n).
+    PrincipalPaste(Vec<Spanned<DExpr>>),
     /// Explicit pasting: lhs #n rhs
     Paste {
         lhs: Box<Spanned<Diagram>>,

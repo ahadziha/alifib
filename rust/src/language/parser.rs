@@ -363,7 +363,7 @@ fn build_diagram<'tokens, 'src: 'tokens>() -> RDiagram<'tokens, 'src> {
             .repeated()
             .at_least(1)
             .collect::<Vec<_>>()
-            .map_with(|exprs, e| sp(Diagram::Principal(exprs), cspan(e.span())));
+            .map_with(|exprs, e| sp(Diagram::PrincipalPaste(exprs), cspan(e.span())));
 
         dprincipal.clone().foldl(
             t(Token::Hash)

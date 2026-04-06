@@ -292,7 +292,7 @@ pub fn interpret_diagram_as_term(
     diagram: &Spanned<ast::Diagram>,
 ) -> (Option<Term>, InterpResult) {
     match &diagram.inner {
-        ast::Diagram::Principal(exprs) => {
+        ast::Diagram::PrincipalPaste(exprs) => {
             interpret_sequence_as_term(context, scope, exprs, diagram.span)
         }
         ast::Diagram::Paste { lhs, dim, rhs } => {
