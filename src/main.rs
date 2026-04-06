@@ -1,11 +1,8 @@
 use std::fs;
 use std::process;
-use std::sync::Arc;
 use std::time::Instant;
 
-use alifib::aux::error::report_load_file_error;
 use alifib::aux::loader::Loader;
-use alifib::interpreter::{Context, interpret_program};
 use alifib::language;
 use alifib::output::InterpretedFile;
 
@@ -84,54 +81,12 @@ fn write_output(path: Option<&str>, text: &str) -> Result<(), String> {
     }
 }
 
-fn read_source(path: &str) -> Result<String, String> {
-    fs::read_to_string(path).map_err(|error| format!("could not read `{}`: {}", path, error))
-}
-
-fn parse_program(path: &str, source: &str) -> Result<language::Program, ()> {
-    match language::parse(source) {
-        Ok(program) => Ok(program),
-        Err(errors) => {
-            language::report_errors(&errors, source, path);
-            Err(())
-        }
-    }
-}
-
-fn execute_file(loader: &Loader, path: &str) -> Option<InterpretedFile> {
-    let loaded = match loader.load(path) {
-        Ok(f) => f,
-        Err(e) => {
-            report_load_file_error(&e);
-            return None;
-        }
-    };
-
-    let context = Context::new_empty(loaded.canonical_path.clone());
-    let result = interpret_program(&loaded.modules, context, &loaded.program);
-
-    if !result.errors.is_empty() {
-        language::report_errors(&result.errors, &loaded.source, &loaded.canonical_path);
-        return None;
-    }
-
-    Some(InterpretedFile {
-        state: Arc::clone(&result.context.state),
-        holes: result.holes,
-        source: loaded.source,
-        path: loaded.canonical_path,
-    })
-}
-
 fn run_interpreter(input: &str, output_path: Option<&str>) -> bool {
-    let loader = Loader::default(vec![]);
-    let file = match execute_file(&loader, input) {
+    let file = match InterpretedFile::load(&Loader::default(vec![]), input) {
         Some(file) => file,
         None => return false,
     };
-
-    let text = file.to_string();
-    if let Err(msg) = write_output(output_path, &text) {
+    if let Err(msg) = write_output(output_path, &file.to_string()) {
         eprintln!("error: {}", msg);
         return false;
     }
@@ -143,9 +98,7 @@ fn run_interpreter(input: &str, output_path: Option<&str>) -> bool {
 
 fn run_bench(input: &str, n: usize) -> bool {
     let loader = Loader::default(vec![]);
-
-    // Warmup
-    match execute_file(&loader, input) {
+    match InterpretedFile::load(&loader, input) {
         None => {
             eprintln!("error: benchmark file failed on warmup");
             return false;
@@ -156,28 +109,23 @@ fn run_bench(input: &str, n: usize) -> bool {
         }
         _ => {}
     }
-
     let start = Instant::now();
     for _ in 0..n {
-        execute_file(&loader, input);
+        InterpretedFile::load(&loader, input);
     }
     let elapsed = start.elapsed();
-    let ms_per_run = elapsed.as_secs_f64() * 1000.0 / n as f64;
-    println!("{:.3}", ms_per_run);
+    println!("{:.3}", elapsed.as_secs_f64() * 1000.0 / n as f64);
     true
 }
 
 fn run_ast(input: &str, output: Option<&str>) -> bool {
-    let source = match read_source(input) {
-        Ok(source) => source,
-        Err(error) => {
-            eprintln!("error: {}", error);
-            return false;
-        }
+    let source = match fs::read_to_string(input) {
+        Ok(s) => s,
+        Err(e) => { eprintln!("error: could not read `{}`: {}", input, e); return false; }
     };
-    let program = match parse_program(input, &source) {
-        Ok(program) => program,
-        Err(()) => return false,
+    let program = match language::parse(&source) {
+        Ok(p) => p,
+        Err(errors) => { language::report_errors(&errors, &source, input); return false; }
     };
     if let Err(msg) = write_output(output, &program.to_string()) {
         eprintln!("error: {}", msg);
@@ -190,7 +138,6 @@ fn run(args: Args) -> bool {
     if let Some(n) = args.bench {
         return run_bench(&args.input, n);
     }
-
     match args.mode {
         RunMode::Ast => run_ast(&args.input, args.output.as_deref()),
         RunMode::Interpret => run_interpreter(&args.input, args.output.as_deref()),
@@ -205,7 +152,6 @@ fn main() {
             process::exit(1);
         }
     };
-
     if !run(args) {
         process::exit(1);
     }

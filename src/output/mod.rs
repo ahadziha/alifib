@@ -1,10 +1,10 @@
-use crate::aux::Tag;
+use crate::aux::{loader::Loader, Tag};
 use crate::core::{
     complex::{Complex, MapDomain},
     diagram::{CellData, Diagram, Sign},
     partial_map::PartialMap,
 };
-use crate::interpreter::{GlobalStore, HoleBd, HoleInfo};
+use crate::interpreter::{Context, GlobalStore, HoleBd, HoleInfo, interpret_program};
 use std::fmt;
 use std::sync::Arc;
 
@@ -19,6 +19,33 @@ pub struct InterpretedFile {
 }
 
 impl InterpretedFile {
+    /// Load, parse, and interpret a source file. Returns `None` and prints
+    /// diagnostics to stderr if loading or interpretation fails.
+    pub fn load(loader: &Loader, path: &str) -> Option<Self> {
+        let loaded = match loader.load(path) {
+            Ok(f) => f,
+            Err(e) => {
+                crate::aux::error::report_load_file_error(&e);
+                return None;
+            }
+        };
+
+        let context = Context::new_empty(loaded.canonical_path.clone());
+        let result = interpret_program(&loaded.modules, context, &loaded.program);
+
+        if !result.errors.is_empty() {
+            crate::language::report_errors(&result.errors, &loaded.source, &loaded.canonical_path);
+            return None;
+        }
+
+        Some(Self {
+            state: Arc::clone(&result.context.state),
+            holes: result.holes,
+            source: loaded.source,
+            path: loaded.canonical_path,
+        })
+    }
+
     pub fn has_holes(&self) -> bool {
         !self.holes.is_empty()
     }
