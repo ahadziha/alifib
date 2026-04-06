@@ -78,11 +78,6 @@ fn n_obs(n: usize) -> Diag {
     seq((0..n).map(|_| Diag::atom("ob")).collect())
 }
 
-/// N copies of `ob` composed as a sequence. For boundary src/tgt of function symbols.
-fn obs_diag(n: usize) -> Diag {
-    n_obs(n)
-}
-
 // ---------------------------------------------------------------------------
 // Main program generation
 // ---------------------------------------------------------------------------
@@ -145,13 +140,13 @@ pub fn generate_program(trs: &TRS, module_name: &str) -> ast::Program {
     trs_body.push(gen_instr(
         "copy",
         Some(Diag::atom("ob")),
-        Some(seq(vec![Diag::atom("ob"), Diag::atom("ob")])),
+        Some(n_obs(2)),
     ));
     // swap : ob ob -> ob ob
     trs_body.push(gen_instr(
         "swap",
-        Some(seq(vec![Diag::atom("ob"), Diag::atom("ob")])),
-        Some(seq(vec![Diag::atom("ob"), Diag::atom("ob")])),
+        Some(n_obs(2)),
+        Some(n_obs(2)),
     ));
     if use_unit {
         // erase : ob -> unit
@@ -188,7 +183,7 @@ pub fn generate_program(trs: &TRS, module_name: &str) -> ast::Program {
             // name : ob ob ... -> ob  (f.arity obs)
             trs_body.push(gen_instr(
                 &name,
-                Some(obs_diag(f.arity)),
+                Some(n_obs(f.arity)),
                 Some(Diag::atom("ob")),
             ));
         }
@@ -202,8 +197,8 @@ pub fn generate_program(trs: &TRS, module_name: &str) -> ast::Program {
         // id_i : ob^i -> ob^i
         trs_body.push(gen_instr(
             &format!("id_{}", i),
-            Some(obs_diag(i)),
-            Some(obs_diag(i)),
+            Some(n_obs(i)),
+            Some(n_obs(i)),
         ));
     }
 
@@ -287,18 +282,8 @@ pub fn generate_program(trs: &TRS, module_name: &str) -> ast::Program {
 
         // Check for extra variables on RHS
         let lhs_set: std::collections::HashSet<&String> = lhs_vars.iter().collect();
-        let mut skip = false;
-        for v in &rhs_vars {
-            if !lhs_set.contains(v) {
-                eprintln!(
-                    "SKIPPED rule {}: RHS has extra variable {}",
-                    rule_num, v
-                );
-                skip = true;
-                break;
-            }
-        }
-        if skip {
+        if let Some(v) = rhs_vars.iter().find(|v| !lhs_set.contains(v)) {
+            eprintln!("SKIPPED rule {}: RHS has extra variable {}", rule_num, v);
             continue;
         }
 

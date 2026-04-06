@@ -8,4 +8,4 @@ name = "ari2ali-rs"
 path = "src/main.rs"
 
 [dependencies]
-alifib = { path = ".." }
+alifib = { path = "../.." }

@@ -53,36 +53,19 @@ pub fn free_vars_ordered(t: &Term) -> Vec<String> {
     result
 }
 
-/// Collect ALL variable occurrences in left-to-right leaf order (with repeats).
-pub fn leaf_vars(t: &Term) -> Vec<String> {
-    match t {
-        Term::Var(name) => vec![name.clone()],
-        Term::App { args, .. } => {
-            let mut result = Vec::new();
-            for arg in args {
-                result.extend(leaf_vars(arg));
-            }
-            result
-        }
-    }
-}
-
 pub fn has_constants(funs: &[crate::types::FunDecl]) -> bool {
     funs.iter().any(|f| f.arity == 0)
 }
 
 /// Check if any rule erases a variable (appears in LHS but not RHS).
 pub fn has_erasing_rules(rules: &[Rule]) -> bool {
-    for rule in rules {
-        let lhs_vars: HashSet<String> = free_vars_ordered(&rule.lhs).into_iter().collect();
-        let rhs_vars: HashSet<String> = free_vars_ordered(&rule.rhs).into_iter().collect();
-        for v in &lhs_vars {
-            if !rhs_vars.contains(v) {
-                return true;
-            }
-        }
-    }
-    false
+    rules.iter().any(|rule| {
+        let rhs_vars = free_vars_ordered(&rule.rhs);
+        let rhs_set: HashSet<&str> = rhs_vars.iter().map(String::as_str).collect();
+        free_vars_ordered(&rule.lhs)
+            .iter()
+            .any(|v| !rhs_set.contains(v.as_str()))
+    })
 }
 
 /// Determine if unit/erase cells are needed (constants or erasing rules).
@@ -149,20 +132,7 @@ pub fn encode_swap_network(swaps: &[usize], width: usize) -> Option<Diag> {
         for _ in (s + 2)..width {
             pieces.push(Diag::atom("ob"));
         }
-        if pieces.len() == 1 {
-            parts.push(pieces.remove(0));
-        } else {
-            // wrap in parens via seq (principal paste) — the seq result is multiple elements
-            // and will be wrapped in Paren when used in then()
-            // But here we need it as a single unit in the outer seq, so wrap it:
-            // Actually, for the outer `parts.join(" ")` -> seq, each part is separate.
-            // For the inner "(pieces.join(" "))" -> a seq that will be wrapped in paren.
-            // We push the seq-wrapped version as a single Diag entry.
-            // When seq(parts) is called, each element of parts is a single item via `then`.
-            // The inner pieces are joined with space (principal paste) and need to be wrapped.
-            // We represent a parenthesized group as a Diag that, when used in then(), becomes Paren.
-            parts.push(make_paren_diag(seq(pieces)));
-        }
+        parts.push(compose_or_single(pieces, seq));
     }
 
     Some(seq(parts))
@@ -175,6 +145,16 @@ fn make_paren_diag(d: Diag) -> Diag {
     Diag(Diagram::PrincipalPaste(vec![syn(DExpr::Component(
         DComponent::Paren(Box::new(syn(d.0))),
     ))]))
+}
+
+/// If `pieces` is a single element, return it directly; otherwise combine with
+/// `compose` and wrap the result in a Paren node.
+fn compose_or_single(pieces: Vec<Diag>, compose: impl FnOnce(Vec<Diag>) -> Diag) -> Diag {
+    if pieces.len() == 1 {
+        pieces.into_iter().next().unwrap()
+    } else {
+        make_paren_diag(compose(pieces))
+    }
 }
 
 /// Encode a duplication network for a variable that needs n copies.
@@ -222,10 +202,7 @@ pub fn encode_gather_phase(
     leaf_order: &[String],
     use_unit: bool,
 ) -> (Option<Diag>, usize) {
-    let mut use_counts: HashMap<String, usize> = HashMap::new();
-    for v in input_vars {
-        use_counts.insert(v.clone(), 0);
-    }
+    let mut use_counts: HashMap<String, usize> = input_vars.iter().map(|v| (v.clone(), 0)).collect();
     for v in leaf_order {
         *use_counts.entry(v.clone()).or_insert(0) += 1;
     }
@@ -264,16 +241,11 @@ pub fn encode_gather_phase(
         .any(|p| !is_atom(p, "ob"));
 
     if has_copy_erase {
-        if copy_erase_pieces.len() == 1 {
-            parts.push(copy_erase_pieces.remove(0));
-        } else {
-            // "(" + pieces.join(" #0 ") + ")" = hseq wrapped in parens
-            parts.push(make_paren_diag(hseq(copy_erase_pieces)));
-        }
+        parts.push(compose_or_single(copy_erase_pieces, hseq));
     }
 
     // Phase 2: remove erased wires using unit_l/unit_r
-    let mut wip_wires = after_copy_erase.clone();
+    let mut wip_wires = after_copy_erase;
     if use_unit {
         loop {
             let idx = wip_wires.iter().position(|w| w == "__erased__");
@@ -285,11 +257,7 @@ pub fn encode_gather_phase(
                 for _ in 2..wip_wires.len() {
                     pieces.push(Diag::atom("ob"));
                 }
-                if pieces.len() == 1 {
-                    parts.push(pieces.remove(0));
-                } else {
-                    parts.push(make_paren_diag(seq(pieces)));
-                }
+                parts.push(compose_or_single(pieces, seq));
                 let next = wip_wires[1].clone();
                 wip_wires.splice(0..2, [next]);
             } else if idx == wip_wires.len() - 1 && wip_wires.len() > 1 {
@@ -299,11 +267,7 @@ pub fn encode_gather_phase(
                     pieces.push(Diag::atom("ob"));
                 }
                 pieces.push(Diag::atom("unit_r"));
-                if pieces.len() == 1 {
-                    parts.push(pieces.remove(0));
-                } else {
-                    parts.push(make_paren_diag(seq(pieces)));
-                }
+                parts.push(compose_or_single(pieces, seq));
                 let prev = wip_wires[idx - 1].clone();
                 wip_wires.splice((idx - 1)..=idx, [prev]);
             } else if wip_wires.len() == 1 {
@@ -419,10 +383,7 @@ pub fn encode_term_for_rule(
         return Ok(raw_encoding);
     }
 
-    let var_slots: Vec<String> = slots
-        .iter()
-        .filter_map(|s| s.clone())
-        .collect();
+    let var_slots: Vec<String> = slots.iter().flatten().cloned().collect();
     let const_count = slots.iter().filter(|s| s.is_none()).count();
 
     // If no constants, just do the standard gather (copy/erase/swap on ob wires)
@@ -439,10 +400,7 @@ pub fn encode_term_for_rule(
     let mut parts: Vec<Diag> = Vec::new();
 
     // Count how many copies each variable needs
-    let mut var_use_counts: HashMap<String, usize> = HashMap::new();
-    for v in rule_vars {
-        var_use_counts.insert(v.clone(), 0);
-    }
+    let mut var_use_counts: HashMap<String, usize> = rule_vars.iter().map(|v| (v.clone(), 0)).collect();
     for s in &var_slots {
         *var_use_counts.entry(s.clone()).or_insert(0) += 1;
     }
@@ -472,11 +430,7 @@ pub fn encode_term_for_rule(
     }
     let has_copy = copy_pieces.iter().any(|p| !is_atom(p, "id_1"));
     if has_copy {
-        if copy_pieces.len() == 1 {
-            parts.push(copy_pieces.remove(0));
-        } else {
-            parts.push(make_paren_diag(hseq(copy_pieces)));
-        }
+        parts.push(compose_or_single(copy_pieces, hseq));
     }
 
     // Build target wire assignment
@@ -539,11 +493,7 @@ pub fn encode_term_for_rule(
     }
     let has_erase = erase_pieces.iter().any(|p| !is_atom(p, "id_1"));
     if has_erase {
-        if erase_pieces.len() == 1 {
-            parts.push(erase_pieces.remove(0));
-        } else {
-            parts.push(make_paren_diag(hseq(erase_pieces)));
-        }
+        parts.push(compose_or_single(erase_pieces, hseq));
     }
 
     // Step 4: Apply raw encoding — TypeScript: parts.join(" ") + " " + rawEncoding (flat join)
