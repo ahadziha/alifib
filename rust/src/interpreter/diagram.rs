@@ -50,11 +50,7 @@ fn top_labels_rendered(diagram: &Diagram, f: impl Fn(&Tag) -> String) -> String 
 // in pmap.rs once a map clause gives enough context to render them.
 fn add_hole_result(context: &Context, span: Span) -> (Option<Term>, InterpResult) {
     let mut result = InterpResult::ok(context.clone());
-    result.add_hole(HoleInfo {
-        span,
-        boundary: None,
-        source_tag: None,
-    });
+    result.add_hole(HoleInfo::new(span));
     (None, result)
 }
 
@@ -62,13 +58,12 @@ fn boundary_term_from_diagram(
     diagram: &Diagram,
     sign: DiagramSign,
     span: Span,
-    result: InterpResult,
+    mut result: InterpResult,
 ) -> (Option<Term>, InterpResult) {
     let boundary_dim = diagram.top_dim().saturating_sub(1);
     match Diagram::boundary(sign, boundary_dim, diagram) {
         Ok(boundary) => (Some(Term::Diag(boundary)), result),
         Err(error) => {
-            let mut result = result;
             result.add_error(make_error(span, error.to_string()));
             (None, result)
         }
@@ -79,27 +74,20 @@ fn apply_map_component(
     eval_map: &EvalMap,
     component: Component,
     span: Span,
-    result: InterpResult,
+    mut result: InterpResult,
 ) -> (Option<Term>, InterpResult) {
     match component {
         Component::Hole => {
-            let mut result = result;
-            result.add_hole(HoleInfo {
-                span,
-                boundary: None,
-                source_tag: None,
-            });
+            result.add_hole(HoleInfo::new(span));
             (None, result)
         }
         Component::Bd(_) => {
-            let mut result = result;
             result.add_error(make_error(span, "Not a diagram or map"));
             (None, result)
         }
         Component::Value(Term::Diag(diagram)) => match PMap::apply(&eval_map.map, &diagram) {
             Ok(image_diagram) => (Some(Term::Diag(image_diagram)), result),
             Err(error) => {
-                let mut result = result;
                 result.add_error(make_error(span, error.to_string()));
                 (None, result)
             }
@@ -142,14 +130,16 @@ pub fn interpret_dexpr(
 ) -> (Option<Term>, InterpResult) {
     match &d_expr.inner {
         DExpr::Component(comp) => {
-            let (comp_opt, result) = interpret_dcomponent(context, scope, comp, d_expr.span);
+            let (comp_opt, mut result) = interpret_dcomponent(context, scope, comp, d_expr.span);
             match comp_opt {
                 None => (None, result),
-                Some(Component::Hole) => add_hole_result(&result.context, d_expr.span),
+                Some(Component::Hole) => {
+                    result.add_hole(HoleInfo::new(d_expr.span));
+                    (None, result)
+                }
                 Some(Component::Bd(_)) => {
-                    let mut r = result;
-                    r.add_error(make_error(d_expr.span, "Not a diagram or map"));
-                    (None, r)
+                    result.add_error(make_error(d_expr.span, "Not a diagram or map"));
+                    (None, result)
                 }
                 Some(Component::Value(t)) => (Some(t), result),
             }

@@ -40,7 +40,7 @@ fn insert_generators_by_tag(scope: &mut Complex, generators: impl IntoIterator<I
         if scope.find_generator_by_tag(&tag).is_some() {
             continue;
         }
-        scope.add_generator(qualified_name, classifier);
+        scope.add_generator(qualified_name, tag, classifier);
     }
 }
 
@@ -93,9 +93,9 @@ fn extend_scope_with_attached_generators(
             }
         };
 
-        let Ok(image_classifier) = Diagram::cell(image_tag, &image_cell_data) else { continue; };
+        let Ok(image_classifier) = Diagram::cell(image_tag.clone(), &image_cell_data) else { continue; };
 
-        scope.add_generator(qualified_name, image_classifier.clone());
+        scope.add_generator(qualified_name, image_tag, image_classifier.clone());
         map.insert_raw(Tag::Global(global_id), generator_dim, source_cell_data, image_classifier);
     }
 

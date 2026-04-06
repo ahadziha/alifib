@@ -80,6 +80,12 @@ pub struct HoleInfo {
     pub source_tag: Option<Tag>,
 }
 
+impl HoleInfo {
+    pub fn new(span: Span) -> Self {
+        Self { span, boundary: None, source_tag: None }
+    }
+}
+
 /// The pretty-printed source/target boundary context for a hole.
 #[derive(Debug, Clone)]
 pub struct HoleBoundaryInfo {

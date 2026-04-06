@@ -40,7 +40,7 @@ pub fn initialize_module_context(mut context: Context) -> InterpResult {
 
     let root_name: LocalId = String::new();
     let mut module_complex = Complex::empty();
-    module_complex.add_generator(root_name.clone(), root_diagram.clone());
+    module_complex.add_generator(root_name.clone(), Tag::Global(root_id), root_diagram.clone());
     module_complex.add_diagram(root_name, root_diagram);
 
     {

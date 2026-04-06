@@ -152,7 +152,7 @@ fn interpret_type_generator(context: &Context, generator: &ast::Generator) -> In
         let s = result.context.state_mut();
         s.set_type(new_id, CellData::Zero, definition_complex);
         s.modify_module(&module_id, |m| {
-            m.add_generator(name.clone(), classifier.clone());
+            m.add_generator(name.clone(), Tag::Global(new_id), classifier.clone());
             m.add_diagram(name, classifier);
         });
     }
@@ -296,7 +296,7 @@ fn interpret_complex_generator(
         }
     };
 
-    scope.add_generator(name.clone(), classifier.clone());
+    scope.add_generator(name.clone(), tag.clone(), classifier.clone());
     scope.add_diagram(name.clone(), classifier.clone());
 
     if mode == Mode::Local {

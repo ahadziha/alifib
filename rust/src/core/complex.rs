@@ -78,23 +78,14 @@ impl Complex {
 
     // ---- Generators ----
 
-    pub fn add_generator(&mut self, name: LocalId, classifier: Diagram) {
+    pub fn add_generator(&mut self, name: LocalId, tag: Tag, classifier: Diagram) {
         let dim = classifier.top_dim();
-        let labels = &classifier.labels;
-        let top_labels = &labels[dim];
-        assert!(!top_labels.is_empty());
-        let tag = top_labels[0].clone();
+        debug_assert_eq!(classifier.labels.get(dim).and_then(|r| r.first()), Some(&tag));
 
         self.generators.by_tag.insert(tag.clone(), name.clone());
-        self.generators
-            .by_dim
-            .entry(dim)
-            .or_default()
-            .insert(name.clone());
+        self.generators.by_dim.entry(dim).or_default().insert(name.clone());
         self.generators.classifiers.insert(name.clone(), classifier);
-        self.generators
-            .by_name
-            .insert(name, GeneratorEntry { tag, dim });
+        self.generators.by_name.insert(name, GeneratorEntry { tag, dim });
 
         self.assert_invariants();
     }

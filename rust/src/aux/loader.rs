@@ -182,17 +182,11 @@ fn find_file(loader: &FileLoader, module_name: &str) -> Result<(String, String),
 
 fn collect_includes(program: &Program) -> Vec<String> {
     use crate::language::ast::{Block, TypeInst};
-    let mut names = Vec::new();
-    for block in &program.blocks {
-        if let Block::TypeBlock(body) = &block.inner {
-            for instr in body {
-                if let TypeInst::IncludeModule(im) = &instr.inner {
-                    names.push(im.name.inner.clone());
-                }
-            }
-        }
-    }
-    names
+    program.blocks.iter()
+        .filter_map(|b| match &b.inner { Block::TypeBlock(body) => Some(body), _ => None })
+        .flat_map(|body| body.iter())
+        .filter_map(|i| match &i.inner { TypeInst::IncludeModule(im) => Some(im.name.inner.clone()), _ => None })
+        .collect()
 }
 
 fn resolve_all_modules(
