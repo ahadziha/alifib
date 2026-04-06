@@ -1,3 +1,16 @@
+//! Partial maps between diagrams.
+//!
+//! A [`PartialMap`] is a structure-preserving assignment of image diagrams to a
+//! finite set of generating cells.  The two primary operations are:
+//! - [`PartialMap::extend`] — add one generator to the domain, checking that its
+//!   image's boundaries are compatible with the images of its boundary generators;
+//! - [`PartialMap::apply`] — compute the image of an arbitrary diagram by
+//!   following its paste-tree structure.
+//!
+//! When every image is itself a single generating cell (`cellular == true`),
+//! `apply` uses a fast label-remapping path instead of reconstructing the
+//! diagram by pasting.
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use crate::aux::{Error, Tag};
@@ -50,10 +63,12 @@ impl PartialMap {
         PartialMap { table, by_dim, cellular }
     }
 
+    /// True if `tag` is in the domain of this partial map.
     pub fn is_defined_at(&self, tag: &Tag) -> bool {
         self.table.contains_key(tag)
     }
 
+    /// Return the image diagram of `tag`, or an error if it is not in the domain.
     pub fn image(&self, tag: &Tag) -> Result<&Diagram, Error> {
         self.table.get(tag)
             .map(|e| &e.image)
@@ -69,6 +84,7 @@ impl PartialMap {
         result
     }
 
+    /// True if any image diagram in this map carries a local (non-global) tag.
     pub fn has_local_labels(&self) -> bool {
         self.table.values().any(|e| e.image.has_local_labels())
     }
@@ -218,6 +234,8 @@ fn remap_tag(tag: &Tag, table: &HashMap<Tag, Entry>, cache: &mut HashMap<Tag, Ta
     mapped
 }
 
+/// Find the first leaf in `tree` whose tag is not in `f`'s domain, or `None`
+/// if all leaves are defined.  Used to surface a helpful error before `apply_tree`.
 fn find_undefined<'a>(f: &PartialMap, tree: &'a PasteTree) -> Option<&'a Tag> {
     match tree {
         PasteTree::Leaf(tag) => {
@@ -229,6 +247,8 @@ fn find_undefined<'a>(f: &PartialMap, tree: &'a PasteTree) -> Option<&'a Tag> {
     }
 }
 
+/// Rewrite every `Leaf` tag in `tree` using the `cache` built by `remap_tag`.
+/// Used in the cellular fast path where every image is a single cell.
 fn map_tree(tree: &PasteTree, cache: &HashMap<Tag, Tag>) -> PasteTree {
     match tree {
         PasteTree::Leaf(tag) => {
@@ -242,6 +262,8 @@ fn map_tree(tree: &PasteTree, cache: &HashMap<Tag, Tag>) -> PasteTree {
     }
 }
 
+/// Recursively apply `f` to a paste tree: leaf images are looked up directly,
+/// and node images are recomposed via [`Diagram::paste`].
 fn apply_tree(f: &PartialMap, tree: &PasteTree) -> Result<Diagram, Error> {
     match tree {
         PasteTree::Leaf(tag) => {
