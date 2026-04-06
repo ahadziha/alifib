@@ -6,12 +6,13 @@ use alifib::aux::loader::Loader;
 use alifib::language;
 use alifib::output::{InterpretedFile, LoadResult};
 
-const USAGE: &str = "Usage: alifib <input-file> [-o|--output <output-file>] [--ast] [--bench N]";
+const USAGE: &str = "Usage: alifib <input-file> [-o|--output <output-file>] [--ast] [--print] [--bench N]";
 
 #[derive(Clone, Copy)]
 enum RunMode {
     Interpret,
     Ast,
+    Print,
 }
 
 struct Args {
@@ -44,6 +45,7 @@ fn parse_args() -> Result<Args, String> {
                 process::exit(0);
             }
             "--ast" => mode = RunMode::Ast,
+            "--print" => mode = RunMode::Print,
             "--bench" => {
                 let run_count_str = arg_iter
                     .next()
@@ -136,12 +138,29 @@ fn run_ast(input: &str, output: Option<&str>) -> bool {
     true
 }
 
+fn run_print(input: &str, output: Option<&str>) -> bool {
+    let source = match fs::read_to_string(input) {
+        Ok(s) => s,
+        Err(e) => { eprintln!("error: could not read `{}`: {}", input, e); return false; }
+    };
+    let program = match language::parse(&source) {
+        Ok(p) => p,
+        Err(errors) => { language::report_errors(&errors, &source, input); return false; }
+    };
+    if let Err(msg) = write_output(output, &language::print_program(&program)) {
+        eprintln!("error: {}", msg);
+        return false;
+    }
+    true
+}
+
 fn run(args: Args) -> bool {
     if let Some(n) = args.bench {
         return run_bench(&args.input, n);
     }
     match args.mode {
         RunMode::Ast => run_ast(&args.input, args.output.as_deref()),
+        RunMode::Print => run_print(&args.input, args.output.as_deref()),
         RunMode::Interpret => run_interpreter(&args.input, args.output.as_deref()),
     }
 }
