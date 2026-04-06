@@ -173,7 +173,11 @@ impl PartialMap {
         }
     }
 
-    /// Compose partial maps: g after f (g . f).
+    /// Compose partial maps: `g` after `f` (`g ∘ f`).
+    ///
+    /// The result is defined on the subset of `f`'s domain where `f`'s image
+    /// lies entirely within `g`'s domain.  Entries outside that intersection
+    /// are silently dropped.
     pub fn compose(g: &PartialMap, f: &PartialMap) -> PartialMap {
         let mut table = HashMap::with_capacity(f.table.len());
         let mut by_dim: HashMap<usize, Vec<Tag>> = HashMap::new();
@@ -228,8 +232,9 @@ fn remap_tag(tag: &Tag, table: &HashMap<Tag, Entry>, cache: &mut HashMap<Tag, Ta
         return hit.clone();
     }
     let entry = table.get(tag).expect("tag in domain (verified by find_undefined)");
-    let d = entry.image.top_dim();
-    let mapped = entry.image.labels[d][0].clone();
+    let mapped = entry.image.top_label()
+        .expect("image must have a top label")
+        .clone();
     cache.insert(tag.clone(), mapped.clone());
     mapped
 }

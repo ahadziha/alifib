@@ -135,7 +135,9 @@ impl Ogposet {
         }
         let n = self.faces_in[k].len();
         match sign {
+            // A source-boundary cell is one not yet "consumed" by any output coface.
             Sign::Input  => (0..n).filter(|&i| self.cofaces_out[k][i].is_empty()).collect(),
+            // A target-boundary cell is one not yet "consumed" by any input coface.
             Sign::Output => (0..n).filter(|&i| self.cofaces_in[k][i].is_empty()).collect(),
             Sign::Both   => (0..n).filter(|&i| {
                 self.cofaces_in[k][i].is_empty() || self.cofaces_out[k][i].is_empty()
@@ -302,7 +304,7 @@ pub(super) fn boundary(sign: Sign, k: usize, g: &Arc<Ogposet>) -> (Arc<Ogposet>,
     let cofaces_in  = remap_adjacency(dims_b, &forward, &inv_dom,  1, &g.cofaces_in);
     let cofaces_out = remap_adjacency(dims_b, &forward, &inv_dom,  1, &g.cofaces_out);
 
-    let sub = Arc::new(Ogposet { dim: k as isize, faces_in, faces_out, cofaces_in, cofaces_out, normal: false });
+    let sub = Arc::new(Ogposet::make(k as isize, faces_in, faces_out, cofaces_in, cofaces_out));
 
     let full_levels = sizes_g.len();
     let cod_inv: Vec<Vec<usize>> = (0..full_levels).map(|d| {

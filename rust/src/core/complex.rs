@@ -88,7 +88,7 @@ impl Complex {
     /// Register a generator with its name, runtime tag, and classifier diagram.
     pub fn add_generator(&mut self, name: LocalId, tag: Tag, classifier: Diagram) {
         let dim = classifier.top_dim();
-        debug_assert_eq!(classifier.labels.get(dim).and_then(|r| r.first()), Some(&tag));
+        debug_assert_eq!(classifier.top_label(), Some(&tag));
 
         self.generators.by_tag.insert(tag.clone(), name.clone());
         self.generators.by_dim.entry(dim).or_default().insert(name.clone());
