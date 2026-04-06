@@ -208,7 +208,7 @@ impl ModuleStore {
 
     /// Consume this store and split it into the resolution mappings (needed
     /// during interpretation) and an ordered list of dependency modules
-    /// (needed for the dep_order-order pre-interpretation loop).
+    /// (needed for the pre-interpretation loop).
     pub fn into_parts(self) -> (ModuleResolutions, Vec<(String, ResolvedModule)>) {
         let ModuleStore { mut modules, resolutions, dep_order } = self;
         let dep_order_modules = dep_order.into_iter()
@@ -250,10 +250,11 @@ fn resolve_all_modules(
     root_program: &Program,
 ) -> Result<ModuleStore, ResolveError> {
     let mut store = ModuleStore::new();
-    // `visited` tracks all paths seen so far in the DFS, including the root
-    // (which is never inserted into the store).  A path present in `visited`
-    // but absent from the store is currently on the recursion stack — a second
-    // encounter is a cycle.
+    // `visited` tracks all paths encountered in the DFS.  The root is seeded
+    // here but never inserted into the store (it is handled separately).  Any
+    // path that is in `visited` but not yet in the store is either the root or
+    // a module currently on the recursion stack; encountering such a path again
+    // is a dependency cycle.
     let mut visited: HashSet<String> = HashSet::new();
     visited.insert(root_path.to_owned());
     resolve_recursive(loader, root_path, root_program, &mut store, &mut visited)?;
