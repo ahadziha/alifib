@@ -21,7 +21,14 @@ pub struct InterpretedFile {
 impl InterpretedFile {
     /// Load, parse, and interpret a source file. Returns `None` and prints
     /// diagnostics to stderr if loading or interpretation fails.
+    ///
+    /// The pipeline has three phases:
+    /// 1. Parse the root file and discover all transitively included modules.
+    /// 2. Resolve the full dependency graph (handled inside `loader.load`).
+    /// 3. Interpret every dependency in topological order (leaves first), then
+    ///    interpret the root.  All results share a single accumulated `GlobalStore`.
     pub fn load(loader: &Loader, path: &str) -> Option<Self> {
+        // Phase 1 + 2: read, parse, resolve all dependencies.
         let loaded = match loader.load(path) {
             Ok(f) => f,
             Err(e) => {
@@ -30,8 +37,32 @@ impl InterpretedFile {
             }
         };
 
-        let context = Context::new_empty(loaded.canonical_path.clone());
-        let result = interpret_program(&loaded.modules, context, &loaded.program);
+        let (resolutions, topo_modules) = loaded.modules.into_parts();
+        let resolutions = Arc::new(resolutions);
+
+        // Phase 3a: interpret dependency modules in topological order (leaves first).
+        let mut prev_state = Arc::new(GlobalStore::empty());
+        for (dep_path, dep_module) in &topo_modules {
+            let dep_context = Context::new_with_resolutions(
+                dep_path.clone(),
+                Arc::clone(&resolutions),
+                Arc::clone(&prev_state),
+            );
+            let dep_result = interpret_program(dep_context, &dep_module.program);
+            if !dep_result.errors.is_empty() {
+                crate::language::report_errors(&dep_result.errors, &dep_module.source, dep_path);
+                return None;
+            }
+            prev_state = dep_result.context.state;
+        }
+
+        // Phase 3b: interpret the root module.
+        let root_context = Context::new_with_resolutions(
+            loaded.canonical_path.clone(),
+            Arc::clone(&resolutions),
+            prev_state,
+        );
+        let result = interpret_program(root_context, &loaded.program);
 
         if !result.errors.is_empty() {
             crate::language::report_errors(&result.errors, &loaded.source, &loaded.canonical_path);

@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 
-use crate::aux::loader::ModuleStore;
 use crate::aux::{GlobalId, Tag};
 use crate::core::{
     complex::{Complex, MapDomain},
@@ -28,47 +27,39 @@ use super::types::{Mode, NameKind, TypeScope, ensure_name_free, error_result, id
 // ---- Main interpreter ----
 
 pub fn interpret_program(
-    modules: &ModuleStore,
     context: Context,
     program: &Program,
 ) -> InterpResult {
-    if context.state.find_module(&context.current_module).is_some() {
-        return InterpResult::ok(context);
-    }
-
     let initialization = initialize_module_context(context);
     if initialization.has_errors() {
         return initialization;
     }
 
     interpret_items(&initialization.context, &program.blocks, |step_context, block| {
-        interpret_block(modules, step_context, block)
+        interpret_block(step_context, block)
     })
 }
 
 fn interpret_block(
-    modules: &ModuleStore,
     context: Context,
     block: &Spanned<Block>,
 ) -> InterpResult {
     match &block.inner {
-        Block::TypeBlock(body) => interpret_type_block(modules, &context, body),
+        Block::TypeBlock(body) => interpret_type_block(&context, body),
         Block::LocalBlock { complex, body } => interpret_local_block(context, complex, body),
     }
 }
 
 fn interpret_type_block(
-    modules: &ModuleStore,
     context: &Context,
     body: &[Spanned<TypeInst>],
 ) -> InterpResult {
     interpret_items(context, body, |step_context, instr| {
-        interpret_type_inst(modules, &step_context, instr)
+        interpret_type_inst(&step_context, instr)
     })
 }
 
 fn interpret_type_inst(
-    modules: &ModuleStore,
     context: &Context,
     instr: &Spanned<TypeInst>,
 ) -> InterpResult {
@@ -89,7 +80,7 @@ fn interpret_type_inst(
             insert_module_map_binding(result, map_binding)
         }
         TypeInst::IncludeModule(include_mod) => {
-            interpret_include_module_instr(modules, context, include_mod, instr.span)
+            interpret_include_module_instr(context, include_mod, instr.span)
         }
     }
 }

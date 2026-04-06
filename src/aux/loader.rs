@@ -119,13 +119,43 @@ impl Loader {
 // Pre-resolution of module includes
 // ---------------------------------------------------------------------------
 
+/// A parsed dependency module together with its source text.
 pub struct ResolvedModule {
     pub program: Program,
+    pub source: String,
 }
 
+/// Resolution mapping from `(parent canonical path, module name)` to the
+/// dependency's canonical path.  This is the only part of the pre-resolution
+/// data needed during interpretation.
+#[derive(Debug)]
+pub struct ModuleResolutions {
+    resolutions: HashMap<(String, String), String>,
+}
+
+impl ModuleResolutions {
+    pub fn empty() -> Self {
+        ModuleResolutions { resolutions: HashMap::new() }
+    }
+
+    pub fn resolve(&self, parent_path: &str, module_name: &str) -> Option<&str> {
+        self.resolutions
+            .get(&(parent_path.to_owned(), module_name.to_owned()))
+            .map(|s| s.as_str())
+    }
+
+    fn insert(&mut self, parent_path: &str, module_name: String, canonical_path: String) {
+        self.resolutions.insert((parent_path.to_owned(), module_name), canonical_path);
+    }
+}
+
+/// All pre-resolved dependency modules for a loaded file.
 pub struct ModuleStore {
     modules: HashMap<String, ResolvedModule>,
-    resolutions: HashMap<(String, String), String>,
+    resolutions: ModuleResolutions,
+    /// Canonical paths of dependency modules in topological order (leaves
+    /// first, root excluded).  Populated in post-order by `resolve_recursive`.
+    topo: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -140,18 +170,9 @@ impl ModuleStore {
     fn new() -> Self {
         ModuleStore {
             modules: HashMap::new(),
-            resolutions: HashMap::new(),
+            resolutions: ModuleResolutions::empty(),
+            topo: Vec::new(),
         }
-    }
-
-    pub fn resolve(&self, parent_path: &str, module_name: &str) -> Option<&str> {
-        self.resolutions
-            .get(&(parent_path.to_owned(), module_name.to_owned()))
-            .map(|s| s.as_str())
-    }
-
-    pub fn get(&self, canonical_path: &str) -> Option<&ResolvedModule> {
-        self.modules.get(canonical_path)
     }
 
     fn has_module(&self, canonical_path: &str) -> bool {
@@ -159,11 +180,26 @@ impl ModuleStore {
     }
 
     fn register_resolution(&mut self, parent_path: &str, module_name: String, canonical_path: String) {
-        self.resolutions.insert((parent_path.to_owned(), module_name), canonical_path);
+        self.resolutions.insert(parent_path, module_name, canonical_path);
     }
 
-    fn insert_module(&mut self, canonical_path: String, program: Program) {
-        self.modules.insert(canonical_path, ResolvedModule { program });
+    fn insert_module(&mut self, canonical_path: String, program: Program, source: String) {
+        self.topo.push(canonical_path.clone());
+        self.modules.insert(canonical_path, ResolvedModule { program, source });
+    }
+
+    /// Consume this store and split it into the resolution mappings (needed
+    /// during interpretation) and an ordered list of dependency modules
+    /// (needed for the topo-order pre-interpretation loop).
+    pub fn into_parts(self) -> (ModuleResolutions, Vec<(String, ResolvedModule)>) {
+        let ModuleStore { mut modules, resolutions, topo } = self;
+        let topo_modules = topo.into_iter()
+            .filter_map(|path| {
+                let module = modules.remove(&path)?;
+                Some((path, module))
+            })
+            .collect();
+        (resolutions, topo_modules)
     }
 }
 
@@ -218,14 +254,14 @@ fn resolve_recursive(
 
         let program = language::parse(&contents).map_err(|errors| ResolveError::ParseError {
             path: canonical_path.clone(),
-            source: contents,
+            source: contents.clone(),
             errors,
         })?;
 
         let child_loader = loader.with_parent_dir(&canonical_path);
         resolve_recursive(&child_loader, &canonical_path, &program, store, resolving)?;
 
-        store.insert_module(canonical_path, program);
+        store.insert_module(canonical_path, program, contents);
     }
     Ok(())
 }

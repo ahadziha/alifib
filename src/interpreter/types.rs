@@ -2,6 +2,7 @@
 
 use super::global_store::GlobalStore;
 use crate::aux::{GlobalId, LocalId, Tag};
+use crate::aux::loader::ModuleResolutions;
 use crate::core::{
     complex::{Complex, MapDomain},
     diagram::{CellData, Diagram, Sign as DiagramSign},
@@ -24,27 +25,37 @@ pub struct Context {
     pub current_module: String,
     /// Shared reference to the global persistent state (cells, types, modules).
     pub state: Arc<GlobalStore>,
+    /// Resolution mappings from (parent path, module name) to canonical path,
+    /// used by `IncludeModule` instructions to look up pre-interpreted modules.
+    pub resolutions: Arc<ModuleResolutions>,
 }
 
 impl Context {
-    pub fn new(module_id: String, state: GlobalStore) -> Self {
+    pub fn new_empty(module_id: String) -> Self {
         Self {
             current_module: module_id,
-            state: Arc::new(state),
+            state: Arc::new(GlobalStore::empty()),
+            resolutions: Arc::new(ModuleResolutions::empty()),
         }
     }
 
-    pub fn new_empty(module_id: String) -> Self {
-        Self::new(module_id, GlobalStore::empty())
+    /// Create a context with explicit resolutions and pre-accumulated state.
+    /// Used in the topo-order pre-interpretation loop.
+    pub fn new_with_resolutions(
+        module_id: String,
+        resolutions: Arc<ModuleResolutions>,
+        state: Arc<GlobalStore>,
+    ) -> Self {
+        Self { current_module: module_id, state, resolutions }
     }
 
-    /// Create a Context for a new module that shares global state with `other`.
-    /// Used when interpreting an included module so that types created there
-    /// are visible in the parent module without copying the store.
+    /// Create a Context for a new module that shares global state and resolutions
+    /// with `other`.
     pub fn new_sharing_state(module_id: String, other: &Context) -> Self {
         Self {
             current_module: module_id,
             state: Arc::clone(&other.state),
+            resolutions: Arc::clone(&other.resolutions),
         }
     }
 

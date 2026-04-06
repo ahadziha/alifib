@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use crate::aux::loader::ModuleStore;
 use crate::aux::{GlobalId, LocalId, Tag};
 use crate::core::{
     complex::{Complex, MapDomain},
@@ -10,7 +9,6 @@ use crate::core::{
 use crate::language::ast::{self, IncludeModule, Span};
 
 use super::global_store::GlobalStore;
-use super::eval::interpret_program;
 use super::partial_map::interpret_pmap_def;
 use super::scope::interpret_address;
 use super::types::*;
@@ -101,7 +99,6 @@ fn extend_scope_with_attached_generators(
 }
 
 pub fn interpret_include_module_instr(
-    modules: &ModuleStore,
     context: &Context,
     include_mod: &IncludeModule,
     span: Span,
@@ -122,34 +119,20 @@ pub fn interpret_include_module_instr(
         return result;
     }
 
-    let Some(canonical_path) = modules.resolve(&module_id, &module_name).map(|p| p.to_owned()) else {
+    let Some(canonical_path) = context.resolutions.resolve(&module_id, &module_name).map(|p| p.to_owned()) else {
         return error_result(context, span, format!("Module file {}.ali not found in search paths", module_name));
     };
 
-    let Some(resolved) = modules.get(&canonical_path) else {
-        return error_result(context, span, format!("Resolved module {} not found in store", canonical_path));
-    };
-
-    let include_context = Context::new_sharing_state(canonical_path.clone(), context);
-    let include_result = interpret_program(modules, include_context, &resolved.program);
-
-    let mut result = InterpResult::ok(context.clone());
-    let has_errors = include_result.has_errors();
-    result.errors.extend(include_result.errors);
-    if has_errors {
-        return result;
-    }
-
-    result.context.state = Arc::clone(&include_result.context.state);
-
-    let Some(included_arc) = result.context.state.find_module_arc(&canonical_path) else {
-        result.add_error(make_error(span, "Included module complex not found"));
-        return result;
+    // The module was pre-interpreted in topological order before this program
+    // started, so its Complex is already in the global store.
+    let Some(included_arc) = context.state.find_module_arc(&canonical_path) else {
+        return error_result(context, span, format!("Module {} was not pre-interpreted (internal error)", canonical_path));
     };
 
     let imported_generators = prefixed_generators(&included_arc, &alias, true);
-    let inclusion = identity_map(&include_result.context, &included_arc);
+    let inclusion = identity_map(context, &included_arc);
 
+    let mut result = InterpResult::ok(context.clone());
     result.context.modify_current_module(|current| {
         insert_generators_by_tag(current, imported_generators);
         current.add_map(alias, MapDomain::Module(canonical_path), inclusion);
