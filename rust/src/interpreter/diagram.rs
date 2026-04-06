@@ -45,15 +45,6 @@ fn top_labels_rendered(diagram: &Diagram, f: impl Fn(&Tag) -> String) -> String 
 
 // ---- Diagram interpretation ----
 
-// Holes use a two-phase computation: they are created here with no boundary info,
-// then enriched with source/target boundary strings later by `fill_hole_boundary`
-// in pmap.rs once a map clause gives enough context to render them.
-fn add_hole_result(context: &Context, span: Span) -> (Option<Term>, InterpResult) {
-    let mut result = InterpResult::ok(context.clone());
-    result.add_hole(HoleInfo::new(span));
-    (None, result)
-}
-
 fn boundary_term_from_diagram(
     diagram: &Diagram,
     sign: DiagramSign,
@@ -166,7 +157,11 @@ fn interpret_dot_access(
                 Some(Component::Bd(sign)) => {
                     boundary_term_from_diagram(&diagram, sign, field.span, combined)
                 }
-                Some(Component::Hole) => add_hole_result(&combined.context, field.span),
+                Some(Component::Hole) => {
+                    let mut r = combined;
+                    r.add_hole(HoleInfo::new(field.span));
+                    (None, r)
+                }
                 Some(Component::Value(_)) => {
                     let mut r = combined;
                     r.add_error(make_error(field.span, "Not a well-formed diagram expression"));

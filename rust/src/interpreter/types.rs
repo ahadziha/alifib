@@ -44,14 +44,6 @@ impl Context {
         }
     }
 
-    /// Return a copy of this context with a completely fresh store.
-    pub fn with_state(&self, state: GlobalStore) -> Self {
-        Self {
-            current_module: self.current_module.clone(),
-            state: Arc::new(state),
-        }
-    }
-
     /// Get a mutable reference to the state via Arc::make_mut (copy-on-write).
     pub fn state_mut(&mut self) -> &mut GlobalStore {
         Arc::make_mut(&mut self.state)

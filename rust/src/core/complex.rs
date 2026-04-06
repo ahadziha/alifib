@@ -102,18 +102,6 @@ impl Complex {
         self.generators.classifiers.get(name)
     }
 
-    pub fn generator_dim(&self, name: &str) -> Option<usize> {
-        self.generators.by_name.get(name).map(|e| e.dim)
-    }
-
-    pub fn generators_in_dim(&self, dim: usize) -> Vec<LocalId> {
-        self.generators
-            .by_dim
-            .get(&dim)
-            .map(|s| s.iter().cloned().collect())
-            .unwrap_or_default()
-    }
-
     pub fn generators_iter(&self) -> impl Iterator<Item = (&LocalId, &GeneratorEntry)> {
         self.generators.by_name.iter()
     }

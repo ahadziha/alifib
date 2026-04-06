@@ -273,7 +273,7 @@ fn interpret_pmap_clause(
         return (Some(map), combined);
     };
 
-    match interpret_assign(&combined.context, map, domain, scope, &left_term, &right_term, clause.span) {
+    match interpret_assign(&combined.context, map, domain, scope, &left_term, &right_term) {
         Ok(new_map) => (Some(new_map), combined),
         Err(e) => {
             combined.add_error(make_error(clause.span, e.to_string()));
@@ -290,7 +290,6 @@ fn extend_matching_map_images(
     target: &Complex,
     left_map: &EvalMap,
     right_map: &EvalMap,
-    span: Span,
 ) -> Result<PMap, aux::Error> {
     let map_domain = &*left_map.domain;
     let mut extended = map;
@@ -310,7 +309,7 @@ fn extend_matching_map_images(
                 let left_image = left_map.map.image(&tag)?;
                 if left_image.is_cell() {
                     let right_image = right_map.map.image(&tag)?;
-                    extended = extend_map_for_cell(context, extended, domain, target, left_image, right_image, span)?;
+                    extended = extend_map_for_cell(context, extended, domain, target, left_image, right_image)?;
                 } else {
                     let all_defined = left_image
                         .labels
@@ -335,17 +334,16 @@ fn interpret_assign(
     target: &Complex,
     left: &Term,
     right: &Term,
-    span: Span,
 ) -> Result<PMap, aux::Error> {
     match (left, right) {
         (Term::Diag(d_left), Term::Diag(d_right)) => {
-            extend_map_for_cell(context, map, domain, target, d_left, d_right, span)
+            extend_map_for_cell(context, map, domain, target, d_left, d_right)
         }
         (Term::Map(mc_left), Term::Map(mc_right)) => {
             if !Arc::ptr_eq(&mc_left.domain, &mc_right.domain) {
                 return Err(aux::Error::new("Not a well-formed assignment"));
             }
-            extend_matching_map_images(context, map, domain, target, mc_left, mc_right, span)
+            extend_matching_map_images(context, map, domain, target, mc_left, mc_right)
         }
         _ => Err(aux::Error::new("Not a well-formed assignment")),
     }
@@ -421,64 +419,6 @@ fn image_classifier_via_boundary(
         .cloned()
 }
 
-fn extend_missing_boundary_dependencies(
-    context: &Context,
-    map: PMap,
-    domain: &Complex,
-    target: &Complex,
-    source_cell_data: &CellData,
-    source_dim: usize,
-    target_diagram: &Diagram,
-    span: Span,
-) -> Result<PMap, aux::Error> {
-    let mut current_map = map;
-
-    for (focus_tag, sign) in boundary_dependencies(source_cell_data, &current_map) {
-        if current_map.is_defined_at(&focus_tag) {
-            continue;
-        }
-
-        let focus_cell_data = get_cell_data(context, domain, &focus_tag).ok_or_else(|| {
-            aux::Error::new(format!("Cannot find cell data for boundary cell {}", focus_tag))
-        })?;
-        let target_boundary = Diagram::boundary(sign, source_dim - 1, target_diagram)?;
-        let Some(source_boundary) = boundary_of_sign(source_cell_data, sign) else {
-            continue;
-        };
-
-        current_map = if source_boundary.is_cell() {
-            extend_map_for_cell(
-                context,
-                current_map,
-                domain,
-                target,
-                &source_boundary,
-                &target_boundary,
-                span,
-            )?
-        } else {
-            let focus_image = image_classifier_via_boundary(
-                &focus_tag,
-                &source_boundary,
-                &target_boundary,
-                target,
-            )?;
-            let focus_diagram = Diagram::cell(focus_tag.clone(), &focus_cell_data)?;
-            extend_map_for_cell(
-                context,
-                current_map,
-                domain,
-                target,
-                &focus_diagram,
-                &focus_image,
-                span,
-            )?
-        };
-    }
-
-    Ok(current_map)
-}
-
 /// Smart extension of a map: adds a mapping from a source cell to a target diagram,
 /// recursively extending for boundary cells as needed.
 pub fn extend_map_for_cell(
@@ -488,7 +428,6 @@ pub fn extend_map_for_cell(
     target: &Complex,
     domain_diag: &Diagram,
     target_diag: &Diagram,
-    span: Span,
 ) -> Result<PMap, aux::Error> {
     if !domain_diag.is_cell() {
         return Err(aux::Error::new(
@@ -517,11 +456,27 @@ pub fn extend_map_for_cell(
     let cell_data = get_cell_data(context, domain, &tag)
         .ok_or_else(|| aux::Error::new("Cannot find cell data for generator"))?;
 
-    let current = extend_missing_boundary_dependencies(
-        context, map, domain, target, &cell_data, d, target_diag, span,
-    )?;
+    // Extend the map for any boundary dependencies not yet in the domain.
+    let mut current_map = map;
+    for (focus_tag, sign) in boundary_dependencies(&cell_data, &current_map) {
+        if current_map.is_defined_at(&focus_tag) {
+            continue;
+        }
+        let focus_cell_data = get_cell_data(context, domain, &focus_tag).ok_or_else(|| {
+            aux::Error::new(format!("Cannot find cell data for boundary cell {}", focus_tag))
+        })?;
+        let target_boundary = Diagram::boundary(sign, d - 1, target_diag)?;
+        let Some(source_boundary) = boundary_of_sign(&cell_data, sign) else { continue; };
+        current_map = if source_boundary.is_cell() {
+            extend_map_for_cell(context, current_map, domain, target, &source_boundary, &target_boundary)?
+        } else {
+            let focus_image = image_classifier_via_boundary(&focus_tag, &source_boundary, &target_boundary, target)?;
+            let focus_diagram = Diagram::cell(focus_tag.clone(), &focus_cell_data)?;
+            extend_map_for_cell(context, current_map, domain, target, &focus_diagram, &focus_image)?
+        };
+    }
 
-    PMap::extend(current, tag, d, cell_data, target_diag.clone())
+    PMap::extend(current_map, tag, d, cell_data, target_diag.clone())
 }
 
 // ---- Partial map naming ----
