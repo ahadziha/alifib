@@ -1,0 +1,8 @@
+; @origtpdbfilename ./TRS/SK90/2.02.trs
+; @xtcfilename "./TRS_Standard/SK90/2.02.xml"
+(format TRS)
+(fun + 2)
+(fun f 1)
+(rule (+ (+ x y) z) (+ x (+ y z)))
+(rule (+ (f x) (f y)) (f (+ x y)))
+(rule (+ (f x) (+ (f y) z)) (+ (f (+ x y)) z))

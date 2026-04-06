@@ -1,3 +1,9 @@
+[workspace]
+members = ["plugins/trs"]
+
+[workspace.dependencies]
+alifib = { path = "." }
+
 [package]
 name = "alifib"
 version = "0.1.0"
