@@ -1,5 +1,5 @@
 use super::types::*;
-use crate::core::{
+use alifib_core::core::{
     complex::Complex,
     diagram::{CellData, Diagram, Sign as DiagramSign},
     partial_map::PartialMap,

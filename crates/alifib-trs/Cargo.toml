@@ -1,0 +1,7 @@
+[package]
+name = "alifib-trs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+alifib-core = { path = "../alifib-core" }

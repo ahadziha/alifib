@@ -15,8 +15,20 @@ dependencies = [
 name = "alifib"
 version = "0.1.0"
 dependencies = [
+ "alifib-core",
  "ariadne",
  "chumsky",
+]
+
+[[package]]
+name = "alifib-core"
+version = "0.1.0"
+
+[[package]]
+name = "alifib-trs"
+version = "0.1.0"
+dependencies = [
+ "alifib-core",
 ]
 
 [[package]]

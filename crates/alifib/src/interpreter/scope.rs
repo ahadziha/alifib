@@ -1,5 +1,5 @@
-use crate::aux::{GlobalId, LocalId, Tag};
-use crate::core::{
+use alifib_core::aux::{GlobalId, LocalId, Tag};
+use alifib_core::core::{
     complex::{Complex, MapDomain},
     diagram::{CellData, Diagram},
 };
@@ -13,7 +13,7 @@ use super::types::{
 };
 
 pub type DiagramBinding = (LocalId, Diagram);
-pub type MapBinding = (LocalId, crate::core::partial_map::PartialMap, MapDomain);
+pub type MapBinding = (LocalId, alifib_core::core::partial_map::PartialMap, MapDomain);
 
 pub fn current_module_scope(context: &Context) -> Option<&Complex> {
     context.state.find_module(&context.current_module)

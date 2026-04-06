@@ -1,0 +1,13 @@
+[package]
+name = "alifib"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "alifib"
+path = "src/main.rs"
+
+[dependencies]
+alifib-core = { path = "../alifib-core" }
+ariadne = "0.6.0"
+chumsky = "0.12.0"

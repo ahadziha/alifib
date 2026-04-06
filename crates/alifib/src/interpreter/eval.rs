@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
-use crate::aux::{GlobalId, Tag};
-use crate::core::{
+use alifib_core::aux::{GlobalId, Tag};
+use alifib_core::core::{
     complex::{Complex, MapDomain},
     diagram::CellData,
 };

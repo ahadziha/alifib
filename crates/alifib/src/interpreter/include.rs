@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
-use crate::aux::{GlobalId, LocalId, Tag};
-use crate::core::{
+use alifib_core::aux::{GlobalId, LocalId, Tag};
+use alifib_core::core::{
     complex::{Complex, MapDomain},
     diagram::{CellData, Diagram},
     partial_map::PartialMap,
 };
 use crate::language::ast::{self, IncludeModule, Span};
 
-use super::global_store::GlobalStore;
+use alifib_core::GlobalStore;
 use super::partial_map::interpret_pmap_def;
 use super::scope::interpret_address;
 use super::types::*;
