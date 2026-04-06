@@ -84,7 +84,7 @@ fn write_output(path: Option<&str>, text: &str) -> Result<(), String> {
 fn run_interpreter(input: &str, output_path: Option<&str>) -> bool {
     let result = InterpretedFile::load(&Loader::default(vec![]), input);
     let file = match result {
-        LoadResult::Ok(f) => f,
+        LoadResult::Loaded(f) => f,
         other => { other.report(); return false; }
     };
     if let Err(msg) = write_output(output_path, &file.to_string()) {
@@ -99,19 +99,21 @@ fn run_interpreter(input: &str, output_path: Option<&str>) -> bool {
 
 fn run_bench(input: &str, n: usize) -> bool {
     let loader = Loader::default(vec![]);
-    let warmup = InterpretedFile::load(&loader, input);
-    if !warmup.is_ok() {
-        warmup.report();
-        eprintln!("error: benchmark file failed on warmup");
-        return false;
-    }
-    if warmup.ok().is_some_and(|f| f.has_holes()) {
-        eprintln!("error: benchmark file contains holes");
-        return false;
+    match InterpretedFile::load(&loader, input) {
+        LoadResult::Loaded(file) if file.has_holes() => {
+            eprintln!("error: benchmark file contains holes");
+            return false;
+        }
+        LoadResult::Loaded(_) => {}
+        other => {
+            other.report();
+            eprintln!("error: benchmark file failed on warmup");
+            return false;
+        }
     }
     let start = Instant::now();
     for _ in 0..n {
-        InterpretedFile::load(&loader, input);
+        let _ = InterpretedFile::load(&loader, input);
     }
     let elapsed = start.elapsed();
     println!("{:.3}", elapsed.as_secs_f64() * 1000.0 / n as f64);

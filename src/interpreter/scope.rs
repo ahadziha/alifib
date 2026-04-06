@@ -9,7 +9,7 @@ use std::sync::Arc;
 use super::diagram::interpret_boundaries;
 use super::types::{
     Context, InterpResult, NameKind, Step, TypeScope, ensure_name_free, make_error,
-    resolve_root_owner_type_id, resolve_type_complex, unknown_span,
+    make_error_from_core, resolve_root_owner_type_id, resolve_type_complex, unknown_span,
 };
 
 pub type DiagramBinding = (LocalId, Diagram);
@@ -30,10 +30,7 @@ pub fn initialize_module_context(mut context: Context) -> InterpResult {
         Ok(root_diagram) => root_diagram,
         Err(error) => {
             let mut result = InterpResult::ok(context);
-            result.add_error(make_error(
-                unknown_span(),
-                format!("Failed to create root type cell: {}", error),
-            ));
+            result.add_error(make_error_from_core(unknown_span(), error));
             return result;
         }
     };
@@ -237,7 +234,7 @@ pub fn create_generator_diagram(
     boundaries: &CellData,
 ) -> Result<Diagram, crate::language::error::Error> {
     Diagram::cell(tag, boundaries)
-        .map_err(|error| make_error(span, format!("Failed to create generator cell: {}", error)))
+        .map_err(|error| make_error_from_core(span, error))
 }
 
 pub fn open_type_scope(

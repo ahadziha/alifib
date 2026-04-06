@@ -13,8 +13,9 @@ fn fixture(name: &str) -> String {
 
 #[test]
 fn magma_interpretation() {
-    let result = InterpretedFile::load(&Loader::default(vec![]), &fixture("Magma.ali"));
-    let file = result.ok().expect("Magma.ali should interpret without errors");
+    let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("Magma.ali"))
+        .ok()
+        .expect("Magma.ali should interpret without errors");
 
     assert!(!file.has_holes());
     assert_eq!(file.state.cells.len(), 12);

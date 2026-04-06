@@ -15,9 +15,10 @@ use std::sync::Arc;
 ///
 /// Callers that only want success can call `.ok()` or pattern-match.
 /// Callers that want to print diagnostics can call `.report()`.
+#[must_use]
 pub enum LoadResult {
     /// Interpretation succeeded.
-    Ok(InterpretedFile),
+    Loaded(InterpretedFile),
     /// File loading or dependency resolution failed.
     LoadError(LoadFileError),
     /// Parsing or interpretation of a module produced errors.
@@ -28,7 +29,7 @@ impl LoadResult {
     /// Print diagnostics to stderr, mirroring the previous `Option`-based behaviour.
     pub fn report(&self) {
         match self {
-            LoadResult::Ok(_) => {}
+            LoadResult::Loaded(_) => {}
             LoadResult::LoadError(e) => crate::aux::error::report_load_file_error(e),
             LoadResult::InterpError { errors, source, path } => {
                 crate::language::report_errors(errors, source, path);
@@ -40,14 +41,14 @@ impl LoadResult {
     /// Diagnostics are NOT printed; call `report()` first if you need them.
     pub fn ok(self) -> Option<InterpretedFile> {
         match self {
-            LoadResult::Ok(f) => Some(f),
+            LoadResult::Loaded(f) => Some(f),
             _ => None,
         }
     }
 
     /// Returns `true` if interpretation succeeded.
     pub fn is_ok(&self) -> bool {
-        matches!(self, LoadResult::Ok(_))
+        matches!(self, LoadResult::Loaded(_))
     }
 }
 
@@ -117,7 +118,7 @@ impl InterpretedFile {
             };
         }
 
-        LoadResult::Ok(Self {
+        LoadResult::Loaded(Self {
             state: Arc::clone(&result.context.state),
             holes: result.holes,
             source: loaded.source,
