@@ -1,12 +1,22 @@
+//! Oriented graded posets (ogposets): the combinatorial shapes underlying diagrams.
+//!
+//! An [`Ogposet`] records cells at each dimension together with their signed
+//! face and coface adjacency.  The module provides the key operations used to
+//! build new ogposets from old ones:
+//!
+//! - [`boundary`] — extract the sub-ogposet on the sign-side k-boundary
+//! - [`boundary_traverse`] — normalised boundary (memoised)
+//! - [`normalisation`] — canonical cell ordering (memoised)
+//! - [`isomorphism_of`] — decide shape isomorphism via canonical forms
+//! - [`traverse`] — general sub-ogposet traversal (drives all of the above)
+
 use std::sync::Arc;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use crate::aux::Error;
 use super::bitset::BitSet;
+use super::embeddings::{Embedding, NO_PREIMAGE};
 use super::intset::{self, IntSet};
-
-// Re-export so downstream code can keep using `ogposet::Embedding` etc.
-pub(crate) use super::embeddings::{Embedding, NO_PREIMAGE};
 
 fn set_map(f: impl Fn(usize) -> usize, s: &IntSet) -> IntSet {
     intset::collect_sorted(s.iter().map(|&x| f(x)))
@@ -16,34 +26,44 @@ fn set_filter_map(f: impl Fn(usize) -> Option<usize>, s: &IntSet) -> IntSet {
     intset::collect_sorted(s.iter().filter_map(|&x| f(x)))
 }
 
-// ---- Ogposet ----
+// ---- Sign ----
 
+/// Face sign in an oriented graded poset.
+///
+/// Every face relation carries a sign indicating whether it is a source (`Input`,
+/// written δ⁻) or target (`Output`, written δ⁺) face.  `Both` is a convenience
+/// variant meaning "either sign".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Sign {
+pub(super) enum Sign {
     Input,
     Output,
     Both,
 }
 
-/// An oriented graded poset.
+// ---- Ogposet ----
+
+/// An oriented graded poset (ogposet): the combinatorial shape of a diagram.
 ///
-/// Dimensions are indexed 0..=dim.
-/// `faces_in[d][p]` = the set of (d-1)-cells that are input faces of cell p at level d.
-/// `cofaces_in[d][p]` = the set of (d+1)-cells that have p as an input face.
-/// Analogously for `faces_out` / `cofaces_out`.
+/// Cells are indexed per dimension, 0..=`dim`.  For a cell `p` at dimension `d`:
+/// - `faces_in[d][p]`    — input (source, δ⁻) faces at dimension d-1
+/// - `faces_out[d][p]`   — output (target, δ⁺) faces at dimension d-1
+/// - `cofaces_in[d][p]`  — cells at dimension d+1 that have `p` as an input face
+/// - `cofaces_out[d][p]` — cells at dimension d+1 that have `p` as an output face
+///
+/// `dim = -1` denotes the empty ogposet.  The `normal` flag records whether
+/// the cells are in canonical traversal order (see [`normalisation`]).
 #[derive(Debug, Clone)]
 pub struct Ogposet {
-    /// Top dimension (-1 for the empty ogposet)
-    pub dim: isize,
-    pub faces_in:   Vec<Vec<IntSet>>,
-    pub faces_out:  Vec<Vec<IntSet>>,
-    pub cofaces_in: Vec<Vec<IntSet>>,
-    pub cofaces_out: Vec<Vec<IntSet>>,
-    pub normal: bool,
+    pub(super) dim: isize,
+    pub(super) faces_in:    Vec<Vec<IntSet>>,
+    pub(super) faces_out:   Vec<Vec<IntSet>>,
+    pub(super) cofaces_in:  Vec<Vec<IntSet>>,
+    pub(super) cofaces_out: Vec<Vec<IntSet>>,
+    pub(super) normal: bool,
 }
 
 impl Ogposet {
-    pub fn make(
+    pub(super) fn make(
         dim: isize,
         faces_in:   Vec<Vec<IntSet>>,
         faces_out:  Vec<Vec<IntSet>>,
@@ -53,7 +73,7 @@ impl Ogposet {
         Self { dim, faces_in, faces_out, cofaces_in, cofaces_out, normal: false }
     }
 
-    /// The empty ogposet (dim = -1)
+    /// The empty ogposet (dim = -1, no cells at any dimension).
     pub fn empty() -> Self {
         Self {
             dim: -1,
@@ -65,7 +85,7 @@ impl Ogposet {
         }
     }
 
-    /// A single point (dim = 0)
+    /// A single point (dim = 0, one 0-cell with no faces or cofaces).
     pub fn point() -> Self {
         Self {
             dim: 0,
@@ -79,13 +99,13 @@ impl Ogposet {
 
     pub fn is_normal(&self) -> bool { self.normal }
 
-    /// Number of cells at each dimension, as a vector of length dim+1 (or 0 for empty)
+    /// Number of cells at each dimension, as a `Vec` of length `dim+1` (empty for dim < 0).
     pub fn sizes(&self) -> Vec<usize> {
         if self.dim < 0 { return vec![]; }
         (0..=(self.dim as usize)).map(|d| self.faces_in[d].len()).collect()
     }
 
-    pub fn faces_of(&self, sign: Sign, dim: usize, pos: usize) -> IntSet {
+    pub(super) fn faces_of(&self, sign: Sign, dim: usize, pos: usize) -> IntSet {
         match sign {
             Sign::Input  => self.faces_in[dim][pos].clone(),
             Sign::Output => self.faces_out[dim][pos].clone(),
@@ -93,7 +113,7 @@ impl Ogposet {
         }
     }
 
-    pub fn cofaces_of(&self, sign: Sign, dim: usize, pos: usize) -> IntSet {
+    pub(super) fn cofaces_of(&self, sign: Sign, dim: usize, pos: usize) -> IntSet {
         match sign {
             Sign::Input  => self.cofaces_in[dim][pos].clone(),
             Sign::Output => self.cofaces_out[dim][pos].clone(),
@@ -101,13 +121,15 @@ impl Ogposet {
         }
     }
 
+    /// Structural equality: two ogposets are equal iff their face tables coincide.
     pub fn equal(a: &Ogposet, b: &Ogposet) -> bool {
         a.faces_in == b.faces_in && a.faces_out == b.faces_out
     }
 
-    /// Cells at dimension k that are extremal in the given direction.
-    /// Input extremal: no output cofaces. Output extremal: no input cofaces.
-    pub fn extremal(&self, sign: Sign, k: usize) -> IntSet {
+    /// Cells at dimension `k` that are extremal in the given direction:
+    /// - `Input` extremal: no output cofaces (source boundary of the diagram)
+    /// - `Output` extremal: no input cofaces (target boundary)
+    pub(super) fn extremal(&self, sign: Sign, k: usize) -> IntSet {
         if self.dim < 0 || k > self.dim as usize {
             return vec![];
         }
@@ -121,8 +143,8 @@ impl Ogposet {
         }
     }
 
-    /// Cells at dimension k that have no cofaces at all.
-    pub fn maximal(&self, k: usize) -> IntSet {
+    /// Cells at dimension `k` that have no cofaces in either direction.
+    pub(super) fn maximal(&self, k: usize) -> IntSet {
         if self.dim < 0 || k > self.dim as usize {
             return vec![];
         }
@@ -132,14 +154,15 @@ impl Ogposet {
         }).collect()
     }
 
-    /// True if all cells below the top dimension have cofaces.
-    pub fn is_pure(&self) -> bool {
+    /// True if every cell below the top dimension has at least one coface.
+    pub(super) fn is_pure(&self) -> bool {
         if self.dim <= 0 { return true; }
         let n = self.dim as usize;
         (0..n).all(|k| self.maximal(k).is_empty())
     }
 
-    /// The ogposet is "round": input and output interiors at each dimension are disjoint.
+    /// True if the ogposet is "round": the input and output interiors are disjoint
+    /// at every dimension, as required for a well-formed diagram boundary.
     pub fn is_round(&self) -> bool {
         if self.dim <= 0 { return true; }
         if !self.is_pure() { return false; }
@@ -185,6 +208,14 @@ impl Ogposet {
 
 // ---- Operations ----
 
+/// Remap a face/coface adjacency table onto a subset of cells given by an embedding.
+///
+/// `forward[d][i]` is the old index of new cell `i` at dimension `d`.
+/// `inv_dom[d][old]` maps an old index to its new index, or [`NO_PREIMAGE`].
+/// `shift = -1` remaps faces (neighbours at dimension d-1); `shift = +1` remaps
+/// cofaces (neighbours at dimension d+1).  With shift -1 every neighbour is
+/// guaranteed to have a preimage; with shift +1 neighbours outside the subset
+/// are silently dropped.
 fn remap_adjacency(
     levels:   usize,
     forward:  &[Vec<usize>],
@@ -214,8 +245,11 @@ fn remap_adjacency(
     }).collect()
 }
 
-/// Compute the boundary (sign-side, up to dimension k) of g.
-pub(crate) fn boundary(sign: Sign, k: usize, g: &Arc<Ogposet>) -> (Arc<Ogposet>, Embedding) {
+/// Extract the sub-ogposet on the sign-side boundary of `g` up to dimension `k`.
+///
+/// Returns the boundary sub-ogposet together with its embedding into `g`.
+/// If `k >= g.dim` the result is `g` itself with an identity embedding.
+pub(super) fn boundary(sign: Sign, k: usize, g: &Arc<Ogposet>) -> (Arc<Ogposet>, Embedding) {
     if g.dim < 0 {
         return (Arc::new(Ogposet::empty()), Embedding::empty(Arc::clone(g)));
     }
@@ -279,10 +313,19 @@ pub(crate) fn boundary(sign: Sign, k: usize, g: &Arc<Ogposet>) -> (Arc<Ogposet>,
     (sub, emb)
 }
 
-/// Traverse a subset of cells in g (specified by initial_stack: list of (dim, set_of_cells))
-/// and return the sub-ogposet induced by the downward closure of those cells.
-/// If `mark_normal` is true, the resulting ogposet has `normal: true`.
-pub(crate) fn traverse(g: &Arc<Ogposet>, initial_stack: Vec<(usize, IntSet)>, mark_normal: bool) -> (Arc<Ogposet>, Embedding) {
+/// Traverse the sub-ogposet of `g` induced by the downward closure of `initial_stack`,
+/// enumerating cells in a canonical input-first order.
+///
+/// `initial_stack` is a list of `(dim, cell_set)` pairs, typically ordered from
+/// highest to lowest dimension, naming the seed cells whose entire downward closure
+/// is to be included.  Cells are emitted in the order the traversal marks them:
+/// roughly highest dimension first, and within each dimension in the order their
+/// input faces were finalised.  This ordering is the key invariant exploited by
+/// [`normalisation`] and [`boundary_traverse`].
+///
+/// Set `mark_normal = true` when the resulting cell ordering is already canonical
+/// so that downstream code can skip re-normalising it.
+pub(super) fn traverse(g: &Arc<Ogposet>, initial_stack: Vec<(usize, IntSet)>, mark_normal: bool) -> (Arc<Ogposet>, Embedding) {
     if initial_stack.is_empty() {
         return (Arc::new(Ogposet::empty()), Embedding::empty(Arc::clone(g)));
     }
@@ -403,7 +446,8 @@ pub(crate) fn traverse(g: &Arc<Ogposet>, initial_stack: Vec<(usize, IntSet)>, ma
             continue;
         }
 
-        // Find best candidate
+        // Find best candidate: the unmarked cell whose earliest-marked input face
+        // has the lowest new index, breaking ties by old cell index.
         let mut best: Option<(usize, usize)> = None;
         {
             let focus = &stack.last().unwrap().1;
@@ -458,8 +502,10 @@ pub(crate) fn traverse(g: &Arc<Ogposet>, initial_stack: Vec<(usize, IntSet)>, ma
     (dom, emb)
 }
 
-/// Compute the normal form of g (traverse from input extremals)
-pub(crate) fn normalisation(g: &Arc<Ogposet>) -> (Arc<Ogposet>, Embedding) {
+/// Compute the normal form of `g`: reorder its cells into the canonical
+/// input-first traversal order.  Returns the normalised ogposet and the
+/// embedding that maps new indices to old ones.  Memoised by pointer identity.
+pub(super) fn normalisation(g: &Arc<Ogposet>) -> (Arc<Ogposet>, Embedding) {
     if g.is_normal() {
         return (Arc::clone(g), Embedding::id(Arc::clone(g)));
     }
@@ -478,16 +524,23 @@ pub(crate) fn normalisation(g: &Arc<Ogposet>) -> (Arc<Ogposet>, Embedding) {
     (dom, emb)
 }
 
+/// Build a traversal stack seeded with the sign-extremal cells of `g` at every
+/// dimension, in descending order (highest dimension first).
 fn build_stack_extremal(sign: Sign, g: &Ogposet) -> Vec<(usize, IntSet)> {
     if g.dim < 0 { return vec![]; }
     let d = g.dim as usize;
     (0..=d).map(|k| (k, g.extremal(sign, k))).rev().collect()
 }
 
+/// Build a traversal stack seeded with sign-extremal cells at levels 0..=`max_dim`,
+/// in ascending order.  Used as the initial stack for paste boundary traversal.
 fn build_stack_paste(sign: Sign, g: &Ogposet, max_dim: usize) -> Vec<(usize, IntSet)> {
     (0..=max_dim).map(|k| (k, g.extremal(sign, k))).collect()
 }
 
+/// Build the traversal stack for the shared boundary of an n-cell:
+/// input-extremal cells at levels 0..d-1 plus output-extremal cells at level d-1,
+/// reversed so traversal starts from the highest dimension.
 fn build_stack_cell_n(g: &Ogposet) -> Vec<(usize, IntSet)> {
     if g.dim < 0 { return vec![]; }
     let d = g.dim as usize;
@@ -500,8 +553,14 @@ fn build_stack_cell_n(g: &Ogposet) -> Vec<(usize, IntSet)> {
     inputs
 }
 
-/// Compute boundary traversal: normalised boundary at level k with a given sign.
-pub(crate) fn boundary_traverse(sign: Sign, k: usize, g: &Arc<Ogposet>) -> (Arc<Ogposet>, Embedding) {
+/// Compute the normalised `sign`-boundary of `g` at dimension `k`.  Memoised
+/// by (pointer, sign, effective_k).
+///
+/// - `Input` / `Output`: traverses the sign-extremal cells at every level 0..=k,
+///   producing the normalised sign-side boundary sub-ogposet.
+/// - `Both`: traverses using [`build_stack_cell_n`], producing the shared boundary
+///   needed when forming an n-cell from a pair of parallel (n-1)-diagrams.
+pub(super) fn boundary_traverse(sign: Sign, k: usize, g: &Arc<Ogposet>) -> (Arc<Ogposet>, Embedding) {
     let effective_k = if g.dim < 0 { 0 } else { k.min(g.dim as usize) };
 
     let cache_key = (Arc::as_ptr(g) as usize, sign, effective_k);
@@ -520,8 +579,12 @@ pub(crate) fn boundary_traverse(sign: Sign, k: usize, g: &Arc<Ogposet>) -> (Arc<
     (dom, emb)
 }
 
-/// Try to find an isomorphism from u to v.
-pub(crate) fn isomorphism_of(u: &Arc<Ogposet>, v: &Arc<Ogposet>) -> Result<Embedding, Error> {
+/// Find a shape isomorphism from `u` to `v`, or return an error if none exists.
+///
+/// The algorithm normalises both shapes and checks that their canonical forms
+/// are structurally equal.  If so, the isomorphism is recovered by composing
+/// the normalisation embedding of `u` with the inverse of `v`'s.
+pub(super) fn isomorphism_of(u: &Arc<Ogposet>, v: &Arc<Ogposet>) -> Result<Embedding, Error> {
     let failure = |msg: &str| Err(Error::new(msg));
 
     if u.dim != v.dim { return failure("dimensions do not match"); }
@@ -568,7 +631,10 @@ pub(crate) fn isomorphism_of(u: &Arc<Ogposet>, v: &Arc<Ogposet>) -> Result<Embed
     Ok(Embedding::make(Arc::clone(u), Arc::clone(v), map, inv))
 }
 
-// ---- Thread-local caches ----
+// ---- Thread-local memoisation caches ----
+//
+// Keyed by the raw pointer of the Arc<Ogposet>.  This is safe because the Arc
+// keeps the allocation live for as long as any cache entry that references it.
 
 type ShapeWithEmbedding = (Arc<Ogposet>, Embedding);
 
@@ -577,9 +643,10 @@ thread_local! {
     static BT_CACHE: RefCell<HashMap<(usize, Sign, usize), ShapeWithEmbedding>> = RefCell::new(HashMap::new());
 }
 
-/// Clear all caches (call between independent runs if needed)
+/// Clear all memoisation caches.  Call between independent interpreter runs
+/// if long-lived threads are reused.
 #[allow(dead_code)]
-pub(crate) fn clear_caches() {
+pub(super) fn clear_caches() {
     NORM_CACHE.with(|c| c.borrow_mut().clear());
     BT_CACHE.with(|c| c.borrow_mut().clear());
 }
