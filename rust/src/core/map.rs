@@ -109,19 +109,9 @@ impl PMap {
                 return Err(Error::new("higher-dimensional cell has no boundary data"))
             }
             (_, CellData::Boundary { boundary_in, boundary_out }) => {
-                let boundary_idx = dim - 1;
-                let mapped_in = PMap::apply(&f, boundary_in)?;
-                let mapped_out = PMap::apply(&f, boundary_out)?;
-
-                let expected_in = Diagram::boundary_normal(Sign::Source, boundary_idx, &image)?;
-                if !Diagram::equal(&Diagram::normal(&mapped_in), &expected_in) {
-                    return Err(Error::new("input boundaries do not match"));
-                }
-                let expected_out = Diagram::boundary_normal(Sign::Target, boundary_idx, &image)?;
-                if !Diagram::equal(&Diagram::normal(&mapped_out), &expected_out) {
-                    return Err(Error::new("output boundaries do not match"));
-                }
-
+                let k = dim - 1;
+                check_boundary_match(&f, boundary_in, Sign::Source, k, &image)?;
+                check_boundary_match(&f, boundary_out, Sign::Target, k, &image)?;
                 f.cellular && image.is_cell()
             }
         };
@@ -192,6 +182,27 @@ impl PMap {
 
 
 // ---- Internal helpers ----
+
+/// Apply `f` to `boundary_diag` and verify the result equals the `sign`-boundary
+/// of `image` at dimension `k` (after normalisation).
+fn check_boundary_match(
+    f: &PMap,
+    boundary_diag: &Diagram,
+    sign: Sign,
+    k: usize,
+    image: &Diagram,
+) -> Result<(), Error> {
+    let mapped = PMap::apply(f, boundary_diag)?;
+    let expected = Diagram::boundary_normal(sign, k, image)?;
+    if Diagram::equal(&Diagram::normal(&mapped), &expected) {
+        Ok(())
+    } else {
+        Err(Error::new(match sign {
+            Sign::Source => "input boundaries do not match",
+            Sign::Target => "output boundaries do not match",
+        }))
+    }
+}
 
 /// Look up the top label of a tag's image in the map, using `cache` to avoid
 /// repeated lookups. Panics if `tag` is not in `table` — callers must ensure

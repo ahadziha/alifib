@@ -539,6 +539,21 @@ fn paste_histories(
         .collect()
 }
 
+/// For each of `n` top-boundary cells, produce a coface list pointing to the
+/// single new top cell (index 0) if the cell has a preimage in `inv`, or empty
+/// otherwise.
+fn cofaces_to_top(n: usize, inv: &[usize]) -> Vec<super::intset::IntSet> {
+    (0..n)
+        .map(|idx| {
+            if inv.get(idx).copied().unwrap_or(NO_PREIMAGE) != NO_PREIMAGE {
+                vec![0usize]
+            } else {
+                vec![]
+            }
+        })
+        .collect()
+}
+
 fn build_cell_shape(
     d: usize,
     bd_uv: &Arc<Ogposet>,
@@ -568,30 +583,8 @@ fn build_cell_shape(
         let n = sizes_bd.get(d).copied().unwrap_or(0);
         faces_in.push((0..n).map(|pos| bd_uv.faces_of(OgSign::Input, d, pos)).collect());
         faces_out.push((0..n).map(|pos| bd_uv.faces_of(OgSign::Output, d, pos)).collect());
-        let inl_inv_d = &inl.inv[d];
-        let inr_inv_d = &inr.inv[d];
-        cofaces_in.push(
-            (0..n)
-                .map(|idx| {
-                    if inl_inv_d.get(idx).copied().unwrap_or(NO_PREIMAGE) != NO_PREIMAGE {
-                        vec![0usize]
-                    } else {
-                        vec![]
-                    }
-                })
-                .collect(),
-        );
-        cofaces_out.push(
-            (0..n)
-                .map(|idx| {
-                    if inr_inv_d.get(idx).copied().unwrap_or(NO_PREIMAGE) != NO_PREIMAGE {
-                        vec![0usize]
-                    } else {
-                        vec![]
-                    }
-                })
-                .collect(),
-        );
+        cofaces_in.push(cofaces_to_top(n, &inl.inv[d]));
+        cofaces_out.push(cofaces_to_top(n, &inr.inv[d]));
     }
 
     // Dim d+1: the single new top cell — its source face is the inl image and
