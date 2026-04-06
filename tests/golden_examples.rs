@@ -92,23 +92,18 @@ fn canonicalize_output(raw: &str) -> String {
 
     lines = drop_advice_blocks(lines);
 
-    // Normalize module path and list ordering within Diagrams/Maps lines.
+    // Normalize list ordering within Diagrams/Maps lines (but NOT module paths yet —
+    // we sort module sections by their raw path first for a stable order).
     for line in &mut lines {
-        if line.starts_with("* Module ") {
-            *line = "* Module <MODULE>".to_string();
-            continue;
-        }
         if let Some(rest) = line.strip_prefix("  Diagrams: ") {
             *line = format!("  Diagrams: {}", sort_csv(rest));
-            continue;
-        }
-        if let Some(rest) = line.strip_prefix("  Maps: ") {
+        } else if let Some(rest) = line.strip_prefix("  Maps: ") {
             *line = format!("  Maps: {}", sort_csv(rest));
-            continue;
         }
     }
 
-    // Split into module/type blocks and sort type blocks for deterministic comparison.
+    // Split into module sections, sort type blocks within each, sort modules by
+    // raw path for determinism, then normalize paths to <MODULE>.
     if lines.is_empty() {
         return String::new();
     }
@@ -116,6 +111,9 @@ fn canonicalize_output(raw: &str) -> String {
     let mut out: Vec<String> = Vec::new();
     out.push(lines[0].clone()); // summary line: "N cells, M types, K modules"
     out.push(String::new());
+
+    // Collect all module sections: (raw_header, sorted_type_blocks)
+    let mut modules: Vec<(String, Vec<Vec<String>>)> = Vec::new();
 
     let mut i = 1usize;
     while i < lines.len() {
@@ -155,8 +153,14 @@ fn canonicalize_output(raw: &str) -> String {
         }
 
         blocks.sort_by_key(|b| b.first().cloned().unwrap_or_default());
+        modules.push((module_line, blocks));
+    }
 
-        out.push(module_line);
+    // Sort by raw path so module order is independent of insertion order.
+    modules.sort_by_key(|(header, _)| header.clone());
+
+    for (_, blocks) in modules {
+        out.push("* Module <MODULE>".to_string());
         for block in blocks {
             out.push(block.join("\n"));
             out.push(String::new());
