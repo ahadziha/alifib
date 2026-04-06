@@ -119,9 +119,9 @@ pub fn encode_swap_network(swaps: &[usize], width: usize) -> Option<Diag> {
         .iter()
         .map(|&s| {
             let pieces: Vec<Diag> = (0..s)
-                .map(|_| Diag::atom("ob"))
-                .chain(std::iter::once(Diag::atom("swap")))
-                .chain((s + 2..width).map(|_| Diag::atom("ob")))
+                .map(|_| Diag::cell("ob"))
+                .chain(std::iter::once(Diag::cell("swap")))
+                .chain((s + 2..width).map(|_| Diag::cell("ob")))
                 .collect();
             compose_or_single(pieces, seq)
         })
@@ -136,13 +136,13 @@ pub fn encode_copy_tree(n: usize) -> Option<Diag> {
         return None;
     }
     if n == 2 {
-        return Some(Diag::atom("copy"));
+        return Some(Diag::cell("copy"));
     }
-    let mut diagram = Diag::atom("copy");
+    let mut diagram = Diag::cell("copy");
     let mut width = 2usize;
     for _ in 2..n {
-        let pieces: Vec<Diag> = std::iter::once(Diag::atom("copy"))
-            .chain((1..width).map(|_| Diag::atom("ob")))
+        let pieces: Vec<Diag> = std::iter::once(Diag::cell("copy"))
+            .chain((1..width).map(|_| Diag::cell("ob")))
             .collect();
         diagram = diagram.then(compose_or_single(pieces, seq));
         width += 1;
@@ -172,17 +172,17 @@ pub fn encode_gather_phase(
         let k = *use_counts.get(v).unwrap_or(&0);
         if k == 0 {
             if use_unit {
-                copy_erase_pieces.push(Diag::atom("erase"));
+                copy_erase_pieces.push(Diag::cell("erase"));
                 after_copy_erase.push("__erased__".to_owned());
             } else {
-                copy_erase_pieces.push(Diag::atom("ob"));
+                copy_erase_pieces.push(Diag::cell("ob"));
                 after_copy_erase.push(v.clone());
             }
         } else if k == 1 {
-            copy_erase_pieces.push(Diag::atom("ob"));
+            copy_erase_pieces.push(Diag::cell("ob"));
             after_copy_erase.push(v.clone());
         } else {
-            let ct = encode_copy_tree(k).unwrap_or_else(|| Diag::atom("ob"));
+            let ct = encode_copy_tree(k).unwrap_or_else(|| Diag::cell("ob"));
             copy_erase_pieces.push(ct);
             for _ in 0..k {
                 after_copy_erase.push(v.clone());
@@ -190,7 +190,7 @@ pub fn encode_gather_phase(
         }
     }
 
-    if copy_erase_pieces.iter().any(|p| !p.is_atom("ob")) {
+    if copy_erase_pieces.iter().any(|p| !p.is_cell("ob")) {
         parts.push(compose_or_single(copy_erase_pieces, par_seq));
     }
 
@@ -202,16 +202,16 @@ pub fn encode_gather_phase(
                 break;
             };
             if idx == 0 && wip_wires.len() > 1 {
-                let pieces: Vec<Diag> = std::iter::once(Diag::atom("unit_l"))
-                    .chain((2..wip_wires.len()).map(|_| Diag::atom("ob")))
+                let pieces: Vec<Diag> = std::iter::once(Diag::cell("unit_l"))
+                    .chain((2..wip_wires.len()).map(|_| Diag::cell("ob")))
                     .collect();
                 parts.push(compose_or_single(pieces, seq));
                 let next = wip_wires[1].clone();
                 wip_wires.splice(0..2, [next]);
             } else if idx == wip_wires.len() - 1 && wip_wires.len() > 1 {
                 let pieces: Vec<Diag> = (0..idx - 1)
-                    .map(|_| Diag::atom("ob"))
-                    .chain(std::iter::once(Diag::atom("unit_r")))
+                    .map(|_| Diag::cell("ob"))
+                    .chain(std::iter::once(Diag::cell("unit_r")))
                     .collect();
                 parts.push(compose_or_single(pieces, seq));
                 let prev = wip_wires[idx - 1].clone();
@@ -244,16 +244,16 @@ pub fn encode_gather_phase(
 /// Inner encoding: produces the dim-2 diagram for a term.
 pub fn encode_term_inner(t: &Term, fun_map: &HashMap<String, usize>) -> Diag {
     match t {
-        Term::Var(_) => Diag::atom("id_1"),
+        Term::Var(_) => Diag::cell("id_1"),
         Term::App { fun, args } => {
             let f_name = sanitize(fun);
             let arity = *fun_map.get(fun).unwrap_or(&0);
             if arity == 0 {
-                return Diag::atom(&f_name);
+                return Diag::cell(&f_name);
             }
             let subs: Vec<Diag> =
                 args.iter().map(|arg| encode_term_inner(arg, fun_map)).collect();
-            compose_subs_then_apply(subs, Diag::atom(&f_name))
+            compose_subs_then_apply(subs, Diag::cell(&f_name))
         }
     }
 }
@@ -263,10 +263,10 @@ fn compose_subs_then_apply(subs: Vec<Diag>, f: Diag) -> Diag {
         0 => f,
         1 => {
             let sub = subs.into_iter().next().unwrap();
-            if sub.is_atom("id_1") { f } else { sub.then(f) }
+            if sub.is_cell("id_1") { f } else { sub.then(f) }
         }
         _ => {
-            if subs.iter().all(|s| s.is_atom("id_1")) {
+            if subs.iter().all(|s| s.is_cell("id_1")) {
                 return f;
             }
             par_seq(subs).then(f)
@@ -331,20 +331,20 @@ pub fn encode_term_for_rule(
     for v in rule_vars {
         let k = *var_use_counts.get(v).unwrap_or(&0);
         if k == 0 {
-            copy_pieces.push(Diag::atom("id_1"));
+            copy_pieces.push(Diag::cell("id_1"));
             after_copy.push(format!("__unused_{}", v));
         } else if k == 1 {
-            copy_pieces.push(Diag::atom("id_1"));
+            copy_pieces.push(Diag::cell("id_1"));
             after_copy.push(v.clone());
         } else {
-            let ct = encode_copy_tree(k).unwrap_or_else(|| Diag::atom("id_1"));
+            let ct = encode_copy_tree(k).unwrap_or_else(|| Diag::cell("id_1"));
             copy_pieces.push(ct);
             for _ in 0..k {
                 after_copy.push(v.clone());
             }
         }
     }
-    if copy_pieces.iter().any(|p| !p.is_atom("id_1")) {
+    if copy_pieces.iter().any(|p| !p.is_cell("id_1")) {
         parts.push(compose_or_single(copy_pieces, par_seq));
     }
 
@@ -401,9 +401,9 @@ pub fn encode_term_for_rule(
     // Step 3: Erase constant positions
     let erase_pieces: Vec<Diag> = slots
         .iter()
-        .map(|s| if s.is_some() { Diag::atom("id_1") } else { Diag::atom("erase") })
+        .map(|s| if s.is_some() { Diag::cell("id_1") } else { Diag::cell("erase") })
         .collect();
-    if erase_pieces.iter().any(|p| !p.is_atom("id_1")) {
+    if erase_pieces.iter().any(|p| !p.is_cell("id_1")) {
         parts.push(compose_or_single(erase_pieces, par_seq));
     }
 

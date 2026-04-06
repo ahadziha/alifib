@@ -20,7 +20,7 @@ fn syn<T>(inner: T) -> ast::Spanned<T> {
 
 #[derive(Clone, Debug)]
 enum DiagRepr {
-    Atom(String),
+    Cell(String),
     /// Vertical (principal) composition: elements are space-joined.
     /// Compound elements are parenthesised when emitted.
     Seq(Vec<DiagRepr>),
@@ -31,7 +31,7 @@ enum DiagRepr {
 /// Convert a `DiagRepr` to the internal `ast::Diagram`.
 fn repr_to_ast(d: DiagRepr) -> ast::Diagram {
     match d {
-        DiagRepr::Atom(name) => ast::Diagram::PrincipalPaste(vec![syn(
+        DiagRepr::Cell(name) => ast::Diagram::PrincipalPaste(vec![syn(
             ast::DExpr::Component(ast::DComponent::PartialMap(
                 ast::PartialMapBasic::Name(name),
             )),
@@ -50,7 +50,7 @@ fn repr_to_ast(d: DiagRepr) -> ast::Diagram {
 /// Convert a `DiagRepr` to a single `ast::DExpr`, parenthesising if compound.
 fn repr_to_dexpr(d: DiagRepr) -> ast::DExpr {
     match d {
-        DiagRepr::Atom(name) => ast::DExpr::Component(ast::DComponent::PartialMap(
+        DiagRepr::Cell(name) => ast::DExpr::Component(ast::DComponent::PartialMap(
             ast::PartialMapBasic::Name(name),
         )),
         other => ast::DExpr::Component(ast::DComponent::Paren(Box::new(syn(repr_to_ast(other))))),
@@ -60,7 +60,7 @@ fn repr_to_dexpr(d: DiagRepr) -> ast::DExpr {
 /// Serialise a `DiagRepr` directly to `.ali` text (for `to_ali`).
 fn repr_to_str(d: &DiagRepr) -> String {
     match d {
-        DiagRepr::Atom(name) => name.clone(),
+        DiagRepr::Cell(name) => name.clone(),
         DiagRepr::Seq(parts) => parts.iter().map(repr_to_dexpr_str).collect::<Vec<_>>().join(" "),
         DiagRepr::Par(lhs, rhs) => format!("{} #0 {}", repr_to_str(lhs), repr_to_dexpr_str(rhs)),
     }
@@ -69,7 +69,7 @@ fn repr_to_str(d: &DiagRepr) -> String {
 /// Serialise as a single token — wrap in parens if compound.
 fn repr_to_dexpr_str(d: &DiagRepr) -> String {
     match d {
-        DiagRepr::Atom(name) => name.clone(),
+        DiagRepr::Cell(name) => name.clone(),
         other => format!("({})", repr_to_str(other)),
     }
 }
@@ -80,15 +80,15 @@ fn repr_to_dexpr_str(d: &DiagRepr) -> String {
 
 /// An opaque diagram expression.
 ///
-/// Build one with [`Diag::atom`], compose with [`Diag::then`] / [`Diag::par`],
+/// Build one with [`Diag::cell`], compose with [`Diag::then`] / [`Diag::par`],
 /// or use the free functions [`seq`], [`seq_flat`], [`par_seq`], [`obs`].
 #[derive(Clone, Debug)]
 pub struct Diag(DiagRepr);
 
 impl Diag {
-    /// A single named generator reference.
-    pub fn atom(name: &str) -> Self {
-        Diag(DiagRepr::Atom(name.to_owned()))
+    /// A single named cell (generator reference).
+    pub fn cell(name: &str) -> Self {
+        Diag(DiagRepr::Cell(name.to_owned()))
     }
 
     /// Vertical composition: `self other` (principal paste).
@@ -109,9 +109,9 @@ impl Diag {
         Diag(DiagRepr::Par(Box::new(self.0), Box::new(other.0)))
     }
 
-    /// Whether this diagram is a bare atom with the given name.
-    pub fn is_atom(&self, name: &str) -> bool {
-        matches!(&self.0, DiagRepr::Atom(n) if n == name)
+    /// Whether this diagram is a bare cell with the given name.
+    pub fn is_cell(&self, name: &str) -> bool {
+        matches!(&self.0, DiagRepr::Cell(n) if n == name)
     }
 }
 
@@ -156,7 +156,7 @@ pub fn par_seq(parts: impl IntoIterator<Item = Diag>) -> Diag {
 
 /// `n` copies of `ob` composed vertically: `ob ob ... ob`.
 pub fn obs(n: usize) -> Diag {
-    seq((0..n).map(|_| Diag::atom("ob")))
+    seq((0..n).map(|_| Diag::cell("ob")))
 }
 
 /// If `pieces` has one element return it directly; otherwise compose with
@@ -211,7 +211,7 @@ fn instr_to_ast(instr: InstrRepr) -> ast::Spanned<ast::ComplexInstr> {
                 .into_iter()
                 .map(|(gen_name, val)| {
                     syn(ast::PartialMapClause {
-                        lhs: syn(repr_to_ast(DiagRepr::Atom(gen_name))),
+                        lhs: syn(repr_to_ast(DiagRepr::Cell(gen_name))),
                         rhs: syn(repr_to_ast(val)),
                     })
                 })

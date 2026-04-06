@@ -15,38 +15,38 @@ pub fn generate_program(trs: &TRS, module_name: &str) -> Program {
     // ---- Eq type ----
     let eq = TypeDef::new("Eq")
         .cell("pt")
-        .cell_bd("dom", Diag::atom("pt"), Diag::atom("pt"))
-        .cell_bd("cod", Diag::atom("pt"), Diag::atom("pt"))
-        .cell_bd("lhs", Diag::atom("dom"), Diag::atom("cod"))
-        .cell_bd("rhs", Diag::atom("dom"), Diag::atom("cod"))
-        .cell_bd("dir", Diag::atom("lhs"), Diag::atom("rhs"))
-        .cell_bd("inv", Diag::atom("rhs"), Diag::atom("lhs"));
+        .cell_bd("dom", Diag::cell("pt"), Diag::cell("pt"))
+        .cell_bd("cod", Diag::cell("pt"), Diag::cell("pt"))
+        .cell_bd("lhs", Diag::cell("dom"), Diag::cell("cod"))
+        .cell_bd("rhs", Diag::cell("dom"), Diag::cell("cod"))
+        .cell_bd("dir", Diag::cell("lhs"), Diag::cell("rhs"))
+        .cell_bd("inv", Diag::cell("rhs"), Diag::cell("lhs"));
 
     // ---- TRS type ----
     let mut trs_type = TypeDef::new(module_name)
         .cell("pt")
-        .cell_bd("ob", Diag::atom("pt"), Diag::atom("pt"));
+        .cell_bd("ob", Diag::cell("pt"), Diag::cell("pt"));
 
     if use_unit {
-        trs_type = trs_type.cell_bd("unit", Diag::atom("pt"), Diag::atom("pt"));
+        trs_type = trs_type.cell_bd("unit", Diag::cell("pt"), Diag::cell("pt"));
     }
 
     trs_type = trs_type
-        .cell_bd("copy", Diag::atom("ob"), obs(2))
+        .cell_bd("copy", Diag::cell("ob"), obs(2))
         .cell_bd("swap", obs(2), obs(2));
 
     if use_unit {
         trs_type = trs_type
-            .cell_bd("erase", Diag::atom("ob"), Diag::atom("unit"))
+            .cell_bd("erase", Diag::cell("ob"), Diag::cell("unit"))
             .cell_bd(
                 "unit_l",
-                seq([Diag::atom("unit"), Diag::atom("ob")]),
-                Diag::atom("ob"),
+                seq([Diag::cell("unit"), Diag::cell("ob")]),
+                Diag::cell("ob"),
             )
             .cell_bd(
                 "unit_r",
-                seq([Diag::atom("ob"), Diag::atom("unit")]),
-                Diag::atom("ob"),
+                seq([Diag::cell("ob"), Diag::cell("unit")]),
+                Diag::cell("ob"),
             );
     }
 
@@ -54,9 +54,9 @@ pub fn generate_program(trs: &TRS, module_name: &str) -> Program {
     for f in &trs.funs {
         let name = sanitize(&f.name);
         if f.arity == 0 {
-            trs_type = trs_type.cell_bd(&name, Diag::atom("unit"), Diag::atom("ob"));
+            trs_type = trs_type.cell_bd(&name, Diag::cell("unit"), Diag::cell("ob"));
         } else {
-            trs_type = trs_type.cell_bd(&name, obs(f.arity), Diag::atom("ob"));
+            trs_type = trs_type.cell_bd(&name, obs(f.arity), Diag::cell("ob"));
         }
     }
 
@@ -72,20 +72,20 @@ pub fn generate_program(trs: &TRS, module_name: &str) -> Program {
             continue;
         }
         let name = sanitize(&f.name);
-        let lhs_diag = Diag::atom(&name).then(Diag::atom("copy"));
+        let lhs_diag = Diag::cell(&name).then(Diag::cell("copy"));
 
         if f.arity == 1 {
-            let rhs_diag = Diag::atom("copy")
-                .then(par_seq([Diag::atom(&name), Diag::atom(&name)]));
+            let rhs_diag = Diag::cell("copy")
+                .then(par_seq([Diag::cell(&name), Diag::cell(&name)]));
             trs_type = trs_type.attach(
                 &format!("Copy_{}", name),
                 &["Eq"],
                 vec![("lhs", lhs_diag), ("rhs", rhs_diag)],
             );
         } else if f.arity == 2 {
-            let rhs_diag = par_seq([Diag::atom("copy"), Diag::atom("copy")])
-                .then(seq([Diag::atom("ob"), Diag::atom("swap"), Diag::atom("ob")]))
-                .then(par_seq([Diag::atom(&name), Diag::atom(&name)]));
+            let rhs_diag = par_seq([Diag::cell("copy"), Diag::cell("copy")])
+                .then(seq([Diag::cell("ob"), Diag::cell("swap"), Diag::cell("ob")]))
+                .then(par_seq([Diag::cell(&name), Diag::cell(&name)]));
             trs_type = trs_type.attach(
                 &format!("Copy_{}", name),
                 &["Eq"],
@@ -99,33 +99,33 @@ pub fn generate_program(trs: &TRS, module_name: &str) -> Program {
     trs_type = trs_type
         .cell_bd(
             "id_1_idem",
-            seq([Diag::atom("id_1"), Diag::atom("id_1")]),
-            Diag::atom("id_1"),
+            seq([Diag::cell("id_1"), Diag::cell("id_1")]),
+            Diag::cell("id_1"),
         )
         .cell_bd(
             "id_1_idem_inv",
-            Diag::atom("id_1"),
-            seq([Diag::atom("id_1"), Diag::atom("id_1")]),
+            Diag::cell("id_1"),
+            seq([Diag::cell("id_1"), Diag::cell("id_1")]),
         )
         .cell_bd(
             "swap_inv",
-            seq([Diag::atom("swap"), Diag::atom("swap")]),
-            Diag::atom("id_2"),
+            seq([Diag::cell("swap"), Diag::cell("swap")]),
+            Diag::cell("id_2"),
         )
         .cell_bd(
             "swap_inv_inv",
-            Diag::atom("id_2"),
-            seq([Diag::atom("swap"), Diag::atom("swap")]),
+            Diag::cell("id_2"),
+            seq([Diag::cell("swap"), Diag::cell("swap")]),
         )
         .cell_bd(
             "copy_comm",
-            seq([Diag::atom("copy"), Diag::atom("swap")]),
-            Diag::atom("copy"),
+            seq([Diag::cell("copy"), Diag::cell("swap")]),
+            Diag::cell("copy"),
         )
         .cell_bd(
             "copy_comm_inv",
-            Diag::atom("copy"),
-            seq([Diag::atom("copy"), Diag::atom("swap")]),
+            Diag::cell("copy"),
+            seq([Diag::cell("copy"), Diag::cell("swap")]),
         );
 
     // Rewrite rules
