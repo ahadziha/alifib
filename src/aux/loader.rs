@@ -6,7 +6,7 @@ use crate::language::{self, Program, Error as LangError};
 type ReadFileFn = Arc<dyn Fn(&str) -> Result<String, LoadError> + Send + Sync>;
 
 #[derive(Debug, Clone)]
-pub(crate) enum LoadError {
+pub enum LoadError {
     NotFound,
     IoError(String),
 }
@@ -58,7 +58,8 @@ pub struct LoadedFile {
     pub modules: ModuleStore,
 }
 
-pub(crate) enum LoadFileError {
+#[derive(Debug)]
+pub enum LoadFileError {
     Load { path: String, cause: LoadError },
     Parse { path: String, source: String, errors: Vec<LangError> },
     Resolve(ResolveError),
@@ -127,7 +128,8 @@ pub struct ModuleStore {
     resolutions: HashMap<(String, String), String>,
 }
 
-pub(crate) enum ResolveError {
+#[derive(Debug)]
+pub enum ResolveError {
     NotFound { module_name: String },
     IoError { path: String, reason: String },
     ParseError { path: String, source: String, errors: Vec<LangError> },

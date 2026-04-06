@@ -1,18 +1,13 @@
-mod aux;
-mod core;
-mod interpreter;
-mod language;
-mod output;
-
 use std::fs;
 use std::process;
 use std::sync::Arc;
 use std::time::Instant;
 
-use aux::error::report_load_file_error;
-use aux::loader::Loader;
-use interpreter::{Context, interpret_program};
-use output::InterpretedFile;
+use alifib::aux::error::report_load_file_error;
+use alifib::aux::loader::Loader;
+use alifib::interpreter::{Context, interpret_program};
+use alifib::language;
+use alifib::output::InterpretedFile;
 
 const USAGE: &str = "Usage: alifib <input-file> [-o|--output <output-file>] [--ast] [--bench N]";
 
@@ -201,9 +196,6 @@ fn run(args: Args) -> bool {
         RunMode::Interpret => run_interpreter(&args.input, args.output.as_deref()),
     }
 }
-
-#[cfg(test)]
-mod tests;
 
 fn main() {
     let args = match parse_args() {
