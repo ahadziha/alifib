@@ -24,10 +24,7 @@ pub fn parse(source: &str) -> Result<Program, Vec<Error>> {
         })
         .collect();
 
-    let tokens = match tokens {
-        Some(t) => t,
-        None => return Err(errors),
-    };
+    let Some(tokens) = tokens else { return Err(errors); };
 
     let eoi = SimpleSpan::from(source.len()..source.len());
     let (ast, parse_errs) = parser::program_parser()

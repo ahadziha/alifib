@@ -102,20 +102,7 @@ impl Ogposet {
     }
 
     pub fn equal(a: &Ogposet, b: &Ogposet) -> bool {
-        if a.faces_in.len() != b.faces_in.len() { return false; }
-        for (la, lb) in a.faces_in.iter().zip(b.faces_in.iter()) {
-            if la.len() != lb.len() { return false; }
-            for (sa, sb) in la.iter().zip(lb.iter()) {
-                if sa != sb { return false; }
-            }
-        }
-        for (la, lb) in a.faces_out.iter().zip(b.faces_out.iter()) {
-            if la.len() != lb.len() { return false; }
-            for (sa, sb) in la.iter().zip(lb.iter()) {
-                if sa != sb { return false; }
-            }
-        }
-        true
+        a.faces_in == b.faces_in && a.faces_out == b.faces_out
     }
 
     /// Cells at dimension k that are extremal in the given direction.
@@ -219,7 +206,7 @@ fn remap_adjacency(
                 } else {
                     set_filter_map(|x| {
                         let y = inv_dom[target_dim][x];
-                        if y == NO_PREIMAGE { None } else { Some(y) }
+                        (y != NO_PREIMAGE).then_some(y)
                     }, &adj[j][old])
                 }
             }).collect()
@@ -524,18 +511,8 @@ pub(crate) fn boundary_traverse(sign: Sign, k: usize, g: &Arc<Ogposet>) -> (Arc<
     }
 
     let (dom, emb) = match sign {
-        Sign::Input => {
-            let stack = build_stack_paste(Sign::Input, g, effective_k);
-            traverse(g, stack, true)
-        }
-        Sign::Output => {
-            let stack = build_stack_paste(Sign::Output, g, effective_k);
-            traverse(g, stack, true)
-        }
-        Sign::Both => {
-            let stack = build_stack_cell_n(g);
-            traverse(g, stack, false)
-        }
+        Sign::Input | Sign::Output => traverse(g, build_stack_paste(sign, g, effective_k), true),
+        Sign::Both => traverse(g, build_stack_cell_n(g), false),
     };
 
     BT_CACHE.with(|c| c.borrow_mut().insert(cache_key, (Arc::clone(&dom), emb.clone())));
