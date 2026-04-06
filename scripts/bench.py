@@ -2,7 +2,7 @@
 """Benchmark the OCaml and Rust alifib implementations against each other.
 
 Run from anywhere inside the repo:
-    python3 rust/scripts/bench.py
+    python3 scripts/bench.py
 
 Optional flags:
     -n N      number of runs per batch (default: 30)
@@ -16,12 +16,11 @@ import subprocess
 import sys
 import time
 
-RUST_DIR  = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-REPO      = os.path.dirname(RUST_DIR)
-OCAML_BIN = os.path.join(REPO, "ocaml", "_build", "default", "src", "main.exe")
-RUST_BIN  = os.path.join(RUST_DIR, "target", "release", "alifib")
-OCAML_EXAMPLES = os.path.join(REPO, "ocaml", "examples")
-RUST_EXAMPLES  = os.path.join(RUST_DIR, "examples")
+REPO      = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OCAML_BIN = os.path.join(REPO, "legacy", "ocaml", "_build", "default", "src", "main.exe")
+RUST_BIN  = os.path.join(REPO, "target", "release", "alifib")
+OCAML_EXAMPLES = os.path.join(REPO, "legacy", "ocaml", "examples")
+EXAMPLES       = os.path.join(REPO, "examples")
 
 
 def bench_ocaml(cmd, path, n):
@@ -81,21 +80,20 @@ def main():
 
     if run_ocaml and not os.path.isfile(OCAML_BIN):
         print(f"OCaml binary not found: {OCAML_BIN}", file=sys.stderr)
-        print("Build with: cd ocaml && dune build", file=sys.stderr)
+        print("Build with: cd legacy/ocaml && dune build", file=sys.stderr)
         run_ocaml = False
 
     if run_rust and not os.path.isfile(RUST_BIN):
         print(f"Rust binary not found: {RUST_BIN}", file=sys.stderr)
-        print("Build with: cd rust && cargo build --release", file=sys.stderr)
+        print("Build with: cargo build --release", file=sys.stderr)
         run_rust = False
 
     if not run_ocaml and not run_rust:
         sys.exit(1)
 
-    # Use Rust examples as the canonical file list; OCaml examples may differ
-    files = sorted(f for f in os.listdir(RUST_EXAMPLES) if f.endswith(".ali"))
+    files = sorted(f for f in os.listdir(EXAMPLES) if f.endswith(".ali"))
     if not files:
-        print(f"No .ali files found in {RUST_EXAMPLES}", file=sys.stderr)
+        print(f"No .ali files found in {EXAMPLES}", file=sys.stderr)
         sys.exit(1)
 
     # Header
@@ -111,7 +109,7 @@ def main():
 
     for fname in files:
         name = fname[:-4]
-        rust_path  = os.path.join(RUST_EXAMPLES, fname)
+        rust_path  = os.path.join(EXAMPLES, fname)
         ocaml_path = os.path.join(OCAML_EXAMPLES, fname)
 
         if run_ocaml and not os.path.isfile(ocaml_path):
