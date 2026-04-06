@@ -363,33 +363,8 @@ fn image_classifier_via_boundary(
     target_boundary: &Diagram,
     target: &Complex,
 ) -> Result<Diagram, aux::Error> {
-    let embedding = crate::core::diagram::isomorphism_of(&source_boundary.shape, &target_boundary.shape)
-        .map_err(|_| aux::Error::new("Failed to extend map (boundary shapes don't match)"))?;
-
-    let boundary_dim = source_boundary.top_dim();
-    let (Some(source_row), Some(map_row), Some(target_row)) = (
-        source_boundary.labels.get(boundary_dim),
-        embedding.map.get(boundary_dim),
-        target_boundary.labels.get(boundary_dim),
-    ) else {
-        return Err(aux::Error::new("Failed to extend map (no image found)"));
-    };
-
-    let mut image_tag: Option<Tag> = None;
-    for (index, tag) in source_row.iter().enumerate() {
-        if tag != focus { continue; }
-        let Some(&mapped_index) = map_row.get(index) else { continue; };
-        let Some(mapped_tag) = target_row.get(mapped_index) else { continue; };
-        match &image_tag {
-            None => image_tag = Some(mapped_tag.clone()),
-            Some(existing) if existing != mapped_tag => {
-                return Err(aux::Error::new("The same generator is mapped to multiple diagrams"));
-            }
-            _ => {}
-        }
-    }
-
-    let mapped_tag = image_tag.ok_or_else(|| aux::Error::new("Failed to extend map (no image found)"))?;
+    let mapped_tag = Diagram::map_tag_via_shape_iso(source_boundary, target_boundary, focus)
+        .map_err(|e| aux::Error::new(format!("Failed to extend map ({})", e)))?;
     let generator_name = target
         .find_generator_by_tag(&mapped_tag)
         .ok_or_else(|| aux::Error::new("Image tag not found in target complex"))?

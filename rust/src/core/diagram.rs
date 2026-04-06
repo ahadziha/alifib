@@ -1,5 +1,4 @@
-pub use super::embeddings::{Embedding, NO_PREIMAGE, Pushout};
-pub(crate) use super::ogposet::isomorphism_of;
+use super::embeddings::{Embedding, NO_PREIMAGE, Pushout};
 use super::ogposet::{self, Ogposet, Sign as OgSign};
 use crate::aux::{Error, Tag};
 use std::sync::Arc;
@@ -78,13 +77,13 @@ pub enum CellData {
 
 /// Witness that two diagrams share matching boundaries.
 ///
-/// Returned by `Diagram::parallelism` and `Diagram::pastability`; the two
-/// embeddings map the shared boundary into each diagram respectively and are
-/// used to compute the pushout that merges the pair.
+/// Produced by `parallelism` and `pastability`; the two embeddings map the
+/// shared boundary into each diagram respectively and are used to compute
+/// the pushout that merges the pair.
 #[derive(Debug, Clone)]
-pub struct BoundaryMatch {
-    pub left_embedding: Embedding,
-    pub right_embedding: Embedding,
+struct BoundaryMatch {
+    left_embedding: Embedding,
+    right_embedding: Embedding,
 }
 
 /// A diagram: a labelled, oriented graded poset with paste structure.
@@ -104,54 +103,78 @@ pub struct Diagram {
     pub paste_history: Vec<BoundaryHistory>, // paste_history[dim]
 }
 
+// ---- Public interface ----
+
 impl Diagram {
-    pub fn new(
-        shape: Arc<Ogposet>,
-        labels: Vec<Vec<Tag>>,
-        paste_history: Vec<BoundaryHistory>,
-    ) -> Self {
-        debug_assert!(Self::well_formed(&shape, &labels, &paste_history));
-        Self::new_unchecked(shape, labels, paste_history)
-    }
-
-    pub fn new_unchecked(
-        shape: Arc<Ogposet>,
-        labels: Vec<Vec<Tag>>,
-        paste_history: Vec<BoundaryHistory>,
-    ) -> Self {
-        Self {
-            shape,
-            labels,
-            paste_history,
+    /// Create a cell from a tag and cell data.
+    pub fn cell(tag: Tag, data: &CellData) -> Result<Diagram, Error> {
+        match data {
+            CellData::Zero => Diagram::cell0(tag),
+            CellData::Boundary {
+                boundary_in,
+                boundary_out,
+            } => Diagram::cell_n(tag, boundary_in, boundary_out),
         }
     }
 
-    fn well_formed(
-        shape: &Ogposet,
-        labels: &[Vec<Tag>],
-        paste_history: &[BoundaryHistory],
-    ) -> bool {
-        let sizes = shape.sizes();
-        if labels.len() != sizes.len() || paste_history.len() != sizes.len() {
-            return false;
-        }
-        if !labels
-            .iter()
-            .zip(sizes.iter())
-            .all(|(level_labels, &expected_len)| level_labels.len() == expected_len)
-        {
-            return false;
-        }
+    /// Paste u and v at level k.
+    pub fn paste(k: usize, u: &Diagram, v: &Diagram) -> Result<Diagram, Error> {
+        let m = Diagram::pastability(k, u, v)?;
+        let Pushout {
+            tip: shape_uv,
+            inl,
+            inr,
+        } = super::pushout::pushout(&m.left_embedding, &m.right_embedding);
+        let sizes_uv = shape_uv.sizes();
+        let num_dims = sizes_uv.len();
 
-        if shape.dim >= 0 {
-            let d = shape.dim as usize;
-            // A non-empty top-dimensional label list is required for classifier lookup.
-            if labels.get(d).is_none_or(|row| row.is_empty()) {
-                return false;
-            }
-        }
+        let labels_uv = merge_pushout_labels(
+            &sizes_uv,
+            &inl.map,
+            &inr.map,
+            &u.labels,
+            &v.labels,
+            "all cells should be labelled",
+        );
+        let history_uv = paste_histories(&u.paste_history, &v.paste_history, k, num_dims);
 
-        true
+        Ok(Diagram::make(shape_uv, labels_uv, history_uv))
+    }
+
+    /// Return the (sign, k)-boundary as a new diagram.
+    pub fn boundary(sign: Sign, k: usize, d: &Diagram) -> Result<Diagram, Error> {
+        let (_, emb) = ogposet::boundary(sign.as_ogposet_sign(), k, &d.shape);
+        let pulled_labels = pullback_labels(d, &emb);
+        let new_history = boundary_history(&d.paste_history, sign, k);
+        Ok(Diagram::make(
+            Arc::clone(&emb.dom),
+            pulled_labels,
+            new_history,
+        ))
+    }
+
+    /// Return the normalised (sign, k)-boundary.
+    pub fn boundary_normal(sign: Sign, k: usize, d: &Diagram) -> Result<Diagram, Error> {
+        let og_sign = sign.as_ogposet_sign();
+        let effective_k = if d.shape.dim < 0 {
+            0
+        } else {
+            k.min(d.shape.dim as usize)
+        };
+        let (shape_norm, emb) = ogposet::boundary_traverse(og_sign, effective_k, &d.shape);
+        let pulled_labels = pullback_labels(d, &emb);
+        let new_history = boundary_history(&d.paste_history, sign, k);
+        Ok(Diagram::make(shape_norm, pulled_labels, new_history))
+    }
+
+    /// Return the normalised version of this diagram (reorder cells canonically).
+    pub fn normal(d: &Diagram) -> Diagram {
+        if d.is_normal() {
+            return d.clone();
+        }
+        let (shape_norm, emb) = ogposet::normalisation(&d.shape);
+        let pulled = pullback_labels(d, &emb);
+        Diagram::make(shape_norm, pulled, d.paste_history.clone())
     }
 
     pub fn dim(&self) -> isize {
@@ -211,44 +234,79 @@ impl Diagram {
         }
     }
 
-    /// Return the (sign, k)-boundary as a new diagram.
-    pub fn boundary(sign: Sign, k: usize, d: &Diagram) -> Result<Diagram, Error> {
-        let (_, emb) = ogposet::boundary(sign.as_ogposet_sign(), k, &d.shape);
-        let pulled_labels = pullback_labels(d, &emb);
-        let new_history = boundary_history(&d.paste_history, sign, k);
-        Ok(Diagram::new(
-            Arc::clone(&emb.dom),
-            pulled_labels,
-            new_history,
-        ))
-    }
-
-    /// Return the normalised (sign, k)-boundary.
-    pub fn boundary_normal(sign: Sign, k: usize, d: &Diagram) -> Result<Diagram, Error> {
-        let og_sign = sign.as_ogposet_sign();
-        let effective_k = if d.shape.dim < 0 {
-            0
-        } else {
-            k.min(d.shape.dim as usize)
+    /// Given two diagrams whose top-level shapes are isomorphic, find the image
+    /// of `focus` (a label in `source`) in `target` under that shape isomorphism.
+    pub fn map_tag_via_shape_iso(source: &Diagram, target: &Diagram, focus: &Tag) -> Result<Tag, Error> {
+        let iso = ogposet::isomorphism_of(&source.shape, &target.shape)
+            .map_err(|_| Error::new("boundary shapes don't match"))?;
+        let dim = source.top_dim();
+        let (Some(source_row), Some(map_row), Some(target_row)) = (
+            source.labels.get(dim),
+            iso.map.get(dim),
+            target.labels.get(dim),
+        ) else {
+            return Err(Error::new("no labels at top dimension"));
         };
-        let (shape_norm, emb) = ogposet::boundary_traverse(og_sign, effective_k, &d.shape);
-        let pulled_labels = pullback_labels(d, &emb);
-        let new_history = boundary_history(&d.paste_history, sign, k);
-        Ok(Diagram::new(shape_norm, pulled_labels, new_history))
+
+        let mut image: Option<Tag> = None;
+        for (i, tag) in source_row.iter().enumerate() {
+            if tag != focus { continue; }
+            let Some(&j) = map_row.get(i) else { continue; };
+            let Some(mapped) = target_row.get(j) else { continue; };
+            match &image {
+                None => image = Some(mapped.clone()),
+                Some(existing) if existing != mapped =>
+                    return Err(Error::new("generator maps to multiple targets")),
+                _ => {}
+            }
+        }
+
+        image.ok_or_else(|| Error::new("tag not found in source diagram"))
+    }
+}
+
+// ---- Internal constructors and helpers ----
+
+impl Diagram {
+    pub(super) fn make(
+        shape: Arc<Ogposet>,
+        labels: Vec<Vec<Tag>>,
+        paste_history: Vec<BoundaryHistory>,
+    ) -> Self {
+        debug_assert!(Self::well_formed(&shape, &labels, &paste_history));
+        Self { shape, labels, paste_history }
     }
 
-    /// Return the normalised version of this diagram (reorder cells canonically).
-    pub fn normal(d: &Diagram) -> Diagram {
-        if d.is_normal() {
-            return d.clone();
+    fn well_formed(
+        shape: &Ogposet,
+        labels: &[Vec<Tag>],
+        paste_history: &[BoundaryHistory],
+    ) -> bool {
+        let sizes = shape.sizes();
+        if labels.len() != sizes.len() || paste_history.len() != sizes.len() {
+            return false;
         }
-        let (shape_norm, emb) = ogposet::normalisation(&d.shape);
-        let pulled = pullback_labels(d, &emb);
-        Diagram::new(shape_norm, pulled, d.paste_history.clone())
+        if !labels
+            .iter()
+            .zip(sizes.iter())
+            .all(|(level_labels, &expected_len)| level_labels.len() == expected_len)
+        {
+            return false;
+        }
+
+        if shape.dim >= 0 {
+            let d = shape.dim as usize;
+            // A non-empty top-dimensional label list is required for classifier lookup.
+            if labels.get(d).is_none_or(|row| row.is_empty()) {
+                return false;
+            }
+        }
+
+        true
     }
 
     /// Check whether u and v have parallel boundaries (same boundary shape and labels).
-    pub fn parallelism(u: &Diagram, v: &Diagram) -> Result<BoundaryMatch, Error> {
+    fn parallelism(u: &Diagram, v: &Diagram) -> Result<BoundaryMatch, Error> {
         let dim_u = u.shape.dim;
         let dim_v = v.shape.dim;
         if dim_u != dim_v {
@@ -282,7 +340,7 @@ impl Diagram {
     }
 
     /// Check whether u and v can be pasted at level k.
-    pub fn pastability(k: usize, u: &Diagram, v: &Diagram) -> Result<BoundaryMatch, Error> {
+    fn pastability(k: usize, u: &Diagram, v: &Diagram) -> Result<BoundaryMatch, Error> {
         let (out_u, e_u) = ogposet::boundary_traverse(OgSign::Output, k.min(u.top_dim()), &u.shape);
         let (in_v, e_v) = ogposet::boundary_traverse(OgSign::Input, k.min(v.top_dim()), &v.shape);
 
@@ -302,41 +360,6 @@ impl Diagram {
         })
     }
 
-    /// Paste u and v at level k.
-    pub fn paste(k: usize, u: &Diagram, v: &Diagram) -> Result<Diagram, Error> {
-        let m = Diagram::pastability(k, u, v)?;
-        let Pushout {
-            tip: shape_uv,
-            inl,
-            inr,
-        } = super::pushout::pushout(&m.left_embedding, &m.right_embedding);
-        let sizes_uv = shape_uv.sizes();
-        let num_dims = sizes_uv.len();
-
-        let labels_uv = merge_pushout_labels(
-            &sizes_uv,
-            &inl.map,
-            &inr.map,
-            &u.labels,
-            &v.labels,
-            "all cells should be labelled",
-        );
-        let history_uv = paste_histories(&u.paste_history, &v.paste_history, k, num_dims);
-
-        Ok(Diagram::new(shape_uv, labels_uv, history_uv))
-    }
-
-    /// Create a cell from a tag and cell data.
-    pub fn cell(tag: Tag, data: &CellData) -> Result<Diagram, Error> {
-        match data {
-            CellData::Zero => Diagram::cell0(tag),
-            CellData::Boundary {
-                boundary_in,
-                boundary_out,
-            } => Diagram::cell_n(tag, boundary_in, boundary_out),
-        }
-    }
-
     fn cell0(tag: Tag) -> Result<Diagram, Error> {
         let shape = Arc::new(Ogposet::point());
         let labels = vec![vec![tag.clone()]];
@@ -344,7 +367,7 @@ impl Diagram {
             PasteTree::Leaf(tag.clone()),
             PasteTree::Leaf(tag),
         )];
-        Ok(Diagram::new(shape, labels, paste_history))
+        Ok(Diagram::make(shape, labels, paste_history))
     }
 
     fn cell_n(tag: Tag, source: &Diagram, target: &Diagram) -> Result<Diagram, Error> {
@@ -372,7 +395,7 @@ impl Diagram {
         let history_uv =
             build_cell_paste_history(d, &tag, &source.paste_history, &target.paste_history);
 
-        Ok(Diagram::new(shape_uv, labels_uv, history_uv))
+        Ok(Diagram::make(shape_uv, labels_uv, history_uv))
     }
 }
 

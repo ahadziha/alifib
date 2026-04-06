@@ -161,7 +161,7 @@ impl PMap {
                 )
             }).collect();
 
-            Ok(Diagram::new(diagram.shape.clone(), new_labels, new_trees))
+            Ok(Diagram::make(diagram.shape.clone(), new_labels, new_trees))
         } else {
             apply_tree(f, &root_tree)
         }
