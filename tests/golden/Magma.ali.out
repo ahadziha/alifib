@@ -1,19 +1,6 @@
 12 cells, 5 types, 1 modules
 
-* Module /private/tmp/alifib-rust-pre-20260402/rust/examples/Magma.ali
-Type Ob
-  [0] pt
-  [1] ob : pt -> pt
-  Diagrams: pt, ob : pt -> pt
-  Maps: Ob :: Ob
-
-Type Magma
-  [0] Ob.pt
-  [1] Ob.ob : Ob.pt -> Ob.pt
-  [2] m : Ob.ob Ob.ob -> Ob.ob
-  Diagrams: m : Ob.ob Ob.ob -> Ob.ob
-  Maps: Magma :: Magma, Ob :: Ob
-
+* Module /Users/lambdabetaeta/projects/alifib/examples/Magma.ali
 Type <empty>
   (no cells)
 
@@ -28,5 +15,18 @@ Type FrobeniusMagma
   [0] Ob.pt
   [1] Ob.ob : Ob.pt -> Ob.pt
   [2] Comagma.c : Ob.ob -> Ob.ob Ob.ob, Magma.m : Ob.ob Ob.ob -> Ob.ob
-  Maps: Comagma :: Comagma, Magma :: Magma, FrobeniusMagma :: FrobeniusMagma, Ob :: Ob
+  Maps: Comagma :: Comagma, FrobeniusMagma :: FrobeniusMagma, Magma :: Magma, Ob :: Ob
+
+Type Magma
+  [0] Ob.pt
+  [1] Ob.ob : Ob.pt -> Ob.pt
+  [2] m : Ob.ob Ob.ob -> Ob.ob
+  Diagrams: m : Ob.ob Ob.ob -> Ob.ob
+  Maps: Magma :: Magma, Ob :: Ob
+
+Type Ob
+  [0] pt
+  [1] ob : pt -> pt
+  Diagrams: ob : pt -> pt, pt
+  Maps: Ob :: Ob
 

@@ -148,7 +148,7 @@ impl InterpretedFile {
 
 impl fmt::Display for InterpretedFile {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.state.fmt_with_main(f, &self.path)
+        write!(f, "{}", self.state)
     }
 }
 
@@ -236,25 +236,6 @@ fn render_domain(domain: &MapDomain, module_complex: &Complex) -> String {
 
 // ---- Display for GlobalStore ----
 
-impl GlobalStore {
-    /// Format the store, sorting dependency modules alphabetically and putting
-    /// `main_module` last (it depends on all others, so this reads naturally).
-    fn fmt_with_main(&self, f: &mut fmt::Formatter<'_>, main_module: &str) -> fmt::Result {
-        writeln!(
-            f,
-            "{} cells, {} types, {} modules",
-            self.cells_count(),
-            self.types_count(),
-            self.modules_count(),
-        )?;
-
-        let mut module_entries: Vec<_> = self.modules_iter().collect();
-        module_entries.sort_by_key(|(id, _)| ((*id == main_module) as u8, *id));
-
-        fmt_module_entries(self, f, &module_entries)
-    }
-}
-
 impl fmt::Display for GlobalStore {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(
@@ -265,9 +246,7 @@ impl fmt::Display for GlobalStore {
             self.modules_count(),
         )?;
 
-        let mut module_entries: Vec<_> = self.modules_iter().collect();
-        module_entries.sort_by_key(|(id, _)| *id);
-
+        let module_entries: Vec<_> = self.modules_iter().collect();
         fmt_module_entries(self, f, &module_entries)
     }
 }

@@ -1,6 +1,7 @@
 use crate::aux::{GlobalId, ModuleId, Tag};
 use crate::core::complex::Complex;
 use crate::core::diagram::CellData;
+use indexmap::IndexMap;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -32,7 +33,8 @@ pub struct GlobalStore {
     pub(crate) cells: HashMap<GlobalId, CellEntry>,
     pub(crate) cells_by_dim: HashMap<usize, Vec<GlobalId>>,
     pub(crate) types: HashMap<GlobalId, TypeEntry>,
-    pub(crate) modules: HashMap<ModuleId, Arc<Complex>>,
+    /// Modules in load order (dependencies before the files that depend on them).
+    pub(crate) modules: IndexMap<ModuleId, Arc<Complex>>,
 }
 
 impl GlobalStore {
@@ -129,7 +131,9 @@ impl GlobalStore {
         self.modules.len()
     }
 
-    /// Returns an iterator over `(module_id, module_complex)` pairs, in unspecified order.
+    /// Returns an iterator over `(module_id, module_complex)` pairs, in load order.
+    ///
+    /// Dependencies always appear before the modules that include them.
     pub fn modules_iter(&self) -> impl Iterator<Item = (&str, &Complex)> {
         self.modules.iter().map(|(id, arc)| (id.as_str(), &**arc))
     }

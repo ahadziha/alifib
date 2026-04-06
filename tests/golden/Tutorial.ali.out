@@ -1,26 +1,26 @@
 21 cells, 4 types, 1 modules
 
-* Module /private/tmp/alifib-rust-pre-20260402/rust/examples/Tutorial.ali
-Type Ob
-  [0] ob
-  [1] id : ob -> ob
-  [2] idem : id id -> id
-  Diagrams: ob, idem : id id -> id, id : ob -> ob
-  Maps: Ob :: Ob
-
+* Module /Users/lambdabetaeta/projects/alifib/examples/Tutorial.ali
 Type <empty>
   (no cells)
-
-Type Pair
-  [0] x.ob, y.ob, z.ob
-  [1] f.mor : x.ob -> y.ob, g.mor : y.ob -> z.ob, x.id : x.ob -> x.ob, y.id : y.ob -> y.ob, z.id : z.ob -> z.ob
-  [2] x.idem : x.id x.id -> x.id, y.idem : y.id y.id -> y.id, z.idem : z.id z.id -> z.id
-  Maps: y :: Ob, f :: Mor, g :: Mor, Pair :: Pair, x :: Ob, z :: Ob
 
 Type Mor
   [0] cod.ob, dom.ob
   [1] cod.id : cod.ob -> cod.ob, dom.id : dom.ob -> dom.ob, mor : dom.ob -> cod.ob
   [2] cod.idem : cod.id cod.id -> cod.id, dom.idem : dom.id dom.id -> dom.id
   Diagrams: mor : dom.ob -> cod.ob
-  Maps: cod :: Ob, dom :: Ob, Mor :: Mor
+  Maps: Mor :: Mor, cod :: Ob, dom :: Ob
+
+Type Ob
+  [0] ob
+  [1] id : ob -> ob
+  [2] idem : id id -> id
+  Diagrams: id : ob -> ob, idem : id id -> id, ob
+  Maps: Ob :: Ob
+
+Type Pair
+  [0] x.ob, y.ob, z.ob
+  [1] f.mor : x.ob -> y.ob, g.mor : y.ob -> z.ob, x.id : x.ob -> x.ob, y.id : y.ob -> y.ob, z.id : z.ob -> z.ob
+  [2] x.idem : x.id x.id -> x.id, y.idem : y.id y.id -> y.id, z.idem : z.id z.id -> z.id
+  Maps: Pair :: Pair, f :: Mor, g :: Mor, x :: Ob, y :: Ob, z :: Ob
 

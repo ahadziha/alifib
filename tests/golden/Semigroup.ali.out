@@ -1,21 +1,44 @@
 216 cells, 13 types, 2 modules
 
-* Module /private/tmp/alifib-rust-pre-20260402/rust/examples/Semigroup.ali
+* Module /Users/lambdabetaeta/projects/alifib/examples/Theory.ali
+Type <empty>
+  (no cells)
+
+Type Equation
+  [0] pt
+  [1] cod : pt -> pt, dom : pt -> pt
+  [2] lhs : dom -> cod, rhs : dom -> cod
+  [3] dir : lhs -> rhs, inv : rhs -> lhs
+  Diagrams: cod : pt -> pt, dir : lhs -> rhs, dom : pt -> pt, inv : rhs -> lhs, lhs : dom -> cod, pt, rhs : dom -> cod
+  Maps: Equation :: Equation
+
+Type Function
+  [0] pt
+  [1] Cod.set : pt -> pt, Dom.set : pt -> pt
+  [2] Cod.id : Cod.set -> Cod.set, Dom.id : Dom.set -> Dom.set, fun : Dom.set -> Cod.set
+  [3] Cod.Id_id.dir : Cod.id Cod.id -> Cod.id, Cod.Id_id.inv : Cod.id -> Cod.id Cod.id, Dom.Id_id.dir : Dom.id Dom.id -> Dom.id, Dom.Id_id.inv : Dom.id -> Dom.id Dom.id, Fun_id.dir : fun Cod.id -> fun, Fun_id.inv : fun -> fun Cod.id, Id_fun.dir : Dom.id fun -> fun, Id_fun.inv : fun -> Dom.id fun
+  Diagrams: cod : pt -> pt, dom : pt -> pt, fun : Dom.set -> Cod.set, pt
+  Maps: Cod :: Set, Dom :: Set, Fun_id :: Equation, Function :: Function, Id_fun :: Equation
+
+Type Set
+  [0] pt
+  [1] set : pt -> pt
+  [2] id : set -> set
+  [3] Id_id.dir : id id -> id, Id_id.inv : id -> id id
+  Diagrams: id : set -> set, pt, set : pt -> pt
+  Maps: Id :: Function, Id_id :: Equation, Set :: Set
+
+* Module /Users/lambdabetaeta/projects/alifib/examples/Semigroup.ali
+Type <empty>
+  (no cells)
+
 Type Bicomodule
   [0] pt
   [1] L.Set.set : pt -> pt, R.Set.set : pt -> pt, Set.set : pt -> pt
   [2] L.Set.id : L.Set.set -> L.Set.set, L.split : L.Set.set -> L.Set.set L.Set.set, LC.coaction : Set.set -> L.Set.set Set.set, R.Set.id : R.Set.set -> R.Set.set, R.split : R.Set.set -> R.Set.set R.Set.set, RC.coaction : Set.set -> Set.set R.Set.set, Set.id : Set.set -> Set.set
   [3] L.Assoc.dir : L.split L.split -> L.split L.split, L.Assoc.inv : L.split L.split -> L.split L.split, L.Id_split.dir : L.split L.Set.id -> L.split, L.Id_split.inv : L.split -> L.split L.Set.id, L.Set.Id_id.dir : L.Set.id L.Set.id -> L.Set.id, L.Set.Id_id.inv : L.Set.id -> L.Set.id L.Set.id, L.Split_left_id.dir : L.split L.Set.id -> L.split, L.Split_left_id.inv : L.split -> L.split L.Set.id, L.Split_right_id.dir : L.split L.Set.id -> L.split, L.Split_right_id.inv : L.split -> L.split L.Set.id, LC.Left_coact_split.dir : L.split LC.coaction -> LC.coaction LC.coaction, LC.Left_coact_split.inv : LC.coaction LC.coaction -> L.split LC.coaction, R.Assoc.dir : R.split R.split -> R.split R.split, R.Assoc.inv : R.split R.split -> R.split R.split, R.Id_split.dir : R.split R.Set.id -> R.split, R.Id_split.inv : R.split -> R.split R.Set.id, R.Set.Id_id.dir : R.Set.id R.Set.id -> R.Set.id, R.Set.Id_id.inv : R.Set.id -> R.Set.id R.Set.id, R.Split_left_id.dir : R.split R.Set.id -> R.split, R.Split_left_id.inv : R.split -> R.split R.Set.id, R.Split_right_id.dir : R.split R.Set.id -> R.split, R.Split_right_id.inv : R.split -> R.split R.Set.id, RC.Right_coact_split.dir : R.split RC.coaction -> RC.coaction RC.coaction, RC.Right_coact_split.inv : RC.coaction RC.coaction -> R.split RC.coaction, Right_coact_left_coact.dir : LC.coaction RC.coaction -> RC.coaction LC.coaction, Right_coact_left_coact.inv : RC.coaction LC.coaction -> LC.coaction RC.coaction, Set.Id_id.dir : Set.id Set.id -> Set.id, Set.Id_id.inv : Set.id -> Set.id Set.id
   Diagrams: pt
-  Maps: Right_coact_left_coact :: Theory.Equation, L :: Cosemigroup, Set :: Theory.Set, RC :: Right_comodule, LC :: Left_comodule, R :: Cosemigroup, Bicomodule :: Bicomodule
-
-Type Left_comodule
-  [0] pt
-  [1] L.Set.set : pt -> pt, Set.set : pt -> pt
-  [2] L.Set.id : L.Set.set -> L.Set.set, L.split : L.Set.set -> L.Set.set L.Set.set, Set.id : Set.set -> Set.set, coaction : Set.set -> L.Set.set Set.set
-  [3] L.Assoc.dir : L.split L.split -> L.split L.split, L.Assoc.inv : L.split L.split -> L.split L.split, L.Id_split.dir : L.split L.Set.id -> L.split, L.Id_split.inv : L.split -> L.split L.Set.id, L.Set.Id_id.dir : L.Set.id L.Set.id -> L.Set.id, L.Set.Id_id.inv : L.Set.id -> L.Set.id L.Set.id, L.Split_left_id.dir : L.split L.Set.id -> L.split, L.Split_left_id.inv : L.split -> L.split L.Set.id, L.Split_right_id.dir : L.split L.Set.id -> L.split, L.Split_right_id.inv : L.split -> L.split L.Set.id, Left_coact_split.dir : L.split coaction -> coaction coaction, Left_coact_split.inv : coaction coaction -> L.split coaction, Set.Id_id.dir : Set.id Set.id -> Set.id, Set.Id_id.inv : Set.id -> Set.id Set.id
-  Diagrams: coaction : Set.set -> L.Set.set Set.set, pt
-  Maps: Left_comodule :: Left_comodule, Left_coact_split :: Theory.Equation, L :: Cosemigroup, Set :: Theory.Set
+  Maps: Bicomodule :: Bicomodule, L :: Cosemigroup, LC :: Left_comodule, R :: Cosemigroup, RC :: Right_comodule, Right_coact_left_coact :: Theory.Equation, Set :: Theory.Set
 
 Type Bimodule
   [0] pt
@@ -23,58 +46,23 @@ Type Bimodule
   [2] L.Set.id : L.Set.set -> L.Set.set, L.merge : L.Set.set L.Set.set -> L.Set.set, LM.action : L.Set.set Set.set -> Set.set, R.Set.id : R.Set.set -> R.Set.set, R.merge : R.Set.set R.Set.set -> R.Set.set, RM.action : Set.set R.Set.set -> Set.set, Set.id : Set.set -> Set.set
   [3] L.Assoc.dir : L.merge L.merge -> L.merge L.merge, L.Assoc.inv : L.merge L.merge -> L.merge L.merge, L.Left_id_merge.dir : L.Set.id L.merge -> L.merge, L.Left_id_merge.inv : L.merge -> L.Set.id L.merge, L.Merge_id.dir : L.merge L.Set.id -> L.merge, L.Merge_id.inv : L.merge -> L.merge L.Set.id, L.Right_id_merge.dir : L.Set.id L.merge -> L.merge, L.Right_id_merge.inv : L.merge -> L.Set.id L.merge, L.Set.Id_id.dir : L.Set.id L.Set.id -> L.Set.id, L.Set.Id_id.inv : L.Set.id -> L.Set.id L.Set.id, LM.Merge_left_act.dir : L.merge LM.action -> LM.action LM.action, LM.Merge_left_act.inv : LM.action LM.action -> L.merge LM.action, Left_act_right_act.dir : LM.action RM.action -> RM.action LM.action, Left_act_right_act.inv : RM.action LM.action -> LM.action RM.action, R.Assoc.dir : R.merge R.merge -> R.merge R.merge, R.Assoc.inv : R.merge R.merge -> R.merge R.merge, R.Left_id_merge.dir : R.Set.id R.merge -> R.merge, R.Left_id_merge.inv : R.merge -> R.Set.id R.merge, R.Merge_id.dir : R.merge R.Set.id -> R.merge, R.Merge_id.inv : R.merge -> R.merge R.Set.id, R.Right_id_merge.dir : R.Set.id R.merge -> R.merge, R.Right_id_merge.inv : R.merge -> R.Set.id R.merge, R.Set.Id_id.dir : R.Set.id R.Set.id -> R.Set.id, R.Set.Id_id.inv : R.Set.id -> R.Set.id R.Set.id, RM.Merge_right_act.dir : R.merge RM.action -> RM.action RM.action, RM.Merge_right_act.inv : RM.action RM.action -> R.merge RM.action, Set.Id_id.dir : Set.id Set.id -> Set.id, Set.Id_id.inv : Set.id -> Set.id Set.id
   Diagrams: pt
-  Maps: Bimodule :: Bimodule, L :: Semigroup, Set :: Theory.Set, LM :: Left_module, RM :: Right_module, R :: Semigroup, Left_act_right_act :: Theory.Equation
-
-Type Theory.Set
-  [0] pt
-  [1] set : pt -> pt
-  [2] id : set -> set
-  [3] Id_id.dir : id id -> id, Id_id.inv : id -> id id
-  Diagrams: set : pt -> pt, id : set -> set, pt
-  Maps: Id_id :: Theory.Equation, Set :: Theory.Set, Id :: Theory.Function
-
-Type Theory.Equation
-  [0] pt
-  [1] cod : pt -> pt, dom : pt -> pt
-  [2] lhs : dom -> cod, rhs : dom -> cod
-  [3] dir : lhs -> rhs, inv : rhs -> lhs
-  Diagrams: cod : pt -> pt, lhs : dom -> cod, dom : pt -> pt, rhs : dom -> cod, dir : lhs -> rhs, inv : rhs -> lhs, pt
-  Maps: Equation :: Theory.Equation
-
-Type Theory.Function
-  [0] pt
-  [1] Cod.set : pt -> pt, Dom.set : pt -> pt
-  [2] Cod.id : Cod.set -> Cod.set, Dom.id : Dom.set -> Dom.set, fun : Dom.set -> Cod.set
-  [3] Cod.Id_id.dir : Cod.id Cod.id -> Cod.id, Cod.Id_id.inv : Cod.id -> Cod.id Cod.id, Dom.Id_id.dir : Dom.id Dom.id -> Dom.id, Dom.Id_id.inv : Dom.id -> Dom.id Dom.id, Fun_id.dir : fun Cod.id -> fun, Fun_id.inv : fun -> fun Cod.id, Id_fun.dir : Dom.id fun -> fun, Id_fun.inv : fun -> Dom.id fun
-  Diagrams: cod : pt -> pt, fun : Dom.set -> Cod.set, dom : pt -> pt, pt
-  Maps: Fun_id :: Theory.Equation, Function :: Theory.Function, Dom :: Theory.Set, Cod :: Theory.Set, Id_fun :: Theory.Equation
-
-Type Semigroup
-  [0] pt
-  [1] Set.set : pt -> pt
-  [2] Set.id : Set.set -> Set.set, merge : Set.set Set.set -> Set.set
-  [3] Assoc.dir : merge merge -> merge merge, Assoc.inv : merge merge -> merge merge, Left_id_merge.dir : Set.id merge -> merge, Left_id_merge.inv : merge -> Set.id merge, Merge_id.dir : merge Set.id -> merge, Merge_id.inv : merge -> merge Set.id, Right_id_merge.dir : Set.id merge -> merge, Right_id_merge.inv : merge -> Set.id merge, Set.Id_id.dir : Set.id Set.id -> Set.id, Set.Id_id.inv : Set.id -> Set.id Set.id
-  Diagrams: id : Set.set -> Set.set, merge : Set.set Set.set -> Set.set, pt, set : pt -> pt
-  Maps: Left_id_merge :: Theory.Equation, Merge_id :: Theory.Equation, Set :: Theory.Set, Semigroup :: Semigroup, Right_id_merge :: Theory.Equation, Assoc :: Theory.Equation
+  Maps: Bimodule :: Bimodule, L :: Semigroup, LM :: Left_module, Left_act_right_act :: Theory.Equation, R :: Semigroup, RM :: Right_module, Set :: Theory.Set
 
 Type Cosemigroup
   [0] pt
   [1] Set.set : pt -> pt
   [2] Set.id : Set.set -> Set.set, split : Set.set -> Set.set Set.set
   [3] Assoc.dir : split split -> split split, Assoc.inv : split split -> split split, Id_split.dir : split Set.id -> split, Id_split.inv : split -> split Set.id, Set.Id_id.dir : Set.id Set.id -> Set.id, Set.Id_id.inv : Set.id -> Set.id Set.id, Split_left_id.dir : split Set.id -> split, Split_left_id.inv : split -> split Set.id, Split_right_id.dir : split Set.id -> split, Split_right_id.inv : split -> split Set.id
-  Diagrams: id : Set.set -> Set.set, pt, split : Set.set -> Set.set Set.set, set : pt -> pt
-  Maps: Split_right_id :: Theory.Equation, Id_split :: Theory.Equation, Set :: Theory.Set, Cosemigroup :: Cosemigroup, Split_left_id :: Theory.Equation, Assoc :: Theory.Equation
+  Diagrams: id : Set.set -> Set.set, pt, set : pt -> pt, split : Set.set -> Set.set Set.set
+  Maps: Assoc :: Theory.Equation, Cosemigroup :: Cosemigroup, Id_split :: Theory.Equation, Set :: Theory.Set, Split_left_id :: Theory.Equation, Split_right_id :: Theory.Equation
 
-Type <empty>
-  (no cells)
-
-Type Right_module
+Type Left_comodule
   [0] pt
-  [1] R.Set.set : pt -> pt, Set.set : pt -> pt
-  [2] R.Set.id : R.Set.set -> R.Set.set, R.merge : R.Set.set R.Set.set -> R.Set.set, Set.id : Set.set -> Set.set, action : Set.set R.Set.set -> Set.set
-  [3] Merge_right_act.dir : R.merge action -> action action, Merge_right_act.inv : action action -> R.merge action, R.Assoc.dir : R.merge R.merge -> R.merge R.merge, R.Assoc.inv : R.merge R.merge -> R.merge R.merge, R.Left_id_merge.dir : R.Set.id R.merge -> R.merge, R.Left_id_merge.inv : R.merge -> R.Set.id R.merge, R.Merge_id.dir : R.merge R.Set.id -> R.merge, R.Merge_id.inv : R.merge -> R.merge R.Set.id, R.Right_id_merge.dir : R.Set.id R.merge -> R.merge, R.Right_id_merge.inv : R.merge -> R.Set.id R.merge, R.Set.Id_id.dir : R.Set.id R.Set.id -> R.Set.id, R.Set.Id_id.inv : R.Set.id -> R.Set.id R.Set.id, Set.Id_id.dir : Set.id Set.id -> Set.id, Set.Id_id.inv : Set.id -> Set.id Set.id
-  Diagrams: action : Set.set R.Set.set -> Set.set, pt
-  Maps: Right_module :: Right_module, Set :: Theory.Set, Merge_right_act :: Theory.Equation, R :: Semigroup
+  [1] L.Set.set : pt -> pt, Set.set : pt -> pt
+  [2] L.Set.id : L.Set.set -> L.Set.set, L.split : L.Set.set -> L.Set.set L.Set.set, Set.id : Set.set -> Set.set, coaction : Set.set -> L.Set.set Set.set
+  [3] L.Assoc.dir : L.split L.split -> L.split L.split, L.Assoc.inv : L.split L.split -> L.split L.split, L.Id_split.dir : L.split L.Set.id -> L.split, L.Id_split.inv : L.split -> L.split L.Set.id, L.Set.Id_id.dir : L.Set.id L.Set.id -> L.Set.id, L.Set.Id_id.inv : L.Set.id -> L.Set.id L.Set.id, L.Split_left_id.dir : L.split L.Set.id -> L.split, L.Split_left_id.inv : L.split -> L.split L.Set.id, L.Split_right_id.dir : L.split L.Set.id -> L.split, L.Split_right_id.inv : L.split -> L.split L.Set.id, Left_coact_split.dir : L.split coaction -> coaction coaction, Left_coact_split.inv : coaction coaction -> L.split coaction, Set.Id_id.dir : Set.id Set.id -> Set.id, Set.Id_id.inv : Set.id -> Set.id Set.id
+  Diagrams: coaction : Set.set -> L.Set.set Set.set, pt
+  Maps: L :: Cosemigroup, Left_coact_split :: Theory.Equation, Left_comodule :: Left_comodule, Set :: Theory.Set
 
 Type Left_module
   [0] pt
@@ -82,7 +70,7 @@ Type Left_module
   [2] L.Set.id : L.Set.set -> L.Set.set, L.merge : L.Set.set L.Set.set -> L.Set.set, Set.id : Set.set -> Set.set, action : L.Set.set Set.set -> Set.set
   [3] L.Assoc.dir : L.merge L.merge -> L.merge L.merge, L.Assoc.inv : L.merge L.merge -> L.merge L.merge, L.Left_id_merge.dir : L.Set.id L.merge -> L.merge, L.Left_id_merge.inv : L.merge -> L.Set.id L.merge, L.Merge_id.dir : L.merge L.Set.id -> L.merge, L.Merge_id.inv : L.merge -> L.merge L.Set.id, L.Right_id_merge.dir : L.Set.id L.merge -> L.merge, L.Right_id_merge.inv : L.merge -> L.Set.id L.merge, L.Set.Id_id.dir : L.Set.id L.Set.id -> L.Set.id, L.Set.Id_id.inv : L.Set.id -> L.Set.id L.Set.id, Merge_left_act.dir : L.merge action -> action action, Merge_left_act.inv : action action -> L.merge action, Set.Id_id.dir : Set.id Set.id -> Set.id, Set.Id_id.inv : Set.id -> Set.id Set.id
   Diagrams: action : L.Set.set Set.set -> Set.set, pt
-  Maps: Merge_left_act :: Theory.Equation, L :: Semigroup, Set :: Theory.Set, Left_module :: Left_module
+  Maps: L :: Semigroup, Left_module :: Left_module, Merge_left_act :: Theory.Equation, Set :: Theory.Set
 
 Type Right_comodule
   [0] pt
@@ -90,33 +78,45 @@ Type Right_comodule
   [2] R.Set.id : R.Set.set -> R.Set.set, R.split : R.Set.set -> R.Set.set R.Set.set, Set.id : Set.set -> Set.set, coaction : Set.set -> Set.set R.Set.set
   [3] R.Assoc.dir : R.split R.split -> R.split R.split, R.Assoc.inv : R.split R.split -> R.split R.split, R.Id_split.dir : R.split R.Set.id -> R.split, R.Id_split.inv : R.split -> R.split R.Set.id, R.Set.Id_id.dir : R.Set.id R.Set.id -> R.Set.id, R.Set.Id_id.inv : R.Set.id -> R.Set.id R.Set.id, R.Split_left_id.dir : R.split R.Set.id -> R.split, R.Split_left_id.inv : R.split -> R.split R.Set.id, R.Split_right_id.dir : R.split R.Set.id -> R.split, R.Split_right_id.inv : R.split -> R.split R.Set.id, Right_coact_split.dir : R.split coaction -> coaction coaction, Right_coact_split.inv : coaction coaction -> R.split coaction, Set.Id_id.dir : Set.id Set.id -> Set.id, Set.Id_id.inv : Set.id -> Set.id Set.id
   Diagrams: coaction : Set.set -> Set.set R.Set.set, pt
-  Maps: Right_coact_split :: Theory.Equation, Set :: Theory.Set, Right_comodule :: Right_comodule, R :: Cosemigroup
+  Maps: R :: Cosemigroup, Right_coact_split :: Theory.Equation, Right_comodule :: Right_comodule, Set :: Theory.Set
 
-* Module /private/tmp/alifib-rust-pre-20260402/rust/examples/Theory.ali
-Type Set
+Type Right_module
   [0] pt
-  [1] set : pt -> pt
-  [2] id : set -> set
-  [3] Id_id.dir : id id -> id, Id_id.inv : id -> id id
-  Diagrams: set : pt -> pt, id : set -> set, pt
-  Maps: Id_id :: Equation, Set :: Set, Id :: Function
+  [1] R.Set.set : pt -> pt, Set.set : pt -> pt
+  [2] R.Set.id : R.Set.set -> R.Set.set, R.merge : R.Set.set R.Set.set -> R.Set.set, Set.id : Set.set -> Set.set, action : Set.set R.Set.set -> Set.set
+  [3] Merge_right_act.dir : R.merge action -> action action, Merge_right_act.inv : action action -> R.merge action, R.Assoc.dir : R.merge R.merge -> R.merge R.merge, R.Assoc.inv : R.merge R.merge -> R.merge R.merge, R.Left_id_merge.dir : R.Set.id R.merge -> R.merge, R.Left_id_merge.inv : R.merge -> R.Set.id R.merge, R.Merge_id.dir : R.merge R.Set.id -> R.merge, R.Merge_id.inv : R.merge -> R.merge R.Set.id, R.Right_id_merge.dir : R.Set.id R.merge -> R.merge, R.Right_id_merge.inv : R.merge -> R.Set.id R.merge, R.Set.Id_id.dir : R.Set.id R.Set.id -> R.Set.id, R.Set.Id_id.inv : R.Set.id -> R.Set.id R.Set.id, Set.Id_id.dir : Set.id Set.id -> Set.id, Set.Id_id.inv : Set.id -> Set.id Set.id
+  Diagrams: action : Set.set R.Set.set -> Set.set, pt
+  Maps: Merge_right_act :: Theory.Equation, R :: Semigroup, Right_module :: Right_module, Set :: Theory.Set
 
-Type <empty>
-  (no cells)
-
-Type Function
+Type Semigroup
   [0] pt
-  [1] Cod.set : pt -> pt, Dom.set : pt -> pt
-  [2] Cod.id : Cod.set -> Cod.set, Dom.id : Dom.set -> Dom.set, fun : Dom.set -> Cod.set
-  [3] Cod.Id_id.dir : Cod.id Cod.id -> Cod.id, Cod.Id_id.inv : Cod.id -> Cod.id Cod.id, Dom.Id_id.dir : Dom.id Dom.id -> Dom.id, Dom.Id_id.inv : Dom.id -> Dom.id Dom.id, Fun_id.dir : fun Cod.id -> fun, Fun_id.inv : fun -> fun Cod.id, Id_fun.dir : Dom.id fun -> fun, Id_fun.inv : fun -> Dom.id fun
-  Diagrams: cod : pt -> pt, fun : Dom.set -> Cod.set, dom : pt -> pt, pt
-  Maps: Fun_id :: Equation, Function :: Function, Dom :: Set, Cod :: Set, Id_fun :: Equation
+  [1] Set.set : pt -> pt
+  [2] Set.id : Set.set -> Set.set, merge : Set.set Set.set -> Set.set
+  [3] Assoc.dir : merge merge -> merge merge, Assoc.inv : merge merge -> merge merge, Left_id_merge.dir : Set.id merge -> merge, Left_id_merge.inv : merge -> Set.id merge, Merge_id.dir : merge Set.id -> merge, Merge_id.inv : merge -> merge Set.id, Right_id_merge.dir : Set.id merge -> merge, Right_id_merge.inv : merge -> Set.id merge, Set.Id_id.dir : Set.id Set.id -> Set.id, Set.Id_id.inv : Set.id -> Set.id Set.id
+  Diagrams: id : Set.set -> Set.set, merge : Set.set Set.set -> Set.set, pt, set : pt -> pt
+  Maps: Assoc :: Theory.Equation, Left_id_merge :: Theory.Equation, Merge_id :: Theory.Equation, Right_id_merge :: Theory.Equation, Semigroup :: Semigroup, Set :: Theory.Set
 
-Type Equation
+Type Theory.Equation
   [0] pt
   [1] cod : pt -> pt, dom : pt -> pt
   [2] lhs : dom -> cod, rhs : dom -> cod
   [3] dir : lhs -> rhs, inv : rhs -> lhs
-  Diagrams: cod : pt -> pt, lhs : dom -> cod, dom : pt -> pt, rhs : dom -> cod, dir : lhs -> rhs, inv : rhs -> lhs, pt
-  Maps: Equation :: Equation
+  Diagrams: cod : pt -> pt, dir : lhs -> rhs, dom : pt -> pt, inv : rhs -> lhs, lhs : dom -> cod, pt, rhs : dom -> cod
+  Maps: Equation :: Theory.Equation
+
+Type Theory.Function
+  [0] pt
+  [1] Cod.set : pt -> pt, Dom.set : pt -> pt
+  [2] Cod.id : Cod.set -> Cod.set, Dom.id : Dom.set -> Dom.set, fun : Dom.set -> Cod.set
+  [3] Cod.Id_id.dir : Cod.id Cod.id -> Cod.id, Cod.Id_id.inv : Cod.id -> Cod.id Cod.id, Dom.Id_id.dir : Dom.id Dom.id -> Dom.id, Dom.Id_id.inv : Dom.id -> Dom.id Dom.id, Fun_id.dir : fun Cod.id -> fun, Fun_id.inv : fun -> fun Cod.id, Id_fun.dir : Dom.id fun -> fun, Id_fun.inv : fun -> Dom.id fun
+  Diagrams: cod : pt -> pt, dom : pt -> pt, fun : Dom.set -> Cod.set, pt
+  Maps: Cod :: Theory.Set, Dom :: Theory.Set, Fun_id :: Theory.Equation, Function :: Theory.Function, Id_fun :: Theory.Equation
+
+Type Theory.Set
+  [0] pt
+  [1] set : pt -> pt
+  [2] id : set -> set
+  [3] Id_id.dir : id id -> id, Id_id.inv : id -> id id
+  Diagrams: id : set -> set, pt, set : pt -> pt
+  Maps: Id :: Theory.Function, Id_id :: Theory.Equation, Set :: Theory.Set
 

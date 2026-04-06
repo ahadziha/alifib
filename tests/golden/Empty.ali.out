@@ -1,8 +1,13 @@
 2 cells, 4 types, 1 modules
 
-* Module /private/tmp/alifib-rust-pre-20260402/rust/examples/Empty.ali
+* Module /Users/lambdabetaeta/projects/alifib/examples/Empty.ali
 Type <empty>
   (no cells)
+
+Type C
+  [0] c
+  Diagrams: c
+  Maps: C :: C
 
 Type D
   [0] c
@@ -12,10 +17,5 @@ Type D
 Type E
   [0] e
   Diagrams: e
-  Maps: g :: D, f :: C, E :: E
-
-Type C
-  [0] c
-  Diagrams: c
-  Maps: C :: C
+  Maps: E :: E, f :: C, g :: D
 
