@@ -134,6 +134,10 @@ impl Complex {
         self.diagrams.get(name)
     }
 
+    pub fn diagrams_iter(&self) -> impl Iterator<Item = (&LocalId, &Diagram)> {
+        self.diagrams.iter()
+    }
+
     pub fn diagram_names(&self) -> Vec<LocalId> {
         self.diagrams.keys().cloned().collect()
     }
@@ -148,6 +152,10 @@ impl Complex {
 
     pub fn find_map(&self, name: &str) -> Option<&MapEntry> {
         self.maps.get(name)
+    }
+
+    pub fn maps_iter(&self) -> impl Iterator<Item = (&LocalId, &MapEntry)> {
+        self.maps.iter()
     }
 
     pub fn map_names(&self) -> Vec<LocalId> {

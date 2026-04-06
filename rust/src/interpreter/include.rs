@@ -23,14 +23,12 @@ fn prefixed_generators(
     skip_empty_name: bool,
 ) -> Vec<ImportedGenerator> {
     source_scope
-        .generator_names()
-        .into_iter()
-        .filter(|name| !skip_empty_name || !name.is_empty())
-        .filter_map(|generator_name| {
-            let generator_entry = source_scope.find_generator(&generator_name)?;
-            let classifier = source_scope.classifier(&generator_name)?.clone();
-            let qualified_name = qualify_name(prefix, &generator_name);
-            Some((qualified_name, generator_entry.tag.clone(), classifier))
+        .generators_iter()
+        .filter(|(name, _)| !skip_empty_name || !name.is_empty())
+        .filter_map(|(name, entry)| {
+            let classifier = source_scope.classifier(name)?.clone();
+            let qualified_name = qualify_name(prefix, name);
+            Some((qualified_name, entry.tag.clone(), classifier))
         })
         .collect()
 }

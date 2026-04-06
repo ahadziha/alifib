@@ -78,17 +78,18 @@ impl fmt::Display for GlobalStore {
         for (module_id, module_complex) in &module_entries {
             write!(f, "\n* Module {}\n", module_id)?;
 
-            let generator_names = module_complex.generator_names();
-            for (i, gen_name) in generator_names.iter().enumerate() {
+            let mut gen_entries: Vec<(&str, &_)> = module_complex
+                .generators_iter()
+                .map(|(name, entry)| (name.as_str(), entry))
+                .collect();
+            gen_entries.sort_by_key(|(name, _)| *name);
+
+            for (i, (gen_name, gen_entry)) in gen_entries.iter().enumerate() {
                 if i > 0 {
                     writeln!(f)?;
                 }
                 let type_label = name_or_empty(gen_name);
 
-                let Some(gen_entry) = module_complex.find_generator(gen_name) else {
-                    writeln!(f, "Type {} (missing)", type_label)?;
-                    continue;
-                };
                 let Tag::Global(gid) = &gen_entry.tag else {
                     writeln!(f, "Type {} (local)", type_label)?;
                     continue;
@@ -103,9 +104,8 @@ impl fmt::Display for GlobalStore {
 
                 // Cells grouped by dimension, with boundaries
                 let mut dims: Vec<usize> = tc
-                    .generator_names()
-                    .iter()
-                    .filter_map(|n| tc.generator_dim(n))
+                    .generators_iter()
+                    .map(|(_, entry)| entry.dim)
                     .collect();
                 dims.sort_unstable();
                 dims.dedup();
@@ -114,13 +114,16 @@ impl fmt::Display for GlobalStore {
                     writeln!(f, "  (no cells)")?;
                 } else {
                     for dim in &dims {
-                        let mut gens = tc.generators_in_dim(*dim);
-                        gens.sort();
+                        let mut gens: Vec<(&str, _)> = tc
+                            .generators_iter()
+                            .filter(|(_, entry)| entry.dim == *dim)
+                            .map(|(name, entry)| (name.as_str(), entry))
+                            .collect();
+                        gens.sort_by_key(|(name, _)| *name);
 
                         let rendered: Vec<String> = gens
                             .iter()
-                            .filter_map(|name| {
-                                let entry = tc.find_generator(name)?;
+                            .filter_map(|(name, entry)| {
                                 let data = self.cell_data_for_tag(tc, &entry.tag)?;
                                 Some(render_cell(name, &data, tc))
                             })
@@ -133,29 +136,31 @@ impl fmt::Display for GlobalStore {
                 }
 
                 // Diagrams
-                let diagram_names = tc.diagram_names();
-                if !diagram_names.is_empty() {
-                    let diags: Vec<String> = diagram_names
+                let mut diag_entries: Vec<(&str, &Diagram)> = tc
+                    .diagrams_iter()
+                    .map(|(name, diag)| (name.as_str(), diag))
+                    .collect();
+                if !diag_entries.is_empty() {
+                    diag_entries.sort_by_key(|(name, _)| *name);
+                    let diags: Vec<String> = diag_entries
                         .iter()
-                        .filter_map(|n| {
-                            let diag = tc.find_diagram(n)?;
-                            Some(render_named_diagram(n, diag, tc))
-                        })
+                        .map(|(name, diag)| render_named_diagram(name, diag, tc))
                         .collect();
                     writeln!(f, "  Diagrams: {}", diags.join(", "))?;
                 }
 
                 // Maps
-                let map_names = tc.map_names();
-                if !map_names.is_empty() {
-                    let maps: Vec<String> = map_names
+                let mut map_entries: Vec<(&str, &_)> = tc
+                    .maps_iter()
+                    .map(|(name, entry)| (name.as_str(), entry))
+                    .collect();
+                if !map_entries.is_empty() {
+                    map_entries.sort_by_key(|(name, _)| *name);
+                    let maps: Vec<String> = map_entries
                         .iter()
-                        .map(|mn| {
-                            let dom = tc
-                                .find_map(mn)
-                                .map(|me| render_domain(&me.domain, module_complex))
-                                .unwrap_or_else(|| "?".into());
-                            format!("{} :: {}", name_or_empty(mn), dom)
+                        .map(|(name, entry)| {
+                            let dom = render_domain(&entry.domain, module_complex);
+                            format!("{} :: {}", name_or_empty(name), dom)
                         })
                         .collect();
                     writeln!(f, "  Maps: {}", maps.join(", "))?;
