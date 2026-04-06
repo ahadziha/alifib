@@ -15,7 +15,7 @@ use super::types::{
 pub type DiagramBinding = (LocalId, Diagram);
 pub type MapBinding = (LocalId, crate::core::map::PMap, MapDomain);
 
-pub fn current_module_scope<'a>(context: &'a Context) -> Option<&'a Complex> {
+pub fn current_module_scope(context: &Context) -> Option<&Complex> {
     context.state.find_module(&context.current_module)
 }
 

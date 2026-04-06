@@ -3,6 +3,8 @@ use std::sync::Arc;
 use super::path;
 use crate::language::{self, Program, Error as LangError};
 
+type ReadFileFn = Arc<dyn Fn(&str) -> Result<String, LoadError> + Send + Sync>;
+
 #[derive(Debug, Clone)]
 pub(crate) enum LoadError {
     NotFound,
@@ -12,7 +14,7 @@ pub(crate) enum LoadError {
 #[derive(Clone)]
 struct FileLoader {
     search_paths: Vec<String>,
-    read_file: Arc<dyn Fn(&str) -> Result<String, LoadError> + Send + Sync>,
+    read_file: ReadFileFn,
 }
 
 impl FileLoader {
@@ -91,8 +93,7 @@ impl Loader {
             .chain(extra_search_paths)
             .collect();
         let search_paths = path::normalize_search_paths(combined);
-        let read_file: Arc<dyn Fn(&str) -> Result<String, LoadError> + Send + Sync> =
-            Arc::new(FileLoader::default_read);
+        let read_file: ReadFileFn = Arc::new(FileLoader::default_read);
         Self { inner: FileLoader { search_paths, read_file } }
     }
 

@@ -321,9 +321,9 @@ pub(crate) fn traverse(g: &Arc<Ogposet>, initial_stack: Vec<(usize, IntSet)>, ma
 
     fn do_mark(
         dim: usize, cell: usize,
-        map: &mut Vec<Vec<usize>>,
-        inv: &mut Vec<Vec<usize>>,
-        next_idx: &mut Vec<usize>,
+        map: &mut [Vec<usize>],
+        inv: &mut [Vec<usize>],
+        next_idx: &mut [usize],
     ) {
         let idx = next_idx[dim];
         map[dim][idx] = cell;
@@ -570,9 +570,11 @@ pub(crate) fn isomorphism_of(u: &Arc<Ogposet>, v: &Arc<Ogposet>) -> Result<Embed
 
 // ---- Thread-local caches ----
 
+type ShapeWithEmbedding = (Arc<Ogposet>, Embedding);
+
 thread_local! {
-    static NORM_CACHE: RefCell<HashMap<usize, (Arc<Ogposet>, Embedding)>> = RefCell::new(HashMap::new());
-    static BT_CACHE: RefCell<HashMap<(usize, Sign, usize), (Arc<Ogposet>, Embedding)>> = RefCell::new(HashMap::new());
+    static NORM_CACHE: RefCell<HashMap<usize, ShapeWithEmbedding>> = RefCell::new(HashMap::new());
+    static BT_CACHE: RefCell<HashMap<(usize, Sign, usize), ShapeWithEmbedding>> = RefCell::new(HashMap::new());
 }
 
 /// Clear all caches (call between independent runs if needed)

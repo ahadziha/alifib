@@ -115,7 +115,7 @@ fn eval_pmap(
             let (base_opt, base_result) = eval_pmap_basic(context, scope, domain, base, span);
             let Some(base_map) = base_opt else { return (None, base_result); };
             let (rest_opt, rest_result) =
-                interpret_pmap(&base_result.context, &*base_map.domain, domain, rest);
+                interpret_pmap(&base_result.context, &base_map.domain, domain, rest);
             let combined = InterpResult::combine(base_result, rest_result);
             let Some(rest_map) = rest_opt else { return (None, combined); };
             let composed = PMap::compose(&base_map.map, &rest_map.map);

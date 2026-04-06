@@ -389,12 +389,7 @@ fn history_tree(hist: &[BoundaryHistory], sign: Sign, k: usize, fallback: impl F
 }
 
 fn labels_equal(a: &[Vec<Tag>], b: &[Vec<Tag>]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    a.iter()
-        .zip(b.iter())
-        .all(|(ra, rb)| ra.len() == rb.len() && ra.iter().zip(rb.iter()).all(|(x, y)| x == y))
+    a == b
 }
 
 fn pullback_labels(d: &Diagram, emb: &Embedding) -> Vec<Vec<Tag>> {

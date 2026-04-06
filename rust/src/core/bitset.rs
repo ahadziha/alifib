@@ -14,7 +14,7 @@ pub(crate) struct BitSet {
 
 impl BitSet {
     pub fn new(universe: usize) -> Self {
-        let words = (universe + 63) / 64;
+        let words = universe.div_ceil(64);
         BitSet { bits: vec![0u64; words], count: 0 }
     }
 
@@ -64,7 +64,7 @@ impl BitSet {
 
     /// Zero all words and adjust length for a new universe size, reusing allocation.
     pub fn reset(&mut self, universe: usize) {
-        let words_needed = (universe + 63) / 64;
+        let words_needed = universe.div_ceil(64);
         for w in self.bits.iter_mut() { *w = 0; }
         self.bits.resize(words_needed, 0);
         self.count = 0;

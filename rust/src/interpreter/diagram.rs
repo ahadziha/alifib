@@ -177,7 +177,7 @@ fn interpret_dot_access(
         Some(Term::Map(eval_map)) => {
             let (comp_opt, comp_result) = interpret_dcomponent(
                 &left_result.context,
-                &*eval_map.domain,
+                &eval_map.domain,
                 &field.inner,
                 field.span,
             );
@@ -348,16 +348,15 @@ fn enrich_hole_with_right_context(
     result = InterpResult::combine(result, next_result);
     if let Some(Term::Diag(d_right)) = next_opt {
         let k = d_right.top_dim().saturating_sub(1);
-        if let Ok(in_bd) = Diagram::boundary(DiagramSign::Source, k, &d_right) {
-            if let Some(last_hole) = result.holes.last_mut() {
-                let bd_out = render_diagram(&in_bd, scope);
-                match &mut last_hole.boundary {
-                    Some(existing) => existing.boundary_out = bd_out,
-                    None => last_hole.boundary = Some(HoleBoundaryInfo {
-                        boundary_in: "?".into(),
-                        boundary_out: bd_out,
-                    }),
-                }
+        if let Ok(in_bd) = Diagram::boundary(DiagramSign::Source, k, &d_right)
+            && let Some(last_hole) = result.holes.last_mut() {
+            let bd_out = render_diagram(&in_bd, scope);
+            match &mut last_hole.boundary {
+                Some(existing) => existing.boundary_out = bd_out,
+                None => last_hole.boundary = Some(HoleBoundaryInfo {
+                    boundary_in: "?".into(),
+                    boundary_out: bd_out,
+                }),
             }
         }
     }
@@ -385,13 +384,12 @@ fn accumulate_paste(
                 // Enrich any newly added hole with the left-context boundary
                 if result.holes.len() > prev_hole_count {
                     let k = acc.top_dim().saturating_sub(1);
-                    if let Ok(out_bd) = Diagram::boundary(DiagramSign::Target, k, &acc) {
-                        if let Some(last_hole) = result.holes.last_mut() {
-                            last_hole.boundary = Some(HoleBoundaryInfo {
-                                boundary_in: render_diagram(&out_bd, scope),
-                                boundary_out: "?".into(),
-                            });
-                        }
+                    if let Ok(out_bd) = Diagram::boundary(DiagramSign::Target, k, &acc)
+                        && let Some(last_hole) = result.holes.last_mut() {
+                        last_hole.boundary = Some(HoleBoundaryInfo {
+                            boundary_in: render_diagram(&out_bd, scope),
+                            boundary_out: "?".into(),
+                        });
                     }
                 }
                 return (None, result);
