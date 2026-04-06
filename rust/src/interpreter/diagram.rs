@@ -34,8 +34,7 @@ fn parse_paste_dim(context: &Context, dim: &Spanned<String>) -> Step<usize> {
 }
 
 fn top_labels_rendered(diagram: &Diagram, f: impl Fn(&Tag) -> String) -> String {
-    let d = diagram.top_dim();
-    match diagram.labels.get(d) {
+    match diagram.labels_at(diagram.top_dim()) {
         Some(labels) if !labels.is_empty() => {
             labels.iter().map(f).collect::<Vec<_>>().join(" ")
         }

@@ -226,8 +226,7 @@ fn mark_last_hole_source_tag(result: &mut InterpResult, source_term: &Term) {
         return;
     }
 
-    let top_dim = source_diagram.top_dim();
-    let Some(tag) = source_diagram.labels.get(top_dim).and_then(|row| row.first()) else {
+    let Some(tag) = source_diagram.top_label() else {
         return;
     };
     if let Some(last_hole) = result.holes.last_mut() {
@@ -291,11 +290,7 @@ fn extend_matching_map_images(
                     let right_image = right_map.map.image(&tag)?;
                     extended = extend_map_for_cell(context, extended, domain, target, left_image, right_image)?;
                 } else {
-                    let all_defined = left_image
-                        .labels
-                        .iter()
-                        .flat_map(|row| row.iter())
-                        .all(|tag| extended.is_defined_at(tag));
+                    let all_defined = left_image.all_labels().all(|tag| extended.is_defined_at(tag));
                     if !all_defined {
                         return Err(aux::Error::new("Failed to extend map (not enough information)"));
                     }
@@ -337,7 +332,7 @@ fn boundary_dependencies(cell_data: &CellData, map: &PMap) -> Vec<(Tag, DiagramS
         .into_iter()
         .flat_map(|(boundary, sign)| {
             let d = boundary.top_dim();
-            boundary.labels.get(d).into_iter().flat_map(move |row| {
+            boundary.labels_at(d).into_iter().flat_map(move |row| {
                 row.iter()
                     .filter(|tag| !map.is_defined_at(tag))
                     .map(move |tag| (tag.clone(), sign))
@@ -391,9 +386,7 @@ pub fn extend_map_for_cell(
     }
     let d = domain_diag.top_dim();
     let tag = domain_diag
-        .labels
-        .get(d)
-        .and_then(|r| r.first())
+        .top_label()
         .ok_or_else(|| aux::Error::new("Domain cell has no top label"))?
         .clone();
 

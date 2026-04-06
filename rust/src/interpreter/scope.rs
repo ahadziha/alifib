@@ -363,8 +363,7 @@ fn type_id_of_named_diagram(
         return (None, result);
     }
 
-    let top_dim = diagram.top_dim();
-    match diagram.labels.get(top_dim).and_then(|row| row.first()) {
+    match diagram.top_label() {
         None => {
             result.add_error(make_error(name_span, "Cell has no top label"));
             (None, result)

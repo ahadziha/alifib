@@ -156,6 +156,8 @@ impl Complex {
         self.used_names.contains(name)
     }
 
+    // ---- Internal ----
+
     fn assert_invariants(&self) {
         debug_assert_eq!(
             self.generators.by_name.len(),

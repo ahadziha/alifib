@@ -98,9 +98,9 @@ struct BoundaryMatch {
 /// `paste_history[d]` stores source/target paste history at dimension `d`.
 #[derive(Debug, Clone)]
 pub struct Diagram {
-    pub shape: Arc<Ogposet>,
-    pub labels: Vec<Vec<Tag>>,               // labels[dim][pos]
-    pub paste_history: Vec<BoundaryHistory>, // paste_history[dim]
+    pub(super) shape: Arc<Ogposet>,
+    pub(super) labels: Vec<Vec<Tag>>,               // labels[dim][pos]
+    pub(super) paste_history: Vec<BoundaryHistory>, // paste_history[dim]
 }
 
 // ---- Public interface ----
@@ -175,6 +175,21 @@ impl Diagram {
         let (shape_norm, emb) = ogposet::normalisation(&d.shape);
         let pulled = pullback_labels(d, &emb);
         Diagram::make(shape_norm, pulled, d.paste_history.clone())
+    }
+
+    /// Returns the labels at dimension `dim`, or `None` if out of range.
+    pub fn labels_at(&self, dim: usize) -> Option<&[Tag]> {
+        self.labels.get(dim).map(|v| v.as_slice())
+    }
+
+    /// Returns the first label at the top dimension, or `None` if absent.
+    pub fn top_label(&self) -> Option<&Tag> {
+        self.labels_at(self.top_dim()).and_then(|row| row.first())
+    }
+
+    /// Iterates over every label in the diagram, across all dimensions.
+    pub fn all_labels(&self) -> impl Iterator<Item = &Tag> {
+        self.labels.iter().flat_map(|row| row.iter())
     }
 
     pub fn dim(&self) -> isize {

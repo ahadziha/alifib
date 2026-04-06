@@ -5,11 +5,9 @@ use super::diagram::{BoundaryHistory, CellData, Diagram, PasteTree, Sign};
 
 /// A single entry in a partial map: the source cell's boundary data and its image.
 #[derive(Debug, Clone)]
-pub struct Entry {
-    /// The boundary specification of the source cell being mapped.
-    pub cell_data: CellData,
-    /// The diagram this cell maps to.
-    pub image: Diagram,
+struct Entry {
+    cell_data: CellData,
+    image: Diagram,
 }
 
 /// A partial map: a structure-preserving assignment of diagrams to generating cells.
@@ -26,8 +24,10 @@ pub struct PMap {
     /// True when every image is a single generating cell (not a composite diagram).
     /// Enables a fast in-place label-remapping path in `apply` instead of
     /// reconstructing the diagram by pasting.
-    pub cellular: bool,
+    cellular: bool,
 }
+
+// ---- Public interface ----
 
 impl PMap {
     /// Create an empty partial map.
@@ -190,6 +190,8 @@ impl PMap {
     }
 }
 
+
+// ---- Internal helpers ----
 
 /// Look up the top label of a tag's image in the map, using `cache` to avoid
 /// repeated lookups. Panics if `tag` is not in `table` — callers must ensure
