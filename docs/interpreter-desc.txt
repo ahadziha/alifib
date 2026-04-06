@@ -1,0 +1,637 @@
+╭─── Claude Code v2.1.92 ──────────────────────────────────────────────────────╮
+│                                                    │ Tips for getting        │
+│                 Welcome back Alex!                 │ started                 │
+│                                                    │ Run /init to create a … │
+│                       ▐▛███▜▌                      │ ─────────────────────── │
+│                      ▝▜█████▛▘                     │ Recent activity         │
+│                        ▘▘ ▝▝                       │ No recent activity      │
+│ Opus 4.6 (1M context) · Claude Team · Safeguarded  │                         │
+│ AI                                                 │                         │
+│                 ~/projects/alifib                  │                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+  Your bash commands will be sandboxed. Disable with /sandbox.
+
+✻ Conversation compacted (ctrl+o for history)
+
+  ⎿  Referenced file rust/src/interpreter/diagram.rs
+  ⎿  Read rust/src/interpreter/interpreter.rs (388 lines)
+  ⎿  Read rust/src/interpreter/include.rs (348 lines)
+  ⎿  Referenced file rust/src/interpreter/pmap.rs
+  ⎿  Read rust/src/interpreter/scope.rs (467 lines)
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Now let me look at the include.rs for the generator_tag issue:
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Now I'll make all the simplifications. First, fix the use-after-move in
+  include.rs:
+
+⏺ Update(rust/src/interpreter/include.rs)
+  ⎿  Added 1 line, removed 1 line
+      113              scope.add_local_cell(qualified_name.clone(), gener
+           ator_dim, image_cell_data.clone());
+      114          }
+      115          scope.add_generator(qualified_name, image_classifier.c
+           lone());
+      116 -        map.insert_raw(generator_tag, generator_dim, source_ce
+          -ll_data, image_classifier);                                   
+      116 +        map.insert_raw(Tag::Global(global_id), generator_dim, 
+          +source_cell_data, image_classifier);                          
+      117      }
+      118  
+      119      (scope, state, map)
+
+⏺ Now fix interpret_anon_map_component and interpret_pmap_node Dot arm and
+  compact initial_eval_map:
+
+⏺ Update(rust/src/interpreter/pmap.rs)
+  ⎿  Added 4 lines, removed 8 lines
+      85  ) -> Step<EvalMap> {
+      86      let (ns_opt, target_result) =
+      87          super::interpreter::interpret_complex(context, super::t
+          ypes::Mode::Global, target);
+      88 -    match ns_opt {                                             
+      89 -        None => (None, target_result),                         
+      90 -        Some(ns) => {                                          
+      91 -            let (mc_opt, def_result) =                         
+      92 -                interpret_pmap_def(&target_result.context, &ns.
+         -working_complex, domain, def);                                 
+      93 -            (mc_opt, InterpResult::combine(target_result, def_r
+         -esult))                                                        
+      94 -        }                                                      
+      95 -    }                                                          
+      88 +    let Some(ns) = ns_opt else { return (None, target_result); 
+         +};                                                             
+      89 +    let (mc_opt, def_result) =                                 
+      90 +        interpret_pmap_def(&target_result.context, &ns.working_
+         +complex, domain, def);                                         
+      91 +    (mc_opt, InterpResult::combine(target_result, def_result)) 
+      92  }
+      93  
+      94  // ---- PMap interpretation ----
+
+⏺ Update(rust/src/interpreter/pmap.rs)
+  ⎿  Added 7 lines, removed 21 lines
+      113          ast::PMap::Basic(basic) => interpret_pmap_basic(contex
+           t, scope, domain, basic, span),
+      114          ast::PMap::Dot { base, rest } => {
+      115              let (base_opt, base_result) = interpret_pmap_basic
+           (context, scope, domain, base, span);
+      116 -            match base_opt {                                  
+      117 -                None => (None, base_result),                  
+      118 -                Some(base_map) => {                           
+      119 -                    let (rest_opt, rest_result) =             
+      120 -                        interpret_pmap(&base_result.context, &
+          -*base_map.domain, domain, rest);                              
+      121 -                    let combined = InterpResult::combine(base_
+          -result, rest_result);                                         
+      122 -                    match rest_opt {                          
+      123 -                        None => (None, combined),             
+      124 -                        Some(rest_map) => {                   
+      125 -                            let composed = PMap::compose(&base
+          -_map.map, &rest_map.map);                                     
+      126 -                            (                                 
+      127 -                                Some(EvalMap {                
+      128 -                                    map: composed,            
+      129 -                                    domain: rest_map.domain,  
+      130 -                                }),                           
+      131 -                                combined,                     
+      132 -                            )                                 
+      133 -                        }                                     
+      134 -                    }                                         
+      135 -                }                                             
+      136 -            }                                                 
+      116 +            let Some(base_map) = base_opt else { return (None,
+          + base_result); };                                             
+      117 +            let (rest_opt, rest_result) =                     
+      118 +                interpret_pmap(&base_result.context, &*base_ma
+          +p.domain, domain, rest);                                      
+      119 +            let combined = InterpResult::combine(base_result, 
+          +rest_result);                                                 
+      120 +            let Some(rest_map) = rest_opt else { return (None,
+          + combined); };                                                
+      121 +            let composed = PMap::compose(&base_map.map, &rest_
+          +map.map);                                                     
+      122 +            (Some(EvalMap { map: composed, domain: rest_map.do
+          +main }), combined)                                            
+      123          }
+      124      }
+      125  }
+
+⏺ Update(rust/src/interpreter/pmap.rs)
+  ⎿  Added 4 lines, removed 10 lines
+      170      prefix: &Option<Box<Spanned<ast::PMap>>>,
+      171  ) -> Step<EvalMap> {
+      172      match prefix {
+      173 -        None => {                                             
+      174 -            let map = PMap::empty();                          
+      175 -            (                                                 
+      176 -                Some(EvalMap {                                
+      177 -                    map,                                      
+      178 -                    domain: Arc::new(domain.clone()),         
+      179 -                }),                                           
+      180 -                InterpResult::ok(context.clone()),            
+      181 -            )                                                 
+      182 -        }                                                     
+      173 +        None => (                                             
+      174 +            Some(EvalMap { map: PMap::empty(), domain: Arc::ne
+          +w(domain.clone()) }),                                         
+      175 +            InterpResult::ok(context.clone()),                
+      176 +        ),                                                    
+      177          Some(prefix) => interpret_pmap(context, scope, domain,
+            prefix),
+      178      }
+      179  }
+
+⏺ Now let's verify everything compiles:
+
+⏺ Bash(cd /Users/lambdabetaeta/projects/alifib/rust && cargo test 2>&1 | tail
+      -20)
+  ⎿     Compiling alifib v0.1.0 (/Users/lambdabetaeta/projects/alifib/rust)
+         Finished `test` profile [unoptimized + debuginfo] target(s) in 1.1
+     5s
+     … +16 lines (ctrl+o to expand)
+
+⏺ All tests pass. Let me commit:
+
+⏺ Bash(cd /Users/lambdabetaeta/projects/alifib && git diff --stat)
+  ⎿   rust/src/interpreter/include.rs |  2 +-
+      rust/src/interpreter/pmap.rs    | 54 ++++++++++++--------------------
+     ---------
+      2 files changed, 16 insertions(+), 40 deletions(-)
+
+⏺ Bash(git add rust/src/interpreter/include.rs rust/src/interpreter/pmap.rs &&
+      git commit -m "$(cat <<'EOF'
+      Simplify pmap and include: let-else, compact literals, fix…)
+  ⎿  [main a92fd8e] Simplify pmap and include: let-else, compact literals,
+     fix generator_tag reuse
+      2 files changed, 16 insertions(+), 40 deletions(-)
+
+⏺ Done. Changes made:
+
+  - include.rs: Fixed generator_tag use-after-move — after let 
+  Tag::Global(global_id) = generator_tag else { continue; }, the insert now
+  correctly uses Tag::Global(global_id) instead of the consumed generator_tag.
+  - pmap.rs: Three cleanups:
+    - interpret_pmap_node Dot arm: double-nested match { None => ..., Some => { 
+  match { None => ..., Some => ... } } } collapsed to two let-else
+    - interpret_anon_map_component: outer match ns_opt { None => ..., Some(ns) 
+  => ... } → let-else
+    - initial_eval_map None arm: verbose 7-line tuple literal → 2 lines
+
+✻ Crunched for 10m 35s
+
+❯ can you find any unnecessary cloning or any other performance issues? don't   
+fix just report                                                                 
+
+⏺ Explore(Audit interpreter code for cloning/performance issues)
+  ⎿  Done (34 tool uses · 75.4k tokens · 1m 12s)
+  (ctrl+o to expand)
+
+⏺ Let me verify the most structurally significant findings before reporting:
+
+  Read 2 files (ctrl+o to expand)
+⏺ Here's the verified report, grouped by significance:
+
+  ---
+  High impact
+
+  types.rs:283 — resolve_type_complex clones the entire Complex out of its Arc
+  (Some((*type_entry.complex).clone()), result)  // full Complex clone
+  TypeEntry.complex is an Arc<Complex>, so this dereferences and deep-copies it.
+   Compare with resolve_map_domain_complex (line 298) which correctly does
+  Arc::clone(&type_entry.complex) and returns Arc<Complex>. Every type lookup in
+   the interpreter pays for a full Complex copy. Fixing this would require
+  changing resolve_type_complex's return type to Step<Arc<Complex>> and updating
+   all call sites, but it would eliminate the most common source of large
+  allocations.
+
+  include.rs:263 — map.clone() when passing to 
+  extend_scope_with_attached_generators
+  let (mut current_scope, current_state, current_map) =
+  extend_scope_with_attached_generators(
+      mode, scope.clone(), Arc::clone(&context_after.state), map.clone(), &name,
+   &attachment,
+  );
+  current_scope.add_map(name, domain, current_map);
+  map comes from resolve_attach as an owned value and is never used after this
+  call — current_map (the returned, extended map) replaces it. The .clone() is
+  unnecessary; map can be moved directly.
+
+  ---
+  Medium impact
+
+  include.rs:167 — include_result.errors.clone()
+  result.errors.extend(include_result.errors.clone());
+  if include_result.has_errors() { return result; }
+  result.context.state = Arc::clone(&include_result.context.state);
+  has_errors() just checks !self.errors.is_empty(), so it doesn't need the
+  vector alive. The clone exists only because include_result is used after
+  extend. Could be restructured to check emptiness first, then move the errors
+  vector.
+
+  scope.rs:384 — module_scope.clone() inside address traversal
+  Some(module_scope) => current_scope = module_scope.clone(),
+  This is inside resolve_address_prefix_scope, called for each segment of every
+  dotted path. find_module returns &Complex (a borrow), forcing the clone to
+  extend the lifetime. find_module_arc (which exists and returns Arc<Complex>)
+  would make this a cheap pointer clone if current_scope were changed to
+  Arc<Complex>.
+
+  types.rs:226-238 — sorted_generators allocates a Vec with cloned Tags on every
+   call
+  pub fn sorted_generators(complex: &Complex) -> Vec<(usize, LocalId, Tag)>
+  Called in multiple hot paths: extend_scope_with_attached_generators,
+  extend_matching_map_images, identity_map. Each call does generator_names()
+  (allocates Vec<String>), then looks up each entry by name and clones its Tag.
+  Two allocations per call, tag clones proportional to number of generators.
+
+  types.rs:319-332 — identity_map double-lookup
+  .filter_map(|name| {
+      let gen_entry = domain.find_generator(&name)?;   // lookup by name
+      ...
+      let image = domain.classifier(&name)?.clone();   // second lookup by same 
+  name
+      ...
+  })
+  generator_names() first clones all names into a Vec, then each name is looked
+  up twice. A single iteration over internal entries would avoid the
+  intermediate vec and double-lookup.
+
+  ---
+  Minor / error-path only
+
+  types.rs:202, 215, 256, 278 — InterpResult::ok(context.clone()) in fail(),
+  ensure_name_free(), resolve_root_owner_type_id(), resolve_type_complex().
+  These clone Context (one String + one Arc) purely to construct an error
+  result. Only reached on error, so no performance impact in the success path.
+
+  global_store.rs:98-100 — cell_data_for_tag returns CellData by clone rather
+  than by reference. CellData::Boundary clones two Arc<Diagram> handles, which
+  is cheap, but it's called from identity_map and extend_map_for_cell which are
+  already doing a lot of work.
+
+  include.rs:115 — image_classifier.clone() in 
+  extend_scope_with_attached_generators
+  scope.add_generator(qualified_name, image_classifier.clone());
+  map.insert_raw(Tag::Global(global_id), ..., image_classifier);
+  image_classifier must be cloned because both add_generator and insert_raw take
+   by value. If Diagram were wrapped in Arc this would be cheap; as-is it's a
+  full diagram clone per generator per attachment.
+
+✻ Crunched for 2m 58s
+
+❯ fix anything fixable, keep code clean and readable                            
+
+⏺ Let me read the files I need before making changes:
+
+  Read 2 files (ctrl+o to expand)
+
+⏺ Now I have everything I need. Let me implement all the fixes in parallel:
+
+⏺ Update(rust/src/core/complex.rs)
+  ⎿  Added 4 lines
+      118          self.generators.by_name.keys().cloned().collect()
+      119      }
+      120  
+      121 +    pub fn generators_iter(&self) -> impl Iterator<Item = (&Lo
+          +calId, &GeneratorEntry)> {                                    
+      122 +        self.generators.by_name.iter()                        
+      123 +    }                                                         
+      124 +                                                              
+      125      // ---- Diagrams ----
+      126  
+      127      pub fn add_diagram(&mut self, name: LocalId, diagram: Diag
+           ram) {
+
+⏺ Now update types.rs — change resolve_type_complex to return Arc<Complex>, and
+  rewrite sorted_generators and identity_map to use generators_iter:
+
+⏺ Update(rust/src/interpreter/types.rs)
+  ⎿  Added 2 lines, removed 2 lines
+      274      type_id: GlobalId,
+      275      span: Span,
+      276      missing_prefix: &str,
+      277 -) -> Step<Complex> {                                          
+      277 +) -> Step<Arc<Complex>> {                                     
+      278      let mut result = InterpResult::ok(context.clone());
+      279      let Some(type_entry) = context.state.find_type(type_id) el
+           se {
+      280          result.add_error(make_error(span, format!("{} {}", mis
+           sing_prefix, type_id)));
+      281          return (None, result);
+      282      };
+      283 -    (Some((*type_entry.complex).clone()), result)             
+      283 +    (Some(Arc::clone(&type_entry.complex)), result)           
+      284  }
+      285  
+      286  pub fn resolve_map_domain_complex(
+
+⏺ Update(rust/src/interpreter/types.rs)
+  ⎿  Added 2 lines, removed 7 lines
+      225  
+      226  pub fn sorted_generators(complex: &Complex) -> Vec<(usize, Loc
+           alId, Tag)> {
+      227      let mut generators: Vec<(usize, LocalId, Tag)> = complex
+      228 -        .generator_names()                                    
+      229 -        .into_iter()                                          
+      230 -        .filter_map(|name| {                                  
+      231 -            complex                                           
+      232 -                .find_generator(&name)                        
+      233 -                .map(|entry| (entry.dim, name, entry.tag.clone
+          -()))                                                          
+      234 -        })                                                    
+      228 +        .generators_iter()                                    
+      229 +        .map(|(name, entry)| (entry.dim, name.clone(), entry.t
+          +ag.clone()))                                                  
+      230          .collect();
+      231      generators.sort_by_key(|(dim, _, _)| *dim);
+      232      generators
+
+⏺ Update(rust/src/interpreter/types.rs)
+  ⎿  Added 3 lines, removed 5 lines
+      313  /// Build an identity map for a complex using state for cell d
+           ata lookup.
+      314  pub fn identity_map(context: &Context, domain: &Complex) -> PM
+           ap {
+      315      let entries: Vec<(Tag, usize, CellData, Diagram)> = domain
+      316 -        .generator_names()                                    
+      317 -        .into_iter()                                          
+      318 -        .filter_map(|name| {                                  
+      319 -            let gen_entry = domain.find_generator(&name)?;    
+      316 +        .generators_iter()                                    
+      317 +        .filter_map(|(name, gen_entry)| {                     
+      318              let tag = gen_entry.tag.clone();
+      319              let dim = gen_entry.dim;
+      320              let cell_data = get_cell_data(context, domain, &ta
+           g)?;
+      323 -            let image = domain.classifier(&name)?.clone();    
+      321 +            let image = domain.classifier(name)?.clone();     
+      322              Some((tag, dim, cell_data, image))
+      323          })
+      324          .collect();
+
+⏺ Now update scope.rs — fix resolve_type_scope_by_id and the address resolution
+  helpers:
+
+⏺ Update(rust/src/interpreter/scope.rs)
+  ⎿  Added 1 line, removed 1 line
+      308          Some(type_complex) => (
+      309              Some(TypeScope {
+      310                  owner_type_id,
+      311 -                working_complex: type_complex,                
+      311 +                working_complex: (*type_complex).clone(),     
+      312              }),
+      313              complex_result,
+      314          ),
+
+⏺ Update(rust/src/interpreter/scope.rs)
+  ⎿  Added 7 lines, removed 7 lines
+      347  
+      348  // ---- Address resolution ----
+      349  
+      350 -fn module_scope_for_address(context: &Context, span: Span) -> 
+          -Step<Complex> {                                               
+      350 +fn module_scope_for_address(context: &Context, span: Span) -> 
+          +Step<Arc<Complex>> {                                          
+      351      let module_id = &context.current_module;
+      352      let mut result = InterpResult::ok(context.clone());
+      353  
+      354 -    let Some(module_scope) = context.state.find_module(module_
+          -id) else {                                                    
+      354 +    let Some(module_arc) = context.state.find_module_arc(modul
+          +e_id) else {                                                  
+      355          result.add_error(make_error(
+      356              span,
+      357              format!("Module `{}` not found", module_id),
+     ...
+      359          return (None, result);
+      360      };
+      361  
+      362 -    (Some(module_scope.clone()), result)                      
+      362 +    (Some(module_arc), result)                                
+      363  }
+      364  
+      365  fn resolve_address_prefix_scope(
+      366      context: &Context,
+      367 -    initial_scope: Complex,                                   
+      367 +    initial_scope: Arc<Complex>,                              
+      368      prefix: &[(Span, String)],
+      369 -) -> Step<Complex> {                                          
+      369 +) -> Step<Arc<Complex>> {                                     
+      370      let mut current_scope = initial_scope;
+      371      let mut result = InterpResult::ok(context.clone());
+      372  
+     ...
+      380          };
+      381  
+      382          match &map_entry.domain {
+      383 -            MapDomain::Module(module_id) => match context.stat
+          -e.find_module(module_id) {                                    
+      384 -                Some(module_scope) => current_scope = module_s
+          -cope.clone(),                                                 
+      383 +            MapDomain::Module(module_id) => match context.stat
+          +e.find_module_arc(module_id) {                                
+      384 +                Some(module_arc) => current_scope = module_arc
+          +,                                                             
+      385                  None => {
+      386                      result.add_error(make_error(
+      387                          *segment_span,
+
+⏺ Now fix include.rs — move errors instead of cloning, and remove the
+  unnecessary map.clone():
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Update(rust/src/interpreter/include.rs)
+  ⎿  Added 3 lines, removed 3 lines
+      164      let include_result = interpret_program(modules, include_co
+           ntext, &resolved.program);
+      165  
+      166      let mut result = InterpResult::ok(context.clone());
+      167 -    result.errors.extend(include_result.errors.clone());      
+      168 -                                                              
+      169 -    if include_result.has_errors() {                          
+      167 +    let has_errors = include_result.has_errors();             
+      168 +    result.errors.extend(include_result.errors);              
+      169 +    if has_errors {                                           
+      170          return result;
+      171      }
+      172  
+
+⏺ Now find and fix the map.clone():
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Update(rust/src/interpreter/include.rs)
+  ⎿  Added 1 line, removed 1 line
+      260          mode,
+      261          scope.clone(),
+      262          Arc::clone(&context_after.state),
+      263 -        map.clone(),                                          
+      263 +        map,                                                  
+      264          &name,
+      265          &attachment,
+      266      );
+
+⏺ Now compile to check:
+
+⏺ Bash(cd /Users/lambdabetaeta/projects/alifib/rust && cargo test 2>&1)
+  ⎿     Compiling alifib v0.1.0 (/Users/lambdabetaeta/projects/alifib/rust)
+         Finished `test` profile [unoptimized + debuginfo] target(s) in 1.4
+     0s
+     … +16 lines (ctrl+o to expand)
+
+⏺ All green. Let me commit:
+
+⏺ Bash(cd /Users/lambdabetaeta/projects/alifib && git add
+      rust/src/core/complex.rs rust/src/interpreter/types.rs
+      rust/src/interpreter/scope.rs rust/src/interpreter/inc…)
+  ⎿  [main c38133d] Eliminate unnecessary clones in hot paths
+      4 files changed, 23 insertions(+), 26 deletions(-)
+⏺ Done. Here's a summary of what was fixed:
+
+  resolve_type_complex → returns Arc<Complex> — the most impactful change. Every
+   type lookup previously cloned the entire Complex out of the store's Arc. Now
+  4 out of 5 call sites (all the read-only ones in include.rs, pmap.rs) get a
+  cheap pointer clone. Only resolve_type_scope_by_id still deref-clones since
+  TypeScope needs an owned mutable working copy.
+
+  Address prefix traversal — module_scope_for_address and
+  resolve_address_prefix_scope now use find_module_arc and thread Arc<Complex>
+  through the loop. Each step in a dotted address like A.B.C was previously a
+  full Complex copy; now it's just Arc::clone.
+
+  sorted_generators and identity_map — new Complex::generators_iter iterates
+  directly over the internal by_name HashMap, eliminating the generator_names()
+  call that allocated a Vec<String> and forced a redundant HashMap lookup for
+  each entry. Both functions are called in several hot paths (map extension,
+  assertions).
+
+  include_result.errors.clone() — reordered the check to move the errors vector.
+
+  map.clone() in interpret_attach_instr — map is already owned and unused after
+  the call; the clone was gratuitous.
+
+  The items not fixed (left as-is): context.clone() in error helpers (only on
+  error paths), tag.clone()/name.clone() in loops (unavoidable given ownership
+  requirements), and cell_data_for_tag returning by value (would need API
+  changes to CellData for marginal benefit).
+
+✻ Sautéed for 7m 45s
+
+❯ explain to me how the interpreter state is structured                         
+
+⏺ The interpreter state has two layers: a context that travels with each step,
+  and a global store that holds everything persistent.
+
+  ---
+  Context
+
+  pub struct Context {
+      pub current_module: String,
+      pub state: Arc<GlobalStore>,
+  }
+
+  The Context is passed by value (cloned) through every interpreter step — it's
+  the interpreter's "current position". It knows which module is being processed
+   and holds a shared pointer to all persistent state. Mutations go through
+  Arc::make_mut(&mut context.state), which implements copy-on-write: if nothing
+  else holds a reference to the store, it mutates in place; otherwise it clones
+  first.
+
+  ---
+  GlobalStore
+
+  pub struct GlobalStore {
+      pub cells:        HashMap<GlobalId, CellEntry>,
+      pub cells_by_dim: HashMap<usize, Vec<GlobalId>>,
+      pub types:        HashMap<GlobalId, TypeEntry>,
+      pub modules:      HashMap<ModuleId, Arc<Complex>>,
+  }
+
+  There are three distinct namespaces:
+
+  cells — higher-dimensional cells (1-cells and above) declared inside type
+  complexes. Each entry just stores the cell's CellData (its boundary
+  information). Indexed by GlobalId.
+
+  types — 0-dimensional type generators, declared in @Type blocks. Each
+  TypeEntry stores its CellData (always Zero since they're 0-dimensional) and
+  its type complex — the environment of generators, diagrams, and maps declared
+  inside its { ... } body.
+
+  modules — each module (.ali file) gets its own Complex, also stored here. Both
+   types and modules store their associated environment as a Complex, but via
+  different tables because they have different roles.
+
+  ---
+  Complex
+
+  pub struct Complex {
+      generators:  Generators,               // name ↔ tag ↔ dim ↔ classifier
+      diagrams:    HashMap<LocalId, Diagram>,
+      maps:        HashMap<LocalId, MapEntry>,
+      local_cells: LocalCells,
+      used_names:  HashSet<LocalId>,
+  }
+
+  A Complex is the local environment for either a type or a module. It stores:
+
+  - Generators with three indices: by name (by_name → GeneratorEntry{tag, dim}),
+   by tag (by_tag → name), and by dimension (by_dim). Generators also each have
+  a classifier diagram — a single-cell diagram whose sole label is that
+  generator's Tag.
+  - Diagrams — named diagram bindings (let f = ...).
+  - Maps — named partial map bindings (def f : A = ...), each with a MapEntry { 
+  map: PMap, domain: MapDomain }.
+  - Local cells — cells with Tag::Local(name) instead of a GlobalId, used inside
+   @Local blocks where the cell identity doesn't persist globally.
+
+  ---
+  CellData and Tags
+
+  Every cell (whether in cells, types, or local) has CellData:
+
+  pub enum CellData {
+      Zero,
+      Boundary { boundary_in: Arc<Diagram>, boundary_out: Arc<Diagram> },
+  }
+
+  Zero for 0-cells (objects), Boundary for higher cells (the source and target
+  are diagrams one dimension lower).
+
+  Every generator has a Tag that identifies it:
+
+  pub enum Tag { Global(GlobalId), Local(LocalId) }
+
+  Global tags refer to entries in the GlobalStore and persist across module
+  boundaries. Local tags (strings) are ephemeral — they only exist within the
+  scope of an @Local block and are never stored in the global state.
+
+  ---
+  How It Fits Together
+
+  When the interpreter processes a type A:
+  1. A fresh GlobalId is minted and state.types[id] is created with
+  CellData::Zero and an initially-empty Complex.
+  2. A classifier diagram (a 0-cell labeled Tag::Global(id)) is stored in the
+  current module's complex under the name "A".
+  3. As the body { ... } is processed, higher-dimensional generators and diagram
+   bindings accumulate in state.types[id].complex.
+
+  When it processes a cell f : A → B inside a type complex:
+  1. A fresh GlobalId is minted for f.
+  2. state.cells[f_id] is created with CellData::Boundary { boundary_in: 
+  [A-diagram], boundary_out: [B-diagram] }.
+  3. A classifier for f is added to the working Complex.
+
+  The working Complex during interpretation is a local copy — the interpreter
+  clones it out of the store into a TypeScope, mutates it as items are
+  processed, then writes changes back via state_mut().modify_type_complex(id, 
+  ...).
+
+✻ Cooked for 33s
