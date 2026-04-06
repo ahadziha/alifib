@@ -1,9 +1,9 @@
 pub mod ast;
 mod ast_fmt;
 pub mod error;
-pub mod lexer;
-pub mod parser;
-pub mod token;
+mod lexer;
+mod parser;
+mod token;
 
 use chumsky::input::Input as _;
 use chumsky::prelude::*;

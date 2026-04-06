@@ -1,6 +1,6 @@
 mod diagram;
-pub mod eval;
-pub mod global_store;
+mod eval;
+mod global_store;
 mod include;
 mod partial_map;
 mod scope;
