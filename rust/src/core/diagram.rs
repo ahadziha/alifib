@@ -11,7 +11,7 @@ pub enum Sign {
 }
 
 impl Sign {
-    pub fn as_ogposet_sign(self) -> OgSign {
+    fn as_ogposet_sign(self) -> OgSign {
         match self {
             Self::Source => OgSign::Input,
             Self::Target => OgSign::Output,
@@ -20,7 +20,7 @@ impl Sign {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Dim(pub usize);
+struct Dim(usize);
 
 /// Records how a diagram was built up from paste operations.
 ///
@@ -28,7 +28,7 @@ pub struct Dim(pub usize);
 /// - `Node { dim, left, right }` — the result of pasting `left` and `right`
 ///   at dimension `dim`.
 #[derive(Debug, Clone)]
-pub enum PasteTree {
+pub(super) enum PasteTree {
     Leaf(Tag),
     Node {
         dim: usize,
@@ -41,22 +41,22 @@ pub enum PasteTree {
 /// diagram at one particular dimension.  One `BoundaryHistory` is stored per
 /// dimension in `Diagram::paste_history`.
 #[derive(Debug, Clone)]
-pub struct BoundaryHistory {
+pub(super) struct BoundaryHistory {
     /// Paste-tree for the source (input) boundary at this dimension.
-    pub source: PasteTree,
+    pub(super) source: PasteTree,
     /// Paste-tree for the target (output) boundary at this dimension.
-    pub target: PasteTree,
+    pub(super) target: PasteTree,
 }
 
 impl BoundaryHistory {
-    pub fn get(&self, sign: Sign) -> &PasteTree {
+    fn get(&self, sign: Sign) -> &PasteTree {
         match sign {
             Sign::Source => &self.source,
             Sign::Target => &self.target,
         }
     }
 
-    pub fn from_pair(source: PasteTree, target: PasteTree) -> Self {
+    pub(super) fn from_pair(source: PasteTree, target: PasteTree) -> Self {
         Self { source, target }
     }
 }
@@ -204,11 +204,11 @@ impl Diagram {
         self.shape.is_normal()
     }
 
-    pub fn history(&self, dim: Dim) -> Option<&BoundaryHistory> {
+    fn history(&self, dim: Dim) -> Option<&BoundaryHistory> {
         self.paste_history.get(dim.0)
     }
 
-    pub fn tree(&self, sign: Sign, dim: usize) -> Option<&PasteTree> {
+    pub(super) fn tree(&self, sign: Sign, dim: usize) -> Option<&PasteTree> {
         self.history(Dim(dim)).map(|h| h.get(sign))
     }
 
