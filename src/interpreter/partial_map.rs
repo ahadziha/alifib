@@ -1,8 +1,8 @@
 use super::diagram::interpret_diagram_as_term;
 use super::scope::interpret_address;
 use super::types::*;
-use alifib_core::aux::{self as aux, LocalId, Tag};
-use alifib_core::core::{
+use crate::aux::{self, LocalId, Tag};
+use crate::core::{
     complex::{Complex, MapDomain},
     diagram::{CellData, Diagram, Sign as DiagramSign},
     partial_map::PartialMap,

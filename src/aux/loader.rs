@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use alifib_core::aux::path;
+use super::path;
 use crate::language::{self, Program, Error as LangError};
 
 type ReadFileFn = Arc<dyn Fn(&str) -> Result<String, LoadError> + Send + Sync>;
@@ -108,8 +108,8 @@ impl Loader {
     pub fn load(&self, path: &str) -> Result<LoadedFile, LoadFileError> {
         // Strictly canonicalize up front so the path used as a module ID is
         // always the true canonical path, regardless of how the caller spelled it.
-        let canonical_path = path::canonicalize_existing(path)
-            .map_err(|e: std::io::Error| LoadFileError::Load {
+        let canonical_path = super::path::canonicalize_existing(path)
+            .map_err(|e| LoadFileError::Load {
                 path: path.to_owned(),
                 cause: if e.kind() == std::io::ErrorKind::NotFound {
                     LoadError::NotFound

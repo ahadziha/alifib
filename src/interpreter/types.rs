@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 
-use alifib_core::GlobalStore;
-use alifib_core::aux::{GlobalId, LocalId, Tag};
+use super::global_store::GlobalStore;
+use crate::aux::{GlobalId, LocalId, Tag};
 use crate::aux::loader::ModuleResolutions;
-use alifib_core::core::{
+use crate::core::{
     complex::{Complex, MapDomain},
     diagram::{CellData, Diagram, Sign as DiagramSign},
     partial_map::PartialMap,

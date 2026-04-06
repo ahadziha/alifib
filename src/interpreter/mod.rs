@@ -1,10 +1,11 @@
 mod diagram;
 mod eval;
+mod global_store;
 mod include;
 mod partial_map;
 mod scope;
 mod types;
 
 pub use eval::{Context, InterpResult, interpret_program};
-pub use alifib_core::GlobalStore;
+pub use global_store::GlobalStore;
 pub use types::{HoleBd, HoleInfo};
