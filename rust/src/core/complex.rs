@@ -114,10 +114,6 @@ impl Complex {
             .unwrap_or_default()
     }
 
-    pub fn generator_names(&self) -> Vec<LocalId> {
-        self.generators.by_name.keys().cloned().collect()
-    }
-
     pub fn generators_iter(&self) -> impl Iterator<Item = (&LocalId, &GeneratorEntry)> {
         self.generators.by_name.iter()
     }
@@ -138,10 +134,6 @@ impl Complex {
         self.diagrams.iter()
     }
 
-    pub fn diagram_names(&self) -> Vec<LocalId> {
-        self.diagrams.keys().cloned().collect()
-    }
-
     // ---- Maps ----
 
     pub fn add_map(&mut self, name: LocalId, domain: MapDomain, map: PMap) {
@@ -156,10 +148,6 @@ impl Complex {
 
     pub fn maps_iter(&self) -> impl Iterator<Item = (&LocalId, &MapEntry)> {
         self.maps.iter()
-    }
-
-    pub fn map_names(&self) -> Vec<LocalId> {
-        self.maps.keys().cloned().collect()
     }
 
     // ---- Local cells ----

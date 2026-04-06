@@ -63,7 +63,7 @@ impl PMap {
     /// Return all (dim, tags) pairs sorted by dimension, tags in insertion order.
     pub fn domain_by_dim(&self) -> Vec<(usize, Vec<Tag>)> {
         let mut result: Vec<(usize, Vec<Tag>)> = self.by_dim.iter()
-            .map(|(&d, tags)| (d, tags.iter().rev().cloned().collect()))
+            .map(|(&d, tags)| (d, tags.clone()))
             .collect();
         result.sort_by_key(|(d, _)| *d);
         result
