@@ -84,7 +84,7 @@ pub fn interpret_anon_map_component(
     def: &Spanned<PMapDef>,
 ) -> Step<EvalMap> {
     let (ns_opt, target_result) =
-        super::interpreter::interpret_complex(context, super::types::Mode::Global, target);
+        super::eval::interpret_complex(context, super::types::Mode::Global, target);
     let Some(ns) = ns_opt else { return (None, target_result); };
     let (mc_opt, def_result) =
         interpret_pmap_def(&target_result.context, &ns.working_complex, domain, def);
