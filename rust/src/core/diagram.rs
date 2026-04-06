@@ -501,42 +501,46 @@ fn paste_histories(
     n: usize,
     num_dims: usize,
 ) -> Vec<BoundaryHistory> {
-    let dummy = |k: usize| {
+    let dummy = |k: usize| -> PasteTree {
         u_hist
             .get(k)
             .or(v_hist.get(k))
             .map(|h| h.source.clone())
             .unwrap_or_else(missing_tree)
     };
-
     (0..num_dims)
-        .map(|k| {
-            if k < n {
-                BoundaryHistory::from_pair(
-                    history_tree(u_hist, Sign::Source, k, || dummy(k)),
-                    history_tree(u_hist, Sign::Target, k, || dummy(k)),
-                )
-            } else if k == n {
-                BoundaryHistory::from_pair(
-                    history_tree(u_hist, Sign::Source, n, || dummy(n)),
-                    history_tree(v_hist, Sign::Target, n, || dummy(n)),
-                )
-            } else {
-                BoundaryHistory::from_pair(
-                    PasteTree::Node {
-                        dim: n,
-                        left: Arc::new(history_tree(u_hist, Sign::Source, k, || dummy(k))),
-                        right: Arc::new(history_tree(v_hist, Sign::Source, k, || dummy(k))),
-                    },
-                    PasteTree::Node {
-                        dim: n,
-                        left: Arc::new(history_tree(u_hist, Sign::Target, k, || dummy(k))),
-                        right: Arc::new(history_tree(v_hist, Sign::Target, k, || dummy(k))),
-                    },
-                )
-            }
-        })
+        .map(|k| BoundaryHistory::from_pair(
+            paste_tree(u_hist, v_hist, n, k, Sign::Source, &dummy),
+            paste_tree(u_hist, v_hist, n, k, Sign::Target, &dummy),
+        ))
         .collect()
+}
+
+/// The paste tree for `sign` at dimension `k` when pasting `u` and `v` at dimension `n`.
+///
+/// - k < n:  inherit from u
+/// - k == n: source from u, target from v
+/// - k > n:  join u and v into a Node at dimension n
+fn paste_tree(
+    u_hist: &[BoundaryHistory],
+    v_hist: &[BoundaryHistory],
+    n: usize,
+    k: usize,
+    sign: Sign,
+    dummy: &dyn Fn(usize) -> PasteTree,
+) -> PasteTree {
+    if k < n {
+        history_tree(u_hist, sign, k, || dummy(k))
+    } else if k == n {
+        let hist = match sign { Sign::Source => u_hist, Sign::Target => v_hist };
+        history_tree(hist, sign, n, || dummy(n))
+    } else {
+        PasteTree::Node {
+            dim: n,
+            left:  Arc::new(history_tree(u_hist, sign, k, || dummy(k))),
+            right: Arc::new(history_tree(v_hist, sign, k, || dummy(k))),
+        }
+    }
 }
 
 /// For each of `n` top-boundary cells, produce a coface list pointing to the

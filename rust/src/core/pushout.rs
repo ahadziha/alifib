@@ -47,23 +47,10 @@ fn attach(f: &Embedding, g: &Embedding) -> Pushout {
 
     let total_sizes: Vec<usize> = (0..levels).map(|d| base_sizes[d] + extra_counts[d]).collect();
 
-    let alloc_faces = |base: &Vec<Vec<IntSet>>| -> Vec<Vec<IntSet>> {
-        (0..levels).map(|d| {
-            let total = total_sizes[d];
-            let mut arr: Vec<IntSet> = vec![vec![]; total];
-            if d < base.len() {
-                for (i, s) in base[d].iter().enumerate() {
-                    arr[i] = s.clone();
-                }
-            }
-            arr
-        }).collect()
-    };
-
-    let mut tip_faces_in   = alloc_faces(&b.faces_in);
-    let mut tip_faces_out  = alloc_faces(&b.faces_out);
-    let mut tip_cofaces_in  = alloc_faces(&b.cofaces_in);
-    let mut tip_cofaces_out = alloc_faces(&b.cofaces_out);
+    let mut tip_faces_in   = alloc_face_arrays(&b.faces_in,   &total_sizes);
+    let mut tip_faces_out  = alloc_face_arrays(&b.faces_out,  &total_sizes);
+    let mut tip_cofaces_in  = alloc_face_arrays(&b.cofaces_in,  &total_sizes);
+    let mut tip_cofaces_out = alloc_face_arrays(&b.cofaces_out, &total_sizes);
 
     let mut inr_inv: Vec<Vec<usize>> = (0..levels).map(|d| vec![NO_PREIMAGE; total_sizes[d]]).collect();
     let c_len = if c.dim < 0 { 0 } else { c.dim as usize + 1 };
@@ -87,24 +74,14 @@ fn attach(f: &Embedding, g: &Embedding) -> Pushout {
                 let idx = counters[i];
                 inr_map[i][p] = idx;
 
-                let new_faces_in: IntSet = if i == 0 {
-                    vec![]
-                } else {
-                    intset::collect_sorted(c.faces_in[i][p].iter().map(|&q| inr_map[i - 1][q]))
-                };
-                let new_faces_out: IntSet = if i == 0 {
-                    vec![]
-                } else {
-                    intset::collect_sorted(c.faces_out[i][p].iter().map(|&q| inr_map[i - 1][q]))
-                };
-
-                tip_faces_in[i][idx]  = new_faces_in.clone();
-                tip_faces_out[i][idx] = new_faces_out.clone();
+                let (fi, fo) = translate_faces(c, i, p, &inr_map);
+                tip_faces_in[i][idx]  = fi.clone();
+                tip_faces_out[i][idx] = fo.clone();
                 inr_inv[i][idx] = p;
 
                 if i > 0 {
-                    for &q in &new_faces_in  { intset::insert(&mut tip_cofaces_in[i - 1][q],  idx); }
-                    for &q in &new_faces_out { intset::insert(&mut tip_cofaces_out[i - 1][q], idx); }
+                    for &q in &fi { intset::insert(&mut tip_cofaces_in[i - 1][q],  idx); }
+                    for &q in &fo { intset::insert(&mut tip_cofaces_out[i - 1][q], idx); }
                 }
 
                 counters[i] += 1;
@@ -138,4 +115,31 @@ fn attach(f: &Embedding, g: &Embedding) -> Pushout {
     let inr = Embedding::make(Arc::clone(c), Arc::clone(&tip), inr_map, inr_inv);
 
     Pushout { tip, inl, inr }
+}
+
+/// Allocate a face/coface array with `total_sizes[d]` slots per dimension,
+/// pre-filled with the corresponding rows from `base` (B's existing data).
+fn alloc_face_arrays(base: &[Vec<IntSet>], total_sizes: &[usize]) -> Vec<Vec<IntSet>> {
+    (0..total_sizes.len()).map(|d| {
+        let mut arr = vec![vec![]; total_sizes[d]];
+        if d < base.len() {
+            for (i, s) in base[d].iter().enumerate() {
+                arr[i] = s.clone();
+            }
+        }
+        arr
+    }).collect()
+}
+
+/// Translate the face indices of cell `(i, p)` from `c`'s indexing into the
+/// tip's indexing via the partial `inr_map` built so far.  Returns `(faces_in,
+/// faces_out)`; both are empty for dimension-0 cells.
+fn translate_faces(c: &Ogposet, i: usize, p: usize, inr_map: &[Vec<usize>]) -> (IntSet, IntSet) {
+    if i == 0 {
+        (vec![], vec![])
+    } else {
+        let fi = intset::collect_sorted(c.faces_in[i][p].iter().map(|&q| inr_map[i - 1][q]));
+        let fo = intset::collect_sorted(c.faces_out[i][p].iter().map(|&q| inr_map[i - 1][q]));
+        (fi, fo)
+    }
 }
