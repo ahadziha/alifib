@@ -1,10 +1,10 @@
-pub mod diagram;
+mod diagram;
 pub mod eval;
-pub mod global_store;
-pub mod include;
-pub mod pmap;
-pub mod scope;
+mod global_store;
+mod include;
+mod pmap;
+mod scope;
 mod state_render;
-pub mod types;
+mod types;
 
-pub use eval::{Context, interpret_program};
+pub use eval::{Context, InterpResult, interpret_program};

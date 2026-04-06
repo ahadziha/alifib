@@ -181,15 +181,6 @@ fn find_file(loader: &FileLoader, module_name: &str) -> Result<(String, String),
     Err(ResolveError::NotFound { module_name: module_name.to_owned() })
 }
 
-fn collect_includes(program: &Program) -> Vec<String> {
-    use crate::language::ast::{Block, TypeInst};
-    program.blocks.iter()
-        .filter_map(|b| match &b.inner { Block::TypeBlock(body) => Some(body), _ => None })
-        .flat_map(|body| body.iter())
-        .filter_map(|i| match &i.inner { TypeInst::IncludeModule(im) => Some(im.name.inner.clone()), _ => None })
-        .collect()
-}
-
 fn resolve_all_modules(
     loader: &FileLoader,
     root_path: &str,
@@ -209,7 +200,7 @@ fn resolve_recursive(
     store: &mut ModuleStore,
     resolving: &mut HashSet<String>,
 ) -> Result<(), ResolveError> {
-    let includes = collect_includes(program);
+    let includes = language::collect_includes(program);
     for module_name in includes {
         let (canonical_path, contents) = find_file(loader, &module_name)?;
 

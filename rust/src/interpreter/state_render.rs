@@ -78,19 +78,19 @@ impl fmt::Display for GlobalStore {
         for (module_id, module_complex) in &module_entries {
             write!(f, "\n* Module {}\n", module_id)?;
 
-            let mut gen_entries: Vec<(&str, &_)> = module_complex
+            let mut gen_entries: Vec<(&str, &Tag)> = module_complex
                 .generators_iter()
-                .map(|(name, entry)| (name.as_str(), entry))
+                .map(|(name, tag, _)| (name.as_str(), tag))
                 .collect();
             gen_entries.sort_by_key(|(name, _)| *name);
 
-            for (i, (gen_name, gen_entry)) in gen_entries.iter().enumerate() {
+            for (i, (gen_name, gen_tag)) in gen_entries.iter().enumerate() {
                 if i > 0 {
                     writeln!(f)?;
                 }
                 let type_label = name_or_empty(gen_name);
 
-                let Tag::Global(gid) = &gen_entry.tag else {
+                let Tag::Global(gid) = gen_tag else {
                     writeln!(f, "Type {} (local)", type_label)?;
                     continue;
                 };
@@ -105,7 +105,7 @@ impl fmt::Display for GlobalStore {
                 // Cells grouped by dimension, with boundaries
                 let mut dims: Vec<usize> = tc
                     .generators_iter()
-                    .map(|(_, entry)| entry.dim)
+                    .map(|(_, _, dim)| dim)
                     .collect();
                 dims.sort_unstable();
                 dims.dedup();
@@ -114,17 +114,17 @@ impl fmt::Display for GlobalStore {
                     writeln!(f, "  (no cells)")?;
                 } else {
                     for dim in &dims {
-                        let mut gens: Vec<(&str, _)> = tc
+                        let mut gens: Vec<(&str, &Tag)> = tc
                             .generators_iter()
-                            .filter(|(_, entry)| entry.dim == *dim)
-                            .map(|(name, entry)| (name.as_str(), entry))
+                            .filter(|(_, _, d)| d == dim)
+                            .map(|(name, tag, _)| (name.as_str(), tag))
                             .collect();
                         gens.sort_by_key(|(name, _)| *name);
 
                         let rendered: Vec<String> = gens
                             .iter()
-                            .filter_map(|(name, entry)| {
-                                let data = self.cell_data_for_tag(tc, &entry.tag)?;
+                            .filter_map(|(name, tag)| {
+                                let data = self.cell_data_for_tag(tc, tag)?;
                                 Some(render_cell(name, &data, tc))
                             })
                             .collect();
@@ -150,16 +150,16 @@ impl fmt::Display for GlobalStore {
                 }
 
                 // Maps
-                let mut map_entries: Vec<(&str, &_)> = tc
+                let mut map_entries: Vec<(&str, &MapDomain)> = tc
                     .maps_iter()
-                    .map(|(name, entry)| (name.as_str(), entry))
+                    .map(|(name, _, domain)| (name.as_str(), domain))
                     .collect();
                 if !map_entries.is_empty() {
                     map_entries.sort_by_key(|(name, _)| *name);
                     let maps: Vec<String> = map_entries
                         .iter()
-                        .map(|(name, entry)| {
-                            let dom = render_domain(&entry.domain, module_complex);
+                        .map(|(name, domain)| {
+                            let dom = render_domain(domain, module_complex);
                             format!("{} :: {}", name_or_empty(name), dom)
                         })
                         .collect();

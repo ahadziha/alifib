@@ -8,6 +8,7 @@ use crate::core::{
     map::PMap,
 };
 use crate::language::{ast::Span, error::Error};
+use std::fmt;
 use std::sync::Arc;
 
 // ---- Context ----
@@ -34,6 +35,10 @@ impl Context {
         }
     }
 
+    pub fn new_empty(module_id: String) -> Self {
+        Self::new(module_id, GlobalStore::empty())
+    }
+
     /// Create a Context for a new module that shares global state with `other`.
     /// Used when interpreting an included module so that types created there
     /// are visible in the parent module without copying the store.
@@ -53,6 +58,12 @@ impl Context {
     pub fn modify_current_module(&mut self, f: impl FnOnce(&mut Complex)) {
         let module_id = self.current_module.clone();
         self.state_mut().modify_module(&module_id, f);
+    }
+}
+
+impl fmt::Display for Context {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.state)
     }
 }
 
@@ -137,6 +148,20 @@ impl InterpResult {
 
     pub fn has_errors(&self) -> bool {
         !self.errors.is_empty()
+    }
+
+    pub fn has_holes(&self) -> bool {
+        !self.holes.is_empty()
+    }
+
+    pub fn report_holes(&self, source: &str, path: &str) {
+        for hole in &self.holes {
+            let message = match &hole.boundary {
+                Some(bd) => format!("{} -> {}", bd.boundary_in, bd.boundary_out),
+                None => "unknown boundary".to_string(),
+            };
+            crate::language::error::report_hole(hole.span, &message, source, path);
+        }
     }
 }
 
@@ -269,7 +294,7 @@ pub fn ensure_name_free(
 pub fn sorted_generators(complex: &Complex) -> Vec<(usize, LocalId, Tag)> {
     let mut generators: Vec<(usize, LocalId, Tag)> = complex
         .generators_iter()
-        .map(|(name, entry)| (entry.dim, name.clone(), entry.tag.clone()))
+        .map(|(name, tag, dim)| (dim, name.clone(), tag.clone()))
         .collect();
     generators.sort_by_key(|(dim, _, _)| *dim);
     generators
@@ -293,13 +318,13 @@ pub fn resolve_root_owner_type_id(
     let empty_name: LocalId = String::new();
     let mut result = InterpResult::ok(context.clone());
 
-    let Some(root_entry) = module_space.find_generator(&empty_name) else {
+    let Some((root_tag, _)) = module_space.find_generator(&empty_name) else {
         result.add_error(make_error(span, "Root generator not found"));
         return (None, result);
     };
 
-    match root_entry.tag {
-        Tag::Global(id) => (Some(id), result),
+    match root_tag {
+        Tag::Global(id) => (Some(*id), result),
         Tag::Local(_) => {
             result.add_error(make_error(span, "Root has local tag (unexpected)"));
             (None, result)
@@ -357,12 +382,10 @@ pub fn get_cell_data(context: &Context, source: &Complex, tag: &Tag) -> Option<C
 pub fn identity_map(context: &Context, domain: &Complex) -> PMap {
     let entries: Vec<(Tag, usize, CellData, Diagram)> = domain
         .generators_iter()
-        .filter_map(|(name, gen_entry)| {
-            let tag = gen_entry.tag.clone();
-            let dim = gen_entry.dim;
-            let cell_data = get_cell_data(context, domain, &tag)?;
+        .filter_map(|(name, tag, dim)| {
+            let cell_data = get_cell_data(context, domain, tag)?;
             let image = domain.classifier(name)?.clone();
-            Some((tag, dim, cell_data, image))
+            Some((tag.clone(), dim, cell_data, image))
         })
         .collect();
     PMap::of_entries(entries, true)

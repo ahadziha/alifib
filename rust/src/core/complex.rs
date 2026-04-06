@@ -12,26 +12,22 @@ pub enum MapDomain {
 
 /// Metadata for a generator within a complex.
 #[derive(Debug, Clone)]
-pub struct GeneratorEntry {
-    /// The tag (Global or Local) that identifies this generator in diagrams and maps.
-    pub tag: Tag,
-    /// The dimension of this generator.
-    pub dim: usize,
+struct GeneratorEntry {
+    tag: Tag,
+    dim: usize,
 }
 
 /// A named partial map together with the complex it maps from.
 #[derive(Debug, Clone)]
-pub struct MapEntry {
-    pub map: PMap,
-    /// Records whether the domain is a type complex or a module complex.
-    pub domain: MapDomain,
+struct MapEntry {
+    map: PMap,
+    domain: MapDomain,
 }
 
 /// A locally-scoped cell created during type elaboration, not persisted in the global store.
 #[derive(Debug, Clone)]
-pub struct LocalCellEntry {
-    /// The boundary specification (Zero for 0-cells, Boundary for n-cells).
-    pub data: CellData,
+struct LocalCellEntry {
+    data: CellData,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -90,8 +86,8 @@ impl Complex {
         self.assert_invariants();
     }
 
-    pub fn find_generator(&self, name: &str) -> Option<&GeneratorEntry> {
-        self.generators.by_name.get(name)
+    pub fn find_generator(&self, name: &str) -> Option<(&Tag, usize)> {
+        self.generators.by_name.get(name).map(|e| (&e.tag, e.dim))
     }
 
     pub fn find_generator_by_tag(&self, tag: &Tag) -> Option<&LocalId> {
@@ -102,8 +98,8 @@ impl Complex {
         self.generators.classifiers.get(name)
     }
 
-    pub fn generators_iter(&self) -> impl Iterator<Item = (&LocalId, &GeneratorEntry)> {
-        self.generators.by_name.iter()
+    pub fn generators_iter(&self) -> impl Iterator<Item = (&LocalId, &Tag, usize)> {
+        self.generators.by_name.iter().map(|(name, e)| (name, &e.tag, e.dim))
     }
 
     // ---- Diagrams ----
@@ -130,12 +126,12 @@ impl Complex {
         self.assert_invariants();
     }
 
-    pub fn find_map(&self, name: &str) -> Option<&MapEntry> {
-        self.maps.get(name)
+    pub fn find_map(&self, name: &str) -> Option<(&PMap, &MapDomain)> {
+        self.maps.get(name).map(|e| (&e.map, &e.domain))
     }
 
-    pub fn maps_iter(&self) -> impl Iterator<Item = (&LocalId, &MapEntry)> {
-        self.maps.iter()
+    pub fn maps_iter(&self) -> impl Iterator<Item = (&LocalId, &PMap, &MapDomain)> {
+        self.maps.iter().map(|(name, e)| (name, &e.map, &e.domain))
     }
 
     // ---- Local cells ----
@@ -150,8 +146,8 @@ impl Complex {
         self.assert_invariants();
     }
 
-    pub fn find_local_cell(&self, name: &str) -> Option<&LocalCellEntry> {
-        self.local_cells.by_id.get(name)
+    pub fn find_local_cell(&self, name: &str) -> Option<&CellData> {
+        self.local_cells.by_id.get(name).map(|e| &e.data)
     }
 
     // ---- Name management ----

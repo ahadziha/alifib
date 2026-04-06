@@ -135,14 +135,14 @@ fn eval_pmap(ctx: &PMapCtx<'_>, pmap: &ast::PMap, span: Span) -> Step<EvalMap> {
 fn eval_pmap_basic(ctx: &PMapCtx<'_>, basic: &PMapBasic, span: Span) -> Step<EvalMap> {
     match basic {
         PMapBasic::Name(name) => {
-            let Some(entry) = ctx.scope.find_map(name) else {
+            let Some((map, domain)) = ctx.scope.find_map(name) else {
                 return fail(ctx.context, span, format!("Partial map not found: `{}`", name));
             };
-            let (domain_opt, result) = resolve_map_domain_complex(ctx.context, &entry.domain, span);
+            let (domain_opt, result) = resolve_map_domain_complex(ctx.context, domain, span);
             let Some(domain) = domain_opt else {
                 return (None, result);
             };
-            (Some(EvalMap { map: entry.map.clone(), domain }), InterpResult::ok(ctx.context.clone()))
+            (Some(EvalMap { map: map.clone(), domain }), InterpResult::ok(ctx.context.clone()))
         }
         PMapBasic::AnonMap { def, target } => {
             interpret_anon_map_component(ctx.context, ctx.domain, target, def)
@@ -473,8 +473,8 @@ fn check_map_totality(
         return;
     }
 
-    for (generator_name, generator_entry) in domain.generators_iter() {
-        if !map.is_defined_at(&generator_entry.tag) {
+    for (generator_name, tag, _) in domain.generators_iter() {
+        if !map.is_defined_at(tag) {
             result.add_error(make_error(
                 name_span,
                 format!("Total map `{}` is not defined on generator `{}`", map_name, generator_name),

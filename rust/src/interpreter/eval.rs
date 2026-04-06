@@ -23,10 +23,8 @@ use super::scope::{
     interpret_generator_boundaries, interpret_items, interpret_items_in_complex_scope,
     interpret_items_in_type_scope, resolve_type_scope,
 };
-pub use super::types::{
-    Context, InterpResult, Mode, NameKind, TypeScope, ensure_name_free, error_result, identity_map,
-    make_error,
-};
+pub use super::types::{Context, InterpResult};
+use super::types::{Mode, NameKind, TypeScope, ensure_name_free, error_result, identity_map, make_error};
 // ---- Main interpreter ----
 
 pub fn interpret_program(

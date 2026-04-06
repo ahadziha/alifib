@@ -62,6 +62,14 @@ pub fn report_errors(errors: &[Error], source: &str, filename: &str) {
     error::report_errors(errors, source, filename);
 }
 
-pub fn report_holes(holes: &[crate::interpreter::types::HoleInfo], source: &str, filename: &str) {
-    error::report_holes(holes, source, filename);
+pub(crate) fn collect_includes(program: &Program) -> Vec<String> {
+    program.blocks.iter()
+        .filter_map(|b| match &b.inner { ast::Block::TypeBlock(body) => Some(body), _ => None })
+        .flat_map(|body| body.iter())
+        .filter_map(|i| match &i.inner {
+            ast::TypeInst::IncludeModule(im) => Some(im.name.inner.clone()),
+            _ => None,
+        })
+        .collect()
 }
+

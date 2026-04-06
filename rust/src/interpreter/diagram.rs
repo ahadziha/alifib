@@ -196,10 +196,10 @@ pub fn interpret_dcomponent(
             if let Some(diagram) = scope.find_diagram(name) {
                 return (Some(Component::Value(Term::Diag(diagram.clone()))), InterpResult::ok(context.clone()));
             }
-            if let Some(entry) = scope.find_map(name) {
-                let (domain_opt, result) = resolve_map_domain_complex(context, &entry.domain, span);
+            if let Some((map, domain)) = scope.find_map(name) {
+                let (domain_opt, result) = resolve_map_domain_complex(context, domain, span);
                 let Some(domain) = domain_opt else { return (None, result); };
-                return (Some(Component::Value(Term::Map(EvalMap { map: entry.map.clone(), domain }))), InterpResult::ok(context.clone()));
+                return (Some(Component::Value(Term::Map(EvalMap { map: map.clone(), domain }))), InterpResult::ok(context.clone()));
             }
             fail(context, span, format!("Name `{}` not found", name))
         }

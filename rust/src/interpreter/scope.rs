@@ -313,7 +313,7 @@ fn resolve_address_prefix_scope(
     let mut result = InterpResult::ok(context.clone());
 
     for (segment_span, segment_name) in prefix {
-        let Some(map_entry) = current_scope.find_map(segment_name) else {
+        let Some((_, domain)) = current_scope.find_map(segment_name) else {
             result.add_error(make_error(
                 *segment_span,
                 format!("Partial map `{}` not found", segment_name),
@@ -321,7 +321,7 @@ fn resolve_address_prefix_scope(
             return (None, result);
         };
 
-        match &map_entry.domain {
+        match domain {
             MapDomain::Module(module_id) => match context.state.find_module_arc(module_id) {
                 Some(module_arc) => current_scope = module_arc,
                 None => {

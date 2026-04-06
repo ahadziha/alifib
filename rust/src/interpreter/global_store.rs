@@ -104,7 +104,7 @@ impl GlobalStore {
                 .find_cell(*gid)
                 .map(|e| e.data.clone())
                 .or_else(|| self.find_type(*gid).map(|e| e.data.clone())),
-            Tag::Local(name) => complex.find_local_cell(name).map(|e| e.data.clone()),
+            Tag::Local(name) => complex.find_local_cell(name).cloned(),
         }
     }
 

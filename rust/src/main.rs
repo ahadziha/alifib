@@ -9,9 +9,7 @@ use std::time::Instant;
 
 use aux::error::report_load_file_error;
 use aux::loader::Loader;
-use interpreter::global_store::GlobalStore;
-use interpreter::types::HoleInfo;
-use interpreter::{Context, interpret_program};
+use interpreter::{Context, InterpResult, interpret_program};
 
 const USAGE: &str = "Usage: alifib <input-file> [-o|--output <output-file>] [--ast] [--bench N]";
 
@@ -103,10 +101,9 @@ fn parse_program(path: &str, source: &str) -> Result<language::Program, ()> {
 }
 
 struct RunResult {
-    context: Context,
+    result: InterpResult,
     source: String,
     canonical_path: String,
-    holes: Vec<HoleInfo>,
 }
 
 fn execute_file(loader: &Loader, path: &str) -> Option<RunResult> {
@@ -118,7 +115,7 @@ fn execute_file(loader: &Loader, path: &str) -> Option<RunResult> {
         }
     };
 
-    let context = Context::new(loaded.canonical_path.clone(), GlobalStore::empty());
+    let context = Context::new_empty(loaded.canonical_path.clone());
     let result = interpret_program(&loaded.modules, context, &loaded.program);
 
     if !result.errors.is_empty() {
@@ -127,9 +124,8 @@ fn execute_file(loader: &Loader, path: &str) -> Option<RunResult> {
     }
 
     Some(RunResult {
-        context: result.context,
+        result,
         canonical_path: loaded.canonical_path,
-        holes: result.holes,
         source: loaded.source,
     })
 }
@@ -141,17 +137,13 @@ fn run_interpreter(input: &str, output: Option<&str>) -> bool {
         None => return false,
     };
 
-    let text = run_result.context.state.to_string();
+    let text = run_result.result.context.to_string();
     if let Err(msg) = write_output(output, &text) {
         eprintln!("error: {}", msg);
         return false;
     }
-    if !run_result.holes.is_empty() {
-        language::report_holes(
-            &run_result.holes,
-            &run_result.source,
-            &run_result.canonical_path,
-        );
+    if run_result.result.has_holes() {
+        run_result.result.report_holes(&run_result.source, &run_result.canonical_path);
     }
     true
 }
@@ -165,7 +157,7 @@ fn run_bench(input: &str, n: usize) -> bool {
             eprintln!("error: benchmark file failed on warmup");
             return false;
         }
-        Some(run_result) if !run_result.holes.is_empty() => {
+        Some(run_result) if run_result.result.has_holes() => {
             eprintln!("error: benchmark file contains holes");
             return false;
         }
