@@ -30,7 +30,7 @@ struct MapEntry {
     domain: MapDomain,
 }
 
-/// A locally-scoped cell created during type elaboration, not persisted in the global store.
+/// A cell scoped to a type body, carrying a local tag rather than a global ID.
 #[derive(Debug, Clone)]
 struct LocalCellEntry {
     data: CellData,
@@ -50,7 +50,8 @@ struct Generators {
     classifiers: HashMap<LocalId, Diagram>,
 }
 
-/// Temporary cells created during type elaboration; not persisted to the global store.
+/// Cells scoped to this type body: tagged with a local name rather than a global ID,
+/// so their boundary data lives only in this Complex, not in the global cell tables.
 #[derive(Debug, Clone, Default)]
 struct LocalCells {
     /// Name -> cell entry.
@@ -59,7 +60,7 @@ struct LocalCells {
     by_dim: HashMap<usize, HashSet<LocalId>>,
 }
 
-/// A complex: the environment of generators, diagrams, maps, and local cells
+/// The environment of generators, diagrams, maps, and locally-scoped cells
 /// associated with a single type or module.
 ///
 /// Invariants (checked in debug builds):
@@ -157,7 +158,8 @@ impl Complex {
 
     // ---- Local cells ----
 
-    /// Register a temporary local cell (used during type elaboration, not persisted globally).
+    /// Register a cell scoped to this type body (carries a local tag; boundary data
+    /// lives here rather than in the global cell tables).
     pub fn add_local_cell(&mut self, name: LocalId, dim: usize, data: CellData) {
         self.local_cells
             .by_dim
