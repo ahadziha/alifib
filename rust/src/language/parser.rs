@@ -333,30 +333,15 @@ fn build_diagram<'tokens, 'src: 'tokens>() -> RDiagram<'tokens, 'src> {
                     .repeated()
                     .collect::<Vec<_>>(),
             )
-            .map(
-                |(first, rest): (Spanned<DComponent>, Vec<Spanned<DComponent>>)| {
-                    if rest.is_empty() {
-                        sp(DExpr::Component(first.inner), first.span)
-                    } else {
-                        let mut expr: Spanned<DExpr> =
-                            sp(DExpr::Component(first.inner), first.span);
-                        for field in rest {
-                            let new_span = Span {
-                                start: expr.span.start,
-                                end: field.span.end,
-                            };
-                            expr = sp(
-                                DExpr::Dot {
-                                    base: Box::new(expr),
-                                    field,
-                                },
-                                new_span,
-                            );
-                        }
-                        expr
-                    }
-                },
-            );
+            .map(|(first, rest): (Spanned<DComponent>, Vec<Spanned<DComponent>>)| {
+                rest.into_iter().fold(
+                    sp(DExpr::Component(first.inner), first.span),
+                    |expr, field| {
+                        let span = Span { start: expr.span.start, end: field.span.end };
+                        sp(DExpr::Dot { base: Box::new(expr), field }, span)
+                    },
+                )
+            });
 
         let dprincipal = dexpr
             .clone()

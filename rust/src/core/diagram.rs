@@ -378,6 +378,11 @@ impl Diagram {
 
 // ---- Helpers ----
 
+/// Sentinel paste tree used when history data is absent.
+fn missing_tree() -> PasteTree {
+    PasteTree::Leaf(Tag::Local("?".into()))
+}
+
 /// Get a paste tree from a history slice at position `k`, falling back to `fallback()`.
 fn history_tree(hist: &[BoundaryHistory], sign: Sign, k: usize, fallback: impl FnOnce() -> PasteTree) -> PasteTree {
     hist.get(k).map(|h| h.get(sign).clone()).unwrap_or_else(fallback)
@@ -449,7 +454,7 @@ fn boundary_history(histories: &[BoundaryHistory], sign: Sign, k: usize) -> Vec<
                 let t = histories
                     .get(k)
                     .map(|h| h.get(sign).clone())
-                    .unwrap_or(PasteTree::Leaf(Tag::Local("?".into())));
+                    .unwrap_or_else(missing_tree);
                 BoundaryHistory::from_pair(t.clone(), t)
             }
         })
@@ -468,7 +473,7 @@ fn paste_histories(
             .get(k)
             .or(v_hist.get(k))
             .map(|h| h.source.clone())
-            .unwrap_or(PasteTree::Leaf(Tag::Local("?".into())))
+            .unwrap_or_else(missing_tree)
     };
 
     (0..num_dims)
@@ -514,69 +519,57 @@ fn build_cell_shape(
     let mut cofaces_in: Vec<Vec<super::intset::IntSet>> = Vec::new();
     let mut cofaces_out: Vec<Vec<super::intset::IntSet>> = Vec::new();
 
-    for dim in 0..=(d + 1) {
-        if dim <= d {
-            let n = sizes_bd.get(dim).copied().unwrap_or(0);
-            faces_in.push(
-                (0..n)
-                    .map(|pos| bd_uv.faces_of(OgSign::Input, dim, pos))
-                    .collect(),
-            );
-            faces_out.push(
-                (0..n)
-                    .map(|pos| bd_uv.faces_of(OgSign::Output, dim, pos))
-                    .collect(),
-            );
+    // Dims 0..d-1: interior boundary cells — copy faces and cofaces directly from bd_uv.
+    for dim in 0..d {
+        let n = sizes_bd.get(dim).copied().unwrap_or(0);
+        faces_in.push((0..n).map(|pos| bd_uv.faces_of(OgSign::Input, dim, pos)).collect());
+        faces_out.push((0..n).map(|pos| bd_uv.faces_of(OgSign::Output, dim, pos)).collect());
+        cofaces_in.push((0..n).map(|pos| bd_uv.cofaces_of(OgSign::Input, dim, pos)).collect());
+        cofaces_out.push((0..n).map(|pos| bd_uv.cofaces_of(OgSign::Output, dim, pos)).collect());
+    }
 
-            if dim < d {
-                cofaces_in.push(
-                    (0..n)
-                        .map(|pos| bd_uv.cofaces_of(OgSign::Input, dim, pos))
-                        .collect(),
-                );
-                cofaces_out.push(
-                    (0..n)
-                        .map(|pos| bd_uv.cofaces_of(OgSign::Output, dim, pos))
-                        .collect(),
-                );
-            } else {
-                let inl_inv_d = &inl.inv[d];
-                let inr_inv_d = &inr.inv[d];
+    // Dim d: top boundary cells — copy faces from bd_uv; cofaces point to the new
+    // top cell (index 0 at dim d+1) iff the cell appears in the source (inl) or
+    // target (inr) embedding respectively.
+    {
+        let n = sizes_bd.get(d).copied().unwrap_or(0);
+        faces_in.push((0..n).map(|pos| bd_uv.faces_of(OgSign::Input, d, pos)).collect());
+        faces_out.push((0..n).map(|pos| bd_uv.faces_of(OgSign::Output, d, pos)).collect());
+        let inl_inv_d = &inl.inv[d];
+        let inr_inv_d = &inr.inv[d];
+        cofaces_in.push(
+            (0..n)
+                .map(|idx| {
+                    if inl_inv_d.get(idx).copied().unwrap_or(NO_PREIMAGE) != NO_PREIMAGE {
+                        vec![0usize]
+                    } else {
+                        vec![]
+                    }
+                })
+                .collect(),
+        );
+        cofaces_out.push(
+            (0..n)
+                .map(|idx| {
+                    if inr_inv_d.get(idx).copied().unwrap_or(NO_PREIMAGE) != NO_PREIMAGE {
+                        vec![0usize]
+                    } else {
+                        vec![]
+                    }
+                })
+                .collect(),
+        );
+    }
 
-                cofaces_in.push(
-                    (0..n)
-                        .map(|idx| {
-                            if inl_inv_d.get(idx).copied().unwrap_or(NO_PREIMAGE) != NO_PREIMAGE {
-                                vec![0usize]
-                            } else {
-                                vec![]
-                            }
-                        })
-                        .collect(),
-                );
-
-                cofaces_out.push(
-                    (0..n)
-                        .map(|idx| {
-                            if inr_inv_d.get(idx).copied().unwrap_or(NO_PREIMAGE) != NO_PREIMAGE {
-                                vec![0usize]
-                            } else {
-                                vec![]
-                            }
-                        })
-                        .collect(),
-                );
-            }
-        } else {
-            let inl_map_d = &inl.map[d];
-            let inr_map_d = &inr.map[d];
-            let faces_source = super::intset::collect_sorted(inl_map_d.iter().copied());
-            let faces_target = super::intset::collect_sorted(inr_map_d.iter().copied());
-            faces_in.push(vec![faces_source]);
-            faces_out.push(vec![faces_target]);
-            cofaces_in.push(vec![vec![]]);
-            cofaces_out.push(vec![vec![]]);
-        }
+    // Dim d+1: the single new top cell — its source face is the inl image and
+    // its target face is the inr image; it has no cofaces.
+    {
+        let faces_source = super::intset::collect_sorted(inl.map[d].iter().copied());
+        let faces_target = super::intset::collect_sorted(inr.map[d].iter().copied());
+        faces_in.push(vec![faces_source]);
+        faces_out.push(vec![faces_target]);
+        cofaces_in.push(vec![vec![]]);
+        cofaces_out.push(vec![vec![]]);
     }
 
     Arc::new(Ogposet::make(

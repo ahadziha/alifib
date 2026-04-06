@@ -100,45 +100,37 @@ impl PMap {
             return Err(Error::new("image is not round"));
         }
 
-        if dim == 0 {
-            match &cell_data {
-                CellData::Zero => {
-                    let mut new_m = f;
-                    new_m.table.insert(tag.clone(), Entry { cell_data, image });
-                    new_m.by_dim.entry(dim).or_default().push(tag);
-                    Ok(new_m)
-                }
-                CellData::Boundary { .. } => panic!("0-cell cannot have boundaries"),
+        let cellular = match (dim, &cell_data) {
+            (0, CellData::Zero) => f.cellular,
+            (0, CellData::Boundary { .. }) => {
+                return Err(Error::new("0-cell cannot have boundary data"))
             }
-        } else {
-            match &cell_data {
-                CellData::Zero => panic!("n-cell must have boundaries"),
-                CellData::Boundary { boundary_in, boundary_out } => {
-                    let mapped_in = PMap::apply(&f, boundary_in)?;
-                    let mapped_out = PMap::apply(&f, boundary_out)?;
-
-                    let boundary_idx = dim - 1;
-                    let expected_input = Diagram::boundary_normal(Sign::Source, boundary_idx, &image)?;
-                    let mapped_input = Diagram::normal(&mapped_in);
-                    if !Diagram::equal(&mapped_input, &expected_input) {
-                        return Err(Error::new("input boundaries do not match"));
-                    }
-
-                    let expected_output = Diagram::boundary_normal(Sign::Target, boundary_idx, &image)?;
-                    let mapped_output = Diagram::normal(&mapped_out);
-                    if !Diagram::equal(&mapped_output, &expected_output) {
-                        return Err(Error::new("output boundaries do not match"));
-                    }
-
-                    let cellular = f.cellular && image.is_cell();
-                    let mut new_m = f;
-                    new_m.table.insert(tag.clone(), Entry { cell_data, image });
-                    new_m.by_dim.entry(dim).or_default().push(tag);
-                    new_m.cellular = cellular;
-                    Ok(new_m)
-                }
+            (_, CellData::Zero) => {
+                return Err(Error::new("higher-dimensional cell has no boundary data"))
             }
-        }
+            (_, CellData::Boundary { boundary_in, boundary_out }) => {
+                let boundary_idx = dim - 1;
+                let mapped_in = PMap::apply(&f, boundary_in)?;
+                let mapped_out = PMap::apply(&f, boundary_out)?;
+
+                let expected_in = Diagram::boundary_normal(Sign::Source, boundary_idx, &image)?;
+                if !Diagram::equal(&Diagram::normal(&mapped_in), &expected_in) {
+                    return Err(Error::new("input boundaries do not match"));
+                }
+                let expected_out = Diagram::boundary_normal(Sign::Target, boundary_idx, &image)?;
+                if !Diagram::equal(&Diagram::normal(&mapped_out), &expected_out) {
+                    return Err(Error::new("output boundaries do not match"));
+                }
+
+                f.cellular && image.is_cell()
+            }
+        };
+
+        let mut new_m = f;
+        new_m.cellular = cellular;
+        new_m.table.insert(tag.clone(), Entry { cell_data, image });
+        new_m.by_dim.entry(dim).or_default().push(tag);
+        Ok(new_m)
     }
 
     /// Apply partial map f to a diagram by following its paste tree structure.
@@ -155,22 +147,11 @@ impl PMap {
         }
 
         if f.cellular {
-            // Fast path: remap labels in-place
+            // Fast path: since every image is a single cell, we can remap labels in-place
+            // without reconstructing the diagram by pasting.
             let mut cache: HashMap<Tag, Tag> = HashMap::new();
-            let top_label = |tag: &Tag, cache: &mut HashMap<Tag, Tag>| -> Tag {
-                if let Some(mapped) = cache.get(tag) {
-                    return mapped.clone();
-                }
-                let cell_diag = f.table.get(tag).map(|e| &e.image)
-                    .expect("tag presence guaranteed by find_undefined()");
-                let d = cell_diag.top_dim();
-                let mapped = cell_diag.labels[d][0].clone();
-                cache.insert(tag.clone(), mapped.clone());
-                mapped
-            };
-
             let new_labels: Vec<Vec<Tag>> = diagram.labels.iter().map(|level| {
-                level.iter().map(|tag| top_label(tag, &mut cache)).collect()
+                level.iter().map(|tag| remap_tag(tag, &f.table, &mut cache)).collect()
             }).collect();
 
             let new_trees: Vec<BoundaryHistory> = diagram.paste_history.iter().map(|h| {
@@ -194,11 +175,8 @@ impl PMap {
 
         for (dim, tags) in f.domain_by_dim() {
             for tag in tags {
-                let f_entry = match f.table.get(&tag) { Some(e) => e, None => continue };
-                let image_gf = match PMap::apply(g, &f_entry.image) {
-                    Ok(d) => d,
-                    Err(_) => continue,
-                };
+                let Some(f_entry) = f.table.get(&tag) else { continue };
+                let Ok(image_gf) = PMap::apply(g, &f_entry.image) else { continue };
                 cellular = cellular && image_gf.is_cell();
                 table.insert(tag.clone(), Entry {
                     cell_data: f_entry.cell_data.clone(),
@@ -212,6 +190,20 @@ impl PMap {
     }
 }
 
+
+/// Look up the top label of a tag's image in the map, using `cache` to avoid
+/// repeated lookups. Panics if `tag` is not in `table` — callers must ensure
+/// all tags are in the domain (verified by `find_undefined` before this runs).
+fn remap_tag(tag: &Tag, table: &HashMap<Tag, Entry>, cache: &mut HashMap<Tag, Tag>) -> Tag {
+    if let Some(hit) = cache.get(tag) {
+        return hit.clone();
+    }
+    let entry = table.get(tag).expect("tag in domain (verified by find_undefined)");
+    let d = entry.image.top_dim();
+    let mapped = entry.image.labels[d][0].clone();
+    cache.insert(tag.clone(), mapped.clone());
+    mapped
+}
 
 fn find_undefined<'a>(f: &PMap, tree: &'a PasteTree) -> Option<&'a Tag> {
     match tree {
