@@ -1,3 +1,9 @@
+//! Pushout of embeddings between oriented graded posets.
+//!
+//! The central operation is [`pushout`], which computes the categorical pushout
+//! of two [`Embedding`]s with a common domain.  The result is a new ogposet
+//! (the colimit) together with two canonical injections into it.
+
 use std::sync::Arc;
 use super::embeddings::{Embedding, NO_PREIMAGE};
 use super::intset::{self, IntSet};

@@ -1,10 +1,20 @@
+//! Diagrams: labelled oriented graded posets with paste structure.
+//!
+//! A [`Diagram`] pairs an [`Ogposet`] shape with a label at each cell and a
+//! [`PasteTree`] history recording how it was assembled from generators.  The
+//! two central operations are [`Diagram::cell`] (introduce a generating cell)
+//! and [`Diagram::paste`] (compose two diagrams along matching boundaries).
+
 use super::embeddings::{Embedding, NO_PREIMAGE};
 use super::pushout::Pushout;
 use super::ogposet::{self, Ogposet, Sign as OgSign};
 use crate::aux::{Error, Tag};
 use std::sync::Arc;
 
-/// Sign in the diagram sense (no `Both` variant)
+/// Source/target polarity for diagram boundaries.
+///
+/// Unlike [`OgSign`], which also has a `Both` variant used by traversal
+/// queries, diagram operations always act on exactly one boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Sign {
     Source,
@@ -19,9 +29,6 @@ impl Sign {
         }
     }
 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Dim(usize);
 
 /// Records how a diagram was built up from paste operations.
 ///
@@ -193,24 +200,23 @@ impl Diagram {
         self.labels.iter().flat_map(|row| row.iter())
     }
 
+    /// The ogposet dimension of the underlying shape; negative means the empty diagram.
     pub fn dim(&self) -> isize {
         self.shape.dim
     }
 
+    /// True if the diagram's source and target boundaries are equal (prerequisite for pasting).
     pub fn is_round(&self) -> bool {
         self.shape.is_round()
     }
 
+    /// True if the diagram's underlying shape is in canonical (normal) form.
     pub fn is_normal(&self) -> bool {
         self.shape.is_normal()
     }
 
-    fn history(&self, dim: Dim) -> Option<&BoundaryHistory> {
-        self.paste_history.get(dim.0)
-    }
-
     pub(super) fn tree(&self, sign: Sign, dim: usize) -> Option<&PasteTree> {
-        self.history(Dim(dim)).map(|h| h.get(sign))
+        self.paste_history.get(dim).map(|h| h.get(sign))
     }
 
     /// Returns the top dimension as a `usize`, clamped to 0 for empty diagrams.
@@ -227,16 +233,20 @@ impl Diagram {
         matches!(self.tree(Sign::Source, d), Some(PasteTree::Leaf(_)))
     }
 
+    /// True if any cell in the diagram carries a local (non-global) tag.
     pub fn has_local_labels(&self) -> bool {
         self.labels
             .iter()
             .any(|level| level.iter().any(|t| t.is_local()))
     }
 
+    /// Structural equality: same shape and identical labels at every cell position.
     pub fn equal(lhs: &Diagram, rhs: &Diagram) -> bool {
         Ogposet::equal(&lhs.shape, &rhs.shape) && labels_equal(&lhs.labels, &rhs.labels)
     }
 
+    /// Equality up to shape isomorphism: same labels after relabelling by the canonical
+    /// shape isomorphism (falls back to [`Diagram::equal`] first for efficiency).
     pub fn isomorphic(lhs: &Diagram, rhs: &Diagram) -> bool {
         if Diagram::equal(lhs, rhs) {
             return true;
@@ -284,6 +294,10 @@ impl Diagram {
 // ---- Internal constructors and helpers ----
 
 impl Diagram {
+    /// Construct a diagram directly from precomputed components.
+    ///
+    /// Panics in debug builds if the components violate the well-formedness
+    /// invariants (label counts must match shape sizes at every dimension).
     pub(super) fn make(
         shape: Arc<Ogposet>,
         labels: Vec<Vec<Tag>>,
@@ -293,6 +307,8 @@ impl Diagram {
         Self { shape, labels, paste_history }
     }
 
+    /// Return `true` if `shape`, `labels`, and `paste_history` satisfy all
+    /// representation invariants (used only in `debug_assert`).
     fn well_formed(
         shape: &Ogposet,
         labels: &[Vec<Tag>],
@@ -376,6 +392,7 @@ impl Diagram {
         })
     }
 
+    /// Construct a 0-dimensional cell diagram (a point labelled `tag`).
     fn cell0(tag: Tag) -> Result<Diagram, Error> {
         let shape = Arc::new(Ogposet::point());
         let labels = vec![vec![tag.clone()]];
@@ -386,6 +403,7 @@ impl Diagram {
         Ok(Diagram::make(shape, labels, paste_history))
     }
 
+    /// Construct an n-dimensional cell with the given tag and parallel boundary diagrams.
     fn cell_n(tag: Tag, source: &Diagram, target: &Diagram) -> Result<Diagram, Error> {
         let m = Diagram::parallelism(source, target)?;
 
@@ -431,6 +449,8 @@ fn labels_equal(a: &[Vec<Tag>], b: &[Vec<Tag>]) -> bool {
     a == b
 }
 
+/// Pull back the labels of `d` along `emb`: for each cell `i` in `emb.dom`,
+/// the result carries the label of the image `emb.map[dim][i]` in `d`.
 fn pullback_labels(d: &Diagram, emb: &Embedding) -> Vec<Vec<Tag>> {
     emb.map
         .iter()
@@ -444,6 +464,9 @@ fn pullback_labels(d: &Diagram, emb: &Embedding) -> Vec<Vec<Tag>> {
         .collect()
 }
 
+/// Merge the labels of `left` and `right` into a flat array indexed by the
+/// pushout's cell positions, using `inl_map` and `inr_map` to route each source
+/// cell to its position in the pushout.
 fn merge_pushout_labels(
     sizes: &[usize],
     inl_map: &[Vec<usize>],
@@ -477,8 +500,10 @@ fn merge_pushout_labels(
         .collect()
 }
 
-/// Histories for a boundary: histories[k'] for k'<k keep original,
-/// histories[k][both] = histories[k][sign].
+/// Compute the paste history for the `(sign, k)`-boundary of a diagram.
+///
+/// Dimensions below `k` are copied unchanged; at dimension `k` both the source
+/// and target history are set to `histories[k][sign]` (collapsing the boundary).
 fn boundary_history(histories: &[BoundaryHistory], sign: Sign, k: usize) -> Vec<BoundaryHistory> {
     (0..=k)
         .map(|k2| {
@@ -495,7 +520,8 @@ fn boundary_history(histories: &[BoundaryHistory], sign: Sign, k: usize) -> Vec<
         .collect()
 }
 
-/// Histories for a paste: result has `num_dims` dimensions.
+/// Compute the paste history when pasting `u` and `v` at dimension `n`.
+/// The result has `num_dims` dimensions; each dimension delegates to [`paste_tree`].
 fn paste_histories(
     u_hist: &[BoundaryHistory],
     v_hist: &[BoundaryHistory],
@@ -559,6 +585,12 @@ fn cofaces_to_top(n: usize, inv: &[usize]) -> Vec<super::intset::IntSet> {
         .collect()
 }
 
+/// Build the ogposet shape for an n-dimensional generating cell.
+///
+/// Given the pushout `bd_uv` of the source and target boundaries (with
+/// injections `inl` from source and `inr` from target), constructs a new
+/// ogposet with one extra cell at dimension `d + 1` whose source faces are
+/// the `inl` image and whose target faces are the `inr` image.
 fn build_cell_shape(
     d: usize,
     bd_uv: &Arc<Ogposet>,
@@ -612,6 +644,12 @@ fn build_cell_shape(
     ))
 }
 
+/// Build the paste history for a new `d`-dimensional generating cell with
+/// the given source and target boundary histories.
+///
+/// - Dimensions below `d`: carry through the source boundary's history.
+/// - Dimension `d`: source from the source boundary, target from the target boundary.
+/// - Dimension `d + 1`: both halves are a `Leaf(tag)` (the cell itself).
 fn build_cell_paste_history(
     d: usize,
     tag: &Tag,
