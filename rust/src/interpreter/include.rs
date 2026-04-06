@@ -44,16 +44,6 @@ fn insert_generators_by_tag(scope: &mut Complex, generators: impl IntoIterator<I
     }
 }
 
-fn resolve_attach_type_id(
-    domain: &MapDomain,
-    context: &Context,
-) -> Result<GlobalId, InterpResult> {
-    match domain {
-        MapDomain::Type(id) => Ok(*id),
-        MapDomain::Module(_) => Err(error_result(context, unknown_span(), "Unexpected module domain in attach")),
-    }
-}
-
 fn mapped_cell_data(map: &PMap, source_cell_data: &CellData) -> Option<CellData> {
     match source_cell_data {
         CellData::Zero => Some(CellData::Zero),
@@ -97,14 +87,14 @@ fn extend_scope_with_attached_generators(
                 Arc::make_mut(&mut state).set_cell(image_id, generator_dim, image_cell_data.clone());
                 Tag::Global(image_id)
             }
-            Mode::Local => Tag::Local(qualified_name.clone()),
+            Mode::Local => {
+                scope.add_local_cell(qualified_name.clone(), generator_dim, image_cell_data.clone());
+                Tag::Local(qualified_name.clone())
+            }
         };
 
         let Ok(image_classifier) = Diagram::cell(image_tag, &image_cell_data) else { continue; };
 
-        if mode == Mode::Local {
-            scope.add_local_cell(qualified_name.clone(), generator_dim, image_cell_data.clone());
-        }
         scope.add_generator(qualified_name, image_classifier.clone());
         map.insert_raw(Tag::Global(global_id), generator_dim, source_cell_data, image_classifier);
     }
@@ -220,9 +210,9 @@ pub fn interpret_attach_instr(
         return (None, InterpResult::combine(attach_result, r));
     }
 
-    let attachment_id = match resolve_attach_type_id(&domain, &attach_result.context) {
-        Ok(attachment_id) => attachment_id,
-        Err(result) => return (None, result),
+    let attachment_id = match domain {
+        MapDomain::Type(id) => id,
+        MapDomain::Module(_) => return (None, error_result(&attach_result.context, unknown_span(), "Unexpected module domain in attach")),
     };
 
     let (attachment_opt, attachment_result) = resolve_type_complex(

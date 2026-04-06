@@ -244,17 +244,14 @@ pub fn make_error(span: Span, message: impl Into<String>) -> Error {
     }
 }
 
-pub fn fail<T>(context: &Context, span: Span, message: impl Into<String>) -> Step<T> {
-    let mut result = InterpResult::ok(context.clone());
-    result.add_error(make_error(span, message));
-    (None, result)
-}
-
-/// Like `fail`, but for functions that return `InterpResult` directly (not `Step<T>`).
 pub fn error_result(context: &Context, span: Span, message: impl Into<String>) -> InterpResult {
     let mut result = InterpResult::ok(context.clone());
     result.add_error(make_error(span, message));
     result
+}
+
+pub fn fail<T>(context: &Context, span: Span, message: impl Into<String>) -> Step<T> {
+    (None, error_result(context, span, message))
 }
 
 pub fn ensure_name_free(
@@ -265,12 +262,7 @@ pub fn ensure_name_free(
     kind: NameKind,
 ) -> Option<InterpResult> {
     if scope.name_in_use(name) {
-        let mut result = InterpResult::ok(context.clone());
-        result.add_error(make_error(
-            span,
-            format!("{} name already in use: {}", kind.as_str(), name),
-        ));
-        Some(result)
+        Some(error_result(context, span, format!("{} name already in use: {}", kind.as_str(), name)))
     } else {
         None
     }

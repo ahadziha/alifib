@@ -99,10 +99,10 @@ pub fn interpret_pmap(
     domain: &Complex,
     pmap: &Spanned<ast::PMap>,
 ) -> Step<EvalMap> {
-    interpret_pmap_node(context, scope, domain, &pmap.inner, pmap.span)
+    eval_pmap(context, scope, domain, &pmap.inner, pmap.span)
 }
 
-fn interpret_pmap_node(
+fn eval_pmap(
     context: &Context,
     scope: &Complex,
     domain: &Complex,
@@ -110,9 +110,9 @@ fn interpret_pmap_node(
     span: Span,
 ) -> Step<EvalMap> {
     match pmap {
-        ast::PMap::Basic(basic) => interpret_pmap_basic(context, scope, domain, basic, span),
+        ast::PMap::Basic(basic) => eval_pmap_basic(context, scope, domain, basic, span),
         ast::PMap::Dot { base, rest } => {
-            let (base_opt, base_result) = interpret_pmap_basic(context, scope, domain, base, span);
+            let (base_opt, base_result) = eval_pmap_basic(context, scope, domain, base, span);
             let Some(base_map) = base_opt else { return (None, base_result); };
             let (rest_opt, rest_result) =
                 interpret_pmap(&base_result.context, &*base_map.domain, domain, rest);
@@ -124,7 +124,7 @@ fn interpret_pmap_node(
     }
 }
 
-fn interpret_pmap_basic(
+fn eval_pmap_basic(
     context: &Context,
     scope: &Complex,
     domain: &Complex,
@@ -158,7 +158,7 @@ pub fn interpret_pmap_def(
     pmap_def: &Spanned<PMapDef>,
 ) -> Step<EvalMap> {
     match &pmap_def.inner {
-        PMapDef::PMap(pmap) => interpret_pmap_node(context, scope, domain, pmap, pmap_def.span),
+        PMapDef::PMap(pmap) => eval_pmap(context, scope, domain, pmap, pmap_def.span),
         PMapDef::Ext(ext) => interpret_pmap_ext(context, scope, domain, ext),
     }
 }
@@ -380,7 +380,7 @@ fn boundary_dependencies(
     }
 }
 
-fn source_boundary_for_sign(
+fn boundary_of_sign(
     cell_data: &CellData,
     sign: DiagramSign,
 ) -> Option<Arc<Diagram>> {
@@ -454,7 +454,7 @@ fn extend_missing_boundary_dependencies(
             aux::Error::new(format!("Cannot find cell data for boundary cell {}", focus_tag))
         })?;
         let target_boundary = Diagram::boundary(sign, source_dim - 1, target_diagram)?;
-        let Some(source_boundary) = source_boundary_for_sign(source_cell_data, sign) else {
+        let Some(source_boundary) = boundary_of_sign(source_cell_data, sign) else {
             continue;
         };
 

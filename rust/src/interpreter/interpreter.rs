@@ -317,11 +317,10 @@ fn interpret_local_block(
     complex: &Spanned<ast::Complex>,
     body: &[Spanned<LocalInst>],
 ) -> InterpResult {
-    let (scope_opt, mut result) = interpret_complex(&context, Mode::Global, complex);
+    let (scope_opt, result) = interpret_complex(&context, Mode::Global, complex);
     let Some(scope) = scope_opt else { return result; };
     let (_, local_result) = interpret_local_body(&result.context, scope, body);
-    result = InterpResult::combine(result, local_result);
-    result
+    InterpResult::combine(result, local_result)
 }
 
 fn interpret_local_body(
