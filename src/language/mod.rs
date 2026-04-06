@@ -62,6 +62,13 @@ pub fn report_errors(errors: &[Error], source: &str, filename: &str) {
     error::report_errors(errors, source, filename);
 }
 
+/// Collect the names of all modules referenced by `IncludeModule` instructions
+/// in `@Type` blocks.
+///
+/// Only `@Type`-level includes are collected here because those are the ones
+/// that require loading an external file before interpretation begins.
+/// `@Local`-block `include` statements refer to types already in scope and are
+/// resolved at interpretation time — they do not name external files.
 pub(crate) fn collect_includes(program: &Program) -> Vec<String> {
     program.blocks.iter()
         .filter_map(|b| match &b.inner { ast::Block::TypeBlock(body) => Some(body), _ => None })

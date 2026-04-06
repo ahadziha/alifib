@@ -22,7 +22,10 @@ impl std::fmt::Display for GlobalId {
 /// A user-visible string name, scoped within a single type or module complex.
 pub type LocalId = String;
 
-/// A module identifier (typically the canonical file path of the source file).
+/// A module identifier: always the canonical absolute file path of the source
+/// file, as produced by [`std::fs::canonicalize`].  Using canonical paths as
+/// keys ensures that two different spellings of the same file are never treated
+/// as separate modules.
 pub type ModuleId = String;
 
 /// A tag: the identity of a cell, either as a local name or a global ID.

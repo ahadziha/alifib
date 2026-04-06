@@ -27,6 +27,13 @@ impl FileLoader {
 }
 
 impl FileLoader {
+    /// Build a child loader whose search paths prepend `file_path`'s parent directory.
+    ///
+    /// Search path precedence: a module's own directory is checked first, then the
+    /// parent's search paths.  Two modules in different directories that both
+    /// include a module by the same name may therefore resolve to different files —
+    /// the closest directory wins.  Duplicate paths are removed by
+    /// `normalize_search_paths` so re-entering the same directory is a no-op.
     fn with_parent_dir(&self, file_path: &str) -> FileLoader {
         let parent = std::path::Path::new(file_path)
             .parent()
@@ -99,7 +106,17 @@ impl Loader {
     }
 
     pub fn load(&self, path: &str) -> Result<LoadedFile, LoadFileError> {
-        let canonical_path = super::path::canonicalize(path);
+        // Strictly canonicalize up front so the path used as a module ID is
+        // always the true canonical path, regardless of how the caller spelled it.
+        let canonical_path = super::path::canonicalize_existing(path)
+            .map_err(|e| LoadFileError::Load {
+                path: path.to_owned(),
+                cause: if e.kind() == std::io::ErrorKind::NotFound {
+                    LoadError::NotFound
+                } else {
+                    LoadError::IoError(e.to_string())
+                },
+            })?;
         let source = (self.inner.read_file)(&canonical_path)
             .map_err(|cause| LoadFileError::Load { path: path.to_owned(), cause })?;
         let file_loader = self.inner.with_parent_dir(&canonical_path);
@@ -208,12 +225,19 @@ fn find_file(loader: &FileLoader, module_name: &str) -> Result<(String, String),
     let filename = format!("{}.ali", module_name);
     for dir in &loader.search_paths {
         let candidate = format!("{}/{}", dir, filename);
-        let canonical = path::canonicalize(&candidate);
-        match (loader.read_file)(&canonical) {
-            Ok(contents) => return Ok((canonical, contents)),
+        match (loader.read_file)(&candidate) {
+            Ok(contents) => {
+                // File confirmed readable; strict canonicalization must succeed.
+                let canonical = path::canonicalize_existing(&candidate)
+                    .map_err(|e| ResolveError::IoError {
+                        path: candidate,
+                        reason: e.to_string(),
+                    })?;
+                return Ok((canonical, contents));
+            }
             Err(LoadError::NotFound) => continue,
             Err(LoadError::IoError(reason)) => {
-                return Err(ResolveError::IoError { path: canonical, reason });
+                return Err(ResolveError::IoError { path: candidate, reason });
             }
         }
     }
@@ -226,9 +250,13 @@ fn resolve_all_modules(
     root_program: &Program,
 ) -> Result<ModuleStore, ResolveError> {
     let mut store = ModuleStore::new();
-    let mut resolving = HashSet::new();
-    resolving.insert(root_path.to_owned());
-    resolve_recursive(loader, root_path, root_program, &mut store, &mut resolving)?;
+    // `visited` tracks all paths seen so far in the DFS, including the root
+    // (which is never inserted into the store).  A path present in `visited`
+    // but absent from the store is currently on the recursion stack — a second
+    // encounter is a cycle.
+    let mut visited: HashSet<String> = HashSet::new();
+    visited.insert(root_path.to_owned());
+    resolve_recursive(loader, root_path, root_program, &mut store, &mut visited)?;
     Ok(store)
 }
 
@@ -237,19 +265,19 @@ fn resolve_recursive(
     parent_path: &str,
     program: &Program,
     store: &mut ModuleStore,
-    resolving: &mut HashSet<String>,
+    visited: &mut HashSet<String>,
 ) -> Result<(), ResolveError> {
     let includes = language::collect_includes(program);
     for module_name in includes {
         let (canonical_path, contents) = find_file(loader, &module_name)?;
 
-        store.register_resolution(parent_path, module_name, canonical_path.clone());
-
         if store.has_module(&canonical_path) {
+            // Already fully resolved; just record the resolution for this parent.
+            store.register_resolution(parent_path, module_name, canonical_path);
             continue;
         }
 
-        if !resolving.insert(canonical_path.clone()) {
+        if !visited.insert(canonical_path.clone()) {
             return Err(ResolveError::Cycle { path: canonical_path });
         }
 
@@ -260,9 +288,12 @@ fn resolve_recursive(
         })?;
 
         let child_loader = loader.with_parent_dir(&canonical_path);
-        resolve_recursive(&child_loader, &canonical_path, &program, store, resolving)?;
+        resolve_recursive(&child_loader, &canonical_path, &program, store, &mut *visited)?;
 
-        store.insert_module(canonical_path, program, contents);
+        // Register resolution only after the module and all its deps are stored,
+        // so a stale mapping can never point to a missing program.
+        store.insert_module(canonical_path.clone(), program, contents);
+        store.register_resolution(parent_path, module_name, canonical_path);
     }
     Ok(())
 }
