@@ -10,32 +10,20 @@ pub enum Error {
 
 pub fn report_errors(errors: &[Error], source: &str, filename: &str) {
     for error in errors {
-        match error {
-            Error::Syntax { message, span } => {
-                Report::build(ReportKind::Error, (filename, span.start..span.end))
-                    .with_message("Syntax error")
-                    .with_label(
-                        Label::new((filename, span.start..span.end))
-                            .with_message(message)
-                            .with_color(Color::Red),
-                    )
-                    .finish()
-                    .eprint((filename, Source::from(source)))
-                    .unwrap_or_else(|e| eprintln!("could not write diagnostic: {}", e));
-            }
-            Error::Runtime { message, span } => {
-                Report::build(ReportKind::Error, (filename, span.start..span.end))
-                    .with_message("Runtime error")
-                    .with_label(
-                        Label::new((filename, span.start..span.end))
-                            .with_message(message)
-                            .with_color(Color::Red),
-                    )
-                    .finish()
-                    .eprint((filename, Source::from(source)))
-                    .unwrap_or_else(|e| eprintln!("could not write diagnostic: {}", e));
-            }
-        }
+        let (label, message, span) = match error {
+            Error::Syntax { message, span } => ("Syntax error", message.as_str(), span),
+            Error::Runtime { message, span } => ("Runtime error", message.as_str(), span),
+        };
+        Report::build(ReportKind::Error, (filename, span.start..span.end))
+            .with_message(label)
+            .with_label(
+                Label::new((filename, span.start..span.end))
+                    .with_message(message)
+                    .with_color(Color::Red),
+            )
+            .finish()
+            .eprint((filename, Source::from(source)))
+            .unwrap_or_else(|e| eprintln!("could not write diagnostic: {}", e));
     }
 }
 

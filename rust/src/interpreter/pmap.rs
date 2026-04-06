@@ -351,33 +351,21 @@ fn interpret_assign(
     }
 }
 
-fn boundary_dependencies(
-    cell_data: &CellData,
-    map: &PMap,
-) -> Vec<(Tag, DiagramSign)> {
-    match cell_data {
-        CellData::Zero => vec![],
-        CellData::Boundary {
-            boundary_in,
-            boundary_out,
-        } => {
-            let mut missing = vec![];
-            for (boundary, sign) in &[
-                (boundary_in, DiagramSign::Source),
-                (boundary_out, DiagramSign::Target),
-            ] {
-                let boundary_dim = boundary.top_dim();
-                if let Some(row) = boundary.labels.get(boundary_dim) {
-                    for tag in row {
-                        if !map.is_defined_at(tag) {
-                            missing.push((tag.clone(), *sign));
-                        }
-                    }
-                }
-            }
-            missing
-        }
-    }
+fn boundary_dependencies(cell_data: &CellData, map: &PMap) -> Vec<(Tag, DiagramSign)> {
+    let CellData::Boundary { boundary_in, boundary_out } = cell_data else {
+        return vec![];
+    };
+    [(boundary_in.as_ref(), DiagramSign::Source), (boundary_out.as_ref(), DiagramSign::Target)]
+        .into_iter()
+        .flat_map(|(boundary, sign)| {
+            let d = boundary.top_dim();
+            boundary.labels.get(d).into_iter().flat_map(move |row| {
+                row.iter()
+                    .filter(|tag| !map.is_defined_at(tag))
+                    .map(move |tag| (tag.clone(), sign))
+            })
+        })
+        .collect()
 }
 
 fn boundary_of_sign(
@@ -550,17 +538,12 @@ fn check_map_totality(
         return;
     }
 
-    for generator_name in domain.generator_names() {
-        if let Some(generator_entry) = domain.find_generator(&generator_name) {
-            if !map.is_defined_at(&generator_entry.tag) {
-                result.add_error(make_error(
-                    name_span,
-                    format!(
-                        "Total map `{}` is not defined on generator `{}`",
-                        map_name, generator_name
-                    ),
-                ));
-            }
+    for (generator_name, generator_entry) in domain.generators_iter() {
+        if !map.is_defined_at(&generator_entry.tag) {
+            result.add_error(make_error(
+                name_span,
+                format!("Total map `{}` is not defined on generator `{}`", map_name, generator_name),
+            ));
         }
     }
 }

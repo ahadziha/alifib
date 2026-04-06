@@ -197,49 +197,27 @@ pub fn interpret_dcomponent(
     span: Span,
 ) -> (Option<Component>, InterpResult) {
     match d_comp {
-        DComponent::PMap(basic) => match basic {
-            PMapBasic::Name(name) => {
-                if let Some(diagram) = scope.find_diagram(name) {
-                    return (
-                        Some(Component::Value(Term::Diag(diagram.clone()))),
-                        InterpResult::ok(context.clone()),
-                    );
-                }
-                if let Some(entry) = scope.find_map(name) {
-                    let (domain_opt, result) =
-                        resolve_map_domain_complex(context, &entry.domain, span);
-                    let Some(domain) = domain_opt else {
-                        return (None, result);
-                    };
-                    return (
-                        Some(Component::Value(Term::Map(EvalMap {
-                            map: entry.map.clone(),
-                            domain,
-                        }))),
-                        InterpResult::ok(context.clone()),
-                    );
-                }
-                fail(context, span, format!("Name `{}` not found", name))
+        DComponent::PMap(PMapBasic::Name(name)) => {
+            if let Some(diagram) = scope.find_diagram(name) {
+                return (Some(Component::Value(Term::Diag(diagram.clone()))), InterpResult::ok(context.clone()));
             }
-            PMapBasic::AnonMap { def, target } => {
-                let (eval_map_opt, result) =
-                    super::pmap::interpret_anon_map_component(context, scope, target, def);
-                (eval_map_opt.map(|em| Component::Value(Term::Map(em))), result)
+            if let Some(entry) = scope.find_map(name) {
+                let (domain_opt, result) = resolve_map_domain_complex(context, &entry.domain, span);
+                let Some(domain) = domain_opt else { return (None, result); };
+                return (Some(Component::Value(Term::Map(EvalMap { map: entry.map.clone(), domain }))), InterpResult::ok(context.clone()));
             }
-            PMapBasic::Paren(inner_pmap) => {
-                let (eval_map_opt, result) =
-                    super::pmap::interpret_pmap(context, scope, scope, inner_pmap);
-                (eval_map_opt.map(|em| Component::Value(Term::Map(em))), result)
-            }
-        },
-        DComponent::In => (
-            Some(Component::Bd(DiagramSign::Source)),
-            InterpResult::ok(context.clone()),
-        ),
-        DComponent::Out => (
-            Some(Component::Bd(DiagramSign::Target)),
-            InterpResult::ok(context.clone()),
-        ),
+            fail(context, span, format!("Name `{}` not found", name))
+        }
+        DComponent::PMap(PMapBasic::AnonMap { def, target }) => {
+            let (eval_map_opt, result) = super::pmap::interpret_anon_map_component(context, scope, target, def);
+            (eval_map_opt.map(|em| Component::Value(Term::Map(em))), result)
+        }
+        DComponent::PMap(PMapBasic::Paren(inner_pmap)) => {
+            let (eval_map_opt, result) = super::pmap::interpret_pmap(context, scope, scope, inner_pmap);
+            (eval_map_opt.map(|em| Component::Value(Term::Map(em))), result)
+        }
+        DComponent::In => (Some(Component::Bd(DiagramSign::Source)), InterpResult::ok(context.clone())),
+        DComponent::Out => (Some(Component::Bd(DiagramSign::Target)), InterpResult::ok(context.clone())),
         DComponent::Paren(inner_diag) => {
             let (d_opt, result) = interpret_diagram(context, scope, inner_diag);
             (d_opt.map(|d| Component::Value(Term::Diag(d))), result)
