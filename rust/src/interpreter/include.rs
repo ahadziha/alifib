@@ -5,13 +5,13 @@ use crate::aux::{GlobalId, LocalId, Tag};
 use crate::core::{
     complex::{Complex, MapDomain},
     diagram::{CellData, Diagram},
-    map::PMap,
+    partial_map::PartialMap,
 };
 use crate::language::ast::{self, IncludeModule, Span};
 
 use super::global_store::GlobalStore;
 use super::eval::interpret_program;
-use super::pmap::interpret_pmap_def;
+use super::partial_map::interpret_pmap_def;
 use super::scope::interpret_address;
 use super::types::*;
 
@@ -42,15 +42,15 @@ fn insert_generators_by_tag(scope: &mut Complex, generators: impl IntoIterator<I
     }
 }
 
-fn mapped_cell_data(map: &PMap, source_cell_data: &CellData) -> Option<CellData> {
+fn mapped_cell_data(map: &PartialMap, source_cell_data: &CellData) -> Option<CellData> {
     match source_cell_data {
         CellData::Zero => Some(CellData::Zero),
         CellData::Boundary {
             boundary_in,
             boundary_out,
         } => {
-            let image_in = PMap::apply(map, boundary_in).ok()?;
-            let image_out = PMap::apply(map, boundary_out).ok()?;
+            let image_in = PartialMap::apply(map, boundary_in).ok()?;
+            let image_out = PartialMap::apply(map, boundary_out).ok()?;
             Some(CellData::Boundary {
                 boundary_in: Arc::new(image_in),
                 boundary_out: Arc::new(image_out),
@@ -63,10 +63,10 @@ fn extend_scope_with_attached_generators(
     mode: Mode,
     mut scope: Complex,
     mut state: Arc<GlobalStore>,
-    mut map: PMap,
+    mut map: PartialMap,
     prefix: &str,
     attachment_scope: &Complex,
-) -> (Complex, Arc<GlobalStore>, PMap) {
+) -> (Complex, Arc<GlobalStore>, PartialMap) {
     for (generator_dim, generator_name, generator_tag) in sorted_generators(attachment_scope) {
         if map.is_defined_at(&generator_tag) {
             continue;
@@ -276,7 +276,7 @@ fn resolve_attach(
     scope: &Complex,
     attach_stmt: &ast::AttachStmt,
     span: Span,
-) -> (Option<(LocalId, PMap, MapDomain)>, InterpResult) {
+) -> (Option<(LocalId, PartialMap, MapDomain)>, InterpResult) {
     let (id_opt, addr_result) = interpret_address(
         context,
         &attach_stmt.address.inner,
@@ -292,7 +292,7 @@ fn resolve_attach(
 
     match &attach_stmt.along {
         None => {
-            let map = PMap::empty();
+            let map = PartialMap::empty();
             (Some((name, map, MapDomain::Type(id))), addr_result)
         }
         Some(pmap_node) => {

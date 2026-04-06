@@ -2,7 +2,7 @@ mod diagram;
 pub mod eval;
 mod global_store;
 mod include;
-mod pmap;
+mod partial_map;
 mod scope;
 mod state_render;
 mod types;

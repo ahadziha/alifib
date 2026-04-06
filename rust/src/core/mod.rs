@@ -3,7 +3,7 @@ pub mod complex;
 pub mod diagram;
 mod embeddings;
 mod intset;
-pub mod map;
+pub mod partial_map;
 mod ogposet;
 mod pushout;
 

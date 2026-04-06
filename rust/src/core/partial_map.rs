@@ -16,7 +16,7 @@ struct Entry {
 /// domain, then every cell in its boundary is too, and images are compatible
 /// with the boundary maps.
 #[derive(Debug, Clone)]
-pub struct PMap {
+pub struct PartialMap {
     /// Primary index: tag -> (cell data, image diagram).
     table: HashMap<Tag, Entry>,
     /// Dimension index: dim -> tags in that dimension, in insertion order.
@@ -29,10 +29,10 @@ pub struct PMap {
 
 // ---- Public interface ----
 
-impl PMap {
+impl PartialMap {
     /// Create an empty partial map.
-    pub fn empty() -> PMap {
-        PMap {
+    pub fn empty() -> PartialMap {
+        PartialMap {
             table: HashMap::new(),
             by_dim: HashMap::new(),
             cellular: true,
@@ -40,14 +40,14 @@ impl PMap {
     }
 
     /// Build a partial map from a list of (tag, dim, cell_data, image) entries.
-    pub fn of_entries(entries: Vec<(Tag, usize, CellData, Diagram)>, cellular: bool) -> PMap {
+    pub fn of_entries(entries: Vec<(Tag, usize, CellData, Diagram)>, cellular: bool) -> PartialMap {
         let mut table = HashMap::with_capacity(entries.len());
         let mut by_dim: HashMap<usize, Vec<Tag>> = HashMap::new();
         for (tag, dim, cell_data, image) in entries {
             table.insert(tag.clone(), Entry { cell_data, image });
             by_dim.entry(dim).or_default().push(tag);
         }
-        PMap { table, by_dim, cellular }
+        PartialMap { table, by_dim, cellular }
     }
 
     pub fn is_defined_at(&self, tag: &Tag) -> bool {
@@ -84,12 +84,12 @@ impl PMap {
     /// Extend the partial map with a new entry, checking boundary compatibility.
     /// Consumes `f` to avoid an unnecessary clone.
     pub fn extend(
-        f: PMap,
+        f: PartialMap,
         tag: Tag,
         dim: usize,
         cell_data: CellData,
         image: Diagram,
-    ) -> Result<PMap, Error> {
+    ) -> Result<PartialMap, Error> {
         if f.is_defined_at(&tag) {
             return Err(Error::new("already defined"));
         }
@@ -124,7 +124,7 @@ impl PMap {
     }
 
     /// Apply partial map f to a diagram by following its paste tree structure.
-    pub fn apply(f: &PMap, diagram: &Diagram) -> Result<Diagram, Error> {
+    pub fn apply(f: &PartialMap, diagram: &Diagram) -> Result<Diagram, Error> {
         let n = diagram.top_dim();
         let root_tree = match diagram.tree(Sign::Source, n) {
             Some(t) => t.clone(),
@@ -158,7 +158,7 @@ impl PMap {
     }
 
     /// Compose partial maps: g after f (g . f).
-    pub fn compose(g: &PMap, f: &PMap) -> PMap {
+    pub fn compose(g: &PartialMap, f: &PartialMap) -> PartialMap {
         let mut table = HashMap::with_capacity(f.table.len());
         let mut by_dim: HashMap<usize, Vec<Tag>> = HashMap::new();
         let mut cellular = true;
@@ -166,7 +166,7 @@ impl PMap {
         for (dim, tags) in f.domain_by_dim() {
             for tag in tags {
                 let Some(f_entry) = f.table.get(&tag) else { continue };
-                let Ok(image_gf) = PMap::apply(g, &f_entry.image) else { continue };
+                let Ok(image_gf) = PartialMap::apply(g, &f_entry.image) else { continue };
                 cellular = cellular && image_gf.is_cell();
                 table.insert(tag.clone(), Entry {
                     cell_data: f_entry.cell_data.clone(),
@@ -176,7 +176,7 @@ impl PMap {
             }
         }
 
-        PMap { table, by_dim, cellular }
+        PartialMap { table, by_dim, cellular }
     }
 }
 
@@ -186,13 +186,13 @@ impl PMap {
 /// Apply `f` to `boundary_diag` and verify the result equals the `sign`-boundary
 /// of `image` at dimension `k` (after normalisation).
 fn check_boundary_match(
-    f: &PMap,
+    f: &PartialMap,
     boundary_diag: &Diagram,
     sign: Sign,
     k: usize,
     image: &Diagram,
 ) -> Result<(), Error> {
-    let mapped = PMap::apply(f, boundary_diag)?;
+    let mapped = PartialMap::apply(f, boundary_diag)?;
     let expected = Diagram::boundary_normal(sign, k, image)?;
     if Diagram::equal(&Diagram::normal(&mapped), &expected) {
         Ok(())
@@ -218,7 +218,7 @@ fn remap_tag(tag: &Tag, table: &HashMap<Tag, Entry>, cache: &mut HashMap<Tag, Ta
     mapped
 }
 
-fn find_undefined<'a>(f: &PMap, tree: &'a PasteTree) -> Option<&'a Tag> {
+fn find_undefined<'a>(f: &PartialMap, tree: &'a PasteTree) -> Option<&'a Tag> {
     match tree {
         PasteTree::Leaf(tag) => {
             if f.is_defined_at(tag) { None } else { Some(tag) }
@@ -242,7 +242,7 @@ fn map_tree(tree: &PasteTree, cache: &HashMap<Tag, Tag>) -> PasteTree {
     }
 }
 
-fn apply_tree(f: &PMap, tree: &PasteTree) -> Result<Diagram, Error> {
+fn apply_tree(f: &PartialMap, tree: &PasteTree) -> Result<Diagram, Error> {
     match tree {
         PasteTree::Leaf(tag) => {
             f.image(tag).cloned()

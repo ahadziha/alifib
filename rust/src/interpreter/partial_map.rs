@@ -5,19 +5,19 @@ use crate::aux::{self, LocalId, Tag};
 use crate::core::{
     complex::{Complex, MapDomain},
     diagram::{CellData, Diagram, Sign as DiagramSign},
-    map::PMap,
+    partial_map::PartialMap,
 };
-use crate::language::ast::{self, DefPMap, PMapBasic, PMapClause, PMapDef, PMapExt, Span, Spanned};
+use crate::language::ast::{self, DefPartialMap, PartialMapBasic, PartialMapClause, PartialMapDef, PartialMapExt, Span, Spanned};
 use std::sync::Arc;
 
 // ---- Hole boundary rendering ----
 
 fn render_mapped_boundary(
     scope: &Complex,
-    map: &PMap,
+    map: &PartialMap,
     boundary: &Diagram,
 ) -> String {
-    match PMap::apply(map, boundary) {
+    match PartialMap::apply(map, boundary) {
         Ok(mapped_boundary) => render_diagram(&mapped_boundary, scope),
         Err(_) => render_boundary_partial(boundary, map, scope),
     }
@@ -27,7 +27,7 @@ fn enrich_hole(
     hole: &mut HoleInfo,
     scope: &Complex,
     domain: &Complex,
-    map: &PMap,
+    map: &PartialMap,
     context: &Context,
 ) {
     let Some(source_tag) = &hole.source_tag else {
@@ -69,7 +69,7 @@ fn enrich_holes(
     result: &mut InterpResult,
     scope: &Complex,
     domain: &Complex,
-    map: &PMap,
+    map: &PartialMap,
 ) {
     let context = result.context.clone();
     for hole in &mut result.holes {
@@ -81,7 +81,7 @@ pub fn interpret_anon_map_component(
     context: &Context,
     domain: &Complex,
     target: &Spanned<ast::Complex>,
-    def: &Spanned<PMapDef>,
+    def: &Spanned<PartialMapDef>,
 ) -> Step<EvalMap> {
     let (ns_opt, target_result) =
         super::eval::interpret_complex(context, super::types::Mode::Global, target);
@@ -91,14 +91,14 @@ pub fn interpret_anon_map_component(
     (mc_opt, InterpResult::combine(target_result, def_result))
 }
 
-// ---- PMap interpretation ----
+// ---- PartialMap interpretation ----
 
 /// Bundled context for evaluating partial map expressions.
 /// Packages the three parameters that travel together through every internal
 /// evaluation function: the interpreter state, the lexical scope for name
 /// resolution, and the complex being mapped from.
 #[derive(Clone, Copy)]
-struct PMapCtx<'a> {
+struct PartialMapCtx<'a> {
     context: &'a Context,
     /// Lexical environment: where diagram and map names are resolved.
     scope: &'a Complex,
@@ -106,35 +106,35 @@ struct PMapCtx<'a> {
     domain: &'a Complex,
 }
 
-pub fn interpret_pmap(
+pub fn interpret_partial_map(
     context: &Context,
     scope: &Complex,
     domain: &Complex,
-    pmap: &Spanned<ast::PMap>,
+    partial_map: &Spanned<ast::PartialMap>,
 ) -> Step<EvalMap> {
-    eval_pmap(&PMapCtx { context, scope, domain }, &pmap.inner, pmap.span)
+    eval_partial_map(&PartialMapCtx { context, scope, domain }, &partial_map.inner, partial_map.span)
 }
 
-fn eval_pmap(ctx: &PMapCtx<'_>, pmap: &ast::PMap, span: Span) -> Step<EvalMap> {
-    match pmap {
-        ast::PMap::Basic(basic) => eval_pmap_basic(ctx, basic, span),
-        ast::PMap::Dot { base, rest } => {
-            let (base_opt, base_result) = eval_pmap_basic(ctx, base, span);
+fn eval_partial_map(ctx: &PartialMapCtx<'_>, partial_map: &ast::PartialMap, span: Span) -> Step<EvalMap> {
+    match partial_map {
+        ast::PartialMap::Basic(basic) => eval_partial_map_basic(ctx, basic, span),
+        ast::PartialMap::Dot { base, rest } => {
+            let (base_opt, base_result) = eval_partial_map_basic(ctx, base, span);
             let Some(base_map) = base_opt else { return (None, base_result); };
             // Dot traversal: the new lookup scope is the base map's domain.
             let (rest_opt, rest_result) =
-                interpret_pmap(&base_result.context, &base_map.domain, ctx.domain, rest);
+                interpret_partial_map(&base_result.context, &base_map.domain, ctx.domain, rest);
             let combined = InterpResult::combine(base_result, rest_result);
             let Some(rest_map) = rest_opt else { return (None, combined); };
-            let composed = PMap::compose(&base_map.map, &rest_map.map);
+            let composed = PartialMap::compose(&base_map.map, &rest_map.map);
             (Some(EvalMap { map: composed, domain: rest_map.domain }), combined)
         }
     }
 }
 
-fn eval_pmap_basic(ctx: &PMapCtx<'_>, basic: &PMapBasic, span: Span) -> Step<EvalMap> {
+fn eval_partial_map_basic(ctx: &PartialMapCtx<'_>, basic: &PartialMapBasic, span: Span) -> Step<EvalMap> {
     match basic {
-        PMapBasic::Name(name) => {
+        PartialMapBasic::Name(name) => {
             let Some((map, domain)) = ctx.scope.find_map(name) else {
                 return fail(ctx.context, span, format!("Partial map not found: `{}`", name));
             };
@@ -144,49 +144,49 @@ fn eval_pmap_basic(ctx: &PMapCtx<'_>, basic: &PMapBasic, span: Span) -> Step<Eva
             };
             (Some(EvalMap { map: map.clone(), domain }), InterpResult::ok(ctx.context.clone()))
         }
-        PMapBasic::AnonMap { def, target } => {
+        PartialMapBasic::AnonMap { def, target } => {
             interpret_anon_map_component(ctx.context, ctx.domain, target, def)
         }
-        PMapBasic::Paren(inner) => interpret_pmap(ctx.context, ctx.scope, ctx.domain, inner),
+        PartialMapBasic::Paren(inner) => interpret_partial_map(ctx.context, ctx.scope, ctx.domain, inner),
     }
 }
 
-// ---- PMapDef / PMapExt interpretation ----
+// ---- PartialMapDef / PartialMapExt interpretation ----
 
 pub fn interpret_pmap_def(
     context: &Context,
     scope: &Complex,
     domain: &Complex,
-    pmap_def: &Spanned<PMapDef>,
+    partial_map_def: &Spanned<PartialMapDef>,
 ) -> Step<EvalMap> {
-    let ctx = PMapCtx { context, scope, domain };
-    match &pmap_def.inner {
-        PMapDef::PMap(pmap) => eval_pmap(&ctx, pmap, pmap_def.span),
-        PMapDef::Ext(ext) => interpret_pmap_ext(&ctx, ext),
+    let ctx = PartialMapCtx { context, scope, domain };
+    match &partial_map_def.inner {
+        PartialMapDef::PartialMap(partial_map) => eval_partial_map(&ctx, partial_map, partial_map_def.span),
+        PartialMapDef::Ext(ext) => interpret_partial_map_ext(&ctx, ext),
     }
 }
 
-fn initial_eval_map(ctx: &PMapCtx<'_>, prefix: &Option<Box<Spanned<ast::PMap>>>) -> Step<EvalMap> {
+fn initial_eval_map(ctx: &PartialMapCtx<'_>, prefix: &Option<Box<Spanned<ast::PartialMap>>>) -> Step<EvalMap> {
     match prefix {
         None => (
-            Some(EvalMap { map: PMap::empty(), domain: Arc::new(ctx.domain.clone()) }),
+            Some(EvalMap { map: PartialMap::empty(), domain: Arc::new(ctx.domain.clone()) }),
             InterpResult::ok(ctx.context.clone()),
         ),
-        Some(prefix) => interpret_pmap(ctx.context, ctx.scope, ctx.domain, prefix),
+        Some(prefix) => interpret_partial_map(ctx.context, ctx.scope, ctx.domain, prefix),
     }
 }
 
 fn eval_pmap_clauses(
-    ctx: &PMapCtx<'_>,
-    initial_map: PMap,
-    clauses: &[Spanned<PMapClause>],
-) -> Step<PMap> {
+    ctx: &PartialMapCtx<'_>,
+    initial_map: PartialMap,
+    clauses: &[Spanned<PartialMapClause>],
+) -> Step<PartialMap> {
     let mut map = initial_map;
     let mut result = InterpResult::ok(ctx.context.clone());
 
     for clause in clauses {
-        let step_ctx = PMapCtx { context: &result.context, ..*ctx };
-        let (next_map, clause_result) = interpret_pmap_clause(&step_ctx, map, clause);
+        let step_ctx = PartialMapCtx { context: &result.context, ..*ctx };
+        let (next_map, clause_result) = interpret_partial_map_clause(&step_ctx, map, clause);
         result = InterpResult::combine(result, clause_result);
         let Some(updated_map) = next_map else {
             return (None, result);
@@ -200,14 +200,14 @@ fn eval_pmap_clauses(
     (Some(map), result)
 }
 
-fn interpret_pmap_ext(ctx: &PMapCtx<'_>, ext: &PMapExt) -> Step<EvalMap> {
+fn interpret_partial_map_ext(ctx: &PartialMapCtx<'_>, ext: &PartialMapExt) -> Step<EvalMap> {
     let (initial_opt, prefix_result) = initial_eval_map(ctx, &ext.prefix);
     let Some(initial) = initial_opt else {
         return (None, prefix_result);
     };
 
     let effective_domain = Arc::clone(&initial.domain);
-    let clauses_ctx = PMapCtx { context: &prefix_result.context, domain: &effective_domain, ..*ctx };
+    let clauses_ctx = PartialMapCtx { context: &prefix_result.context, domain: &effective_domain, ..*ctx };
     let (map_opt, clause_result) = eval_pmap_clauses(&clauses_ctx, initial.map, &ext.clauses);
     let Some(current_map) = map_opt else {
         return (None, InterpResult::combine(prefix_result, clause_result));
@@ -234,7 +234,7 @@ fn mark_last_hole_source_tag(result: &mut InterpResult, source_term: &Term) {
     }
 }
 
-fn interpret_pmap_clause(ctx: &PMapCtx<'_>, map: PMap, clause: &Spanned<PMapClause>) -> Step<PMap> {
+fn interpret_partial_map_clause(ctx: &PartialMapCtx<'_>, map: PartialMap, clause: &Spanned<PartialMapClause>) -> Step<PartialMap> {
     let (left_opt, left_result) = interpret_diagram_as_term(ctx.context, ctx.domain, &clause.inner.lhs);
     let Some(left_term) = left_opt else { return (None, left_result); };
 
@@ -264,12 +264,12 @@ fn interpret_pmap_clause(ctx: &PMapCtx<'_>, map: PMap, clause: &Spanned<PMapClau
 /// Handle assignment of a term to another term in a map clause.
 fn extend_matching_map_images(
     context: &Context,
-    map: PMap,
+    map: PartialMap,
     domain: &Complex,
     target: &Complex,
     left_map: &EvalMap,
     right_map: &EvalMap,
-) -> Result<PMap, aux::Error> {
+) -> Result<PartialMap, aux::Error> {
     let map_domain = &*left_map.domain;
     let mut extended = map;
 
@@ -304,12 +304,12 @@ fn extend_matching_map_images(
 
 fn interpret_assign(
     context: &Context,
-    map: PMap,
+    map: PartialMap,
     domain: &Complex,
     target: &Complex,
     left: &Term,
     right: &Term,
-) -> Result<PMap, aux::Error> {
+) -> Result<PartialMap, aux::Error> {
     match (left, right) {
         (Term::Diag(d_left), Term::Diag(d_right)) => {
             extend_map_for_cell(context, map, domain, target, d_left, d_right)
@@ -324,7 +324,7 @@ fn interpret_assign(
     }
 }
 
-fn boundary_dependencies(cell_data: &CellData, map: &PMap) -> Vec<(Tag, DiagramSign)> {
+fn boundary_dependencies(cell_data: &CellData, map: &PartialMap) -> Vec<(Tag, DiagramSign)> {
     let CellData::Boundary { boundary_in, boundary_out } = cell_data else {
         return vec![];
     };
@@ -373,12 +373,12 @@ fn image_classifier_via_boundary(
 /// recursively extending for boundary cells as needed.
 pub fn extend_map_for_cell(
     context: &Context,
-    map: PMap,
+    map: PartialMap,
     domain: &Complex,
     target: &Complex,
     domain_diag: &Diagram,
     target_diag: &Diagram,
-) -> Result<PMap, aux::Error> {
+) -> Result<PartialMap, aux::Error> {
     if !domain_diag.is_cell() {
         return Err(aux::Error::new(
             "Left-hand side of map instruction must be a cell",
@@ -424,7 +424,7 @@ pub fn extend_map_for_cell(
         };
     }
 
-    PMap::extend(current_map, tag, d, cell_data, target_diag.clone())
+    PartialMap::extend(current_map, tag, d, cell_data, target_diag.clone())
 }
 
 // ---- Partial map naming ----
@@ -432,7 +432,7 @@ pub fn extend_map_for_cell(
 fn check_map_totality(
     result: &mut InterpResult,
     domain: &Complex,
-    map: &PMap,
+    map: &PartialMap,
     map_name: &str,
     name_span: Span,
     is_total: bool,
@@ -454,8 +454,8 @@ fn check_map_totality(
 pub fn interpret_def_pmap(
     context: &Context,
     scope: &Complex,
-    dp: &DefPMap,
-) -> (Option<(LocalId, PMap, MapDomain)>, InterpResult) {
+    dp: &DefPartialMap,
+) -> (Option<(LocalId, PartialMap, MapDomain)>, InterpResult) {
     let (id_opt, addr_result) = interpret_address(context, &dp.address.inner, dp.address.span);
     let Some(id) = id_opt else {
         return (None, addr_result);

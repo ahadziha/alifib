@@ -5,7 +5,7 @@
 //! operations maintain internal consistency invariants checked in debug builds.
 
 use super::diagram::{CellData, Diagram};
-use super::map::PMap;
+use super::partial_map::PartialMap;
 use crate::aux::{GlobalId, LocalId, ModuleId, Tag};
 use std::collections::{HashMap, HashSet};
 
@@ -26,7 +26,7 @@ struct GeneratorEntry {
 /// A named partial map together with the complex it maps from.
 #[derive(Debug, Clone)]
 struct MapEntry {
-    map: PMap,
+    map: PartialMap,
     domain: MapDomain,
 }
 
@@ -140,19 +140,19 @@ impl Complex {
     // ---- Maps ----
 
     /// Store a named partial map together with the complex it maps from.
-    pub fn add_map(&mut self, name: LocalId, domain: MapDomain, map: PMap) {
+    pub fn add_map(&mut self, name: LocalId, domain: MapDomain, map: PartialMap) {
         self.maps.insert(name.clone(), MapEntry { map, domain });
         self.used_names.insert(name);
         self.assert_invariants();
     }
 
     /// Look up a map by name; returns the map and its domain if found.
-    pub fn find_map(&self, name: &str) -> Option<(&PMap, &MapDomain)> {
+    pub fn find_map(&self, name: &str) -> Option<(&PartialMap, &MapDomain)> {
         self.maps.get(name).map(|e| (&e.map, &e.domain))
     }
 
     /// Iterate over all stored maps as `(name, map, domain)` triples.
-    pub fn maps_iter(&self) -> impl Iterator<Item = (&LocalId, &PMap, &MapDomain)> {
+    pub fn maps_iter(&self) -> impl Iterator<Item = (&LocalId, &PartialMap, &MapDomain)> {
         self.maps.iter().map(|(name, e)| (name, &e.map, &e.domain))
     }
 

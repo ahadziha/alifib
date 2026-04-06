@@ -3,9 +3,9 @@ use crate::aux::Tag;
 use crate::core::{
     complex::Complex,
     diagram::{CellData, Diagram, Sign as DiagramSign},
-    map::PMap,
+    partial_map::PartialMap,
 };
-use crate::language::ast::{self, DComponent, DExpr, PMapBasic, Span, Spanned};
+use crate::language::ast::{self, DComponent, DExpr, PartialMapBasic, Span, Spanned};
 use std::sync::Arc;
 
 // ---- Helpers ----
@@ -75,7 +75,7 @@ fn apply_map_component(
             result.add_error(make_error(span, "Not a diagram or map"));
             (None, result)
         }
-        Component::Value(Term::Diag(diagram)) => match PMap::apply(&eval_map.map, &diagram) {
+        Component::Value(Term::Diag(diagram)) => match PartialMap::apply(&eval_map.map, &diagram) {
             Ok(image_diagram) => (Some(Term::Diag(image_diagram)), result),
             Err(error) => {
                 result.add_error(make_error(span, error.to_string()));
@@ -83,7 +83,7 @@ fn apply_map_component(
             }
         },
         Component::Value(Term::Map(inner_map)) => {
-            let composed = PMap::compose(&eval_map.map, &inner_map.map);
+            let composed = PartialMap::compose(&eval_map.map, &inner_map.map);
             (
                 Some(Term::Map(EvalMap {
                     map: composed,
@@ -191,7 +191,7 @@ pub fn interpret_dcomponent(
     span: Span,
 ) -> (Option<Component>, InterpResult) {
     match d_comp {
-        DComponent::PMap(PMapBasic::Name(name)) => {
+        DComponent::PartialMap(PartialMapBasic::Name(name)) => {
             if let Some(diagram) = scope.find_diagram(name) {
                 return (Some(Component::Value(Term::Diag(diagram.clone()))), InterpResult::ok(context.clone()));
             }
@@ -202,12 +202,12 @@ pub fn interpret_dcomponent(
             }
             fail(context, span, format!("Name `{}` not found", name))
         }
-        DComponent::PMap(PMapBasic::AnonMap { def, target }) => {
-            let (eval_map_opt, result) = super::pmap::interpret_anon_map_component(context, scope, target, def);
+        DComponent::PartialMap(PartialMapBasic::AnonMap { def, target }) => {
+            let (eval_map_opt, result) = super::partial_map::interpret_anon_map_component(context, scope, target, def);
             (eval_map_opt.map(|em| Component::Value(Term::Map(em))), result)
         }
-        DComponent::PMap(PMapBasic::Paren(inner_pmap)) => {
-            let (eval_map_opt, result) = super::pmap::interpret_pmap(context, scope, scope, inner_pmap);
+        DComponent::PartialMap(PartialMapBasic::Paren(inner_pmap)) => {
+            let (eval_map_opt, result) = super::partial_map::interpret_partial_map(context, scope, scope, inner_pmap);
             (eval_map_opt.map(|em| Component::Value(Term::Map(em))), result)
         }
         DComponent::In => (Some(Component::Bd(DiagramSign::Source)), InterpResult::ok(context.clone())),
@@ -446,7 +446,7 @@ pub fn render_diagram(diagram: &Diagram, scope: &Complex) -> String {
 
 /// Render a source boundary diagram through a partial map. Mapped tags are rendered
 /// via their image's top label; unmapped tags are rendered as `?`.
-pub fn render_boundary_partial(boundary: &Diagram, map: &PMap, scope: &Complex) -> String {
+pub fn render_boundary_partial(boundary: &Diagram, map: &PartialMap, scope: &Complex) -> String {
     top_labels_rendered(boundary, |tag| match map.image(tag) {
         Ok(img) => render_diagram(img, scope),
         Err(_) => "?".to_string(),

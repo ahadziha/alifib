@@ -15,7 +15,7 @@ use super::diagram::{check_assert, interpret_assert, interpret_let_diag};
 use super::include::{
     interpret_attach_instr, interpret_include_instr, interpret_include_module_instr,
 };
-use super::pmap::interpret_def_pmap;
+use super::partial_map::interpret_def_pmap;
 use super::scope::{
     cell_dim, create_generator_diagram, current_module_scope, initialize_module_context,
     insert_complex_diagram_binding, insert_complex_map_binding, insert_module_diagram_binding,
@@ -81,7 +81,7 @@ fn interpret_type_inst(
             let (diagram_binding, result) = interpret_let_diag(context, scope, ld);
             insert_module_diagram_binding(result, diagram_binding)
         }
-        TypeInst::DefPMap(dp) => {
+        TypeInst::DefPartialMap(dp) => {
             let Some(scope) = current_module_scope(context) else {
                 return InterpResult::ok(context.clone());
             };
@@ -237,7 +237,7 @@ fn interpret_complex_instr(
             let (binding, result) = interpret_let_diag(&context, &scope, ld);
             insert_complex_diagram_binding(scope, result, ld.name.span, binding)
         }
-        ComplexInstr::DefPMap(dp) => {
+        ComplexInstr::DefPartialMap(dp) => {
             let (binding, result) = interpret_def_pmap(&context, &scope, dp);
             insert_complex_map_binding(scope, result, dp.name.span, binding)
         }
@@ -353,7 +353,7 @@ fn interpret_local_inst(
                 binding,
             )
         }
-        LocalInst::DefPMap(dp) => {
+        LocalInst::DefPartialMap(dp) => {
             let (binding, result) = interpret_def_pmap(context, scope, dp);
             insert_type_map_binding(
                 owner_type_id,

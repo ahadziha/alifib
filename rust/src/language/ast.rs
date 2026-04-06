@@ -35,7 +35,7 @@ pub enum Block {
 pub enum TypeInst {
     Generator(Generator),
     LetDiag(LetDiag),
-    DefPMap(DefPMap),
+    DefPartialMap(DefPartialMap),
     IncludeModule(IncludeModule),
 }
 
@@ -68,7 +68,7 @@ pub enum Complex {
 pub enum ComplexInstr {
     NameWithBoundary(NameWithBoundary),
     LetDiag(LetDiag),
-    DefPMap(DefPMap),
+    DefPartialMap(DefPartialMap),
     AttachStmt(AttachStmt),
     IncludeStmt(IncludeStmt),
 }
@@ -76,7 +76,7 @@ pub enum ComplexInstr {
 pub struct AttachStmt {
     pub name: Spanned<String>,
     pub address: Spanned<Address>,
-    pub along: Option<Spanned<PMapDef>>,
+    pub along: Option<Spanned<PartialMapDef>>,
 }
 
 pub struct IncludeStmt {
@@ -90,7 +90,7 @@ pub struct IncludeStmt {
 
 pub enum LocalInst {
     LetDiag(LetDiag),
-    DefPMap(DefPMap),
+    DefPartialMap(DefPartialMap),
     AssertStmt(AssertStmt),
 }
 
@@ -120,11 +120,11 @@ pub struct LetDiag {
     pub value: Spanned<Diagram>,
 }
 
-pub struct DefPMap {
+pub struct DefPartialMap {
     pub total: bool,
     pub name: Spanned<String>,
     pub address: Spanned<Address>,
-    pub value: Spanned<PMapDef>,
+    pub value: Spanned<PartialMapDef>,
 }
 
 // ---------------------------------------------------------------------------
@@ -153,7 +153,7 @@ pub enum DExpr {
 }
 
 pub enum DComponent {
-    PMap(PMapBasic),
+    PartialMap(PartialMapBasic),
     In,
     Out,
     Paren(Box<Spanned<Diagram>>),
@@ -164,34 +164,34 @@ pub enum DComponent {
 // Partial maps
 // ---------------------------------------------------------------------------
 
-pub enum PMapDef {
-    PMap(PMap),
-    Ext(PMapExt),
+pub enum PartialMapDef {
+    PartialMap(PartialMap),
+    Ext(PartialMapExt),
 }
 
-pub struct PMapExt {
-    pub prefix: Option<Box<Spanned<PMap>>>,
-    pub clauses: Vec<Spanned<PMapClause>>,
+pub struct PartialMapExt {
+    pub prefix: Option<Box<Spanned<PartialMap>>>,
+    pub clauses: Vec<Spanned<PartialMapClause>>,
 }
 
-pub enum PMap {
-    Basic(PMapBasic),
+pub enum PartialMap {
+    Basic(PartialMapBasic),
     Dot {
-        base: PMapBasic,
-        rest: Box<Spanned<PMap>>,
+        base: PartialMapBasic,
+        rest: Box<Spanned<PartialMap>>,
     },
 }
 
-pub enum PMapBasic {
+pub enum PartialMapBasic {
     Name(String),
     AnonMap {
-        def: Box<Spanned<PMapDef>>,
+        def: Box<Spanned<PartialMapDef>>,
         target: Spanned<Complex>,
     },
-    Paren(Box<Spanned<PMap>>),
+    Paren(Box<Spanned<PartialMap>>),
 }
 
-pub struct PMapClause {
+pub struct PartialMapClause {
     pub lhs: Spanned<Diagram>,
     pub rhs: Spanned<Diagram>,
 }

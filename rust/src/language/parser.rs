@@ -5,8 +5,8 @@ use chumsky::span::SimpleSpan;
 
 use super::ast::{
     Address, AssertStmt, AttachStmt, Block, Boundary, ComplexInstr, Complex, DComponent, DExpr,
-    DefPMap, Diagram, Generator, IncludeModule, IncludeStmt, LetDiag, LocalInst, NameWithBoundary,
-    PMap, PMapBasic, PMapClause, PMapDef, PMapExt, Program, Span, Spanned, TypeInst,
+    DefPartialMap, Diagram, Generator, IncludeModule, IncludeStmt, LetDiag, LocalInst, NameWithBoundary,
+    PartialMap, PartialMapBasic, PartialMapClause, PartialMapDef, PartialMapExt, Program, Span, Spanned, TypeInst,
 };
 use super::token::Token;
 
@@ -22,8 +22,8 @@ type R<'tokens, 'src, O> = Recursive<
 >;
 
 type RDiagram<'tokens, 'src> = R<'tokens, 'src, Spanned<Diagram>>;
-type RPMap<'tokens, 'src> = R<'tokens, 'src, Spanned<PMap>>;
-type RPMapDef<'tokens, 'src> = R<'tokens, 'src, Spanned<PMapDef>>;
+type RPartialMap<'tokens, 'src> = R<'tokens, 'src, Spanned<PartialMap>>;
+type RPartialMapDef<'tokens, 'src> = R<'tokens, 'src, Spanned<PartialMapDef>>;
 type RComplex<'tokens, 'src> = R<'tokens, 'src, Spanned<Complex>>;
 
 fn cspan(s: SimpleSpan) -> Span {
@@ -90,9 +90,9 @@ fn build_name_with_boundary<'tokens, 'src: 'tokens>(
 
 fn build_let_or_def<'tokens, 'src: 'tokens, T: 'tokens>(
     diagram: RDiagram<'tokens, 'src>,
-    pmap_def: RPMapDef<'tokens, 'src>,
+    partial_map_def: RPartialMapDef<'tokens, 'src>,
     make_let_diag: impl Fn(LetDiag) -> T + Clone + 'tokens,
-    make_def_pmap: impl Fn(DefPMap) -> T + Clone + 'tokens,
+    make_def_partial_map: impl Fn(DefPartialMap) -> T + Clone + 'tokens,
 ) -> impl Parser<'tokens, TokenInput<'tokens, 'src>, Spanned<T>, E<'tokens, 'src>> + Clone + 'tokens
 {
     t(Token::Let)
@@ -102,7 +102,7 @@ fn build_let_or_def<'tokens, 'src: 'tokens, T: 'tokens>(
             t(Token::DColon)
                 .ignore_then(address())
                 .then_ignore(t(Token::Eq))
-                .then(pmap_def)
+                .then(partial_map_def)
                 .map(|(a, v)| LetOrDef::Def(a, v)),
             t(Token::Eq).ignore_then(diagram).map(LetOrDef::Let),
         )))
@@ -111,7 +111,7 @@ fn build_let_or_def<'tokens, 'src: 'tokens, T: 'tokens>(
                 sp(make_let_diag(LetDiag { name, value }), cspan(e.span()))
             }
             LetOrDef::Def(address, value) => sp(
-                make_def_pmap(DefPMap { total: is_total.is_some(), name, address, value }),
+                make_def_partial_map(DefPartialMap { total: is_total.is_some(), name, address, value }),
                 cspan(e.span()),
             ),
         })
@@ -132,7 +132,7 @@ fn address<'tokens, 'src: 'tokens>()
 
 enum LetOrDef {
     Let(Spanned<Diagram>),
-    Def(Spanned<Address>, Spanned<PMapDef>),
+    Def(Spanned<Address>, Spanned<PartialMapDef>),
 }
 
 // ---------------------------------------------------------------------------
@@ -144,17 +144,17 @@ enum LetOrDef {
 // 2. Symbol name explosion from deeply nested generic types
 // ---------------------------------------------------------------------------
 
-/// Build PMapDef parser: `[clauses]` | PMap [`[clauses]`]
-fn build_pmap_def<'tokens, 'src: 'tokens>(
+/// Build PartialMapDef parser: `[clauses]` | PartialMap [`[clauses]`]
+fn build_partial_map_def<'tokens, 'src: 'tokens>(
     diagram: RDiagram<'tokens, 'src>,
-    pmap: RPMap<'tokens, 'src>,
-) -> RPMapDef<'tokens, 'src> {
+    partial_map: RPartialMap<'tokens, 'src>,
+) -> RPartialMapDef<'tokens, 'src> {
     recursive(move |_| {
         let clause = diagram
             .clone()
             .then_ignore(t(Token::FatArrow))
             .then(diagram.clone())
-            .map_with(|(lhs, rhs), e| sp(PMapClause { lhs, rhs }, cspan(e.span())));
+            .map_with(|(lhs, rhs), e| sp(PartialMapClause { lhs, rhs }, cspan(e.span())));
 
         let bracketed = clause
             .separated_by(t(Token::Comma))
@@ -164,7 +164,7 @@ fn build_pmap_def<'tokens, 'src: 'tokens>(
 
         let bare_ext = bracketed.clone().map_with(|clauses, e| {
             sp(
-                PMapDef::Ext(PMapExt {
+                PartialMapDef::Ext(PartialMapExt {
                     prefix: None,
                     clauses,
                 }),
@@ -172,13 +172,13 @@ fn build_pmap_def<'tokens, 'src: 'tokens>(
             )
         });
 
-        let pmap_then_maybe_ext = pmap
+        let pmap_then_maybe_ext = partial_map
             .clone()
             .then(bracketed.or_not())
             .map_with(|(pm, mc), e| match mc {
-                None => sp(PMapDef::PMap(pm.inner), cspan(e.span())),
+                None => sp(PartialMapDef::PartialMap(pm.inner), cspan(e.span())),
                 Some(clauses) => sp(
-                    PMapDef::Ext(PMapExt {
+                    PartialMapDef::Ext(PartialMapExt {
                         prefix: Some(Box::new(pm)),
                         clauses,
                     }),
@@ -193,18 +193,18 @@ fn build_pmap_def<'tokens, 'src: 'tokens>(
 /// Build Complex parser: `Address? { ComplexInstr, ... }` | `Address`
 fn build_complex<'tokens, 'src: 'tokens>(
     diagram: RDiagram<'tokens, 'src>,
-    pmap_def: RPMapDef<'tokens, 'src>,
+    partial_map_def: RPartialMapDef<'tokens, 'src>,
 ) -> RComplex<'tokens, 'src> {
     recursive(move |_| {
         let let_or_def = build_let_or_def(
-            diagram.clone(), pmap_def.clone(), ComplexInstr::LetDiag, ComplexInstr::DefPMap,
+            diagram.clone(), partial_map_def.clone(), ComplexInstr::LetDiag, ComplexInstr::DefPartialMap,
         );
 
         let attach_stmt = t(Token::Attach)
             .ignore_then(name())
             .then_ignore(t(Token::DColon))
             .then(address())
-            .then(t(Token::Along).ignore_then(pmap_def.clone()).or_not())
+            .then(t(Token::Along).ignore_then(partial_map_def.clone()).or_not())
             .map_with(|((name, address), along), event| {
                 sp(ComplexInstr::AttachStmt(AttachStmt { name, address, along }), cspan(event.span()))
             });
@@ -246,37 +246,37 @@ fn build_complex<'tokens, 'src: 'tokens>(
     })
 }
 
-/// Build PMap parser (actually recursive: PMap = PMapBasic [ "." PMap ])
-fn build_pmap<'tokens, 'src: 'tokens>(diagram: RDiagram<'tokens, 'src>) -> RPMap<'tokens, 'src> {
-    recursive(move |pmap: RPMap<'tokens, 'src>| {
-        let pmap_def = build_pmap_def(diagram.clone(), pmap.clone());
-        let complex = build_complex(diagram.clone(), pmap_def.clone());
+/// Build PartialMap parser (actually recursive: PartialMap = PartialMapBasic [ "." PartialMap ])
+fn build_partial_map<'tokens, 'src: 'tokens>(diagram: RDiagram<'tokens, 'src>) -> RPartialMap<'tokens, 'src> {
+    recursive(move |partial_map: RPartialMap<'tokens, 'src>| {
+        let partial_map_def = build_partial_map_def(diagram.clone(), partial_map.clone());
+        let complex = build_complex(diagram.clone(), partial_map_def.clone());
 
         let anon_map = t(Token::LParen)
             .ignore_then(t(Token::Map))
-            .ignore_then(pmap_def)
+            .ignore_then(partial_map_def)
             .then_ignore(t(Token::DColon))
             .then(complex)
             .then_ignore(t(Token::RParen))
-            .map(|(def, target)| PMapBasic::AnonMap {
+            .map(|(def, target)| PartialMapBasic::AnonMap {
                 def: Box::new(def),
                 target,
             });
 
-        let paren_pmap = pmap
+        let paren_pmap = partial_map
             .clone()
             .delimited_by(t(Token::LParen), t(Token::RParen))
-            .map(|p| PMapBasic::Paren(Box::new(p)));
+            .map(|p| PartialMapBasic::Paren(Box::new(p)));
 
-        let name_basic = name().map(|n| PMapBasic::Name(n.inner));
+        let name_basic = name().map(|n| PartialMapBasic::Name(n.inner));
         let pmap_basic = choice((anon_map, paren_pmap, name_basic));
 
         pmap_basic
-            .then(t(Token::Dot).ignore_then(pmap.clone()).or_not())
+            .then(t(Token::Dot).ignore_then(partial_map.clone()).or_not())
             .map_with(|(base, rest), e| match rest {
-                None => sp(PMap::Basic(base), cspan(e.span())),
+                None => sp(PartialMap::Basic(base), cspan(e.span())),
                 Some(rest) => sp(
-                    PMap::Dot {
+                    PartialMap::Dot {
                         base,
                         rest: Box::new(rest),
                     },
@@ -289,27 +289,27 @@ fn build_pmap<'tokens, 'src: 'tokens>(diagram: RDiagram<'tokens, 'src>) -> RPMap
 /// Build Diagram parser (actually recursive: through DComponent::Paren and AnonMap)
 fn build_diagram<'tokens, 'src: 'tokens>() -> RDiagram<'tokens, 'src> {
     recursive(|diagram: RDiagram<'tokens, 'src>| {
-        let pmap = build_pmap(diagram.clone());
-        let pmap_def = build_pmap_def(diagram.clone(), pmap.clone());
-        let complex = build_complex(diagram.clone(), pmap_def.clone());
+        let partial_map = build_partial_map(diagram.clone());
+        let partial_map_def = build_partial_map_def(diagram.clone(), partial_map.clone());
+        let complex = build_complex(diagram.clone(), partial_map_def.clone());
 
         let anon_map_dcomp = t(Token::LParen)
             .ignore_then(t(Token::Map))
-            .ignore_then(pmap_def)
+            .ignore_then(partial_map_def)
             .then_ignore(t(Token::DColon))
             .then(complex)
             .then_ignore(t(Token::RParen))
             .map(|(def, target)| {
-                DComponent::PMap(PMapBasic::AnonMap {
+                DComponent::PartialMap(PartialMapBasic::AnonMap {
                     def: Box::new(def),
                     target,
                 })
             });
 
-        let paren_pmap_dcomp = pmap
+        let paren_pmap_dcomp = partial_map
             .clone()
             .delimited_by(t(Token::LParen), t(Token::RParen))
-            .map(|p| DComponent::PMap(PMapBasic::Paren(Box::new(p))));
+            .map(|p| DComponent::PartialMap(PartialMapBasic::Paren(Box::new(p))));
 
         let dcomponent = choice((
             anon_map_dcomp,
@@ -321,7 +321,7 @@ fn build_diagram<'tokens, 'src: 'tokens>() -> RDiagram<'tokens, 'src> {
             t(Token::In).map(|_| DComponent::In),
             t(Token::Out).map(|_| DComponent::Out),
             t(Token::Question).map(|_| DComponent::Hole),
-            select_ref! { Token::Ident(s) => DComponent::PMap(PMapBasic::Name(s.to_string())) },
+            select_ref! { Token::Ident(s) => DComponent::PartialMap(PartialMapBasic::Name(s.to_string())) },
         ))
         .map_with(|v, e| sp(v, cspan(e.span())));
 
@@ -378,9 +378,9 @@ fn build_diagram<'tokens, 'src: 'tokens>() -> RDiagram<'tokens, 'src> {
 pub fn program_parser<'tokens, 'src: 'tokens>()
 -> impl Parser<'tokens, TokenInput<'tokens, 'src>, Program, E<'tokens, 'src>> {
     let diagram = build_diagram();
-    let pmap = build_pmap(diagram.clone());
-    let pmap_def = build_pmap_def(diagram.clone(), pmap.clone());
-    let complex = build_complex(diagram.clone(), pmap_def.clone());
+    let partial_map = build_partial_map(diagram.clone());
+    let partial_map_def = build_partial_map_def(diagram.clone(), partial_map.clone());
+    let complex = build_complex(diagram.clone(), partial_map_def.clone());
 
     let name_with_boundary = build_name_with_boundary(diagram.clone());
 
@@ -394,7 +394,7 @@ pub fn program_parser<'tokens, 'src: 'tokens>()
         });
 
     let let_or_def_local =
-        build_let_or_def(diagram.clone(), pmap_def.clone(), LocalInst::LetDiag, LocalInst::DefPMap);
+        build_let_or_def(diagram.clone(), partial_map_def.clone(), LocalInst::LetDiag, LocalInst::DefPartialMap);
 
     let local_inst = choice((assert_stmt, let_or_def_local));
 
@@ -414,7 +414,7 @@ pub fn program_parser<'tokens, 'src: 'tokens>()
         });
 
     let let_or_def_type =
-        build_let_or_def(diagram.clone(), pmap_def, TypeInst::LetDiag, TypeInst::DefPMap);
+        build_let_or_def(diagram.clone(), partial_map_def, TypeInst::LetDiag, TypeInst::DefPartialMap);
 
     let type_inst = choice((generator, include_module, let_or_def_type));
 

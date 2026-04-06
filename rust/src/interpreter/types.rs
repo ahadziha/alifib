@@ -5,7 +5,7 @@ use crate::aux::{GlobalId, LocalId, Tag};
 use crate::core::{
     complex::{Complex, MapDomain},
     diagram::{CellData, Diagram, Sign as DiagramSign},
-    map::PMap,
+    partial_map::PartialMap,
 };
 use crate::language::{ast::Span, error::Error};
 use std::fmt;
@@ -72,14 +72,14 @@ impl fmt::Display for Context {
 /// Tracks a `?` hole encountered during interpretation.
 ///
 /// Holes are created without boundary information and enriched with
-/// `HoleBoundaryInfo` later when a surrounding `pmap` clause provides context.
+/// `HoleBoundaryInfo` later when a surrounding `partial_map` clause provides context.
 #[derive(Debug, Clone)]
 pub struct HoleInfo {
     /// Source location of the hole.
     pub span: Span,
     /// Boundary context for the hole; `None` until the enclosing map clause provides it.
     pub boundary: Option<HoleBoundaryInfo>,
-    /// Source cell tag, for deferred boundary computation in pmap context.
+    /// Source cell tag, for deferred boundary computation in partial_map context.
     pub source_tag: Option<Tag>,
 }
 
@@ -196,7 +196,7 @@ pub struct TypeScope {
 /// A partial map together with its domain complex, the result of evaluating a map expression.
 #[derive(Debug, Clone)]
 pub struct EvalMap {
-    pub map: PMap,
+    pub map: PartialMap,
     pub domain: Arc<Complex>,
 }
 
@@ -225,8 +225,8 @@ pub enum Component {
 pub enum TermPair {
     /// Two partial maps with a shared domain complex.
     Maps {
-        fst: PMap,
-        snd: PMap,
+        fst: PartialMap,
+        snd: PartialMap,
         domain: Arc<Complex>,
     },
     /// Two diagrams.
@@ -379,7 +379,7 @@ pub fn get_cell_data(context: &Context, source: &Complex, tag: &Tag) -> Option<C
 }
 
 /// Build an identity map for a complex using state for cell data lookup.
-pub fn identity_map(context: &Context, domain: &Complex) -> PMap {
+pub fn identity_map(context: &Context, domain: &Complex) -> PartialMap {
     let entries: Vec<(Tag, usize, CellData, Diagram)> = domain
         .generators_iter()
         .filter_map(|(name, tag, dim)| {
@@ -388,5 +388,5 @@ pub fn identity_map(context: &Context, domain: &Complex) -> PMap {
             Some((tag.clone(), dim, cell_data, image))
         })
         .collect();
-    PMap::of_entries(entries, true)
+    PartialMap::of_entries(entries, true)
 }

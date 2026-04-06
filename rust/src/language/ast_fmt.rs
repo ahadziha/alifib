@@ -29,7 +29,7 @@ impl fmt::Display for FmtAddress<'_> {
 impl fmt::Display for DComponent {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::PMap(basic) => write!(f, "{}", basic),
+            Self::PartialMap(basic) => write!(f, "{}", basic),
             Self::In => f.write_str("in"),
             Self::Out => f.write_str("out"),
             Self::Paren(d) => write!(f, "({})", d.inner),
@@ -86,22 +86,22 @@ impl fmt::Display for NameWithBoundary {
     }
 }
 
-impl fmt::Display for PMapClause {
+impl fmt::Display for PartialMapClause {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{} => {}", self.lhs.inner, self.rhs.inner)
     }
 }
 
-impl fmt::Display for PMapDef {
+impl fmt::Display for PartialMapDef {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::PMap(p) => write!(f, "{p}"),
+            Self::PartialMap(p) => write!(f, "{p}"),
             Self::Ext(e) => write!(f, "{e}"),
         }
     }
 }
 
-impl fmt::Display for PMapExt {
+impl fmt::Display for PartialMapExt {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if let Some(prefix) = &self.prefix {
             write!(f, "{}", prefix.inner)?;
@@ -117,7 +117,7 @@ impl fmt::Display for PMapExt {
     }
 }
 
-impl fmt::Display for PMapBasic {
+impl fmt::Display for PartialMapBasic {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Name(n) => f.write_str(n),
@@ -127,7 +127,7 @@ impl fmt::Display for PMapBasic {
     }
 }
 
-impl fmt::Display for PMap {
+impl fmt::Display for PartialMap {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Basic(b) => write!(f, "{b}"),
@@ -192,7 +192,7 @@ fn pp_type_inst(f: &mut fmt::Formatter, inst: &TypeInst, d: usize) -> fmt::Resul
             pp_complex_tree(f, &g.complex.inner, d + 1)
         }
         TypeInst::LetDiag(l) => pp_let_diag(f, l, d),
-        TypeInst::DefPMap(p) => pp_def_pmap(f, p, d),
+        TypeInst::DefPartialMap(p) => pp_def_partial_map(f, p, d),
         TypeInst::IncludeModule(im) => {
             pad(f, d)?;
             write!(f, "IncludeModule {}", im.name.inner)?;
@@ -211,7 +211,7 @@ fn pp_complex_instr(f: &mut fmt::Formatter, instr: &ComplexInstr, d: usize) -> f
             writeln!(f, "{nwb}")
         }
         ComplexInstr::LetDiag(l) => pp_let_diag(f, l, d),
-        ComplexInstr::DefPMap(p) => pp_def_pmap(f, p, d),
+        ComplexInstr::DefPartialMap(p) => pp_def_partial_map(f, p, d),
         ComplexInstr::AttachStmt(a) => {
             pad(f, d)?;
             write!(f, "attach {} :: {}", a.name.inner, FmtAddress(&a.address.inner))?;
@@ -234,7 +234,7 @@ fn pp_complex_instr(f: &mut fmt::Formatter, instr: &ComplexInstr, d: usize) -> f
 fn pp_local_inst(f: &mut fmt::Formatter, inst: &LocalInst, d: usize) -> fmt::Result {
     match inst {
         LocalInst::LetDiag(l) => pp_let_diag(f, l, d),
-        LocalInst::DefPMap(p) => pp_def_pmap(f, p, d),
+        LocalInst::DefPartialMap(p) => pp_def_partial_map(f, p, d),
         LocalInst::AssertStmt(a) => {
             pad(f, d)?;
             writeln!(f, "assert {} = {}", a.lhs.inner, a.rhs.inner)
@@ -247,7 +247,7 @@ fn pp_let_diag(f: &mut fmt::Formatter, l: &LetDiag, d: usize) -> fmt::Result {
     writeln!(f, "let {} = {}", l.name.inner, l.value.inner)
 }
 
-fn pp_def_pmap(f: &mut fmt::Formatter, p: &DefPMap, d: usize) -> fmt::Result {
+fn pp_def_partial_map(f: &mut fmt::Formatter, p: &DefPartialMap, d: usize) -> fmt::Result {
     pad(f, d)?;
     if p.total {
         writeln!(
