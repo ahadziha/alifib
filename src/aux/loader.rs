@@ -69,7 +69,9 @@ pub struct LoadedFile {
 pub enum LoadFileError {
     Load { path: String, cause: LoadError },
     Parse { path: String, source: String, errors: Vec<LangError> },
-    Resolve(ResolveError),
+    ModuleNotFound { module_name: String },
+    ModuleIoError { path: String, reason: String },
+    Cycle { path: String },
 }
 
 impl Loader {
@@ -126,8 +128,7 @@ impl Loader {
                 source: source.clone(),
                 errors,
             })?;
-        let modules = resolve_all_modules(&file_loader, &canonical_path, &program)
-            .map_err(LoadFileError::Resolve)?;
+        let modules = resolve_all_modules(&file_loader, &canonical_path, &program)?;
         Ok(LoadedFile { canonical_path, source, program, modules })
     }
 }
@@ -176,14 +177,6 @@ pub struct ModuleStore {
     dep_order: Vec<String>,
 }
 
-#[derive(Debug)]
-pub enum ResolveError {
-    NotFound { module_name: String },
-    IoError { path: String, reason: String },
-    ParseError { path: String, source: String, errors: Vec<LangError> },
-    Cycle { path: String },
-}
-
 impl ModuleStore {
     fn new() -> Self {
         ModuleStore {
@@ -221,7 +214,7 @@ impl ModuleStore {
     }
 }
 
-fn find_file(loader: &FileLoader, module_name: &str) -> Result<(String, String), ResolveError> {
+fn find_file(loader: &FileLoader, module_name: &str) -> Result<(String, String), LoadFileError> {
     let filename = format!("{}.ali", module_name);
     for dir in &loader.search_paths {
         let candidate = format!("{}/{}", dir, filename);
@@ -229,7 +222,7 @@ fn find_file(loader: &FileLoader, module_name: &str) -> Result<(String, String),
             Ok(contents) => {
                 // File confirmed readable; strict canonicalization must succeed.
                 let canonical = path::canonicalize_existing(&candidate)
-                    .map_err(|e| ResolveError::IoError {
+                    .map_err(|e| LoadFileError::ModuleIoError {
                         path: candidate,
                         reason: e.to_string(),
                     })?;
@@ -237,18 +230,18 @@ fn find_file(loader: &FileLoader, module_name: &str) -> Result<(String, String),
             }
             Err(LoadError::NotFound) => continue,
             Err(LoadError::IoError(reason)) => {
-                return Err(ResolveError::IoError { path: candidate, reason });
+                return Err(LoadFileError::ModuleIoError { path: candidate, reason });
             }
         }
     }
-    Err(ResolveError::NotFound { module_name: module_name.to_owned() })
+    Err(LoadFileError::ModuleNotFound { module_name: module_name.to_owned() })
 }
 
 fn resolve_all_modules(
     loader: &FileLoader,
     root_path: &str,
     root_program: &Program,
-) -> Result<ModuleStore, ResolveError> {
+) -> Result<ModuleStore, LoadFileError> {
     let mut store = ModuleStore::new();
     // `visited` tracks all paths encountered in the DFS.  The root is seeded
     // here but never inserted into the store (it is handled separately).  Any
@@ -267,7 +260,7 @@ fn resolve_recursive(
     program: &Program,
     store: &mut ModuleStore,
     visited: &mut HashSet<String>,
-) -> Result<(), ResolveError> {
+) -> Result<(), LoadFileError> {
     let includes = language::collect_includes(program);
     for module_name in includes {
         let (canonical_path, contents) = find_file(loader, &module_name)?;
@@ -279,10 +272,10 @@ fn resolve_recursive(
         }
 
         if !visited.insert(canonical_path.clone()) {
-            return Err(ResolveError::Cycle { path: canonical_path });
+            return Err(LoadFileError::Cycle { path: canonical_path });
         }
 
-        let program = language::parse(&contents).map_err(|errors| ResolveError::ParseError {
+        let program = language::parse(&contents).map_err(|errors| LoadFileError::Parse {
             path: canonical_path.clone(),
             source: contents.clone(),
             errors,

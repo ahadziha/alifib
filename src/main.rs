@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use alifib::aux::loader::Loader;
 use alifib::language;
-use alifib::output::InterpretedFile;
+use alifib::output::{InterpretedFile, LoadResult};
 
 const USAGE: &str = "Usage: alifib <input-file> [-o|--output <output-file>] [--ast] [--bench N]";
 
@@ -82,9 +82,10 @@ fn write_output(path: Option<&str>, text: &str) -> Result<(), String> {
 }
 
 fn run_interpreter(input: &str, output_path: Option<&str>) -> bool {
-    let file = match InterpretedFile::load(&Loader::default(vec![]), input) {
-        Some(file) => file,
-        None => return false,
+    let result = InterpretedFile::load(&Loader::default(vec![]), input);
+    let file = match result {
+        LoadResult::Ok(f) => f,
+        other => { other.report(); return false; }
     };
     if let Err(msg) = write_output(output_path, &file.to_string()) {
         eprintln!("error: {}", msg);
@@ -98,16 +99,15 @@ fn run_interpreter(input: &str, output_path: Option<&str>) -> bool {
 
 fn run_bench(input: &str, n: usize) -> bool {
     let loader = Loader::default(vec![]);
-    match InterpretedFile::load(&loader, input) {
-        None => {
-            eprintln!("error: benchmark file failed on warmup");
-            return false;
-        }
-        Some(file) if file.has_holes() => {
-            eprintln!("error: benchmark file contains holes");
-            return false;
-        }
-        _ => {}
+    let warmup = InterpretedFile::load(&loader, input);
+    if !warmup.is_ok() {
+        warmup.report();
+        eprintln!("error: benchmark file failed on warmup");
+        return false;
+    }
+    if warmup.ok().is_some_and(|f| f.has_holes()) {
+        eprintln!("error: benchmark file contains holes");
+        return false;
     }
     let start = Instant::now();
     for _ in 0..n {

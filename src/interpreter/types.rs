@@ -275,6 +275,15 @@ pub fn make_error(span: Span, message: impl Into<String>) -> Error {
     Error::Runtime {
         message: message.into(),
         span,
+        notes: vec![],
+    }
+}
+
+pub fn make_error_from_core(span: Span, error: crate::aux::Error) -> Error {
+    Error::Runtime {
+        message: error.message,
+        span,
+        notes: error.notes,
     }
 }
 

@@ -42,7 +42,7 @@ fn main() {
 
     if !result.errors.is_empty() {
         for e in &result.errors {
-            eprintln!("error: {:?}", e);
+            eprintln!("error: {}", e);
         }
         std::process::exit(1);
     }

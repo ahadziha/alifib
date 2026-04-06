@@ -1,12 +1,55 @@
-use crate::aux::{loader::Loader, Tag};
+use crate::aux::{loader::{LoadFileError, Loader}, Tag};
 use crate::core::{
     complex::{Complex, MapDomain},
     diagram::{CellData, Diagram, Sign},
     partial_map::PartialMap,
 };
 use crate::interpreter::{Context, GlobalStore, HoleBd, HoleInfo, interpret_program};
+use crate::language::Error as LangError;
 use std::fmt;
 use std::sync::Arc;
+
+// ---- LoadResult ----
+
+/// The outcome of attempting to load and interpret a source file.
+///
+/// Callers that only want success can call `.ok()` or pattern-match.
+/// Callers that want to print diagnostics can call `.report()`.
+pub enum LoadResult {
+    /// Interpretation succeeded.
+    Ok(InterpretedFile),
+    /// File loading or dependency resolution failed.
+    LoadError(LoadFileError),
+    /// Parsing or interpretation of a module produced errors.
+    InterpError { errors: Vec<LangError>, source: String, path: String },
+}
+
+impl LoadResult {
+    /// Print diagnostics to stderr, mirroring the previous `Option`-based behaviour.
+    pub fn report(&self) {
+        match self {
+            LoadResult::Ok(_) => {}
+            LoadResult::LoadError(e) => crate::aux::error::report_load_file_error(e),
+            LoadResult::InterpError { errors, source, path } => {
+                crate::language::report_errors(errors, source, path);
+            }
+        }
+    }
+
+    /// Consume, returning `Some(InterpretedFile)` on success, `None` otherwise.
+    /// Diagnostics are NOT printed; call `report()` first if you need them.
+    pub fn ok(self) -> Option<InterpretedFile> {
+        match self {
+            LoadResult::Ok(f) => Some(f),
+            _ => None,
+        }
+    }
+
+    /// Returns `true` if interpretation succeeded.
+    pub fn is_ok(&self) -> bool {
+        matches!(self, LoadResult::Ok(_))
+    }
+}
 
 // ---- InterpretedFile ----
 
@@ -19,22 +62,21 @@ pub struct InterpretedFile {
 }
 
 impl InterpretedFile {
-    /// Load, parse, and interpret a source file. Returns `None` and prints
-    /// diagnostics to stderr if loading or interpretation fails.
+    /// Load, parse, and interpret a source file, returning a structured [`LoadResult`].
     ///
     /// The pipeline has three phases:
     /// 1. Parse the root file and discover all transitively included modules.
     /// 2. Resolve the full dependency graph (handled inside `loader.load`).
     /// 3. Interpret every dependency in topological order (leaves first), then
     ///    interpret the root.  All results share a single accumulated `GlobalStore`.
-    pub fn load(loader: &Loader, path: &str) -> Option<Self> {
+    ///
+    /// Call [`LoadResult::report`] to print diagnostics to stderr, then
+    /// [`LoadResult::ok`] to extract the file on success.
+    pub fn load(loader: &Loader, path: &str) -> LoadResult {
         // Phase 1 + 2: read, parse, resolve all dependencies.
         let loaded = match loader.load(path) {
             Ok(f) => f,
-            Err(e) => {
-                crate::aux::error::report_load_file_error(&e);
-                return None;
-            }
+            Err(e) => return LoadResult::LoadError(e),
         };
 
         let (resolutions, topo_modules) = loaded.modules.into_parts();
@@ -50,8 +92,11 @@ impl InterpretedFile {
             );
             let dep_result = interpret_program(dep_context, &dep_module.program);
             if !dep_result.errors.is_empty() {
-                crate::language::report_errors(&dep_result.errors, &dep_module.source, dep_path);
-                return None;
+                return LoadResult::InterpError {
+                    errors: dep_result.errors,
+                    source: dep_module.source.clone(),
+                    path: dep_path.clone(),
+                };
             }
             prev_state = dep_result.context.state;
         }
@@ -65,11 +110,14 @@ impl InterpretedFile {
         let result = interpret_program(root_context, &loaded.program);
 
         if !result.errors.is_empty() {
-            crate::language::report_errors(&result.errors, &loaded.source, &loaded.canonical_path);
-            return None;
+            return LoadResult::InterpError {
+                errors: result.errors,
+                source: loaded.source,
+                path: loaded.canonical_path,
+            };
         }
 
-        Some(Self {
+        LoadResult::Ok(Self {
             state: Arc::clone(&result.context.state),
             holes: result.holes,
             source: loaded.source,

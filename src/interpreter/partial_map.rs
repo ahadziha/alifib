@@ -255,7 +255,7 @@ fn interpret_partial_map_clause(ctx: &PartialMapCtx<'_>, map: PartialMap, clause
     match interpret_assign(&combined.context, map, ctx.domain, ctx.scope, &left_term, &right_term) {
         Ok(new_map) => (Some(new_map), combined),
         Err(e) => {
-            combined.add_error(make_error(clause.span, e.to_string()));
+            combined.add_error(make_error_from_core(clause.span, e));
             (None, combined)
         }
     }

@@ -45,7 +45,7 @@ fn boundary_term_from_diagram(
     match Diagram::boundary(sign, boundary_dim, diagram) {
         Ok(boundary) => (Some(Term::Diag(boundary)), result),
         Err(error) => {
-            result.add_error(make_error(span, error.to_string()));
+            result.add_error(make_error_from_core(span, error));
             (None, result)
         }
     }
@@ -69,7 +69,7 @@ fn apply_map_component(
         Component::Value(Term::Diag(diagram)) => match PartialMap::apply(&eval_map.map, &diagram) {
             Ok(image_diagram) => (Some(Term::Diag(image_diagram)), result),
             Err(error) => {
-                result.add_error(make_error(span, error.to_string()));
+                result.add_error(make_error_from_core(span, error));
                 (None, result)
             }
         },
