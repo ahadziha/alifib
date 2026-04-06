@@ -10,6 +10,22 @@ use std::sync::Arc;
 
 // ---- Helpers ----
 
+/// Extract a `Diagram` from an `Option<Term>`, failing with an error if it's a map.
+fn require_diagram_term(
+    term: Option<Term>,
+    mut result: InterpResult,
+    span: Span,
+) -> (Option<Diagram>, InterpResult) {
+    match term {
+        None => (None, result),
+        Some(Term::Diag(d)) => (Some(d), result),
+        Some(Term::Map(_)) => {
+            result.add_error(make_error(span, "Not a diagram"));
+            (None, result)
+        }
+    }
+}
+
 fn parse_paste_dim(context: &Context, dim: &Spanned<String>) -> Step<usize> {
     dim.inner
         .parse::<usize>()
@@ -277,51 +293,51 @@ pub fn interpret_diagram_as_term(
 ) -> (Option<Term>, InterpResult) {
     match &diagram.inner {
         ast::Diagram::Principal(exprs) => {
-            interpret_principal_as_term(context, scope, exprs, diagram.span)
+            interpret_sequence_as_term(context, scope, exprs, diagram.span)
         }
         ast::Diagram::Paste { lhs, dim, rhs } => {
-            let (k_opt, k_result) = parse_paste_dim(context, dim);
-            let Some(k) = k_opt else { return (None, k_result); };
-            // Right side first
-            let (right_opt, right_result) =
-                interpret_principal_as_term(context, scope, rhs, diagram.span);
-            match right_opt {
-                None => (None, right_result),
-                Some(Term::Map(_)) => {
-                    let mut r = right_result;
-                    r.add_error(make_error(diagram.span, "Not a diagram"));
-                    (None, r)
-                }
-                Some(Term::Diag(d_right)) => {
-                    let (left_opt, left_result) =
-                        interpret_diagram_as_term(&right_result.context, scope, lhs);
-                    let combined = InterpResult::combine(right_result, left_result);
-                    match left_opt {
-                        None => (None, combined),
-                        Some(Term::Map(_)) => {
-                            let mut r = combined;
-                            r.add_error(make_error(diagram.span, "Not a diagram"));
-                            (None, r)
-                        }
-                        Some(Term::Diag(d_left)) => match Diagram::paste(k, &d_left, &d_right) {
-                            Ok(d) => (Some(Term::Diag(d)), combined),
-                            Err(e) => {
-                                let mut r = combined;
-                                r.add_error(make_error(
-                                    diagram.span,
-                                    format!("Failed to paste diagrams: {}", e),
-                                ));
-                                (None, r)
-                            }
-                        },
-                    }
-                }
-            }
+            interpret_paste(context, scope, lhs, dim, rhs, diagram.span)
         }
     }
 }
 
-fn interpret_principal_as_term(
+/// Interpret an explicit paste `lhs *k rhs`. The right-hand side is evaluated first
+/// (it determines the context for the left), then both are pasted at dimension k.
+fn interpret_paste(
+    context: &Context,
+    scope: &Complex,
+    lhs: &Spanned<ast::Diagram>,
+    dim: &Spanned<String>,
+    rhs: &[Spanned<DExpr>],
+    span: Span,
+) -> (Option<Term>, InterpResult) {
+    let (k_opt, k_result) = parse_paste_dim(context, dim);
+    let Some(k) = k_opt else { return (None, k_result); };
+
+    // Right side evaluated first: its input boundary constrains the left side.
+    let (right_term, right_result) = interpret_sequence_as_term(context, scope, rhs, span);
+    let (d_right, right_result) = require_diagram_term(right_term, right_result, span);
+    let Some(d_right) = d_right else { return (None, right_result); };
+
+    let (left_term, left_result) = interpret_diagram_as_term(&right_result.context, scope, lhs);
+    let combined = InterpResult::combine(right_result, left_result);
+    let (d_left, combined) = require_diagram_term(left_term, combined, span);
+    let Some(d_left) = d_left else { return (None, combined); };
+
+    match Diagram::paste(k, &d_left, &d_right) {
+        Ok(d) => (Some(Term::Diag(d)), combined),
+        Err(e) => {
+            let mut r = combined;
+            r.add_error(make_error(span, format!("Failed to paste diagrams: {}", e)));
+            (None, r)
+        }
+    }
+}
+
+/// Interpret a juxtaposition sequence of diagram expressions.
+/// A single expression evaluates to its term; multiple expressions are
+/// implicitly pasted at the highest compatible dimension.
+fn interpret_sequence_as_term(
     context: &Context,
     scope: &Complex,
     exprs: &[Spanned<DExpr>],
@@ -503,26 +519,23 @@ pub fn check_assert(pair: &TermPair) -> Result<(), String> {
         }
         TermPair::Maps { fst, snd, domain } => {
             for (_, gen_name, tag) in sorted_generators(domain) {
-                let in_first = fst.is_defined_at(&tag);
-                let in_second = snd.is_defined_at(&tag);
-                if in_first && !in_second {
-                    return Err(format!(
+                match (fst.is_defined_at(&tag), snd.is_defined_at(&tag)) {
+                    (true, false) => return Err(format!(
                         "`{}` is in the domain of the first map but not the second",
                         gen_name
-                    ));
-                }
-                if in_second && !in_first {
-                    return Err(format!(
+                    )),
+                    (false, true) => return Err(format!(
                         "`{}` is in the domain of the second map but not the first",
                         gen_name
-                    ));
-                }
-                if in_first {
-                    let img1 = fst.image(&tag).map_err(|e| e.to_string())?;
-                    let img2 = snd.image(&tag).map_err(|e| e.to_string())?;
-                    if !Diagram::isomorphic(img1, img2) {
-                        return Err(format!("The maps differ on `{}`", gen_name));
+                    )),
+                    (true, true) => {
+                        let img1 = fst.image(&tag).map_err(|e| e.to_string())?;
+                        let img2 = snd.image(&tag).map_err(|e| e.to_string())?;
+                        if !Diagram::isomorphic(img1, img2) {
+                            return Err(format!("The maps differ on `{}`", gen_name));
+                        }
                     }
+                    (false, false) => {}
                 }
             }
             Ok(())

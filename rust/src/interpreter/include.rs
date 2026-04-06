@@ -50,14 +50,7 @@ fn resolve_attach_type_id(
 ) -> Result<GlobalId, InterpResult> {
     match domain {
         MapDomain::Type(id) => Ok(*id),
-        MapDomain::Module(_) => {
-            let mut result = InterpResult::ok(context.clone());
-            result.add_error(make_error(
-                unknown_span(),
-                "Unexpected module domain in attach",
-            ));
-            Err(result)
-        }
+        MapDomain::Module(_) => Err(error_result(context, unknown_span(), "Unexpected module domain in attach")),
     }
 }
 
@@ -133,31 +126,20 @@ pub fn interpret_include_module_instr(
         .unwrap_or_else(|| module_name.clone());
 
     let module_id = context.current_module.clone();
-    {
-        let scope = match context.state.find_module(&module_id) {
-            None => {
-                let mut result = InterpResult::ok(context.clone());
-                result.add_error(make_error(span, "Module not found"));
-                return result;
-            }
-            Some(m) => m,
-        };
 
-        if let Some(result) = ensure_name_free(context, scope, &alias, span, NameKind::PartialMap) {
-            return result;
-        }
+    let Some(scope) = context.state.find_module(&module_id) else {
+        return error_result(context, span, "Module not found");
+    };
+    if let Some(result) = ensure_name_free(context, scope, &alias, span, NameKind::PartialMap) {
+        return result;
     }
 
     let Some(canonical_path) = modules.resolve(&module_id, &module_name).map(|p| p.to_owned()) else {
-        let mut result = InterpResult::ok(context.clone());
-        result.add_error(make_error(span, format!("Module file {}.ali not found in search paths", module_name)));
-        return result;
+        return error_result(context, span, format!("Module file {}.ali not found in search paths", module_name));
     };
 
     let Some(resolved) = modules.get(&canonical_path) else {
-        let mut result = InterpResult::ok(context.clone());
-        result.add_error(make_error(span, format!("Resolved module {} not found in store", canonical_path)));
-        return result;
+        return error_result(context, span, format!("Resolved module {} not found in store", canonical_path));
     };
 
     let include_context = Context::new_sharing_state(canonical_path.clone(), context);
@@ -172,12 +154,9 @@ pub fn interpret_include_module_instr(
 
     result.context.state = Arc::clone(&include_result.context.state);
 
-    let included_arc = match result.context.state.find_module_arc(&canonical_path) {
-        Some(arc) => arc,
-        None => {
-            result.add_error(make_error(span, "Included module complex not found"));
-            return result;
-        }
+    let Some(included_arc) = result.context.state.find_module_arc(&canonical_path) else {
+        result.add_error(make_error(span, "Included module complex not found"));
+        return result;
     };
 
     let imported_generators = prefixed_generators(&included_arc, &alias, true);

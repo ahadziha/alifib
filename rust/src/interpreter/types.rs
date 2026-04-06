@@ -250,6 +250,13 @@ pub fn fail<T>(context: &Context, span: Span, message: impl Into<String>) -> Ste
     (None, result)
 }
 
+/// Like `fail`, but for functions that return `InterpResult` directly (not `Step<T>`).
+pub fn error_result(context: &Context, span: Span, message: impl Into<String>) -> InterpResult {
+    let mut result = InterpResult::ok(context.clone());
+    result.add_error(make_error(span, message));
+    result
+}
+
 pub fn ensure_name_free(
     context: &Context,
     scope: &Complex,

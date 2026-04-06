@@ -23,7 +23,7 @@ fn render_mapped_boundary(
     }
 }
 
-fn fill_hole_boundary(
+fn enrich_hole(
     hole: &mut HoleInfo,
     scope: &Complex,
     domain: &Complex,
@@ -65,7 +65,7 @@ fn fill_hole_boundary(
     }
 }
 
-fn finalize_hole_boundaries(
+fn enrich_holes(
     result: &mut InterpResult,
     scope: &Complex,
     domain: &Complex,
@@ -73,7 +73,7 @@ fn finalize_hole_boundaries(
 ) {
     let context = result.context.clone();
     for hole in &mut result.holes {
-        fill_hole_boundary(hole, scope, domain, map, &context);
+        enrich_hole(hole, scope, domain, map, &context);
     }
 }
 
@@ -178,7 +178,7 @@ fn initial_eval_map(
     }
 }
 
-fn apply_pmap_clauses(
+fn eval_pmap_clauses(
     context: &Context,
     scope: &Complex,
     domain: &Complex,
@@ -216,7 +216,7 @@ fn interpret_pmap_ext(
     };
 
     let effective_domain = Arc::clone(&initial.domain);
-    let (map_opt, clause_result) = apply_pmap_clauses(
+    let (map_opt, clause_result) = eval_pmap_clauses(
         &prefix_result.context,
         scope,
         &effective_domain,
@@ -228,7 +228,7 @@ fn interpret_pmap_ext(
     };
 
     let mut result = InterpResult::combine(prefix_result, clause_result);
-    finalize_hole_boundaries(&mut result, scope, &effective_domain, &current_map);
+    enrich_holes(&mut result, scope, &effective_domain, &current_map);
     (Some(EvalMap { map: current_map, domain: effective_domain }), result)
 }
 
@@ -297,6 +297,15 @@ fn extend_matching_map_images(
 
     for (_, generator_name, tag) in sorted_generators(map_domain) {
         match (left_map.map.is_defined_at(&tag), right_map.map.is_defined_at(&tag)) {
+            (false, false) => {}
+            (true, false) => return Err(aux::Error::new(format!(
+                "`{}` is in the domain of the first map but not the second",
+                generator_name
+            ))),
+            (false, true) => return Err(aux::Error::new(format!(
+                "`{}` is in the domain of the second map but not the first",
+                generator_name
+            ))),
             (true, true) => {
                 let left_image = left_map.map.image(&tag)?;
                 if left_image.is_cell() {
@@ -313,19 +322,6 @@ fn extend_matching_map_images(
                     }
                 }
             }
-            (true, false) => {
-                return Err(aux::Error::new(format!(
-                    "{} is in the domain of definition of the first map, but not the second map",
-                    generator_name
-                )));
-            }
-            (false, true) => {
-                return Err(aux::Error::new(format!(
-                    "{} is in the domain of definition of the second map, but not the first map",
-                    generator_name
-                )));
-            }
-            (false, false) => {}
         }
     }
 
@@ -542,7 +538,7 @@ pub fn extend_map_for_cell(
 
 // ---- Partial map naming ----
 
-fn ensure_total_map_defined(
+fn check_map_totality(
     result: &mut InterpResult,
     domain: &Complex,
     map: &PMap,
@@ -593,7 +589,7 @@ pub fn interpret_def_pmap(
         return (None, combined);
     };
 
-    ensure_total_map_defined(&mut combined, &domain, &eval_map.map, &dp.name.inner, dp.name.span, dp.total);
+    check_map_totality(&mut combined, &domain, &eval_map.map, &dp.name.inner, dp.name.span, dp.total);
 
     let name = dp.name.inner.clone();
     (Some((name, eval_map.map, MapDomain::Type(id))), combined)

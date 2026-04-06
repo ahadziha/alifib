@@ -21,10 +21,11 @@ use super::scope::{
     insert_complex_diagram_binding, insert_complex_map_binding, insert_module_diagram_binding,
     insert_module_map_binding, insert_type_diagram_binding, insert_type_map_binding,
     interpret_generator_boundaries, interpret_items, interpret_items_in_complex_scope,
-    interpret_items_in_type_scope, resolve_complex_type_scope,
+    interpret_items_in_type_scope, resolve_type_scope,
 };
 pub use super::types::{
-    Context, InterpResult, Mode, NameKind, TypeScope, ensure_name_free, identity_map, make_error,
+    Context, InterpResult, Mode, NameKind, TypeScope, ensure_name_free, error_result, identity_map,
+    make_error,
 };
 // ---- Main interpreter ----
 
@@ -101,9 +102,7 @@ fn interpret_type_generator(context: &Context, generator: &ast::Generator) -> In
     let name_span = generator_name.name.span;
 
     let Some(module_scope) = current_module_scope(context) else {
-        let mut result = InterpResult::ok(context.clone());
-        result.add_error(make_error(name_span, "Module not found"));
-        return result;
+        return error_result(context, name_span, "Module not found");
     };
 
     if let Some(result) = ensure_name_free(context, module_scope, &name, name_span, NameKind::Generator) {
@@ -171,9 +170,7 @@ pub(super) fn interpret_complex(
     let complex_span = complex.span;
 
     let Some(module_scope) = current_module_scope(context) else {
-        let mut result = InterpResult::ok(context.clone());
-        result.add_error(make_error(complex_span, format!("Module `{}` not found", context.current_module)));
-        return (None, result);
+        return (None, error_result(context, complex_span, format!("Module `{}` not found", context.current_module)));
     };
 
     match &complex.inner {
@@ -183,7 +180,7 @@ pub(super) fn interpret_complex(
             } else {
                 "Type not found in global record:"
             };
-            resolve_complex_type_scope(
+            resolve_type_scope(
                 context,
                 module_scope,
                 Some(addr),
@@ -192,7 +189,7 @@ pub(super) fn interpret_complex(
             )
         }
         ast::Complex::Block { address, body } => {
-            let (scope_opt, mut result) = resolve_complex_type_scope(
+            let (scope_opt, mut result) = resolve_type_scope(
                 context,
                 module_scope,
                 address.as_ref(),

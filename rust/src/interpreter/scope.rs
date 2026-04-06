@@ -295,7 +295,7 @@ pub fn create_generator_diagram(
         .map_err(|error| make_error(span, format!("Failed to create generator cell: {}", error)))
 }
 
-pub fn resolve_type_scope_by_id(
+pub fn open_type_scope(
     context: &Context,
     owner_type_id: GlobalId,
     span: Span,
@@ -315,7 +315,7 @@ pub fn resolve_type_scope_by_id(
     }
 }
 
-pub fn resolve_complex_owner_type_id(
+pub fn resolve_owner_type_id(
     context: &Context,
     module_scope: &Complex,
     address: Option<&Vec<Spanned<String>>>,
@@ -327,7 +327,7 @@ pub fn resolve_complex_owner_type_id(
     }
 }
 
-pub fn resolve_complex_type_scope(
+pub fn resolve_type_scope(
     context: &Context,
     module_scope: &Complex,
     address: Option<&Vec<Spanned<String>>>,
@@ -335,27 +335,24 @@ pub fn resolve_complex_type_scope(
     not_found_msg: &str,
 ) -> (Option<TypeScope>, InterpResult) {
     let (owner_type_id, owner_result) =
-        resolve_complex_owner_type_id(context, module_scope, address, span);
+        resolve_owner_type_id(context, module_scope, address, span);
     let Some(owner_type_id) = owner_type_id else {
         return (None, owner_result);
     };
 
     let (scope, scope_result) =
-        resolve_type_scope_by_id(&owner_result.context, owner_type_id, span, not_found_msg);
+        open_type_scope(&owner_result.context, owner_type_id, span, not_found_msg);
     (scope, InterpResult::combine(owner_result, scope_result))
 }
 
 // ---- Address resolution ----
 
-fn module_scope_for_address(context: &Context, span: Span) -> Step<Arc<Complex>> {
+fn current_module_arc(context: &Context, span: Span) -> Step<Arc<Complex>> {
     let module_id = &context.current_module;
     let mut result = InterpResult::ok(context.clone());
 
     let Some(module_arc) = context.state.find_module_arc(module_id) else {
-        result.add_error(make_error(
-            span,
-            format!("Module `{}` not found", module_id),
-        ));
+        result.add_error(make_error(span, format!("Module `{}` not found", module_id)));
         return (None, result);
     };
 
@@ -403,7 +400,7 @@ fn resolve_address_prefix_scope(
     (Some(current_scope), result)
 }
 
-fn global_cell_id_for_named_diagram(
+fn type_id_of_named_diagram(
     scope: &Complex,
     name: &str,
     name_span: Span,
@@ -437,7 +434,7 @@ fn global_cell_id_for_named_diagram(
 
 /// Resolve an address (dotted path) in the current module scope to a global type ID.
 pub fn interpret_address(context: &Context, address: &Address, addr_span: Span) -> Step<GlobalId> {
-    let (module_scope, module_result) = module_scope_for_address(context, addr_span);
+    let (module_scope, module_result) = current_module_arc(context, addr_span);
     let Some(module_scope) = module_scope else {
         return (None, module_result);
     };
@@ -458,7 +455,7 @@ pub fn interpret_address(context: &Context, address: &Address, addr_span: Span) 
     };
 
     let (id_opt, id_result) =
-        global_cell_id_for_named_diagram(&target_scope, last_name, *last_span, context);
+        type_id_of_named_diagram(&target_scope, last_name, *last_span, context);
     (
         id_opt,
         InterpResult::combine(InterpResult::combine(module_result, prefix_result), id_result),
