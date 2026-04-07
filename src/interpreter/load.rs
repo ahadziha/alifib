@@ -166,7 +166,14 @@ impl InterpretedFile {
         let entries: Vec<HoleEntry> = result.holes.iter()
             .map(|h| HoleEntry { id: h.id, span: h.span })
             .collect();
-        let solved_holes = solve(&entries, &result.constraints);
+        let mut solved_holes = solve(&entries, &result.constraints);
+
+        // Copy rendering hints from HoleInfo into SolvedHole.  The solver never
+        // reads these; they are used only by the renderer to show `_` for
+        // labels that are in scope but not yet determined.
+        for (hole_info, solved) in result.holes.iter().zip(solved_holes.iter_mut()) {
+            solved.partial_hints = hole_info.partial_hints.clone();
+        }
 
         LoadResult::Loaded(Self {
             state: Arc::clone(&result.context.state),

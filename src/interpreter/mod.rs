@@ -19,3 +19,4 @@ pub use eval::{Context, InterpResult, interpret_program};
 pub use global_store::GlobalStore;
 pub use inference::{HoleEntry, HoleId, SolvedHole};
 pub use load::{InterpretedFile, LoadResult};
+pub use types::PartialHint;

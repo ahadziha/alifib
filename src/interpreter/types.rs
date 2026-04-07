@@ -1,5 +1,5 @@
 use super::global_store::GlobalStore;
-use super::inference::{Constraint, HoleId};
+use super::inference::{BdSlot, Constraint, HoleId};
 use crate::aux::{GlobalId, LocalId, Tag};
 use crate::aux::loader::ModuleResolutions;
 use crate::core::{
@@ -74,6 +74,22 @@ impl Context {
 
 // ---- Hole info ----
 
+/// Rendering hint for a partially-known boundary slot.
+///
+/// Stored on [`HoleInfo`] (and copied to [`super::inference::SolvedHole`]) when
+/// a partial map covers only part of a hole's boundary.  The solver never reads
+/// these hints; they are used exclusively by the renderer to show `_` for
+/// unmapped labels.
+#[derive(Debug, Clone)]
+pub struct PartialHint {
+    pub slot: BdSlot,
+    /// The un-mapped boundary diagram (from the source cell).
+    pub boundary: Diagram,
+    /// The partial map at the time the hint was generated.
+    pub map: PartialMap,
+    pub scope: Arc<Complex>,
+}
+
 /// Structured boundary data for a hole, stored without rendering.
 /// Tracks a `?` hole encountered during interpretation.
 ///
@@ -93,14 +109,25 @@ pub struct HoleInfo {
     ///
     /// When true, `enrich_holes` will attempt a full `PartialMap::apply` on the
     /// source cell's boundary diagrams and emit `BoundaryEq` if the map covers
-    /// them completely, enabling consistency checking against other constraints.
+    /// them completely.  When the map is incomplete, a `PartialHint` is stored
+    /// for the renderer instead of emitting a solver constraint.
     pub direct_in_partial_map: bool,
+    /// Rendering hints for boundary slots that are only partially covered by the
+    /// partial map.  These bypass the solver and are used directly by the
+    /// renderer to show `_` for unmapped labels.
+    pub partial_hints: Vec<PartialHint>,
 }
 
 impl HoleInfo {
     /// Create a hole record at the given source location, with no boundary information yet.
     pub fn new(span: Span) -> Self {
-        Self { id: HoleId::fresh(), span, source_tag: None, direct_in_partial_map: false }
+        Self {
+            id: HoleId::fresh(),
+            span,
+            source_tag: None,
+            direct_in_partial_map: false,
+            partial_hints: vec![],
+        }
     }
 }
 

@@ -14,6 +14,7 @@ use crate::core::{
 };
 use crate::interpreter::{GlobalStore, InterpretedFile};
 use crate::interpreter::inference::{BdSlot, SolvedBd, SolvedHole};
+use crate::interpreter::PartialHint;
 use std::fmt;
 use super::types::{Cell, Dim, Map, Module, Store, Type};
 
@@ -224,18 +225,32 @@ fn format_slot(slot: &BdSlot) -> String {
     format!("∂{}{}", sign_superscript(slot.sign), aux::dim_subscript(slot.dim))
 }
 
-/// Render one side of a solved hole boundary.
+/// Render a fully resolved boundary slot.
 fn render_solved_bd(bd: &SolvedBd) -> String {
-    match bd {
-        SolvedBd::Known { diagram, scope, .. } => render_diagram(diagram, scope),
-        SolvedBd::Partial { boundary, map, scope, .. } => render_boundary_partial(boundary, map, scope),
+    render_diagram(&bd.diagram, &bd.scope)
+}
+
+/// Render a boundary slot, falling back to the partial hint if the slot is not resolved.
+fn render_slot_with_hint(
+    slot: BdSlot,
+    boundaries: &std::collections::BTreeMap<BdSlot, SolvedBd>,
+    partial_hints: &[PartialHint],
+) -> String {
+    if let Some(bd) = boundaries.get(&slot) {
+        return render_solved_bd(bd);
     }
+    // Fall back to partial hint for this slot if available.
+    if let Some(hint) = partial_hints.iter().find(|h| h.slot == slot) {
+        return render_boundary_partial(&hint.boundary, &hint.map, &hint.scope);
+    }
+    "_".to_string()
 }
 
 /// Render a solved hole as a diagnostic message.
 ///
 /// Reports the principal boundary `src -> tgt` when the hole's dimension and
-/// principal slots are known; falls back to listing all known slots otherwise.
+/// principal slots are available (either fully resolved or via partial hints);
+/// falls back to listing all available slots otherwise.
 pub fn render_solved_hole(hole: &SolvedHole) -> String {
     // If an Eq constraint determined the exact value, report it.
     if let Some((ref diag, ref scope)) = hole.value {
@@ -246,26 +261,34 @@ pub fn render_solved_hole(hole: &SolvedHole) -> String {
         return msg;
     }
 
-    // Determine the best dimension k to display as "src -> tgt".
-    // Prefer the principal slot (dim n-1) when the dimension is known AND both
-    // Source-(n-1) and Target-(n-1) are present; otherwise find the highest k
-    // where both signs are available.
+    // A slot is "available" if it has a resolved boundary or a partial hint.
+    let has_slot = |slot: BdSlot| -> bool {
+        hole.boundaries.contains_key(&slot)
+            || hole.partial_hints.iter().any(|h| h.slot == slot)
+    };
+
+    // Collect all dims that have both Source and Target available (either resolved or hinted).
     let paired_max_k = || -> Option<usize> {
-        hole.boundaries
-            .keys()
-            .filter(|slot| {
-                hole.boundaries.contains_key(&BdSlot { sign: Sign::Source, dim: slot.dim })
-                    && hole.boundaries.contains_key(&BdSlot { sign: Sign::Target, dim: slot.dim })
+        let mut dims: std::collections::BTreeSet<usize> = hole.boundaries.keys()
+            .map(|s| s.dim)
+            .collect();
+        for h in &hole.partial_hints {
+            dims.insert(h.slot.dim);
+        }
+        dims.into_iter()
+            .filter(|&k| {
+                has_slot(BdSlot { sign: Sign::Source, dim: k })
+                    && has_slot(BdSlot { sign: Sign::Target, dim: k })
             })
-            .map(|slot| slot.dim)
             .max()
     };
+
+    // Prefer the principal slot (dim n-1) when the dimension is known.
     let best_k: Option<usize> = if let Some(n) = hole.dim {
         if n > 0 {
             let k = n - 1;
-            let has_principal =
-                hole.boundaries.contains_key(&BdSlot { sign: Sign::Source, dim: k })
-                && hole.boundaries.contains_key(&BdSlot { sign: Sign::Target, dim: k });
+            let has_principal = has_slot(BdSlot { sign: Sign::Source, dim: k })
+                && has_slot(BdSlot { sign: Sign::Target, dim: k });
             if has_principal { Some(k) } else { paired_max_k() }
         } else {
             None
@@ -277,49 +300,53 @@ pub fn render_solved_hole(hole: &SolvedHole) -> String {
     if let Some(k) = best_k {
         let src_slot = BdSlot { sign: Sign::Source, dim: k };
         let tgt_slot = BdSlot { sign: Sign::Target, dim: k };
-        if let (Some(src_bd), Some(tgt_bd)) =
-            (hole.boundaries.get(&src_slot), hole.boundaries.get(&tgt_slot))
-        {
-            let mut msg = format!("{} -> {}", render_solved_bd(src_bd), render_solved_bd(tgt_bd));
-            if !hole.inconsistencies.is_empty() {
-                msg.push_str(&format!(
-                    " [inconsistencies: {}]",
-                    hole.inconsistencies.join("; ")
-                ));
-            }
-            return msg;
-        }
-    }
-
-    // Fall back: list all known slots grouped by dimension, highest first.
-    if hole.boundaries.is_empty() {
-        let dim_info = hole.dim.map(|d| format!(" (dim {})", d)).unwrap_or_default();
-        if hole.inconsistencies.is_empty() {
-            format!("unknown boundary{}", dim_info)
-        } else {
-            format!("inconsistent constraints{}: {}", dim_info, hole.inconsistencies.join("; "))
-        }
-    } else {
-        // Collect distinct dims and iterate descending so higher dimensions come first.
-        let mut dims: Vec<usize> = hole.boundaries.keys().map(|s| s.dim).collect();
-        dims.sort_unstable();
-        dims.dedup();
-
-        let parts: Vec<String> = dims.iter().rev().flat_map(|&k| {
-            [Sign::Source, Sign::Target].iter().filter_map(move |&sign| {
-                let slot = BdSlot { sign, dim: k };
-                hole.boundaries.get(&slot).map(|bd| {
-                    format!("{} = {}", format_slot(&slot), render_solved_bd(bd))
-                })
-            })
-        }).collect();
-
-        let mut msg = parts.join(", ");
+        let src = render_slot_with_hint(src_slot, &hole.boundaries, &hole.partial_hints);
+        let tgt = render_slot_with_hint(tgt_slot, &hole.boundaries, &hole.partial_hints);
+        let mut msg = format!("{} -> {}", src, tgt);
         if !hole.inconsistencies.is_empty() {
             msg.push_str(&format!(" [inconsistencies: {}]", hole.inconsistencies.join("; ")));
         }
-        msg
+        return msg;
     }
+
+    // Fall back: list all available slots grouped by dimension, highest first.
+    let has_anything = !hole.boundaries.is_empty() || !hole.partial_hints.is_empty();
+    if !has_anything {
+        let dim_info = hole.dim.map(|d| format!(" (dim {})", d)).unwrap_or_default();
+        if hole.inconsistencies.is_empty() {
+            return format!("unknown boundary{}", dim_info);
+        } else {
+            return format!("inconsistent constraints{}: {}", dim_info, hole.inconsistencies.join("; "));
+        }
+    }
+
+    // Collect distinct dims from both resolved boundaries and partial hints.
+    let mut dims: Vec<usize> = {
+        let mut d: std::collections::BTreeSet<usize> = hole.boundaries.keys().map(|s| s.dim).collect();
+        for h in &hole.partial_hints {
+            d.insert(h.slot.dim);
+        }
+        d.into_iter().collect()
+    };
+    dims.sort_unstable();
+
+    let parts: Vec<String> = dims.iter().rev().flat_map(|&k| {
+        [Sign::Source, Sign::Target].iter().filter_map(move |&sign| {
+            let slot = BdSlot { sign, dim: k };
+            if has_slot(slot) {
+                Some(format!("{} = {}", format_slot(&slot),
+                    render_slot_with_hint(slot, &hole.boundaries, &hole.partial_hints)))
+            } else {
+                None
+            }
+        })
+    }).collect();
+
+    let mut msg = parts.join(", ");
+    if !hole.inconsistencies.is_empty() {
+        msg.push_str(&format!(" [inconsistencies: {}]", hole.inconsistencies.join("; ")));
+    }
+    msg
 }
 
 /// Print a diagnostic for each unsolved hole using constraint-solver output.
@@ -358,6 +385,7 @@ mod tests {
             boundaries: BTreeMap::new(),
             value: None,
             inconsistencies: vec![],
+            partial_hints: vec![],
         }
     }
 

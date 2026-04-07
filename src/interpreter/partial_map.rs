@@ -2,7 +2,7 @@ use super::diagram::{interpret_diagram_as_term, is_pure_hole_diagram};
 use super::inference::{BdSlot, Constraint, ConstraintOrigin};
 use super::resolve::{interpret_address, resolve_map_domain_complex, resolve_type_complex};
 use super::types::{
-    Context, EvalMap, InterpResult, Step, Term,
+    Context, EvalMap, InterpResult, PartialHint, Step, Term,
     fail, get_cell_data, make_error, make_error_from_core, sorted_generators,
 };
 use crate::aux::{self, LocalId, Tag};
@@ -18,6 +18,22 @@ use std::sync::Arc;
 
 /// Emit boundary constraints for all holes that have a source tag, using the
 /// current partial map state.
+///
+/// Only processes **direct** holes (where the hole is the entire RHS of a
+/// partial-map clause, e.g. `arr => ?`).  For those holes the source cell's
+/// image IS the hole, so the map applied to the source cell's boundary gives
+/// the hole's boundary.
+///
+/// For **embedded** holes (`arr => ? g`) this function emits nothing: the hole
+/// is only part of a composite, so the map applied to the source cell's
+/// boundary gives the composite's boundary, not the hole's.  The paste context
+/// already emits the correct `BoundaryEq` / `DimEq` constraints for embedded
+/// holes from the concrete neighbours in the composition.
+///
+/// When the map fully covers a boundary, a `BoundaryEq` solver constraint is
+/// emitted.  When the map only partially covers a boundary, a `PartialHint` is
+/// stored on the hole for the renderer (showing `_` for unmapped labels) and
+/// no solver constraint is emitted.
 fn enrich_holes(
     result: &mut InterpResult,
     scope: &Complex,
@@ -28,74 +44,104 @@ fn enrich_holes(
     // Created lazily: avoid cloning scope when no hole has a source_tag.
     let mut scope_arc: Option<Arc<Complex>> = None;
 
-    // Collect constraints to emit (can't push to result.constraints while also
-    // reading result.holes, since both are fields of `result`).
+    // Collect constraints to emit and hints to attach (can't push directly while
+    // iterating result.holes, since both are fields of `result`).
     let mut new_constraints: Vec<Constraint> = vec![];
+    // (hole_index, hint) pairs to attach after the loop.
+    let mut new_hints: Vec<(usize, PartialHint)> = vec![];
 
-    for hole in &result.holes {
-        // Constraint system: emit BoundaryEq or PartialBoundary for each boundary slot.
+    for (idx, hole) in result.holes.iter().enumerate() {
+        // Only enrich holes that appeared as the direct image of a source cell.
+        // Embedded holes are constrained by the paste context, not here.
+        if !hole.direct_in_partial_map { continue; }
         let Some(source_tag) = &hole.source_tag else { continue; };
         let Some(cell_data) = get_cell_data(context, domain, source_tag) else { continue; };
-        // 0-cells have no boundary, but a direct hole mapped from a 0-cell must itself be a 0-cell.
+
+        let origin = ConstraintOrigin::PartialMap { source_tag: source_tag.clone() };
+
+        // 0-cells have no boundary; a direct hole mapped from a 0-cell is itself a 0-cell.
         if matches!(cell_data, CellData::Zero) {
-            if hole.direct_in_partial_map {
-                let origin = ConstraintOrigin::PartialMap { source_tag: source_tag.clone() };
-                new_constraints.push(Constraint::DimEq { hole: hole.id, dim: 0, origin });
-            }
+            new_constraints.push(Constraint::DimEq { hole: hole.id, dim: 0, origin });
             continue;
         }
         let CellData::Boundary { boundary_in, boundary_out } = &cell_data else { continue; };
 
-        let origin = ConstraintOrigin::PartialMap { source_tag: source_tag.clone() };
         let scope_arc = scope_arc.get_or_insert_with(|| Arc::new(scope.clone())).clone();
         // boundary_in and boundary_out are parallel, so they share the same top_dim.
         let k = boundary_in.top_dim();
 
-        if hole.direct_in_partial_map {
-            // The image equals the source cell's image, so the hole's dimension is k+1.
-            // For embedded holes (`source_cell => ? g`) the paste context determines dim.
-            new_constraints.push(Constraint::DimEq {
-                hole: hole.id,
-                dim: k + 1,
-                origin: origin.clone(),
-            });
-            // Try a full apply: if the map covers the boundary, emit the strong BoundaryEq;
-            // otherwise fall back to PartialBoundary.  For embedded holes the map's
-            // target-boundary applies to the whole composite, so always use PartialBoundary.
-            for (sign, boundary) in [
-                (DiagramSign::Source, boundary_in),
-                (DiagramSign::Target, boundary_out),
-            ] {
-                let slot = BdSlot { sign, dim: k };
-                match PartialMap::apply(map, boundary) {
-                    Ok(mapped) => new_constraints.push(Constraint::BoundaryEq {
+        // The hole's dimension equals the source cell's dimension.
+        new_constraints.push(Constraint::DimEq {
+            hole: hole.id,
+            dim: k + 1,
+            origin: origin.clone(),
+        });
+
+        for (sign, boundary) in [
+            (DiagramSign::Source, boundary_in),
+            (DiagramSign::Target, boundary_out),
+        ] {
+            let slot = BdSlot { sign, dim: k };
+            match PartialMap::apply(map, boundary) {
+                Ok(mapped) => {
+                    // Map fully covers this boundary: emit a strong BoundaryEq.
+                    new_constraints.push(Constraint::BoundaryEq {
                         hole: hole.id, slot, diagram: mapped,
                         scope: scope_arc.clone(), origin: origin.clone(),
-                    }),
-                    Err(_) => new_constraints.push(Constraint::PartialBoundary {
-                        hole: hole.id, slot, boundary: (**boundary).clone(),
-                        map: map.clone(), scope: scope_arc.clone(), origin: origin.clone(),
-                    }),
+                    });
                 }
-            }
-        } else {
-            for (sign, boundary) in [
-                (DiagramSign::Source, boundary_in),
-                (DiagramSign::Target, boundary_out),
-            ] {
-                new_constraints.push(Constraint::PartialBoundary {
-                    hole: hole.id,
-                    slot: BdSlot { sign, dim: k },
-                    boundary: (**boundary).clone(),
-                    map: map.clone(),
-                    scope: scope_arc.clone(),
-                    origin: origin.clone(),
-                });
+                Err(_) => {
+                    // Map only partially covers this boundary: store a rendering
+                    // hint so the renderer can show `_` for unmapped labels.
+                    // No solver constraint is emitted — the partial map tells us
+                    // about the composite's boundary (not the hole's) for this slot,
+                    // but the hint is useful for display as a fallback.
+                    new_hints.push((idx, PartialHint {
+                        slot,
+                        boundary: (**boundary).clone(),
+                        map: map.clone(),
+                        scope: scope_arc.clone(),
+                    }));
+                }
             }
         }
     }
 
+    for (idx, hole) in result.holes.iter().enumerate() {
+        // For **embedded** holes (`source_cell => ? g`), no solver constraints are
+        // emitted (the paste context constrains the hole's actual boundaries).
+        // However, the partial map still provides useful rendering context: for the
+        // "outer" side of the composition (the side not adjacent to a concrete
+        // neighbour), the composite's boundary IS the hole's boundary.  We store
+        // PartialHints for both sides so the renderer can show a best-effort
+        // display; the paste context's BoundaryEq will take priority over any hint
+        // for the "inner" side.
+        if hole.direct_in_partial_map { continue; } // already handled above
+        let Some(source_tag) = &hole.source_tag else { continue; };
+        let Some(cell_data) = get_cell_data(context, domain, source_tag) else { continue; };
+        if matches!(cell_data, CellData::Zero) { continue; } // 0-cells have no boundary hints
+        let CellData::Boundary { boundary_in, boundary_out } = &cell_data else { continue; };
+
+        let scope_arc = scope_arc.get_or_insert_with(|| Arc::new(scope.clone())).clone();
+        let k = boundary_in.top_dim();
+
+        for (sign, boundary) in [
+            (DiagramSign::Source, boundary_in),
+            (DiagramSign::Target, boundary_out),
+        ] {
+            new_hints.push((idx, PartialHint {
+                slot: BdSlot { sign, dim: k },
+                boundary: (**boundary).clone(),
+                map: map.clone(),
+                scope: scope_arc.clone(),
+            }));
+        }
+    }
+
     result.constraints.extend(new_constraints);
+    for (idx, hint) in new_hints {
+        result.holes[idx].partial_hints.push(hint);
+    }
 }
 
 /// Interpret an anonymous map component (inline map definition with an explicit target complex).
