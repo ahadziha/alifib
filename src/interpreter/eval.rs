@@ -92,27 +92,40 @@ fn interpret_type_inst(
     }
 }
 
+/// Validate a generator name and interpret its boundary annotation.
+///
+/// Checks that the name is free in `scope`, then evaluates the optional boundary
+/// expression. Returns `(name, name_span, cell_data)` on success.
+fn prepare_generator(
+    context: &Context,
+    scope: &Complex,
+    generator_name: &ast::NameWithBoundary,
+) -> (Option<(String, Span, CellData)>, InterpResult) {
+    let name = generator_name.name.inner.clone();
+    let name_span = generator_name.name.span;
+
+    if let Some(result) = ensure_name_free(context, scope, &name, name_span, NameKind::Generator) {
+        return (None, result);
+    }
+
+    let (boundaries_opt, result) = interpret_generator_boundaries(context, scope, generator_name);
+    match boundaries_opt {
+        None => (None, result),
+        Some(boundaries) => (Some((name, name_span, boundaries)), result),
+    }
+}
+
 /// Interpret a generator declaration at the `@Type` level.
 ///
 /// Only 0-dimensional (object) generators are allowed here; higher-dimensional
 /// generators must appear inside a type body block.
 fn interpret_type_generator(context: &Context, generator: &ast::Generator) -> InterpResult {
-    let generator_name = &generator.name.inner;
-    let name = generator_name.name.inner.clone();
-    let name_span = generator_name.name.span;
-
     let Some(module_scope) = current_module_scope(context) else {
-        return error_result(context, name_span, "Module not found");
+        return error_result(context, generator.name.inner.name.span, "Module not found");
     };
 
-    if let Some(result) = ensure_name_free(context, module_scope, &name, name_span, NameKind::Generator) {
-        return result;
-    }
-
-    let (boundaries, mut result) = match interpret_generator_boundaries(context, module_scope, generator_name) {
-        (Some(boundaries), result) => (boundaries, result),
-        (None, result) => return result,
-    };
+    let (prep_opt, mut result) = prepare_generator(context, module_scope, &generator.name.inner);
+    let Some((name, name_span, boundaries)) = prep_opt else { return result; };
 
     // @Type blocks may only introduce 0-dimensional type generators (objects).
     // Higher-dimensional generators are declared inside the type complex itself
@@ -271,18 +284,8 @@ fn interpret_complex_generator(
     generator_name: &NameWithBoundary,
     outer_span: Span,
 ) -> (Complex, InterpResult) {
-    let name = generator_name.name.inner.clone();
-    let name_span = generator_name.name.span;
-
-    if let Some(result) = ensure_name_free(&context, &scope, &name, name_span, NameKind::Generator)
-    {
-        return (scope, result);
-    }
-
-    let (boundaries, mut result) = match interpret_generator_boundaries(&context, &scope, generator_name) {
-        (Some(boundaries), result) => (boundaries, result),
-        (None, result) => return (scope, result),
-    };
+    let (prep_opt, mut result) = prepare_generator(&context, &scope, generator_name);
+    let Some((name, _name_span, boundaries)) = prep_opt else { return (scope, result); };
 
     let dim = cell_dim(&boundaries);
 
