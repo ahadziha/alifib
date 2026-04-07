@@ -370,9 +370,10 @@ fn interpret_paste(
         None => None,
     };
 
-    // Constraint system: BoundaryEq constraints from each concrete side.
+    // Constraint system: BoundaryEq and DimEq from each concrete side.
     // LHS holes (index rhs_hole_count..) get boundary_out from RHS.source_k.
     // RHS holes (index ..rhs_hole_count) get boundary_in from LHS.target_k.
+    // Both sides also learn their dimension from the concrete partner.
     let scope_arc = Arc::new(scope.clone());
     if let Some(ref d_right) = d_right_opt {
         if let Ok(in_bd) = Diagram::boundary(DiagramSign::Source, k, d_right) {
@@ -386,6 +387,14 @@ fn interpret_paste(
                 });
             }
         }
+        let n = d_right.top_dim();
+        for hole in &combined.holes[rhs_hole_count..] {
+            combined.constraints.push(Constraint::DimEq {
+                hole: hole.id,
+                dim: n,
+                origin: ConstraintOrigin::Paste { paste_dim: k },
+            });
+        }
     }
     if let Some(ref d_left) = d_left_opt {
         if let Ok(out_bd) = Diagram::boundary(DiagramSign::Target, k, d_left) {
@@ -398,6 +407,14 @@ fn interpret_paste(
                     origin: ConstraintOrigin::Paste { paste_dim: k },
                 });
             }
+        }
+        let n = d_left.top_dim();
+        for hole in &combined.holes[..rhs_hole_count] {
+            combined.constraints.push(Constraint::DimEq {
+                hole: hole.id,
+                dim: n,
+                origin: ConstraintOrigin::Paste { paste_dim: k },
+            });
         }
     }
 
@@ -430,6 +447,12 @@ fn interpret_paste(
 /// `last_hole_block_start` records the first index (into `result.holes`) of
 /// the current run of consecutive holes so that the next concrete diagram can
 /// enrich the right boundary of all of them.
+///
+/// Source-boundary constraints are *deferred* until the right neighbour is
+/// known so that both source and target constraints use a consistent paste
+/// dimension `k = min(left.dim, right.dim) - 1`, matching the behaviour of
+/// concrete paste.  Trailing holes (no right neighbour) have their source
+/// constraint emitted after the loop using only the left neighbour.
 fn interpret_sequence_as_term(
     context: &Context,
     scope: &Complex,
@@ -447,7 +470,11 @@ fn interpret_sequence_as_term(
 
     let mut left_acc: Option<Diagram> = None;
     let mut right_acc: Option<Diagram> = None;
+    // First index in `result.holes` of the current hole block.
     let mut last_hole_block_start: Option<usize> = None;
+    // The concrete diagram immediately to the left of the current hole block.
+    // Captured when the block opens; used (deferred) to emit the source constraint.
+    let mut hole_block_left: Option<Diagram> = None;
     let mut has_holes = false;
     let mut result = InterpResult::ok(context.clone());
 
@@ -459,30 +486,11 @@ fn interpret_sequence_as_term(
 
         match term_opt {
             None if new_holes => {
-                // Enrich each new hole's left boundary from the most recent concrete diagram.
-                let left_ref = right_acc.as_ref().or(left_acc.as_ref());
-                if let Some(left_diag) = left_ref {
-                    let k = left_diag.top_dim().saturating_sub(1);
-                    if let Ok(out_bd) = Diagram::boundary(DiagramSign::Target, k, left_diag) {
-                        // Constraint system: BoundaryEq from left neighbor.
-                        let scope_arc = Arc::new(scope.clone());
-                        let new_hole_ids: Vec<_> = result.holes[prev_hole_count..].iter().map(|h| h.id).collect();
-                        for id in new_hole_ids {
-                            result.constraints.push(Constraint::BoundaryEq {
-                                hole: id,
-                                slot: BdSlot { sign: DiagramSign::Source, dim: k },
-                                diagram: out_bd.clone(),
-                                scope: scope_arc.clone(),
-                                origin: ConstraintOrigin::Paste { paste_dim: k },
-                            });
-                        }
-                    }
-                }
-                // Start a new hole block only when not already in one;
-                // adjacent holes share the same block so they all get right
-                // context from the next concrete diagram.
+                // Start a new hole block (or extend the current one).
+                // Source-boundary emission is deferred until the right neighbour arrives.
                 if last_hole_block_start.is_none() {
                     last_hole_block_start = Some(prev_hole_count);
+                    hole_block_left = right_acc.clone().or_else(|| left_acc.clone());
                 }
                 right_acc = None;
                 has_holes = true;
@@ -496,14 +504,36 @@ fn interpret_sequence_as_term(
                 return (None, result);
             }
             Some(Term::Diag(d_right)) => {
-                // Enrich the right boundary of every hole in the current block.
+                // Enrich the current hole block now that we have a right neighbour.
                 if let Some(start) = last_hole_block_start {
-                    let k = d_right.top_dim().saturating_sub(1);
+                    let scope_arc = Arc::new(scope.clone());
+                    let block_hole_ids: Vec<_> =
+                        result.holes[start..prev_hole_count].iter().map(|h| h.id).collect();
+
+                    // Consistent paste dimension from both neighbours.
+                    let k = match hole_block_left.as_ref() {
+                        Some(left_diag) => left_diag.top_dim().min(d_right.top_dim()).saturating_sub(1),
+                        None => d_right.top_dim().saturating_sub(1),
+                    };
+
+                    // Deferred source constraints (from left neighbour).
+                    if let Some(ref left_diag) = hole_block_left {
+                        if let Ok(out_bd) = Diagram::boundary(DiagramSign::Target, k, left_diag) {
+                            for &id in &block_hole_ids {
+                                result.constraints.push(Constraint::BoundaryEq {
+                                    hole: id,
+                                    slot: BdSlot { sign: DiagramSign::Source, dim: k },
+                                    diagram: out_bd.clone(),
+                                    scope: scope_arc.clone(),
+                                    origin: ConstraintOrigin::Paste { paste_dim: k },
+                                });
+                            }
+                        }
+                    }
+
+                    // Target constraints (from right neighbour).
                     if let Ok(in_bd) = Diagram::boundary(DiagramSign::Source, k, &d_right) {
-                        // Constraint system: BoundaryEq from right neighbor.
-                        let scope_arc = Arc::new(scope.clone());
-                        let block_hole_ids: Vec<_> = result.holes[start..prev_hole_count].iter().map(|h| h.id).collect();
-                        for id in block_hole_ids {
+                        for &id in &block_hole_ids {
                             result.constraints.push(Constraint::BoundaryEq {
                                 hole: id,
                                 slot: BdSlot { sign: DiagramSign::Target, dim: k },
@@ -513,7 +543,19 @@ fn interpret_sequence_as_term(
                             });
                         }
                     }
+
+                    // Dimension constraint: holes must match the right neighbour's dimension.
+                    let n = d_right.top_dim();
+                    for &id in &block_hole_ids {
+                        result.constraints.push(Constraint::DimEq {
+                            hole: id,
+                            dim: n,
+                            origin: ConstraintOrigin::Paste { paste_dim: k },
+                        });
+                    }
+
                     last_hole_block_start = None;
+                    hole_block_left = None;
                 }
                 // Paste into the appropriate accumulator.
                 let acc = if has_holes { &mut right_acc } else { &mut left_acc };
@@ -531,6 +573,34 @@ fn interpret_sequence_as_term(
                         return (None, result);
                     }
                 }
+            }
+        }
+    }
+
+    // Emit deferred source constraints for trailing holes (no right neighbour).
+    if let Some(start) = last_hole_block_start {
+        if let Some(ref left_diag) = hole_block_left {
+            let k = left_diag.top_dim().saturating_sub(1);
+            let scope_arc = Arc::new(scope.clone());
+            if let Ok(out_bd) = Diagram::boundary(DiagramSign::Target, k, left_diag) {
+                for id in result.holes[start..].iter().map(|h| h.id) {
+                    result.constraints.push(Constraint::BoundaryEq {
+                        hole: id,
+                        slot: BdSlot { sign: DiagramSign::Source, dim: k },
+                        diagram: out_bd.clone(),
+                        scope: scope_arc.clone(),
+                        origin: ConstraintOrigin::Paste { paste_dim: k },
+                    });
+                }
+            }
+            // Dimension constraint from left neighbour for trailing holes.
+            let n = left_diag.top_dim();
+            for id in result.holes[start..].iter().map(|h| h.id) {
+                result.constraints.push(Constraint::DimEq {
+                    hole: id,
+                    dim: n,
+                    origin: ConstraintOrigin::Paste { paste_dim: k },
+                });
             }
         }
     }

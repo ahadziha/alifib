@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use alifib::aux::loader::Loader;
 use alifib::interpreter::InterpretedFile;
-use alifib::output::Store;
+use alifib::output::{render_solved_hole, Store};
 
 fn example_path(name: &str) -> String {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -43,4 +43,22 @@ fn golden_semigroup() {
     insta::with_settings!({ filters => vec![PATH_FILTER] }, {
         insta::assert_debug_snapshot!(load_example("Semigroup.ali"));
     });
+}
+
+/// Snapshot-tests the rendered boundary strings for every hole in Hole.ali.
+///
+/// This catches regressions that would produce the *wrong* inferred boundary
+/// (the structural tests in interpreter.rs only verify that *some* boundary
+/// exists and that there are no inconsistencies).
+#[test]
+fn golden_hole_boundaries() {
+    let file = InterpretedFile::load(&Loader::default(vec![]), &example_path("Hole.ali"))
+        .ok()
+        .expect("Hole.ali should interpret without errors");
+
+    let rendered: Vec<String> = file.solved_holes.iter()
+        .map(render_solved_hole)
+        .collect();
+
+    insta::assert_debug_snapshot!(rendered);
 }

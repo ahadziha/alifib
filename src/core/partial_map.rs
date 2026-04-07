@@ -84,6 +84,11 @@ impl PartialMap {
         result
     }
 
+    /// Return the number of generators in the domain.
+    pub fn domain_size(&self) -> usize {
+        self.table.len()
+    }
+
     /// True if any image diagram in this map carries a local (non-global) tag.
     pub fn has_local_labels(&self) -> bool {
         self.table.values().any(|e| e.image.has_local_labels())

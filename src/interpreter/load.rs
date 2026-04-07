@@ -126,6 +126,26 @@ impl InterpretedFile {
                     path: dep_path.clone(),
                 };
             }
+            // Warn when a dependency module contains holes: they are not solved here
+            // and the user will receive no inference feedback for them.
+            if dep_result.has_holes() {
+                let entries: Vec<super::inference::HoleEntry> = dep_result.holes.iter()
+                    .map(|h| super::inference::HoleEntry { id: h.id, span: h.span })
+                    .collect();
+                let solved = solve(&entries, &dep_result.constraints);
+                for hole in &solved {
+                    let message = format!(
+                        "hole in included module {} (boundary inference is only performed for the root file)",
+                        dep_path
+                    );
+                    crate::language::error::report_hole(
+                        hole.span,
+                        &message,
+                        &dep_module.source,
+                        dep_path,
+                    );
+                }
+            }
             prev_state = dep_result.context.state;
         }
 

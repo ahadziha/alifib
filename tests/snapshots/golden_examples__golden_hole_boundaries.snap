@@ -1,0 +1,15 @@
+---
+source: tests/golden_examples.rs
+expression: rendered
+---
+[
+    "x -> y",
+    "x -> y",
+    "p q -> r s",
+    "h4 _ -> v4 _",
+    "h3 v4 -> _ _",
+    "h4 v5 -> v4 h7",
+    "h3 v4 -> v3 h6",
+    "h1 v2 -> v1 h4",
+    "h0 v1 -> v0 h3",
+]

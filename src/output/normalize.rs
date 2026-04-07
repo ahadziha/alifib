@@ -245,7 +245,7 @@ fn render_solved_bd(bd: &SolvedBd) -> String {
 ///
 /// Reports the principal boundary `src -> tgt` when the hole's dimension and
 /// principal slots are known; falls back to listing all known slots otherwise.
-fn render_solved_hole(hole: &SolvedHole) -> String {
+pub fn render_solved_hole(hole: &SolvedHole) -> String {
     // If an Eq constraint determined the exact value, report it.
     if let Some((ref diag, ref scope)) = hole.value {
         return format!("= {}", render_diagram(diag, scope));

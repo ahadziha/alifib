@@ -271,8 +271,10 @@ impl SolvedHole {
         }
     }
 
-    /// Fill `slot` with a `Partial` boundary, but only if the slot is
-    /// currently empty (weaker than `Known`).
+    /// Fill `slot` with a `Partial` boundary.  If the slot is empty, insert
+    /// unconditionally.  If it already holds a `Partial`, keep whichever map
+    /// has a larger domain (more defined entries → richer rendering).  If it
+    /// already holds a `Known`, do nothing (`Known` takes priority).
     fn set_partial(
         &mut self,
         slot: BdSlot,
@@ -281,11 +283,16 @@ impl SolvedHole {
         scope: Arc<Complex>,
         origin: ConstraintOrigin,
     ) {
-        if !self.boundaries.contains_key(&slot) {
-            self.boundaries.insert(
-                slot,
-                SolvedBd::Partial { boundary, map, scope, origin },
-            );
+        match self.boundaries.get(&slot) {
+            None => {
+                self.boundaries.insert(slot, SolvedBd::Partial { boundary, map, scope, origin });
+            }
+            Some(SolvedBd::Partial { map: existing_map, .. }) => {
+                if map.domain_size() > existing_map.domain_size() {
+                    self.boundaries.insert(slot, SolvedBd::Partial { boundary, map, scope, origin });
+                }
+            }
+            Some(SolvedBd::Known { .. }) => {}
         }
     }
 }
@@ -342,9 +349,19 @@ pub fn solve(entries: &[HoleEntry], constraints: &[Constraint]) -> Vec<SolvedHol
     for constraint in constraints {
         match constraint {
             Constraint::Eq { hole, diagram, scope, origin } => {
-                // Eq: record value, then expand like Parallel.
+                // Eq: record value (checking for conflicts), then expand like Parallel.
                 if let Some(h) = get_mut!(*hole) {
-                    h.value = Some((diagram.clone(), scope.clone()));
+                    match h.value {
+                        None => h.value = Some((diagram.clone(), scope.clone())),
+                        Some((ref existing, _)) => {
+                            if !Diagram::isomorphic(existing, diagram) {
+                                h.inconsistencies.push(format!(
+                                    "conflicting Eq constraints: from {}",
+                                    origin
+                                ));
+                            }
+                        }
+                    }
                 }
                 expand_parallel(*hole, diagram, scope, origin, &mut dim_eqs, &mut boundary_eqs);
             }
@@ -374,22 +391,21 @@ pub fn solve(entries: &[HoleEntry], constraints: &[Constraint]) -> Vec<SolvedHol
     // For each BoundaryEq at (s, k) with k > 0, derive BoundaryEq at every (s', j) for j < k.
     // Justified by the globular identity: for well-formed diagrams (which are always round),
     // ∂^{s'}_j(∂^s_k(H)) = ∂^{s'}_j(H), so knowing ∂^s_k(H) = D implies ∂^{s'}_j(H) = ∂^{s'}_j(D).
-    // Process entries as we extend the vec (new entries have strictly smaller dim, so no cycle).
+    // A HashSet de-duplicates derived entries so each (hole, slot) pair is pushed at most once.
     {
+        let mut seen: std::collections::HashSet<(HoleId, BdSlot)> =
+            boundary_eqs.iter().map(|(h, s, ..)| (*h, *s)).collect();
         let mut i = 0;
         while i < boundary_eqs.len() {
             let (hole, slot, diagram, scope, origin) = boundary_eqs[i].clone();
             if slot.dim > 0 {
                 for j in 0..slot.dim {
                     for &sign2 in &[DiagramSign::Source, DiagramSign::Target] {
-                        if let Ok(bd) = Diagram::boundary_normal(sign2, j, &diagram) {
-                            boundary_eqs.push((
-                                hole,
-                                BdSlot { sign: sign2, dim: j },
-                                bd,
-                                scope.clone(),
-                                origin.clone(),
-                            ));
+                        let new_slot = BdSlot { sign: sign2, dim: j };
+                        if seen.insert((hole, new_slot)) {
+                            if let Ok(bd) = Diagram::boundary_normal(sign2, j, &diagram) {
+                                boundary_eqs.push((hole, new_slot, bd, scope.clone(), origin.clone()));
+                            }
                         }
                     }
                 }
@@ -416,22 +432,21 @@ pub fn solve(entries: &[HoleEntry], constraints: &[Constraint]) -> Vec<SolvedHol
     // For each PartialBoundary at (s, k) with k > 0, derive PartialBoundary at every (s', j) for j < k.
     // Same globular identity as for BoundaryEq: ∂^{s'}_j(∂^s_k(H)) = ∂^{s'}_j(H).
     // The same `map` applies because globular propagation is taken in the source scope.
+    // A HashSet de-duplicates derived entries so each (hole, slot) pair is pushed at most once.
     {
+        let mut seen: std::collections::HashSet<(HoleId, BdSlot)> =
+            partial_bds.iter().map(|(h, s, ..)| (*h, *s)).collect();
         let mut i = 0;
         while i < partial_bds.len() {
             let (hole, slot, boundary, map, scope, origin) = partial_bds[i].clone();
             if slot.dim > 0 {
                 for j in 0..slot.dim {
                     for &sign2 in &[DiagramSign::Source, DiagramSign::Target] {
-                        if let Ok(bd) = Diagram::boundary_normal(sign2, j, &boundary) {
-                            partial_bds.push((
-                                hole,
-                                BdSlot { sign: sign2, dim: j },
-                                bd,
-                                map.clone(),
-                                scope.clone(),
-                                origin.clone(),
-                            ));
+                        let new_slot = BdSlot { sign: sign2, dim: j };
+                        if seen.insert((hole, new_slot)) {
+                            if let Ok(bd) = Diagram::boundary_normal(sign2, j, &boundary) {
+                                partial_bds.push((hole, new_slot, bd, map.clone(), scope.clone(), origin.clone()));
+                            }
                         }
                     }
                 }
@@ -516,6 +531,116 @@ mod tests {
         let h2 = result.iter().find(|h| h.id == id2).unwrap();
         assert_eq!(h1.dim, Some(1));
         assert_eq!(h2.dim, Some(2));
+    }
+
+    // ---- BoundaryEq tests ----
+
+    fn zero_cell(name: &str) -> Diagram {
+        let tag = crate::aux::Tag::Local(name.to_string());
+        Diagram::cell(tag, &crate::core::diagram::CellData::Zero).unwrap()
+    }
+
+    fn empty_scope() -> Arc<crate::core::complex::Complex> {
+        Arc::new(crate::core::complex::Complex::empty())
+    }
+
+    #[test]
+    fn solve_boundary_eq_fills_slot() {
+        let id = HoleId::fresh();
+        let diag = zero_cell("a");
+        let slot = BdSlot { sign: DiagramSign::Source, dim: 0 };
+        let c = Constraint::BoundaryEq {
+            hole: id,
+            slot,
+            diagram: diag,
+            scope: empty_scope(),
+            origin: ConstraintOrigin::Declaration,
+        };
+        let result = solve(&[entry(id)], &[c]);
+        assert!(result[0].boundaries.contains_key(&slot));
+        assert!(result[0].inconsistencies.is_empty());
+    }
+
+    #[test]
+    fn solve_boundary_eq_consistent_duplicates_no_inconsistency() {
+        // Two BoundaryEq at the same slot with isomorphic diagrams: no conflict.
+        let id = HoleId::fresh();
+        let slot = BdSlot { sign: DiagramSign::Source, dim: 0 };
+        let c1 = Constraint::BoundaryEq {
+            hole: id, slot, diagram: zero_cell("a"), scope: empty_scope(),
+            origin: ConstraintOrigin::Declaration,
+        };
+        let c2 = Constraint::BoundaryEq {
+            hole: id, slot, diagram: zero_cell("a"), scope: empty_scope(),
+            origin: ConstraintOrigin::Assertion,
+        };
+        let result = solve(&[entry(id)], &[c1, c2]);
+        assert!(result[0].inconsistencies.is_empty());
+    }
+
+    #[test]
+    fn solve_boundary_eq_conflict_records_inconsistency() {
+        // Two BoundaryEq at the same slot with *different* diagrams: one inconsistency.
+        let id = HoleId::fresh();
+        let slot = BdSlot { sign: DiagramSign::Source, dim: 0 };
+        let c1 = Constraint::BoundaryEq {
+            hole: id, slot, diagram: zero_cell("a"), scope: empty_scope(),
+            origin: ConstraintOrigin::Declaration,
+        };
+        let c2 = Constraint::BoundaryEq {
+            hole: id, slot, diagram: zero_cell("b"), scope: empty_scope(),
+            origin: ConstraintOrigin::Assertion,
+        };
+        let result = solve(&[entry(id)], &[c1, c2]);
+        assert_eq!(result[0].inconsistencies.len(), 1);
+    }
+
+    #[test]
+    fn solve_eq_sets_value() {
+        let id = HoleId::fresh();
+        let diag = zero_cell("a");
+        let c = Constraint::Eq {
+            hole: id,
+            diagram: diag.clone(),
+            scope: empty_scope(),
+            origin: ConstraintOrigin::Assertion,
+        };
+        let result = solve(&[entry(id)], &[c]);
+        assert!(result[0].value.is_some());
+        assert!(result[0].inconsistencies.is_empty());
+    }
+
+    #[test]
+    fn solve_eq_conflict_records_inconsistency() {
+        // Two Eq constraints with different diagrams: inconsistency recorded, value = first.
+        let id = HoleId::fresh();
+        let c1 = Constraint::Eq {
+            hole: id, diagram: zero_cell("a"), scope: empty_scope(),
+            origin: ConstraintOrigin::Assertion,
+        };
+        let c2 = Constraint::Eq {
+            hole: id, diagram: zero_cell("b"), scope: empty_scope(),
+            origin: ConstraintOrigin::Assertion,
+        };
+        let result = solve(&[entry(id)], &[c1, c2]);
+        assert_eq!(result[0].inconsistencies.len(), 1);
+        assert!(result[0].value.is_some(), "value should be set from first Eq");
+    }
+
+    #[test]
+    fn solve_eq_consistent_no_inconsistency() {
+        // Two Eq constraints with the same diagram: no conflict.
+        let id = HoleId::fresh();
+        let c1 = Constraint::Eq {
+            hole: id, diagram: zero_cell("a"), scope: empty_scope(),
+            origin: ConstraintOrigin::Assertion,
+        };
+        let c2 = Constraint::Eq {
+            hole: id, diagram: zero_cell("a"), scope: empty_scope(),
+            origin: ConstraintOrigin::Assertion,
+        };
+        let result = solve(&[entry(id)], &[c1, c2]);
+        assert!(result[0].inconsistencies.is_empty());
     }
 }
 
