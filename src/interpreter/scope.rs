@@ -183,6 +183,36 @@ pub fn insert_module_map_binding(
     result
 }
 
+/// Shared implementation for inserting a binding into both the local type scope and the global
+/// store's type complex.
+///
+/// Fails if the name is already in use or if `has_local_labels` is `true`.
+fn insert_type_binding(
+    owner_type_id: GlobalId,
+    scope: &Complex,
+    mut result: InterpResult,
+    name: String,
+    name_span: Span,
+    value_span: Span,
+    kind: NameKind,
+    has_local_labels: bool,
+    local_label_msg: &str,
+    update_scope: impl FnOnce(&mut Complex),
+    update_store: impl FnOnce(&mut Complex),
+) -> (Option<Complex>, InterpResult) {
+    if let Some(r) = ensure_name_free(&result.context, scope, &name, name_span, kind) {
+        return (None, InterpResult::combine(result, r));
+    }
+    if has_local_labels {
+        result.add_error(make_error(value_span, local_label_msg));
+        return (None, result);
+    }
+    let mut updated_scope = scope.clone();
+    update_scope(&mut updated_scope);
+    result.context.state_mut().modify_type_complex(owner_type_id, update_store);
+    (Some(updated_scope), result)
+}
+
 /// Insert a diagram binding into both the local type scope and the global store's type complex.
 ///
 /// Fails if the name is already in use, or if the diagram contains local labels
@@ -190,23 +220,21 @@ pub fn insert_module_map_binding(
 pub fn insert_type_diagram_binding(
     owner_type_id: GlobalId,
     scope: &Complex,
-    mut result: InterpResult,
+    result: InterpResult,
     name_span: Span,
     value_span: Span,
     binding: Option<DiagramBinding>,
 ) -> (Option<Complex>, InterpResult) {
     let Some((name, diagram)) = binding else { return (None, result); };
-    if let Some(r) = ensure_name_free(&result.context, scope, &name, name_span, NameKind::Diagram) {
-        return (None, InterpResult::combine(result, r));
-    }
-    if diagram.has_local_labels() {
-        result.add_error(make_error(value_span, "Named diagrams must contain only global cells"));
-        return (None, result);
-    }
-    let mut updated_scope = scope.clone();
-    updated_scope.add_diagram(name.clone(), diagram.clone());
-    result.context.state_mut().modify_type_complex(owner_type_id, |tc| tc.add_diagram(name, diagram));
-    (Some(updated_scope), result)
+    let has_local = diagram.has_local_labels();
+    let (name_sc, diag_sc) = (name.clone(), diagram.clone());
+    insert_type_binding(
+        owner_type_id, scope, result, name.clone(), name_span, value_span,
+        NameKind::Diagram, has_local,
+        "Named diagrams must contain only global cells",
+        move |sc| sc.add_diagram(name_sc, diag_sc),
+        move |tc| tc.add_diagram(name, diagram),
+    )
 }
 
 /// Insert a map binding into both the local type scope and the global store's type complex.
@@ -216,23 +244,21 @@ pub fn insert_type_diagram_binding(
 pub fn insert_type_map_binding(
     owner_type_id: GlobalId,
     scope: &Complex,
-    mut result: InterpResult,
+    result: InterpResult,
     name_span: Span,
     value_span: Span,
     binding: Option<MapBinding>,
 ) -> (Option<Complex>, InterpResult) {
     let Some((name, map, domain)) = binding else { return (None, result); };
-    if let Some(r) = ensure_name_free(&result.context, scope, &name, name_span, NameKind::PartialMap) {
-        return (None, InterpResult::combine(result, r));
-    }
-    if map.has_local_labels() {
-        result.add_error(make_error(value_span, "Named maps must only be valued in global cells"));
-        return (None, result);
-    }
-    let mut updated_scope = scope.clone();
-    updated_scope.add_map(name.clone(), domain.clone(), map.clone());
-    result.context.state_mut().modify_type_complex(owner_type_id, |tc| tc.add_map(name, domain, map));
-    (Some(updated_scope), result)
+    let has_local = map.has_local_labels();
+    let (name_sc, map_sc, dom_sc) = (name.clone(), map.clone(), domain.clone());
+    insert_type_binding(
+        owner_type_id, scope, result, name.clone(), name_span, value_span,
+        NameKind::PartialMap, has_local,
+        "Named maps must only be valued in global cells",
+        move |sc| sc.add_map(name_sc, dom_sc, map_sc),
+        move |tc| tc.add_map(name, domain, map),
+    )
 }
 
 /// Interpret the optional boundary annotation of a generator declaration.
