@@ -12,50 +12,9 @@ pub enum LoadError {
 }
 
 #[derive(Clone)]
-struct FileLoader {
+pub struct Loader {
     search_paths: Vec<String>,
     read_file: ReadFileFn,
-}
-
-impl FileLoader {
-    fn default_read(path: &str) -> Result<String, LoadError> {
-        if !std::path::Path::new(path).exists() {
-            return Err(LoadError::NotFound);
-        }
-        std::fs::read_to_string(path).map_err(|e| LoadError::IoError(e.to_string()))
-    }
-}
-
-impl FileLoader {
-    /// Build a child loader whose search paths prepend `file_path`'s parent directory.
-    ///
-    /// Search path precedence: a module's own directory is checked first, then the
-    /// parent's search paths.  Two modules in different directories that both
-    /// include a module by the same name may therefore resolve to different files —
-    /// the closest directory wins.  Duplicate paths are removed by
-    /// `normalize_search_paths` so re-entering the same directory is a no-op.
-    fn with_parent_dir(&self, file_path: &str) -> FileLoader {
-        let parent = std::path::Path::new(file_path)
-            .parent()
-            .and_then(|p| p.to_str())
-            .map(path::canonicalize)
-            .unwrap_or_else(|| file_path.to_owned());
-        let mut desired = vec![parent];
-        desired.extend(self.search_paths.iter().cloned());
-        let normalized = path::normalize_search_paths(desired);
-        if normalized == self.search_paths {
-            self.clone()
-        } else {
-            FileLoader {
-                search_paths: normalized,
-                read_file: self.read_file.clone(),
-            }
-        }
-    }
-}
-
-pub struct Loader {
-    inner: FileLoader,
 }
 
 pub struct LoadedFile {
@@ -75,6 +34,16 @@ pub enum LoadFileError {
 }
 
 impl Loader {
+    fn default_read(path: &str) -> Result<String, LoadError> {
+        std::fs::read_to_string(path).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                LoadError::NotFound
+            } else {
+                LoadError::IoError(e.to_string())
+            }
+        })
+    }
+
     fn path_separator() -> char {
         if cfg!(windows) { ';' } else { ':' }
     }
@@ -102,15 +71,38 @@ impl Loader {
             .chain(env_paths)
             .chain(extra_search_paths)
             .collect();
-        let search_paths = path::normalize_search_paths(combined);
-        let read_file: ReadFileFn = Arc::new(FileLoader::default_read);
-        Self { inner: FileLoader { search_paths, read_file } }
+        Self {
+            search_paths: path::normalize_search_paths(combined),
+            read_file: Arc::new(Self::default_read),
+        }
     }
 
-    /// Read and parse the root file only, without resolving any dependencies.
-    /// Use this when only the AST of a single file is needed.
-    pub fn load_only_root(&self, path: &str) -> Result<Program, LoadFileError> {
-        let canonical_path = super::path::canonicalize_existing(path)
+    /// Build a child loader whose search paths prepend `file_path`'s parent directory.
+    ///
+    /// Search path precedence: a module's own directory is checked first, then the
+    /// parent's search paths.  Two modules in different directories that both
+    /// include a module by the same name may therefore resolve to different files —
+    /// the closest directory wins.  Duplicate paths are removed by
+    /// `normalize_search_paths` so re-entering the same directory is a no-op.
+    fn with_parent_dir(&self, file_path: &str) -> Loader {
+        let parent = std::path::Path::new(file_path)
+            .parent()
+            .and_then(|p| p.to_str())
+            .map(path::canonicalize)
+            .unwrap_or_else(|| file_path.to_owned());
+        let mut desired = vec![parent];
+        desired.extend(self.search_paths.iter().cloned());
+        let normalized = path::normalize_search_paths(desired);
+        if normalized == self.search_paths {
+            self.clone()
+        } else {
+            Loader { search_paths: normalized, read_file: self.read_file.clone() }
+        }
+    }
+
+    /// Canonicalize `path` and read its contents, mapping errors to `LoadFileError`.
+    fn read_file_at(&self, path: &str) -> Result<(String, String), LoadFileError> {
+        let canonical_path = path::canonicalize_existing(path)
             .map_err(|e| LoadFileError::Load {
                 path: path.to_owned(),
                 cause: if e.kind() == std::io::ErrorKind::NotFound {
@@ -119,8 +111,15 @@ impl Loader {
                     LoadError::IoError(e.to_string())
                 },
             })?;
-        let source = (self.inner.read_file)(&canonical_path)
+        let source = (self.read_file)(&canonical_path)
             .map_err(|cause| LoadFileError::Load { path: path.to_owned(), cause })?;
+        Ok((canonical_path, source))
+    }
+
+    /// Read and parse the root file only, without resolving any dependencies.
+    /// Use this when only the AST of a single file is needed.
+    pub fn load_only_root(&self, path: &str) -> Result<Program, LoadFileError> {
+        let (canonical_path, source) = self.read_file_at(path)?;
         language::parse(&source).map_err(|errors| LoadFileError::Parse {
             path: canonical_path,
             source,
@@ -131,18 +130,8 @@ impl Loader {
     pub fn load(&self, path: &str) -> Result<LoadedFile, LoadFileError> {
         // Strictly canonicalize up front so the path used as a module ID is
         // always the true canonical path, regardless of how the caller spelled it.
-        let canonical_path = super::path::canonicalize_existing(path)
-            .map_err(|e| LoadFileError::Load {
-                path: path.to_owned(),
-                cause: if e.kind() == std::io::ErrorKind::NotFound {
-                    LoadError::NotFound
-                } else {
-                    LoadError::IoError(e.to_string())
-                },
-            })?;
-        let source = (self.inner.read_file)(&canonical_path)
-            .map_err(|cause| LoadFileError::Load { path: path.to_owned(), cause })?;
-        let file_loader = self.inner.with_parent_dir(&canonical_path);
+        let (canonical_path, source) = self.read_file_at(path)?;
+        let file_loader = self.with_parent_dir(&canonical_path);
         let program = language::parse(&source)
             .map_err(|errors| LoadFileError::Parse {
                 path: canonical_path.clone(),
@@ -235,7 +224,7 @@ impl ModuleStore {
     }
 }
 
-fn find_file(loader: &FileLoader, module_name: &str) -> Result<(String, String), LoadFileError> {
+fn find_file(loader: &Loader, module_name: &str) -> Result<(String, String), LoadFileError> {
     let filename = format!("{}.ali", module_name);
     for dir in &loader.search_paths {
         let candidate = format!("{}/{}", dir, filename);
@@ -259,7 +248,7 @@ fn find_file(loader: &FileLoader, module_name: &str) -> Result<(String, String),
 }
 
 fn resolve_all_modules(
-    loader: &FileLoader,
+    loader: &Loader,
     root_path: &str,
     root_program: &Program,
 ) -> Result<ModuleStore, LoadFileError> {
@@ -276,7 +265,7 @@ fn resolve_all_modules(
 }
 
 fn resolve_recursive(
-    loader: &FileLoader,
+    loader: &Loader,
     parent_path: &str,
     program: &Program,
     store: &mut ModuleStore,
