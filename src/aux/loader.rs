@@ -109,7 +109,7 @@ impl Loader {
 
     /// Read and parse the root file only, without resolving any dependencies.
     /// Use this when only the AST of a single file is needed.
-    pub fn parse_root(&self, path: &str) -> Result<Program, LoadFileError> {
+    pub fn load_only_root(&self, path: &str) -> Result<Program, LoadFileError> {
         let canonical_path = super::path::canonicalize_existing(path)
             .map_err(|e| LoadFileError::Load {
                 path: path.to_owned(),

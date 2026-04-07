@@ -86,7 +86,7 @@ fn write_output(path: Option<&str>, text: &str) -> Result<(), String> {
 }
 
 fn run_ast(loader: &Loader, input: &str, output: Option<&str>) -> bool {
-    match loader.parse_root(input) {
+    match loader.load_only_root(input) {
         Err(e) => { report_load_file_error(&e); false }
         Ok(program) => {
             if let Err(msg) = write_output(output, &program.to_string()) {
@@ -99,7 +99,7 @@ fn run_ast(loader: &Loader, input: &str, output: Option<&str>) -> bool {
 }
 
 fn run_print(loader: &Loader, input: &str, output: Option<&str>) -> bool {
-    match loader.parse_root(input) {
+    match loader.load_only_root(input) {
         Err(e) => { report_load_file_error(&e); false }
         Ok(program) => {
             if let Err(msg) = write_output(output, &language::print_program(&program)) {
