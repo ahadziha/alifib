@@ -26,6 +26,16 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+// ---- Notation helpers -------------------------------------------------------
+
+fn dim_subscript(n: usize) -> String {
+    const SUBS: [char; 10] = ['₀','₁','₂','₃','₄','₅','₆','₇','₈','₉'];
+    n.to_string()
+        .chars()
+        .map(|c| c.to_digit(10).and_then(|d| SUBS.get(d as usize)).copied().unwrap_or(c))
+        .collect()
+}
+
 // ---- Hole identity ----------------------------------------------------------
 
 static HOLE_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -250,8 +260,10 @@ impl SolvedHole {
                 // Consistency check: isomorphic handles normalisation.
                 if !Diagram::isomorphic(existing, &diagram) {
                     self.inconsistencies.push(format!(
-                        "conflicting boundary at ({:?}, dim {}): from {}",
-                        slot.sign, slot.dim, origin
+                        "conflicting ∂{}{}: from {}",
+                        match slot.sign { DiagramSign::Source => "⁻", DiagramSign::Target => "⁺" },
+                        dim_subscript(slot.dim),
+                        origin
                     ));
                 }
                 // Keep the first (earlier) constraint to preserve its origin.

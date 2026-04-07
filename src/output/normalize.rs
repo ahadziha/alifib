@@ -214,6 +214,25 @@ fn render_domain(domain: &MapDomain, module_complex: &Complex) -> String {
 
 // ---- Hole reporting ----
 
+/// Unicode superscript for a boundary sign: ⁻ for Source, ⁺ for Target.
+fn sign_superscript(sign: Sign) -> &'static str {
+    match sign { Sign::Source => "⁻", Sign::Target => "⁺" }
+}
+
+/// Format a non-negative integer as unicode subscript digits.
+fn dim_subscript(n: usize) -> String {
+    const SUBS: [char; 10] = ['₀','₁','₂','₃','₄','₅','₆','₇','₈','₉'];
+    n.to_string()
+        .chars()
+        .map(|c| c.to_digit(10).and_then(|d| SUBS.get(d as usize)).copied().unwrap_or(c))
+        .collect()
+}
+
+/// Format a boundary slot as `∂⁻ₖ` or `∂⁺ₖ`.
+fn format_slot(slot: &BdSlot) -> String {
+    format!("∂{}{}", sign_superscript(slot.sign), dim_subscript(slot.dim))
+}
+
 /// Render one side of a solved hole boundary.
 fn render_solved_bd(bd: &SolvedBd) -> String {
     match bd {
@@ -233,11 +252,10 @@ fn render_solved_hole(hole: &SolvedHole) -> String {
     }
 
     // Determine the best dimension k to display as "src -> tgt".
-    // Prefer the principal slot (dim n-1) when the dimension is known; otherwise
-    // pick the highest k where both Source-k and Target-k are available.
-    let best_k: Option<usize> = if let Some(n) = hole.dim {
-        if n > 0 { Some(n - 1) } else { None }
-    } else {
+    // Prefer the principal slot (dim n-1) when the dimension is known AND both
+    // Source-(n-1) and Target-(n-1) are present; otherwise find the highest k
+    // where both signs are available.
+    let paired_max_k = || -> Option<usize> {
         hole.boundaries
             .keys()
             .filter(|slot| {
@@ -246,6 +264,19 @@ fn render_solved_hole(hole: &SolvedHole) -> String {
             })
             .map(|slot| slot.dim)
             .max()
+    };
+    let best_k: Option<usize> = if let Some(n) = hole.dim {
+        if n > 0 {
+            let k = n - 1;
+            let has_principal =
+                hole.boundaries.contains_key(&BdSlot { sign: Sign::Source, dim: k })
+                && hole.boundaries.contains_key(&BdSlot { sign: Sign::Target, dim: k });
+            if has_principal { Some(k) } else { paired_max_k() }
+        } else {
+            None
+        }
+    } else {
+        paired_max_k()
     };
 
     if let Some(k) = best_k {
@@ -265,7 +296,7 @@ fn render_solved_hole(hole: &SolvedHole) -> String {
         }
     }
 
-    // Fall back: list all known slots.
+    // Fall back: list all known slots grouped by dimension, highest first.
     if hole.boundaries.is_empty() {
         if hole.inconsistencies.is_empty() {
             "unknown boundary".to_string()
@@ -273,10 +304,20 @@ fn render_solved_hole(hole: &SolvedHole) -> String {
             format!("inconsistent constraints: {}", hole.inconsistencies.join("; "))
         }
     } else {
-        let parts: Vec<String> = hole.boundaries.iter().map(|(slot, bd)| {
-            let sign_str = match slot.sign { Sign::Source => "src", Sign::Target => "tgt" };
-            format!("∂^{}_{} = {}", sign_str, slot.dim, render_solved_bd(bd))
+        // Collect distinct dims and iterate descending so higher dimensions come first.
+        let mut dims: Vec<usize> = hole.boundaries.keys().map(|s| s.dim).collect();
+        dims.sort_unstable();
+        dims.dedup();
+
+        let parts: Vec<String> = dims.iter().rev().flat_map(|&k| {
+            [Sign::Source, Sign::Target].iter().filter_map(move |&sign| {
+                let slot = BdSlot { sign, dim: k };
+                hole.boundaries.get(&slot).map(|bd| {
+                    format!("{} = {}", format_slot(&slot), render_solved_bd(bd))
+                })
+            })
         }).collect();
+
         let mut msg = parts.join(", ");
         if !hole.inconsistencies.is_empty() {
             msg.push_str(&format!(" [inconsistencies: {}]", hole.inconsistencies.join("; ")));
