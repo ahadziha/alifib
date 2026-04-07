@@ -24,8 +24,9 @@ fn enrich_holes(
     domain: &Complex,
     map: &PartialMap,
 ) {
-    let context = result.context.clone();
-    let scope_arc = Arc::new(scope.clone());
+    let context = &result.context;
+    // Created lazily: avoid cloning scope when no hole has a source_tag.
+    let mut scope_arc: Option<Arc<Complex>> = None;
 
     // Collect constraints to emit (can't push to result.constraints while also
     // reading result.holes, since both are fields of `result`).
@@ -34,12 +35,25 @@ fn enrich_holes(
     for hole in &result.holes {
         // Constraint system: emit BoundaryEq or PartialBoundary for each boundary slot.
         let Some(source_tag) = &hole.source_tag else { continue; };
-        let Some(cell_data) = get_cell_data(&context, domain, source_tag) else { continue; };
+        let Some(cell_data) = get_cell_data(context, domain, source_tag) else { continue; };
         let CellData::Boundary { boundary_in, boundary_out } = &cell_data else { continue; };
 
         let origin = ConstraintOrigin::PartialMap { source_tag: source_tag.clone() };
+        let scope_arc = scope_arc.get_or_insert_with(|| Arc::new(scope.clone())).clone();
         let k_in = boundary_in.top_dim();
         let k_out = boundary_out.top_dim();
+
+        // For direct holes the image equals the source cell's image, so the
+        // hole's dimension is exactly k_in + 1. For embedded holes (e.g.
+        // `source_cell => ? g`), the hole's dimension comes from the paste
+        // context instead — emitting DimEq here could produce a false conflict.
+        if hole.direct_in_partial_map {
+            new_constraints.push(Constraint::DimEq {
+                hole: hole.id,
+                dim: k_in + 1,
+                origin: origin.clone(),
+            });
+        }
 
         // For direct holes (`source_cell => ?`), try a full `PartialMap::apply`:
         // if the map covers all generators in the boundary, we get a fully determined

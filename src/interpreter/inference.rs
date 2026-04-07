@@ -658,11 +658,12 @@ where
 
 /// Expand a `Parallel` (or `Eq`) constraint into `DimEq` + `BoundaryEq` atoms.
 ///
-/// For a companion of dimension n, emits `DimEq(hole, n)` and, for every `j`
-/// in `0..n` and both signs, `BoundaryEq(hole, (s, j), ∂^s_j(companion))`.
+/// For a companion of dimension n, emits `DimEq(hole, n)` and the two
+/// **principal** boundary slots `(Source, n-1)` and `(Target, n-1)`.
+/// Lower-dimensional slots are derived by `globular_propagate` afterwards,
+/// so they do not need to be emitted here.
 ///
-/// Uses `Diagram::boundary_normal` so that equality checking later uses
-/// canonical forms.
+/// Uses `Diagram::boundary_normal` for canonical forms.
 fn expand_parallel(
     hole: HoleId,
     companion: &Diagram,
@@ -673,12 +674,12 @@ fn expand_parallel(
 ) {
     let n = companion.top_dim();
     dim_eqs.push((hole, n, origin.clone()));
-    for j in 0..n {
+    if n > 0 {
         for &sign in &[DiagramSign::Source, DiagramSign::Target] {
-            if let Ok(bd) = Diagram::boundary_normal(sign, j, companion) {
+            if let Ok(bd) = Diagram::boundary_normal(sign, n - 1, companion) {
                 boundary_eqs.push((
                     hole,
-                    BdSlot { sign, dim: j },
+                    BdSlot { sign, dim: n - 1 },
                     bd,
                     scope.clone(),
                     origin.clone(),
