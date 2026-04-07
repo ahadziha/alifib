@@ -1,7 +1,13 @@
+//! Generic error type and load-error reporting.
+
 use std::fmt;
 
 use super::loader::{LoadError, LoadFileError};
 
+/// A simple structured error with an optional list of notes.
+///
+/// Used throughout the interpreter to accumulate diagnostics before they are
+/// turned into user-facing error messages.
 #[derive(Debug, Clone)]
 pub struct Error {
     pub message: String,
@@ -13,6 +19,7 @@ impl Error {
         Self { message: message.into(), notes: vec![] }
     }
 
+    /// Attach an additional note to this error, returning `self` for chaining.
     pub fn with_note(mut self, note: impl Into<String>) -> Self {
         self.notes.push(note.into());
         self
@@ -29,6 +36,7 @@ impl fmt::Display for Error {
     }
 }
 
+/// Print a human-readable diagnostic for a [`LoadFileError`] to stderr.
 pub fn report_load_file_error(err: &LoadFileError) {
     match err {
         LoadFileError::Load { path, cause } => match cause {

@@ -1,3 +1,8 @@
+//! File loading and dependency resolution for alifib source files.
+//!
+//! The main entry point is [`Loader`], which reads source files, resolves
+//! module includes, and returns [`LoadedFile`] values ready for interpretation.
+
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use super::path;
@@ -11,6 +16,12 @@ pub enum LoadError {
     IoError(String),
 }
 
+/// Resolves and loads alifib source files, including their transitive dependencies.
+///
+/// Holds the search paths used to locate module files by name and a pluggable
+/// file-reading function (for testing with in-memory file systems).  Construct
+/// with [`Loader::default`]; clone cheaply to create child loaders with
+/// adjusted search paths during recursive dependency resolution.
 #[derive(Clone)]
 pub struct Loader {
     search_paths: Vec<String>,
@@ -62,6 +73,9 @@ impl Loader {
         }
     }
 
+    /// Build a loader with the standard search path: current working directory,
+    /// then any paths in the `ALIFIB_PATH` environment variable, then
+    /// `extra_search_paths`.  Duplicate paths are removed, preserving order.
     pub fn default(extra_search_paths: Vec<String>) -> Self {
         let cwd = path::canonicalize(&std::env::current_dir()
             .map(|p| p.to_string_lossy().into_owned())

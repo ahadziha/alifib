@@ -1,3 +1,5 @@
+//! Path canonicalization and search-path utilities.
+
 use std::path::Path;
 
 /// Return an absolute, canonical path for the given path string.
