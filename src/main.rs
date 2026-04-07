@@ -122,15 +122,19 @@ fn run_bench(input: &str, n: usize) -> bool {
     true
 }
 
-fn run_ast(input: &str, output: Option<&str>) -> bool {
+fn parse_file(input: &str) -> Option<language::Program> {
     let source = match fs::read_to_string(input) {
         Ok(s) => s,
-        Err(e) => { eprintln!("error: could not read `{}`: {}", input, e); return false; }
+        Err(e) => { eprintln!("error: could not read `{}`: {}", input, e); return None; }
     };
-    let program = match language::parse(&source) {
-        Ok(p) => p,
-        Err(errors) => { language::report_errors(&errors, &source, input); return false; }
-    };
+    match language::parse(&source) {
+        Ok(p) => Some(p),
+        Err(errors) => { language::report_errors(&errors, &source, input); None }
+    }
+}
+
+fn run_ast(input: &str, output: Option<&str>) -> bool {
+    let Some(program) = parse_file(input) else { return false; };
     if let Err(msg) = write_output(output, &program.to_string()) {
         eprintln!("error: {}", msg);
         return false;
@@ -139,14 +143,7 @@ fn run_ast(input: &str, output: Option<&str>) -> bool {
 }
 
 fn run_print(input: &str, output: Option<&str>) -> bool {
-    let source = match fs::read_to_string(input) {
-        Ok(s) => s,
-        Err(e) => { eprintln!("error: could not read `{}`: {}", input, e); return false; }
-    };
-    let program = match language::parse(&source) {
-        Ok(p) => p,
-        Err(errors) => { language::report_errors(&errors, &source, input); return false; }
-    };
+    let Some(program) = parse_file(input) else { return false; };
     if let Err(msg) = write_output(output, &language::print_program(&program)) {
         eprintln!("error: {}", msg);
         return false;
