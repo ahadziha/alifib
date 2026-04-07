@@ -4,7 +4,6 @@ use crate::core::{
     diagram::{CellData, Diagram},
 };
 use crate::language::ast::{NameWithBoundary, Span};
-use std::sync::Arc;
 
 use super::diagram::interpret_boundaries;
 use super::types::{
@@ -18,41 +17,6 @@ pub type DiagramBinding = (LocalId, Diagram);
 /// A named map binding produced by a `map` definition: `(name, partial_map, domain)`.
 pub type MapBinding = (LocalId, crate::core::partial_map::PartialMap, MapDomain);
 
-/// Look up the current module's complex in the global store.
-pub fn current_module_scope(context: &Context) -> Option<&Complex> {
-    context.state.find_module(&context.current_module)
-}
-
-/// Ensure the current module exists in the store, creating it with a fresh root generator if absent.
-pub fn initialize_module_context(mut context: Context) -> InterpResult {
-    let module_id = context.current_module.clone();
-    if context.state.find_module(&module_id).is_some() {
-        return InterpResult::ok(context);
-    }
-
-    let root_id = GlobalId::fresh();
-    let root_diagram = match Diagram::cell(Tag::Global(root_id), &CellData::Zero) {
-        Ok(root_diagram) => root_diagram,
-        Err(error) => {
-            let mut result = InterpResult::ok(context);
-            result.add_error(make_error_from_core(Span::synthetic(), error));
-            return result;
-        }
-    };
-
-    let root_name: LocalId = String::new();
-    let mut module_complex = Complex::empty();
-    module_complex.add_generator(root_name.clone(), Tag::Global(root_id), root_diagram.clone());
-    module_complex.add_diagram(root_name, root_diagram);
-
-    {
-        let state = Arc::make_mut(&mut context.state);
-        state.set_type(root_id, CellData::Zero, Complex::empty());
-        state.set_module(module_id, module_complex);
-    }
-
-    InterpResult::ok(context)
-}
 
 /// Interpret a sequence of items, threading context through each step.
 pub fn interpret_items<T>(

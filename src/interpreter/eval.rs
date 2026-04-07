@@ -1,7 +1,7 @@
-use crate::aux::{GlobalId, Tag};
+use crate::aux::{GlobalId, LocalId, Tag};
 use crate::core::{
     complex::{Complex, MapDomain},
-    diagram::CellData,
+    diagram::{CellData, Diagram},
 };
 use crate::language::ast::{
     self, Block, ComplexInstr, LocalInst, NameWithBoundary, Program, Span, Spanned, TypeInst,
@@ -15,14 +15,52 @@ use super::include::{
 use super::partial_map::interpret_def_pmap;
 use super::resolve::resolve_type_scope;
 use super::binding::{
-    cell_dim, create_generator_diagram, current_module_scope, initialize_module_context,
+    cell_dim, create_generator_diagram,
     insert_complex_diagram_binding, insert_complex_map_binding, insert_module_diagram_binding,
     insert_module_map_binding, insert_type_diagram_binding, insert_type_map_binding,
     interpret_generator_boundaries, interpret_items, interpret_items_in_complex_scope,
     interpret_items_in_type_scope,
 };
 pub use super::types::{Context, InterpResult};
-use super::types::{Mode, NameKind, TypeScope, ensure_name_free, error_result, identity_map, make_error};
+use super::types::{Mode, NameKind, TypeScope, ensure_name_free, error_result, identity_map, make_error, make_error_from_core};
+
+// ---- Module initialisation ----
+
+/// Look up the current module's complex in the global store.
+fn current_module_scope(context: &Context) -> Option<&Complex> {
+    context.state.find_module(&context.current_module)
+}
+
+/// Ensure the current module exists in the store, creating it with a fresh root generator if absent.
+fn initialize_module_context(mut context: Context) -> InterpResult {
+    let module_id = context.current_module.clone();
+    if context.state.find_module(&module_id).is_some() {
+        return InterpResult::ok(context);
+    }
+
+    let root_id = GlobalId::fresh();
+    let root_diagram = match Diagram::cell(Tag::Global(root_id), &CellData::Zero) {
+        Ok(root_diagram) => root_diagram,
+        Err(error) => {
+            let mut result = InterpResult::ok(context);
+            result.add_error(make_error_from_core(Span::synthetic(), error));
+            return result;
+        }
+    };
+
+    let root_name: LocalId = String::new();
+    let mut module_complex = Complex::empty();
+    module_complex.add_generator(root_name.clone(), Tag::Global(root_id), root_diagram.clone());
+    module_complex.add_diagram(root_name, root_diagram);
+
+    {
+        let state = Arc::make_mut(&mut context.state);
+        state.set_type(root_id, CellData::Zero, Complex::empty());
+        state.set_module(module_id, module_complex);
+    }
+
+    InterpResult::ok(context)
+}
 
 // ---- Main interpreter ----
 
