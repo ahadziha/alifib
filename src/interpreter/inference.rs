@@ -22,7 +22,7 @@ use crate::core::{
     partial_map::PartialMap,
 };
 use crate::language::ast::Span;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -393,7 +393,7 @@ pub fn solve(entries: &[HoleEntry], constraints: &[Constraint]) -> Vec<SolvedHol
     // ∂^{s'}_j(∂^s_k(H)) = ∂^{s'}_j(H), so knowing ∂^s_k(H) = D implies ∂^{s'}_j(H) = ∂^{s'}_j(D).
     // A HashSet de-duplicates derived entries so each (hole, slot) pair is pushed at most once.
     {
-        let mut seen: std::collections::HashSet<(HoleId, BdSlot)> =
+        let mut seen: HashSet<(HoleId, BdSlot)> =
             boundary_eqs.iter().map(|(h, s, ..)| (*h, *s)).collect();
         let mut i = 0;
         while i < boundary_eqs.len() {
@@ -434,7 +434,7 @@ pub fn solve(entries: &[HoleEntry], constraints: &[Constraint]) -> Vec<SolvedHol
     // The same `map` applies because globular propagation is taken in the source scope.
     // A HashSet de-duplicates derived entries so each (hole, slot) pair is pushed at most once.
     {
-        let mut seen: std::collections::HashSet<(HoleId, BdSlot)> =
+        let mut seen: HashSet<(HoleId, BdSlot)> =
             partial_bds.iter().map(|(h, s, ..)| (*h, *s)).collect();
         let mut i = 0;
         while i < partial_bds.len() {
@@ -598,10 +598,9 @@ mod tests {
     #[test]
     fn solve_eq_sets_value() {
         let id = HoleId::fresh();
-        let diag = zero_cell("a");
         let c = Constraint::Eq {
             hole: id,
-            diagram: diag.clone(),
+            diagram: zero_cell("a"),
             scope: empty_scope(),
             origin: ConstraintOrigin::Assertion,
         };

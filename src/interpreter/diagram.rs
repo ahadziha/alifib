@@ -1,4 +1,4 @@
-use super::inference::{BdSlot, Constraint, ConstraintOrigin};
+use super::inference::{BdSlot, Constraint, ConstraintOrigin, HoleId};
 use super::resolve::resolve_map_domain_complex;
 use super::types::{
     Component, Context, EvalMap, HoleInfo, InterpResult, Step,
@@ -581,9 +581,11 @@ fn interpret_sequence_as_term(
     if let Some(start) = last_hole_block_start {
         if let Some(ref left_diag) = hole_block_left {
             let k = left_diag.top_dim().saturating_sub(1);
+            let n = left_diag.top_dim();
             let scope_arc = Arc::new(scope.clone());
+            let trailing_ids: Vec<HoleId> = result.holes[start..].iter().map(|h| h.id).collect();
             if let Ok(out_bd) = Diagram::boundary(DiagramSign::Target, k, left_diag) {
-                for id in result.holes[start..].iter().map(|h| h.id) {
+                for &id in &trailing_ids {
                     result.constraints.push(Constraint::BoundaryEq {
                         hole: id,
                         slot: BdSlot { sign: DiagramSign::Source, dim: k },
@@ -594,8 +596,7 @@ fn interpret_sequence_as_term(
                 }
             }
             // Dimension constraint from left neighbour for trailing holes.
-            let n = left_diag.top_dim();
-            for id in result.holes[start..].iter().map(|h| h.id) {
+            for &id in &trailing_ids {
                 result.constraints.push(Constraint::DimEq {
                     hole: id,
                     dim: n,
