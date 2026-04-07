@@ -150,18 +150,18 @@ pub fn render_diagram(diagram: &Diagram, scope: &Complex) -> String {
 
 /// Render a partial boundary: each top-level label of `boundary` is mapped
 /// through `map` and the result rendered against `scope`. Labels outside the
-/// domain of `map` are rendered as `?`.
+/// domain of `map` are rendered as `_` (unknown but distinct from a hole `?`).
 pub fn render_boundary_partial(boundary: &Diagram, map: &PartialMap, scope: &Complex) -> String {
     match boundary.labels_at(boundary.top_dim()) {
         Some(labels) if !labels.is_empty() => labels
             .iter()
             .map(|tag| match map.image(tag) {
                 Ok(img) => render_diagram(img, scope),
-                Err(_) => "?".to_string(),
+                Err(_) => "_".to_string(),
             })
             .collect::<Vec<_>>()
             .join(" "),
-        _ => "?".to_string(),
+        _ => "_".to_string(),
     }
 }
 
