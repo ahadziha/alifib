@@ -39,6 +39,26 @@ fn parse_paste_dim(context: &Context, dim: &Spanned<String>) -> Step<usize> {
 }
 
 
+/// Returns `true` if `diagram` is a single un-parenthesized or parenthesized `?`.
+fn is_pure_hole_diagram(diagram: &ast::Diagram) -> bool {
+    match diagram {
+        ast::Diagram::PrincipalPaste(exprs) if exprs.len() == 1 => {
+            is_pure_hole_dexpr(&exprs[0].inner)
+        }
+        _ => false,
+    }
+}
+
+fn is_pure_hole_dexpr(expr: &ast::DExpr) -> bool {
+    match expr {
+        ast::DExpr::Component(ast::DComponent::Hole) => true,
+        ast::DExpr::Component(ast::DComponent::Paren(inner)) => {
+            is_pure_hole_diagram(&inner.inner)
+        }
+        _ => false,
+    }
+}
+
 // ---- Diagram interpretation ----
 
 /// Compute a boundary term from a diagram at one dimension below its top.
@@ -251,26 +271,33 @@ pub fn interpret_assert(
         interpret_diagram_as_term(&left_result.context, scope, &assert_stmt.rhs);
     let mut combined = left_result.merge(right_result);
 
-    // Constraint system: Eq constraints — the hole must equal the concrete side.
+    // Constraint system: Eq constraints.
+    // Only emit Eq when the entire other side is a single `?` expression; for embedded
+    // holes (e.g., `f ? g = h`) the paste context already emits BoundaryEq constraints,
+    // and claiming Eq(hole, h) would be wrong.
     let scope_arc = Arc::new(scope.clone());
     if let Some(Term::Diag(ref d)) = right_opt {
-        for hole in &combined.holes[..lhs_hole_count] {
-            combined.constraints.push(Constraint::Eq {
-                hole: hole.id,
-                diagram: d.clone(),
-                scope: scope_arc.clone(),
-                origin: ConstraintOrigin::Assertion,
-            });
+        if is_pure_hole_diagram(&assert_stmt.lhs.inner) {
+            for hole in &combined.holes[..lhs_hole_count] {
+                combined.constraints.push(Constraint::Eq {
+                    hole: hole.id,
+                    diagram: d.clone(),
+                    scope: scope_arc.clone(),
+                    origin: ConstraintOrigin::Assertion,
+                });
+            }
         }
     }
     if let Some(Term::Diag(ref d)) = left_opt {
-        for hole in &combined.holes[lhs_hole_count..] {
-            combined.constraints.push(Constraint::Eq {
-                hole: hole.id,
-                diagram: d.clone(),
-                scope: scope_arc.clone(),
-                origin: ConstraintOrigin::Assertion,
-            });
+        if is_pure_hole_diagram(&assert_stmt.rhs.inner) {
+            for hole in &combined.holes[lhs_hole_count..] {
+                combined.constraints.push(Constraint::Eq {
+                    hole: hole.id,
+                    diagram: d.clone(),
+                    scope: scope_arc.clone(),
+                    origin: ConstraintOrigin::Assertion,
+                });
+            }
         }
     }
 

@@ -81,6 +81,17 @@ pub enum ConstraintOrigin {
     PartialMap { source_tag: Tag },
 }
 
+impl std::fmt::Display for ConstraintOrigin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Paste { paste_dim } => write!(f, "paste at dim {}", paste_dim),
+            Self::Declaration => write!(f, "boundary declaration"),
+            Self::Assertion => write!(f, "assertion"),
+            Self::PartialMap { source_tag } => write!(f, "partial map (source: {})", source_tag),
+        }
+    }
+}
+
 // ---- Constraints ------------------------------------------------------------
 
 /// A constraint on a single hole, emitted during interpretation.
@@ -215,7 +226,7 @@ impl SolvedHole {
             None => self.dim = Some(n),
             Some(existing) if existing == n => {}
             Some(existing) => self.inconsistencies.push(format!(
-                "conflicting dimension constraints: {} vs {} (from {:?})",
+                "conflicting dimension constraints: {} vs {} (from {})",
                 existing, n, origin
             )),
         }
@@ -239,8 +250,8 @@ impl SolvedHole {
                 // Consistency check: isomorphic handles normalisation.
                 if !Diagram::isomorphic(existing, &diagram) {
                     self.inconsistencies.push(format!(
-                        "conflicting boundary constraints at {:?} (from {:?})",
-                        slot, origin
+                        "conflicting boundary at ({:?}, dim {}): from {}",
+                        slot.sign, slot.dim, origin
                     ));
                 }
                 // Keep the first (earlier) constraint to preserve its origin.
@@ -342,6 +353,34 @@ pub fn solve(entries: &[HoleEntry], constraints: &[Constraint]) -> Vec<SolvedHol
                     origin.clone(),
                 ));
             }
+        }
+    }
+
+    // ---- globular propagation ----
+    // For each BoundaryEq at (s, k) with k > 0, derive BoundaryEq at every (s', j) for j < k.
+    // Justified by the globular identity: for well-formed diagrams (which are always round),
+    // ∂^{s'}_j(∂^s_k(H)) = ∂^{s'}_j(H), so knowing ∂^s_k(H) = D implies ∂^{s'}_j(H) = ∂^{s'}_j(D).
+    // Process entries as we extend the vec (new entries have strictly smaller dim, so no cycle).
+    {
+        let mut i = 0;
+        while i < boundary_eqs.len() {
+            let (hole, slot, diagram, scope, origin) = boundary_eqs[i].clone();
+            if slot.dim > 0 {
+                for j in 0..slot.dim {
+                    for &sign2 in &[DiagramSign::Source, DiagramSign::Target] {
+                        if let Ok(bd) = Diagram::boundary_normal(sign2, j, &diagram) {
+                            boundary_eqs.push((
+                                hole,
+                                BdSlot { sign: sign2, dim: j },
+                                bd,
+                                scope.clone(),
+                                origin.clone(),
+                            ));
+                        }
+                    }
+                }
+            }
+            i += 1;
         }
     }
 

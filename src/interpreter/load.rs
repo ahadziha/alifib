@@ -8,7 +8,7 @@ use crate::aux::loader::{LoadFileError, Loader};
 use crate::language::Error as LangError;
 use std::fmt;
 use std::sync::Arc;
-use super::{Context, GlobalStore, HoleInfo, SolvedHole, interpret_program};
+use super::{Context, GlobalStore, SolvedHole, interpret_program};
 use super::inference::{solve, HoleEntry};
 
 // ---- LoadResult ----
@@ -82,9 +82,6 @@ impl LoadResult {
 pub struct InterpretedFile {
     /// Accumulated interpreter state for the file and all its dependencies.
     pub state: Arc<GlobalStore>,
-    /// Any unsolved holes (`?`) encountered during interpretation.
-    /// Kept for backward compatibility; prefer `solved_holes` for new code.
-    pub holes: Vec<HoleInfo>,
     /// Holes after constraint solving: richer boundary information.
     pub solved_holes: Vec<SolvedHole>,
     /// Original source text of the root file, kept for diagnostic rendering.
@@ -157,7 +154,6 @@ impl InterpretedFile {
 
         LoadResult::Loaded(Self {
             state: Arc::clone(&result.context.state),
-            holes: result.holes,
             solved_holes,
             source: loaded.source,
             path: loaded.canonical_path,
@@ -166,7 +162,7 @@ impl InterpretedFile {
 
     /// Returns `true` if interpretation left any unsolved holes (`?`).
     pub fn has_holes(&self) -> bool {
-        !self.holes.is_empty()
+        !self.solved_holes.is_empty()
     }
 }
 
