@@ -7,14 +7,14 @@
 //!    No enrichment happens in-place.
 //!
 //! 2. **Solving**: after the entire file is interpreted, [`solve`] processes
-//!    the collected constraints in one pass and produces a [`SolvedHole`] for
-//!    each registered hole.
+//!    the collected constraints using a work-queue fixpoint algorithm, iterating
+//!    until no new information can be derived.
 //!
-//! The solver checks consistency where slots are claimed more than once and
-//! fills remaining slots with weaker `PartialBoundary` evidence from
-//! partial-map contexts.  All composite constraints are decomposed into atomic
-//! `BoundaryEq`/`DimEq` facts at emission time, so the solver only ever sees
-//! already-atomic constraints.
+//! The solver is fixpoint-correct: each successful constraint application may
+//! derive follow-up constraints (globular sub-boundaries, `Value`→`BoundaryEq`,
+//! etc.) that are enqueued and processed in turn.  Termination is guaranteed
+//! because each hole's state transitions monotonically (`Empty → Partial →
+//! Known`) and `dim`/`value` are set at most once.
 
 use crate::aux::{self, Tag};
 use crate::core::{
@@ -23,7 +23,7 @@ use crate::core::{
     partial_map::PartialMap,
 };
 use crate::language::ast::Span;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -123,8 +123,8 @@ pub enum Constraint {
     /// `hole = diagram` (exact value).
     ///
     /// Emitted from assertions (`assert ? = d`).  Records the hole's exact
-    /// value; the boundary constraints implied by equality are emitted as
-    /// separate `BoundaryEq`/`DimEq` constraints at the same site.
+    /// value; the boundary constraints implied by equality are derived
+    /// automatically by the solver and enqueued as `BoundaryEq`/`DimEq`.
     Value {
         hole: HoleId,
         diagram: Diagram,
@@ -210,33 +210,64 @@ impl SolvedHole {
     }
 
     /// Record `dim = n`, checking consistency with any prior `DimEq`.
-    fn set_dim(&mut self, n: usize, origin: &ConstraintOrigin) {
+    /// Returns `true` if `dim` was newly set (i.e. was `None` before).
+    fn set_dim(&mut self, n: usize, origin: &ConstraintOrigin) -> bool {
         match self.dim {
-            None => self.dim = Some(n),
-            Some(existing) if existing == n => {}
-            Some(existing) => self.inconsistencies.push(format!(
-                "conflicting dimension constraints: {} vs {} (from {})",
-                existing, n, origin
-            )),
+            None => {
+                self.dim = Some(n);
+                true
+            }
+            Some(existing) if existing == n => false,
+            Some(existing) => {
+                self.inconsistencies.push(format!(
+                    "conflicting dimension constraints: {} vs {} (from {})",
+                    existing, n, origin
+                ));
+                false
+            }
         }
     }
 
-    /// Try to fill `slot` with a `Known` boundary. If the slot is already
-    /// `Known` with a *different* diagram, record an inconsistency.
+    /// Record `value = diagram`, checking consistency with any prior `Value`.
+    /// Returns `true` if the value was newly set (i.e. was `None` before).
+    fn set_value(&mut self, diagram: Diagram, scope: Arc<Complex>, origin: &ConstraintOrigin) -> bool {
+        match self.value {
+            None => {
+                self.value = Some((diagram, scope));
+                true
+            }
+            Some((ref existing, _)) => {
+                if !Diagram::isomorphic(existing, &diagram) {
+                    self.inconsistencies.push(format!(
+                        "conflicting Value constraints: from {}",
+                        origin
+                    ));
+                }
+                false
+            }
+        }
+    }
+
+    /// Try to fill `slot` with a `Known` boundary.
+    ///
+    /// Returns `true` if the slot gained new information (was `Empty` or
+    /// `Partial`; the caller should then derive globular sub-constraints).
+    /// Returns `false` if the slot was already `Known` (consistent duplicate)
+    /// or an inconsistency was recorded (conflicting duplicate).
     fn set_known(
         &mut self,
         slot: BdSlot,
         diagram: Diagram,
         scope: Arc<Complex>,
         origin: ConstraintOrigin,
-    ) {
+    ) -> bool {
         match self.boundaries.get(&slot) {
             None | Some(SolvedBd::Partial { .. }) => {
                 self.boundaries
                     .insert(slot, SolvedBd::Known { diagram, scope, origin });
+                true
             }
             Some(SolvedBd::Known { diagram: existing, .. }) => {
-                // Consistency check: isomorphic handles normalisation.
                 if !Diagram::isomorphic(existing, &diagram) {
                     self.inconsistencies.push(format!(
                         "conflicting ∂{}{}: from {}",
@@ -246,15 +277,17 @@ impl SolvedHole {
                     ));
                 }
                 // Keep the first (earlier) constraint to preserve its origin.
+                false
             }
         }
     }
 
-    /// Fill `slot` with a `Partial` boundary.  If the slot is empty, insert
-    /// unconditionally.  If it already holds a `Partial`, merge the two maps
-    /// so that the result covers all generators from either input (first-wins
-    /// on overlap), giving the richest possible rendering.  If it already holds
-    /// a `Known`, do nothing (`Known` takes priority).
+    /// Fill `slot` with a `Partial` boundary.
+    ///
+    /// Returns `true` if the slot was newly created (was `Empty`); the caller
+    /// should then derive globular sub-constraints.  Returns `false` if the slot
+    /// was already `Partial` (the maps are merged in-place; no re-propagation
+    /// needed) or already `Known` (`Known` takes priority over `Partial`).
     fn set_partial(
         &mut self,
         slot: BdSlot,
@@ -262,10 +295,11 @@ impl SolvedHole {
         map: PartialMap,
         scope: Arc<Complex>,
         origin: ConstraintOrigin,
-    ) {
+    ) -> bool {
         match self.boundaries.get(&slot) {
             None => {
                 self.boundaries.insert(slot, SolvedBd::Partial { boundary, map, scope, origin });
+                true
             }
             Some(SolvedBd::Partial { .. }) => {
                 // Clone to release the immutable borrow before re-inserting.
@@ -284,8 +318,10 @@ impl SolvedHole {
                         origin: existing_origin,
                     });
                 }
+                // No new slot opened: sub-slots were already propagated at first insertion.
+                false
             }
-            Some(SolvedBd::Known { .. }) => {}
+            Some(SolvedBd::Known { .. }) => false,
         }
     }
 }
@@ -305,19 +341,22 @@ pub struct HoleEntry {
 /// Solve a set of constraints and produce one [`SolvedHole`] per registered
 /// hole.
 ///
-/// The solver runs in a single pass (no fixpoint iteration needed in the
-/// absence of `SharedBoundary` constraints):
+/// The solver runs a work-queue fixpoint loop:
 ///
-/// 1. Partition constraints: `Value` records the exact value; `BoundaryEq`,
-///    `DimEq`, and `PartialBoundary` are collected into separate vecs.
-/// 2. Globular propagation on `BoundaryEq`: from `(s,k)` derive `(s',j)` for j < k.
-/// 3. Apply `BoundaryEq` to fill / check boundary slots (`Known`).
-/// 4. Apply `DimEq`.
-/// 5. Globular propagation on `PartialBoundary`: from `(s,k)` derive `(s',j)` for j < k.
-/// 6. Fill remaining empty slots from `PartialBoundary` (`Partial`, weaker than `Known`).
+/// 1. All initial constraints are loaded into a queue.
+/// 2. Each constraint is applied to its hole.  When a constraint produces new
+///    information (a slot changes state, `dim` or `value` is set for the first
+///    time), derived constraints are computed and enqueued:
+///    - `BoundaryEq` at `(s, k)` → globular `BoundaryEq` at `(s', j)` for `j < k`.
+///    - `Value` → `DimEq` + `BoundaryEq` at the two principal slots.
+///    - `PartialBoundary` at `(s, k)` → globular `PartialBoundary` at `(s', j)` for `j < k`.
+/// 3. The loop ends when the queue is empty (no new information).
 ///
-/// Constraints for unknown hole ids (not in `entries`) are silently ignored so
-/// that callers do not need to filter.
+/// Termination: slot states transition monotonically (`Empty → Partial →
+/// Known`), and `dim`/`value` are set at most once per hole, so the total
+/// number of state changes is bounded.
+///
+/// Constraints for unknown hole ids (not in `entries`) are silently ignored.
 pub fn solve(entries: &[HoleEntry], constraints: &[Constraint]) -> Vec<SolvedHole> {
     // Note: `scope` fields on constraints are pass-through — the solver never
     // inspects them; they are stored on `SolvedBd` for downstream rendering only.
@@ -325,104 +364,142 @@ pub fn solve(entries: &[HoleEntry], constraints: &[Constraint]) -> Vec<SolvedHol
     // Build an index: HoleId -> position in the output vec.
     let mut holes: Vec<SolvedHole> =
         entries.iter().map(|e| SolvedHole::new(e.id, e.span)).collect();
-    let index: std::collections::HashMap<HoleId, usize> =
+    let index: HashMap<HoleId, usize> =
         entries.iter().enumerate().map(|(i, e)| (e.id, i)).collect();
 
-    // Helpers to look up a hole mutably by id.
-    macro_rules! get_mut {
-        ($id:expr) => {
-            index.get(&$id).map(|&i| &mut holes[i])
-        };
-    }
+    // Seed the work queue with all initial constraints.
+    let mut queue: VecDeque<Constraint> = constraints.iter().cloned().collect();
 
-    // ---- pass 1: partition constraints ----
-    // Value records the hole's exact value; the other three are collected into
-    // separate vecs so they can be applied in deterministic order.
-    let mut boundary_eqs: Vec<(HoleId, BdSlot, Diagram, Arc<Complex>, ConstraintOrigin)> = vec![];
-    let mut dim_eqs: Vec<(HoleId, usize, ConstraintOrigin)> = vec![];
-    let mut partial_bds: Vec<(HoleId, BdSlot, Diagram, PartialMap, Arc<Complex>, ConstraintOrigin)> =
-        vec![];
-
-    for constraint in constraints {
-        match constraint {
-            Constraint::Value { hole, diagram, scope, origin } => {
-                if let Some(h) = get_mut!(*hole) {
-                    match h.value {
-                        None => h.value = Some((diagram.clone(), scope.clone())),
-                        Some((ref existing, _)) => {
-                            if !Diagram::isomorphic(existing, diagram) {
-                                h.inconsistencies.push(format!(
-                                    "conflicting Value constraints: from {}",
-                                    origin
-                                ));
-                            }
-                        }
-                    }
-                }
-            }
-            Constraint::BoundaryEq { hole, slot, diagram, scope, origin } => {
-                boundary_eqs.push((*hole, *slot, diagram.clone(), scope.clone(), origin.clone()));
-            }
-            Constraint::DimEq { hole, dim, origin } => {
-                dim_eqs.push((*hole, *dim, origin.clone()));
-            }
-            Constraint::PartialBoundary { hole, slot, boundary, map, scope, origin } => {
-                partial_bds.push((
-                    *hole,
-                    *slot,
-                    boundary.clone(),
-                    map.clone(),
-                    scope.clone(),
-                    origin.clone(),
-                ));
-            }
-        }
-    }
-
-    // ---- globular propagation for BoundaryEq ----
-    // For each BoundaryEq at (s, k) with k > 0, derive BoundaryEq at every (s', j) for j < k.
-    // Justified by the globular identity: ∂^{s'}_j(∂^s_k(H)) = ∂^{s'}_j(H), so knowing
-    // ∂^s_k(H) = D implies ∂^{s'}_j(H) = ∂^{s'}_j(D).
-    globular_propagate(
-        &mut boundary_eqs,
-        |e| (e.0, e.1),
-        |e| &e.2,
-        |e, new_slot, bd| (e.0, new_slot, bd, e.3.clone(), e.4.clone()),
-    );
-
-    // ---- pass 2: apply BoundaryEq ----
-    for (hole, slot, diagram, scope, origin) in boundary_eqs {
-        if let Some(h) = get_mut!(hole) {
-            h.set_known(slot, diagram, scope, origin);
-        }
-    }
-
-    // ---- pass 3: apply DimEq ----
-    for (hole, dim, origin) in dim_eqs {
-        if let Some(h) = get_mut!(hole) {
-            h.set_dim(dim, &origin);
-        }
-    }
-
-    // ---- globular propagation for PartialBoundary ----
-    // For each PartialBoundary at (s, k) with k > 0, derive PartialBoundary at every (s', j) for j < k.
-    // Same globular identity as for BoundaryEq: ∂^{s'}_j(∂^s_k(H)) = ∂^{s'}_j(H).
-    // The same `map` applies because globular propagation is taken in the source scope.
-    globular_propagate(
-        &mut partial_bds,
-        |e| (e.0, e.1),
-        |e| &e.2,
-        |e, new_slot, bd| (e.0, new_slot, bd, e.3.clone(), e.4.clone(), e.5.clone()),
-    );
-
-    // ---- pass 4: fill remaining slots from PartialBoundary ----
-    for (hole, slot, boundary, map, scope, origin) in partial_bds {
-        if let Some(h) = get_mut!(hole) {
-            h.set_partial(slot, boundary, map, scope, origin);
-        }
+    while let Some(constraint) = queue.pop_front() {
+        let hole_id = constraint.hole();
+        let Some(&idx) = index.get(&hole_id) else { continue; };
+        let derived = process_constraint(&mut holes[idx], hole_id, constraint);
+        queue.extend(derived);
     }
 
     holes
+}
+
+// ---- Internal helpers -------------------------------------------------------
+
+/// Apply one constraint to a hole and return any derived constraints to enqueue.
+///
+/// Returns an empty vec when the constraint produced no new information
+/// (duplicate, inconsistency-only, or `DimEq` which never derives further
+/// constraints on its own).
+fn process_constraint(hole: &mut SolvedHole, hole_id: HoleId, constraint: Constraint) -> Vec<Constraint> {
+    match constraint {
+        Constraint::Value { hole: _, diagram, scope, origin } => {
+            if !hole.set_value(diagram.clone(), scope.clone(), &origin) {
+                return vec![];
+            }
+            // Derive: DimEq from the value's dimension, then BoundaryEq at
+            // the two principal slots.  Globular sub-constraints will be
+            // derived in turn when those BoundaryEq constraints are processed.
+            let n = diagram.top_dim();
+            let mut derived = vec![
+                Constraint::DimEq { hole: hole_id, dim: n, origin: origin.clone() },
+            ];
+            if n > 0 {
+                for &sign in &[DiagramSign::Source, DiagramSign::Target] {
+                    if let Ok(bd) = Diagram::boundary_normal(sign, n - 1, &diagram) {
+                        derived.push(Constraint::BoundaryEq {
+                            hole: hole_id,
+                            slot: BdSlot { sign, dim: n - 1 },
+                            diagram: bd,
+                            scope: scope.clone(),
+                            origin: origin.clone(),
+                        });
+                    }
+                }
+            }
+            derived
+        }
+
+        Constraint::DimEq { hole: _, dim, origin } => {
+            hole.set_dim(dim, &origin);
+            // No constraints are derived from DimEq alone.
+            vec![]
+        }
+
+        Constraint::BoundaryEq { hole: _, slot, diagram, scope, origin } => {
+            if !hole.set_known(slot, diagram.clone(), scope.clone(), origin.clone()) {
+                return vec![];
+            }
+            // Derive: globular BoundaryEq at all sub-slots.
+            globular_boundary_eq(hole_id, slot, &diagram, &scope, &origin)
+        }
+
+        Constraint::PartialBoundary { hole: _, slot, boundary, map, scope, origin } => {
+            if !hole.set_partial(slot, boundary.clone(), map.clone(), scope.clone(), origin.clone()) {
+                return vec![];
+            }
+            // Derive: globular PartialBoundary at all sub-slots.
+            // Only done on first insertion (Empty → Partial); Partial → Partial
+            // merges do not re-propagate since sub-slots were already handled.
+            globular_partial_boundary(hole_id, slot, &boundary, &map, &scope, &origin)
+        }
+    }
+}
+
+/// Derive globular `BoundaryEq` constraints at all sub-slots of `(slot.sign, slot.dim)`.
+///
+/// For each `j < slot.dim` and both signs `s'`, computes `∂^{s'}_j(diagram)`
+/// and emits `BoundaryEq(hole, (s', j), ∂^{s'}_j(diagram))`.  Failures in
+/// `boundary_normal` are skipped (the slot remains unconstrained from this
+/// derivation path).
+fn globular_boundary_eq(
+    hole: HoleId,
+    slot: BdSlot,
+    diagram: &Diagram,
+    scope: &Arc<Complex>,
+    origin: &ConstraintOrigin,
+) -> Vec<Constraint> {
+    let mut derived = vec![];
+    for j in 0..slot.dim {
+        for &sign in &[DiagramSign::Source, DiagramSign::Target] {
+            if let Ok(bd) = Diagram::boundary_normal(sign, j, diagram) {
+                derived.push(Constraint::BoundaryEq {
+                    hole,
+                    slot: BdSlot { sign, dim: j },
+                    diagram: bd,
+                    scope: scope.clone(),
+                    origin: origin.clone(),
+                });
+            }
+        }
+    }
+    derived
+}
+
+/// Derive globular `PartialBoundary` constraints at all sub-slots of `(slot.sign, slot.dim)`.
+///
+/// Same globular identity as for `BoundaryEq`: `∂^{s'}_j(∂^s_k(H)) = ∂^{s'}_j(H)`.
+/// The same `map` applies because globular propagation is taken in the source scope.
+fn globular_partial_boundary(
+    hole: HoleId,
+    slot: BdSlot,
+    boundary: &Diagram,
+    map: &PartialMap,
+    scope: &Arc<Complex>,
+    origin: &ConstraintOrigin,
+) -> Vec<Constraint> {
+    let mut derived = vec![];
+    for j in 0..slot.dim {
+        for &sign in &[DiagramSign::Source, DiagramSign::Target] {
+            if let Ok(bd) = Diagram::boundary_normal(sign, j, boundary) {
+                derived.push(Constraint::PartialBoundary {
+                    hole,
+                    slot: BdSlot { sign, dim: j },
+                    boundary: bd,
+                    map: map.clone(),
+                    scope: scope.clone(),
+                    origin: origin.clone(),
+                });
+            }
+        }
+    }
+    derived
 }
 
 #[cfg(test)]
@@ -601,44 +678,64 @@ mod tests {
         let result = solve(&[entry(id)], &[c1, c2]);
         assert!(result[0].inconsistencies.is_empty());
     }
-}
 
-// ---- Internal helpers -------------------------------------------------------
+    #[test]
+    fn solve_value_infers_dim() {
+        // A Value constraint on a 0-cell should derive DimEq(0).
+        let id = HoleId::fresh();
+        let c = Constraint::Value {
+            hole: id,
+            diagram: zero_cell("a"),
+            scope: empty_scope(),
+            origin: ConstraintOrigin::Assertion,
+        };
+        let result = solve(&[entry(id)], &[c]);
+        assert_eq!(result[0].dim, Some(0), "dim should be derived from Value");
+        assert!(result[0].inconsistencies.is_empty());
+    }
 
-/// Propagate constraints to lower-dimensional slots using the globular identity.
-///
-/// For each entry at slot `(s, k)` with `k > 0`, derives new entries at every
-/// `(s', j)` for `j < k` and both signs, using:
-///   `∂^{s'}_j(∂^s_k(H)) = ∂^{s'}_j(H)`
-///
-/// A `HashSet` on `(HoleId, BdSlot)` de-duplicates entries so each
-/// `(hole, slot)` pair is pushed at most once.
-fn globular_propagate<T, K, B, D>(entries: &mut Vec<T>, key: K, boundary: B, derive: D)
-where
-    T: Clone,
-    K: Fn(&T) -> (HoleId, BdSlot),
-    B: Fn(&T) -> &Diagram,
-    D: Fn(&T, BdSlot, Diagram) -> T,
-{
-    let mut seen: HashSet<(HoleId, BdSlot)> = entries.iter().map(|e| key(e)).collect();
-    let mut i = 0;
-    while i < entries.len() {
-        let entry = entries[i].clone();
-        let (hole, slot) = key(&entry);
-        if slot.dim > 0 {
-            for j in 0..slot.dim {
-                for &sign2 in &[DiagramSign::Source, DiagramSign::Target] {
-                    let new_slot = BdSlot { sign: sign2, dim: j };
-                    if seen.insert((hole, new_slot)) {
-                        if let Ok(bd) = Diagram::boundary_normal(sign2, j, boundary(&entry)) {
-                            entries.push(derive(&entry, new_slot, bd));
-                        }
-                    }
-                }
-            }
-        }
-        i += 1;
+    #[test]
+    fn solve_value_conflict_with_dim_eq_records_inconsistency() {
+        // Value(0-cell) → DimEq(0); explicit DimEq(1) conflicts.
+        let id = HoleId::fresh();
+        let c1 = Constraint::Value {
+            hole: id, diagram: zero_cell("a"), scope: empty_scope(),
+            origin: ConstraintOrigin::Assertion,
+        };
+        let c2 = Constraint::DimEq { hole: id, dim: 1, origin: ConstraintOrigin::Declaration };
+        // Order: DimEq first, then Value.  Value derives DimEq(0) which conflicts with the
+        // already-set dim=1.
+        let result = solve(&[entry(id)], &[c2, c1]);
+        assert_eq!(result[0].dim, Some(1), "first DimEq wins");
+        assert_eq!(result[0].inconsistencies.len(), 1, "derived DimEq(0) conflicts with explicit DimEq(1)");
+    }
+
+    #[test]
+    fn solve_boundary_eq_upgrades_partial() {
+        // A PartialBoundary followed by a BoundaryEq at the same slot:
+        // the slot should be upgraded to Known with no inconsistency.
+        use crate::core::partial_map::PartialMap;
+        let id = HoleId::fresh();
+        let slot = BdSlot { sign: DiagramSign::Source, dim: 0 };
+        let diag = zero_cell("a");
+        let c_partial = Constraint::PartialBoundary {
+            hole: id, slot,
+            boundary: diag.clone(),
+            map: PartialMap::empty(),
+            scope: empty_scope(),
+            origin: ConstraintOrigin::PartialMap {
+                source_tag: crate::aux::Tag::Local("src".into())
+            },
+        };
+        let c_known = Constraint::BoundaryEq {
+            hole: id, slot, diagram: diag, scope: empty_scope(),
+            origin: ConstraintOrigin::Declaration,
+        };
+        let result = solve(&[entry(id)], &[c_partial, c_known]);
+        assert!(
+            matches!(result[0].boundaries.get(&slot), Some(SolvedBd::Known { .. })),
+            "BoundaryEq should upgrade the slot from Partial to Known"
+        );
+        assert!(result[0].inconsistencies.is_empty());
     }
 }
-
-
