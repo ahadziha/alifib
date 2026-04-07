@@ -232,29 +232,70 @@ pub fn interpret_dcomponent(
 // ---- Assert ----
 
 /// Evaluate both sides of an assertion statement and pair them for equality checking.
+///
+/// Both sides are always evaluated even when one fails, so that holes are detected in
+/// a single pass.  When one side is a concrete diagram and the other has holes, those
+/// holes are enriched with the concrete diagram's source/target boundaries: the hole
+/// must be a diagram equal to the concrete side, so it must share its boundaries.
 pub fn interpret_assert(
     context: &Context,
     scope: &Complex,
     assert_stmt: &crate::language::ast::AssertStmt,
 ) -> (Option<TermPair>, InterpResult) {
     let (left_opt, left_result) = interpret_diagram_as_term(context, scope, &assert_stmt.lhs);
-    let Some(left_term) = left_opt else { return (None, left_result); };
+    let lhs_hole_count = left_result.holes.len();
 
+    // Always evaluate RHS even if LHS failed.
     let (right_opt, right_result) =
         interpret_diagram_as_term(&left_result.context, scope, &assert_stmt.rhs);
     let mut combined = left_result.merge(right_result);
-    let Some(right_term) = right_opt else { return (None, combined); };
 
-    match (left_term, right_term) {
-        (Term::Diag(d1), Term::Diag(d2)) => (Some(TermPair::Diagrams { fst: d1, snd: d2 }), combined),
-        (Term::Map(mc1), Term::Map(mc2)) => (
+    // Cross-enrich diagram holes from the concrete opposite side.
+    // After merge, combined.holes = [LHS holes (..lhs_hole_count)] ++ [RHS holes].
+    let enrich = |holes: &mut [crate::interpreter::types::HoleInfo], d: &Diagram, scope: &Complex| {
+        let k = d.top_dim().saturating_sub(1);
+        if let (Ok(in_bd), Ok(out_bd)) = (
+            Diagram::boundary(DiagramSign::Source, k, d),
+            Diagram::boundary(DiagramSign::Target, k, d),
+        ) {
+            for hole in holes {
+                match &mut hole.boundary {
+                    None => hole.boundary = Some(HoleBoundaryInfo {
+                        boundary_in: HoleBd::Full(in_bd.clone(), Arc::new(scope.clone())),
+                        boundary_out: HoleBd::Full(out_bd.clone(), Arc::new(scope.clone())),
+                    }),
+                    Some(bd) => {
+                        if matches!(bd.boundary_in, HoleBd::Unknown) {
+                            bd.boundary_in = HoleBd::Full(in_bd.clone(), Arc::new(scope.clone()));
+                        }
+                        if matches!(bd.boundary_out, HoleBd::Unknown) {
+                            bd.boundary_out = HoleBd::Full(out_bd.clone(), Arc::new(scope.clone()));
+                        }
+                    }
+                }
+            }
+        }
+    };
+    if let Some(Term::Diag(ref d)) = right_opt {
+        enrich(&mut combined.holes[..lhs_hole_count], d, scope);
+    }
+    if let Some(Term::Diag(ref d)) = left_opt {
+        enrich(&mut combined.holes[lhs_hole_count..], d, scope);
+    }
+
+    match (left_opt, right_opt) {
+        (Some(Term::Diag(d1)), Some(Term::Diag(d2))) => {
+            (Some(TermPair::Diagrams { fst: d1, snd: d2 }), combined)
+        }
+        (Some(Term::Map(mc1)), Some(Term::Map(mc2))) => (
             Some(TermPair::Maps { fst: mc1.map, snd: mc2.map, domain: mc1.domain }),
             combined,
         ),
-        _ => {
+        (Some(_), Some(_)) => {
             combined.add_error(make_error(assert_stmt.lhs.span, "The two sides of the equation are incomparable"));
             (None, combined)
         }
+        _ => (None, combined),
     }
 }
 
