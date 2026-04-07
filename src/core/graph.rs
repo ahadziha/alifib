@@ -1,11 +1,17 @@
 //! Lightweight directed graphs for flow graphs, contractions, and topological sort enumeration.
 //!
-//! This module provides:
-//! - [`DiGraph`] — a directed graph on nodes 0..n
-//! - [`flow_graph`] — constructs F_k(U) (Definition 61 of Hadzihasanovic–Kessler 2304.09216)
-//! - [`maximal_flow_graph`] — constructs M_k(U) (Definition 63)
-//! - [`contract`] — graph contraction G/(G|_W) (Definition 88)
-//! - [`all_topological_sorts`] — enumerate all topological orderings of a DAG
+//! This module provides the combinatorial graph machinery used by the subdiagram matching
+//! algorithms of Hadzihasanovic–Kessler (2304.09216):
+//!
+//! - [`DiGraph`] — a directed graph on nodes `0..n`, with sorted adjacency lists
+//! - [`flow_graph`] — constructs the k-flow graph **F**_k(U) (Definition 61)
+//! - [`maximal_flow_graph`] — constructs the maximal k-flow graph **M**_k(U) (Definition 63)
+//! - [`contract`] — computes the quotient **G**/**G**|_W (Definition 88)
+//! - [`all_topological_sorts`] — enumerates all topological orderings of a DAG
+//!
+//! All graph nodes are identified by small non-negative integers.  Adjacency lists are
+//! [`IntSet`](super::intset::IntSet) values — sorted, deduplicated `Vec<usize>` — which
+//! support O(n+m) set operations and binary-search membership queries.
 
 use std::sync::Arc;
 use super::intset::{self, IntSet};
@@ -14,12 +20,16 @@ use super::ogposet::{self, Ogposet, Sign};
 // ---- DiGraph ----
 
 /// A directed graph on nodes `0..n`, represented as sorted adjacency lists.
+///
+/// Both the successor list (`u → v`) and the predecessor list (`v → u`) are
+/// stored explicitly so that callers can traverse edges in either direction
+/// in O(degree) time.
 #[derive(Debug, Clone)]
 pub(super) struct DiGraph {
     n: usize,
-    /// `successors[i]` — sorted list of nodes that i points to.
+    /// `successors[u]` — sorted list of nodes that `u` points to.
     pub(super) successors: Vec<IntSet>,
-    /// `predecessors[i]` — sorted list of nodes pointing to i.
+    /// `predecessors[v]` — sorted list of nodes that point to `v`.
     pub(super) predecessors: Vec<IntSet>,
 }
 
@@ -36,7 +46,7 @@ impl DiGraph {
     /// Number of nodes.
     pub(super) fn node_count(&self) -> usize { self.n }
 
-    /// Add a directed edge from `u` to `v`.  Idempotent.
+    /// Add a directed edge from `u` to `v`.  Idempotent (adding a duplicate edge is a no-op).
     pub(super) fn add_edge(&mut self, u: usize, v: usize) {
         intset::insert(&mut self.successors[u], v);
         intset::insert(&mut self.predecessors[v], u);
@@ -48,7 +58,7 @@ impl DiGraph {
         self.successors[u].binary_search(&v).is_ok()
     }
 
-    /// Indegree of node `v`.
+    /// In-degree of node `v`: the number of nodes with an edge to `v`.
     pub(super) fn indegree(&self, v: usize) -> usize {
         self.predecessors[v].len()
     }
@@ -56,12 +66,15 @@ impl DiGraph {
 
 // ---- Flow graph construction ----
 
-/// Constructs the k-flow graph F_k(U) of an ogposet (Definition 61).
+/// Constructs the k-flow graph **F**_k(U) (Definition 61 of Hadzihasanovic–Kessler).
 ///
-/// Nodes are all cells at dimensions > k, labelled by `(dim, pos)`.
-/// There is a directed edge x → y iff Δ⁺_k(x) ∩ Δ⁻_k(y) ≠ ∅.
+/// **Nodes** — all cells of `g` at dimensions strictly greater than `k`.  The returned
+/// `node_map[i] = (dim, pos)` gives the `(dimension, position)` of node `i` in `g`.
 ///
-/// Returns `(graph, node_map)` where `node_map[i] = (dim, pos)`.
+/// **Edges** — there is a directed edge `x → y` iff `Δ⁺_k(x) ∩ Δ⁻_k(y) ≠ ∅`,
+/// i.e. the output k-boundary of `x` and the input k-boundary of `y` share a k-cell.
+///
+/// Returns `(graph, node_map)`.  When `k >= g.dim` or `g` is empty, returns an empty graph.
 pub(super) fn flow_graph(g: &Arc<Ogposet>, k: usize) -> (DiGraph, Vec<(usize, usize)>) {
     if g.dim < 0 { return (DiGraph::new(0), vec![]); }
     let gd = g.dim as usize;
@@ -78,22 +91,7 @@ pub(super) fn flow_graph(g: &Arc<Ogposet>, k: usize) -> (DiGraph, Vec<(usize, us
     let n = node_map.len();
     let mut graph = DiGraph::new(n);
 
-    // Build a lookup: (dim, pos) -> node index.
-    // Use a flat offset: node index = sum_{d=k+1}^{dim-1} |cells at d| + pos.
-    let sizes = g.sizes();
-    let mut dim_offset = vec![0usize; gd + 2];
-    let mut acc = 0usize;
-    for dim in 0..=gd {
-        dim_offset[dim] = acc;
-        acc += sizes.get(dim).copied().unwrap_or(0);
-    }
-    let node_idx = |(dim, pos): (usize, usize)| -> usize {
-        dim_offset[dim] - dim_offset[k + 1] + pos
-    };
-
     // Precompute Δ⁺_k and Δ⁻_k for every node.
-    // For dim = k+1: Δ⁺_k(x) = faces_out[k+1][pos], Δ⁻_k(x) = faces_in[k+1][pos].
-    // For dim > k+1: use signed_k_boundary_of_cell.
     let out_k: Vec<IntSet> = node_map.iter().map(|&(dim, pos)| {
         ogposet::signed_k_boundary_of_cell(g, Sign::Output, k, dim, pos)
     }).collect();
@@ -101,7 +99,7 @@ pub(super) fn flow_graph(g: &Arc<Ogposet>, k: usize) -> (DiGraph, Vec<(usize, us
         ogposet::signed_k_boundary_of_cell(g, Sign::Input, k, dim, pos)
     }).collect();
 
-    // Add edges: x -> y iff out_k[x] ∩ in_k[y] ≠ ∅.
+    // Add edges: x → y iff Δ⁺_k(x) ∩ Δ⁻_k(y) ≠ ∅.
     for xi in 0..n {
         for yi in 0..n {
             if xi == yi { continue; }
@@ -111,16 +109,16 @@ pub(super) fn flow_graph(g: &Arc<Ogposet>, k: usize) -> (DiGraph, Vec<(usize, us
         }
     }
 
-    // Suppress unused warning for node_idx in cases where g.dim == k+1
-    let _ = node_idx;
-
     (graph, node_map)
 }
 
-/// Constructs the maximal k-flow graph M_k(U) of an ogposet (Definition 63).
+/// Constructs the maximal k-flow graph **M**_k(U) (Definition 63 of Hadzihasanovic–Kessler).
 ///
-/// This is the induced subgraph of F_k(U) restricted to cells that are maximal
-/// at their dimension (i.e. have no cofaces in any direction).
+/// This is the induced subgraph of **F**_k(U) restricted to cells that are *maximal* —
+/// i.e. cells that have no cofaces in either direction within `g`.  For a pure regular
+/// molecule, every top-dimensional cell is maximal, so **M**_{n-1}(U) and **F**_{n-1}(U)
+/// coincide.  For lower k values, intermediate-dimensional cells without cofaces are
+/// also included.
 ///
 /// Returns `(graph, node_map)` where `node_map[i] = (dim, pos)`.
 #[allow(dead_code)]
@@ -139,7 +137,7 @@ pub(super) fn maximal_flow_graph(g: &Arc<Ogposet>, k: usize) -> (DiGraph, Vec<(u
     let n = node_map.len();
     let mut graph = DiGraph::new(n);
 
-    // Precompute boundaries.
+    // Precompute boundaries and add edges as in flow_graph.
     let out_k: Vec<IntSet> = node_map.iter().map(|&(dim, pos)| {
         ogposet::signed_k_boundary_of_cell(g, Sign::Output, k, dim, pos)
     }).collect();
@@ -161,19 +159,24 @@ pub(super) fn maximal_flow_graph(g: &Arc<Ogposet>, k: usize) -> (DiGraph, Vec<(u
 
 // ---- Graph contraction ----
 
-/// Contract the graph `graph` by the subgraph induced on `subset` (Definition 88).
+/// Contract the induced subgraph on `subset` to a single node (Definition 88).
 ///
-/// Computes connected components of the undirected version of the induced
-/// subgraph on `subset`, collapses each component to a single node, and builds
-/// the quotient graph.  Nodes outside `subset` retain individual identities.
+/// Computes the connected components of the *undirected* version of the induced subgraph
+/// `graph|_subset`, collapses each component to one representative node, and returns the
+/// quotient graph **G**/**G**|_W together with a mapping from old node indices to new ones.
 ///
-/// Returns `(quotient_graph, mapping)` where `mapping[old_node] = new_node_index`.
+/// Nodes outside `subset` retain their individual identities in the quotient.
+///
+/// **Returns** `(quotient_graph, mapping)` where `mapping[old_node] = new_node_index`.
+///
+/// This corresponds to the contraction used in Algorithm 95 to build
+/// **F**_{n-1}(U) / **F**_{n-1}(ι(V)).
 pub(super) fn contract(graph: &DiGraph, subset: &[usize]) -> (DiGraph, Vec<usize>) {
     let n = graph.node_count();
-    let mut component = vec![usize::MAX; n];
 
-    // Union-Find on subset nodes to find connected components
-    // (treating edges as undirected).
+    // Union-Find on subset nodes to identify connected components,
+    // treating directed edges as undirected (Lemma 89 requires path-induced subgraphs,
+    // so we check connectivity undirectedly).
     let mut parent: Vec<usize> = (0..n).collect();
 
     fn find(parent: &mut Vec<usize>, x: usize) -> usize {
@@ -189,34 +192,28 @@ pub(super) fn contract(graph: &DiGraph, subset: &[usize]) -> (DiGraph, Vec<usize
         if rx != ry { parent[rx] = ry; }
     }
 
-    // Union connected nodes within the subset.
     let subset_set: Vec<bool> = {
         let mut s = vec![false; n];
         for &v in subset { s[v] = true; }
         s
     };
 
+    // Union connected nodes within the subset (both directions to handle all paths).
     for &u in subset {
         for &v in &graph.successors[u] {
-            if subset_set[v] {
-                union(&mut parent, u, v);
-            }
+            if subset_set[v] { union(&mut parent, u, v); }
         }
         for &v in &graph.predecessors[u] {
-            if subset_set[v] {
-                union(&mut parent, u, v);
-            }
+            if subset_set[v] { union(&mut parent, u, v); }
         }
     }
 
-    // Assign new node indices.
-    // Each connected component of the subset gets one node.
-    // Nodes outside the subset get individual nodes.
+    // Assign new node indices: one per connected component of the subset,
+    // then one per node outside the subset.
     let mut new_idx: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
     let mut mapping = vec![0usize; n];
     let mut next_id = 0usize;
 
-    // First pass: nodes in subset, grouped by root.
     for &v in subset {
         let root = find(&mut parent, v);
         let id = *new_idx.entry(root).or_insert_with(|| {
@@ -224,11 +221,9 @@ pub(super) fn contract(graph: &DiGraph, subset: &[usize]) -> (DiGraph, Vec<usize
             next_id += 1;
             id
         });
-        component[v] = id;
         mapping[v] = id;
     }
 
-    // Second pass: nodes outside subset get fresh ids.
     for v in 0..n {
         if !subset_set[v] {
             mapping[v] = next_id;
@@ -236,6 +231,8 @@ pub(super) fn contract(graph: &DiGraph, subset: &[usize]) -> (DiGraph, Vec<usize
         }
     }
 
+    // Build the quotient graph: add an edge nu → nv for each original edge u → v
+    // where the endpoints map to distinct new nodes (self-loops are dropped).
     let new_n = next_id;
     let mut quotient = DiGraph::new(new_n);
 
@@ -254,21 +251,27 @@ pub(super) fn contract(graph: &DiGraph, subset: &[usize]) -> (DiGraph, Vec<usize
 
 // ---- Topological sort enumeration ----
 
-/// Outcome of enumerating topological orderings.
+/// Outcome of enumerating topological orderings (returned by [`all_topological_sorts`]).
 pub(super) enum TopoSortResult {
-    /// All orderings collected (up to the optional limit).
+    /// All orderings were successfully collected (at most `limit` of them).
     Sorts(Vec<Vec<usize>>),
-    /// The graph contains a cycle; no ordering exists.
+    /// The graph contains a directed cycle; no topological ordering exists.
     HasCycle,
-    /// The number of orderings exceeded the requested limit.
+    /// The number of distinct orderings exceeded the requested limit.
     LimitExceeded,
 }
 
 /// Enumerate all topological orderings of a DAG using Kahn's algorithm with backtracking.
 ///
-/// Returns `TopoSortResult::Sorts` (up to `limit` orderings, or all if `None`),
-/// `TopoSortResult::HasCycle` if the graph is not a DAG, or
-/// `TopoSortResult::LimitExceeded` if the number of orderings exceeds the limit.
+/// At each backtracking step, every node currently at in-degree 0 is a valid next choice;
+/// the algorithm tries each in turn and recurses.  State is restored on backtrack.
+///
+/// **Returns**:
+/// - `TopoSortResult::Sorts(v)` — all orderings found (up to `limit`, or all if `None`)
+/// - `TopoSortResult::HasCycle` — the graph is not a DAG
+/// - `TopoSortResult::LimitExceeded` — more than `limit` orderings exist
+///
+/// Used by Algorithm 95 to iterate over all topological sorts of the contracted flow graph.
 pub(super) fn all_topological_sorts(graph: &DiGraph, limit: Option<usize>) -> TopoSortResult {
     let n = graph.node_count();
     let lim = limit.unwrap_or(usize::MAX);
@@ -299,7 +302,7 @@ fn topo_backtrack(
         return BacktrackOutcome::Done;
     }
 
-    // usize::MAX is the sentinel for "already scheduled".
+    // `usize::MAX` is the sentinel for "already scheduled" (avoids a separate `visited` array).
     let ready: Vec<usize> = (0..total).filter(|&v| indegrees[v] == 0).collect();
 
     if ready.is_empty() {
@@ -309,7 +312,7 @@ fn topo_backtrack(
 
     for v in ready {
         current.push(v);
-        indegrees[v] = usize::MAX;
+        indegrees[v] = usize::MAX; // mark as scheduled
 
         let succs: Vec<usize> = graph.successors[v].clone();
         for &s in &succs {
@@ -318,11 +321,9 @@ fn topo_backtrack(
 
         match topo_backtrack(graph, indegrees, current, total, result, limit) {
             BacktrackOutcome::Cycle => {
-                // Restore before propagating.
                 for &s in &succs { if indegrees[s] != usize::MAX { indegrees[s] += 1; } }
                 indegrees[v] = 0;
                 current.pop();
-                // A cycle is a global property; propagate immediately.
                 return BacktrackOutcome::Cycle;
             }
             BacktrackOutcome::LimitExceeded => {
@@ -334,6 +335,7 @@ fn topo_backtrack(
             BacktrackOutcome::Done => {}
         }
 
+        // Restore and try the next candidate.
         for &s in &succs { if indegrees[s] != usize::MAX { indegrees[s] += 1; } }
         indegrees[v] = 0;
         current.pop();
