@@ -41,43 +41,27 @@ fn enrich_holes(
         let k_in = boundary_in.top_dim();
         let k_out = boundary_out.top_dim();
 
-        // Source slot: apply the map to boundary_in.
-        match PartialMap::apply(map, boundary_in) {
-            Ok(mapped) => new_constraints.push(Constraint::BoundaryEq {
-                hole: hole.id,
-                slot: BdSlot { sign: DiagramSign::Source, dim: k_in },
-                diagram: mapped,
-                scope: scope_arc.clone(),
-                origin: origin.clone(),
-            }),
-            Err(_) => new_constraints.push(Constraint::PartialBoundary {
-                hole: hole.id,
-                slot: BdSlot { sign: DiagramSign::Source, dim: k_in },
-                boundary: (**boundary_in).clone(),
-                map: map.clone(),
-                scope: scope_arc.clone(),
-                origin: origin.clone(),
-            }),
-        }
-
-        // Target slot: apply the map to boundary_out.
-        match PartialMap::apply(map, boundary_out) {
-            Ok(mapped) => new_constraints.push(Constraint::BoundaryEq {
-                hole: hole.id,
-                slot: BdSlot { sign: DiagramSign::Target, dim: k_out },
-                diagram: mapped,
-                scope: scope_arc.clone(),
-                origin: origin.clone(),
-            }),
-            Err(_) => new_constraints.push(Constraint::PartialBoundary {
-                hole: hole.id,
-                slot: BdSlot { sign: DiagramSign::Target, dim: k_out },
-                boundary: (**boundary_out).clone(),
-                map: map.clone(),
-                scope: scope_arc.clone(),
-                origin: origin.clone(),
-            }),
-        }
+        // Always emit PartialBoundary, never BoundaryEq.
+        // Rationale: the partial map constraint on target may be wrong for embedded holes
+        // (e.g. `arr => ? g` — the map's target-boundary applies to the whole `? g`, not
+        // just `?`). BoundaryEq constraints from paste contexts take precedence via the
+        // Known > Partial priority in the solver.
+        new_constraints.push(Constraint::PartialBoundary {
+            hole: hole.id,
+            slot: BdSlot { sign: DiagramSign::Source, dim: k_in },
+            boundary: (**boundary_in).clone(),
+            map: map.clone(),
+            scope: scope_arc.clone(),
+            origin: origin.clone(),
+        });
+        new_constraints.push(Constraint::PartialBoundary {
+            hole: hole.id,
+            slot: BdSlot { sign: DiagramSign::Target, dim: k_out },
+            boundary: (**boundary_out).clone(),
+            map: map.clone(),
+            scope: scope_arc.clone(),
+            origin: origin.clone(),
+        });
     }
 
     result.constraints.extend(new_constraints);

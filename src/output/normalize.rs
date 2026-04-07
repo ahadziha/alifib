@@ -232,20 +232,36 @@ fn render_solved_hole(hole: &SolvedHole) -> String {
         return format!("= {}", render_diagram(diag, scope));
     }
 
-    // Try to report the principal boundary (src, n-1) and (tgt, n-1).
-    if let Some(n) = hole.dim {
-        if n > 0 {
-            let src_slot = BdSlot { sign: Sign::Source, dim: n - 1 };
-            let tgt_slot = BdSlot { sign: Sign::Target, dim: n - 1 };
-            if let (Some(src_bd), Some(tgt_bd)) =
-                (hole.boundaries.get(&src_slot), hole.boundaries.get(&tgt_slot))
-            {
-                let mut msg = format!("{} -> {}", render_solved_bd(src_bd), render_solved_bd(tgt_bd));
-                if !hole.inconsistencies.is_empty() {
-                    msg.push_str(&format!(" [inconsistencies: {}]", hole.inconsistencies.join("; ")));
-                }
-                return msg;
+    // Determine the best dimension k to display as "src -> tgt".
+    // Prefer the principal slot (dim n-1) when the dimension is known; otherwise
+    // pick the highest k where both Source-k and Target-k are available.
+    let best_k: Option<usize> = if let Some(n) = hole.dim {
+        if n > 0 { Some(n - 1) } else { None }
+    } else {
+        hole.boundaries
+            .keys()
+            .filter(|slot| {
+                hole.boundaries.contains_key(&BdSlot { sign: Sign::Source, dim: slot.dim })
+                    && hole.boundaries.contains_key(&BdSlot { sign: Sign::Target, dim: slot.dim })
+            })
+            .map(|slot| slot.dim)
+            .max()
+    };
+
+    if let Some(k) = best_k {
+        let src_slot = BdSlot { sign: Sign::Source, dim: k };
+        let tgt_slot = BdSlot { sign: Sign::Target, dim: k };
+        if let (Some(src_bd), Some(tgt_bd)) =
+            (hole.boundaries.get(&src_slot), hole.boundaries.get(&tgt_slot))
+        {
+            let mut msg = format!("{} -> {}", render_solved_bd(src_bd), render_solved_bd(tgt_bd));
+            if !hole.inconsistencies.is_empty() {
+                msg.push_str(&format!(
+                    " [inconsistencies: {}]",
+                    hole.inconsistencies.join("; ")
+                ));
             }
+            return msg;
         }
     }
 

@@ -408,6 +408,75 @@ pub fn solve(entries: &[HoleEntry], constraints: &[Constraint]) -> Vec<SolvedHol
     holes
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(id: HoleId) -> HoleEntry {
+        HoleEntry { id, span: crate::language::ast::Span { start: 0, end: 0 } }
+    }
+
+    #[test]
+    fn solve_empty() {
+        let result = solve(&[], &[]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn solve_no_constraints() {
+        let id = HoleId::fresh();
+        let result = solve(&[entry(id)], &[]);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].id, id);
+        assert!(result[0].dim.is_none());
+        assert!(result[0].boundaries.is_empty());
+        assert!(result[0].inconsistencies.is_empty());
+    }
+
+    #[test]
+    fn solve_dim_eq() {
+        let id = HoleId::fresh();
+        let c = Constraint::DimEq { hole: id, dim: 3, origin: ConstraintOrigin::Declaration };
+        let result = solve(&[entry(id)], &[c]);
+        assert_eq!(result[0].dim, Some(3));
+        assert!(result[0].inconsistencies.is_empty());
+    }
+
+    #[test]
+    fn solve_conflicting_dim_eq() {
+        let id = HoleId::fresh();
+        let c1 = Constraint::DimEq { hole: id, dim: 2, origin: ConstraintOrigin::Declaration };
+        let c2 = Constraint::DimEq { hole: id, dim: 3, origin: ConstraintOrigin::Assertion };
+        let result = solve(&[entry(id)], &[c1, c2]);
+        assert_eq!(result[0].dim, Some(2)); // first one wins
+        assert_eq!(result[0].inconsistencies.len(), 1);
+    }
+
+    #[test]
+    fn solve_unknown_hole_ignored() {
+        let id = HoleId::fresh();
+        let unknown = HoleId::fresh();
+        let c = Constraint::DimEq { hole: unknown, dim: 1, origin: ConstraintOrigin::Declaration };
+        let result = solve(&[entry(id)], &[c]);
+        assert_eq!(result.len(), 1);
+        assert!(result[0].dim.is_none()); // id was not constrained
+    }
+
+    #[test]
+    fn solve_multiple_holes_independent() {
+        let id1 = HoleId::fresh();
+        let id2 = HoleId::fresh();
+        let c1 = Constraint::DimEq { hole: id1, dim: 1, origin: ConstraintOrigin::Declaration };
+        let c2 = Constraint::DimEq { hole: id2, dim: 2, origin: ConstraintOrigin::Assertion };
+        let result = solve(&[entry(id1), entry(id2)], &[c1, c2]);
+        assert_eq!(result.len(), 2);
+        let h1 = result.iter().find(|h| h.id == id1).unwrap();
+        let h2 = result.iter().find(|h| h.id == id2).unwrap();
+        assert_eq!(h1.dim, Some(1));
+        assert_eq!(h2.dim, Some(2));
+    }
+}
+
 // ---- Internal helpers -------------------------------------------------------
 
 /// Expand a `Parallel` (or `Eq`) constraint into `DimEq` + `BoundaryEq` atoms.
