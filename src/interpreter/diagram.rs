@@ -547,28 +547,33 @@ fn interpret_sequence_as_term(
                         None => d_right.top_dim().saturating_sub(1),
                     };
 
-                    // Deferred source constraints (from left neighbour).
-                    if let Some(ref left_diag) = hole_block_left {
+                    // Deferred source constraint: only the *first* hole in the block
+                    // has its source determined by the left neighbour.  For a block of
+                    // multiple holes `a ?₁ ?₂ … ?ₙ b`, target(?ₙ₋₁) = source(?ₙ) is
+                    // unknown; over-constraining the inner holes produces false
+                    // inconsistencies.
+                    if let (Some(left_diag), Some(&first_id)) =
+                        (&hole_block_left, block_hole_ids.first())
+                    {
                         if let Ok(out_bd) = Diagram::boundary_normal(DiagramSign::Target, k, left_diag) {
-                            for &id in &block_hole_ids {
-                                result.constraints.push(Constraint::BoundaryEq {
-                                    hole: id,
-                                    slot: BdSlot { sign: DiagramSign::Source, dim: k },
-                                    diagram: out_bd.clone(),
-                                    scope: scope_arc.clone(),
-                                    origin: ConstraintOrigin::Paste { paste_dim: k },
-                                });
-                            }
+                            result.constraints.push(Constraint::BoundaryEq {
+                                hole: first_id,
+                                slot: BdSlot { sign: DiagramSign::Source, dim: k },
+                                diagram: out_bd,
+                                scope: scope_arc.clone(),
+                                origin: ConstraintOrigin::Paste { paste_dim: k },
+                            });
                         }
                     }
 
-                    // Target constraints (from right neighbour).
-                    if let Ok(in_bd) = Diagram::boundary_normal(DiagramSign::Source, k, &d_right) {
-                        for &id in &block_hole_ids {
+                    // Target constraint: only the *last* hole in the block has its
+                    // target determined by the right neighbour.
+                    if let Some(&last_id) = block_hole_ids.last() {
+                        if let Ok(in_bd) = Diagram::boundary_normal(DiagramSign::Source, k, &d_right) {
                             result.constraints.push(Constraint::BoundaryEq {
-                                hole: id,
+                                hole: last_id,
                                 slot: BdSlot { sign: DiagramSign::Target, dim: k },
-                                diagram: in_bd.clone(),
+                                diagram: in_bd,
                                 scope: scope_arc.clone(),
                                 origin: ConstraintOrigin::Paste { paste_dim: k },
                             });
@@ -620,23 +625,25 @@ fn interpret_sequence_as_term(
         }
     }
 
-    // Emit deferred source constraints for trailing holes (no right neighbour).
+    // Emit deferred source constraint for trailing holes (no right neighbour).
+    // Only the *first* trailing hole has its source determined by the left
+    // neighbour; inner holes in the block are unconstrained on that side.
     if let Some(start) = last_hole_block_start {
         if let Some(ref left_diag) = hole_block_left {
             let k = left_diag.top_dim().saturating_sub(1);
             let n = left_diag.top_dim();
             let scope_arc = Arc::new(scope.clone());
             let trailing_ids: Vec<HoleId> = result.holes[start..].iter().map(|h| h.id).collect();
-            if let Ok(out_bd) = Diagram::boundary_normal(DiagramSign::Target, k, left_diag) {
-                for &id in &trailing_ids {
-                    result.constraints.push(Constraint::BoundaryEq {
-                        hole: id,
-                        slot: BdSlot { sign: DiagramSign::Source, dim: k },
-                        diagram: out_bd.clone(),
-                        scope: scope_arc.clone(),
-                        origin: ConstraintOrigin::Paste { paste_dim: k },
-                    });
-                }
+            if let (Ok(out_bd), Some(&first_id)) =
+                (Diagram::boundary_normal(DiagramSign::Target, k, left_diag), trailing_ids.first())
+            {
+                result.constraints.push(Constraint::BoundaryEq {
+                    hole: first_id,
+                    slot: BdSlot { sign: DiagramSign::Source, dim: k },
+                    diagram: out_bd,
+                    scope: scope_arc.clone(),
+                    origin: ConstraintOrigin::Paste { paste_dim: k },
+                });
             }
             // Dimension constraint from left neighbour for trailing holes.
             for &id in &trailing_ids {

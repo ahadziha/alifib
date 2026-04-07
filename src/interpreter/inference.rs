@@ -13,8 +13,8 @@
 //! The solver is fixpoint-correct: each successful constraint application may
 //! derive follow-up constraints (globular sub-boundaries, `Value`→`BoundaryEq`,
 //! etc.) that are enqueued and processed in turn.  Termination is guaranteed
-//! because each hole's state transitions monotonically (`Empty → Partial →
-//! Known`) and `dim`/`value` are set at most once.
+//! because each hole's state transitions monotonically (`Empty → Known`) and
+//! `dim`/`value` are set at most once.
 
 use crate::aux::{self, Tag};
 use crate::core::{
