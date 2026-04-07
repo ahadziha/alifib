@@ -67,6 +67,22 @@ pub fn is_disjoint(a: &IntSet, b: &IntSet) -> bool {
     true
 }
 
+/// Merge-intersection: elements present in both sorted Vecs.
+#[allow(dead_code)]
+pub fn intersection(a: &IntSet, b: &IntSet) -> IntSet {
+    use std::cmp::Ordering::*;
+    let mut result = Vec::with_capacity(a.len().min(b.len()));
+    let (mut i, mut j) = (0, 0);
+    while i < a.len() && j < b.len() {
+        match a[i].cmp(&b[j]) {
+            Less    => i += 1,
+            Greater => j += 1,
+            Equal   => { result.push(a[i]); i += 1; j += 1; }
+        }
+    }
+    result
+}
+
 /// Collect an unsorted iterator into a sorted, deduplicated Vec<usize>.
 pub fn collect_sorted(iter: impl Iterator<Item = usize>) -> IntSet {
     let mut v: Vec<usize> = iter.collect();

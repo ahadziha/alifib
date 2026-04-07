@@ -645,6 +645,77 @@ thread_local! {
     static BT_CACHE: RefCell<HashMap<(usize, Sign, usize), ShapeWithEmbedding>> = RefCell::new(HashMap::new());
 }
 
+/// Compute the downward closure of a set of seed cells as BitSets per dimension,
+/// without constructing a sub-ogposet or embedding.
+///
+/// `seeds` is a list of `(dim, cells)` pairs.  The returned `Vec<BitSet>` is
+/// indexed by dimension 0..=max_seed_dim; every face of every seed cell is
+/// recursively included.  Used by the flow-graph and matching algorithms where
+/// only membership queries are needed, not a full sub-ogposet.
+#[allow(dead_code)]
+pub(super) fn closure(g: &Ogposet, seeds: &[(usize, &[usize])]) -> Vec<BitSet> {
+    if g.dim < 0 || seeds.is_empty() {
+        return vec![];
+    }
+    let gd = g.dim as usize;
+    let sizes_g = g.sizes();
+
+    let max_dim = seeds.iter().map(|(d, _)| *d).max().unwrap_or(0);
+
+    let mut dc: Vec<BitSet> = (0..=max_dim)
+        .map(|d| BitSet::new(sizes_g.get(d).copied().unwrap_or(0)))
+        .collect();
+
+    for (d, cells) in seeds {
+        for &c in *cells {
+            dc[*d].insert(c);
+        }
+    }
+
+    for d in (1..=max_dim).rev() {
+        if d > gd { continue; }
+        let (lower, upper) = dc.split_at_mut(d);
+        let dc_d = &upper[0];
+        let dc_d_minus_1 = &mut lower[d - 1];
+        for cell in dc_d.iter() {
+            for &f in &g.faces_in[d][cell]  { dc_d_minus_1.insert(f); }
+            for &f in &g.faces_out[d][cell] { dc_d_minus_1.insert(f); }
+        }
+    }
+
+    dc
+}
+
+/// Compute Δ^sign_k(x) for a single cell x = (dim, pos): the set of k-dimensional
+/// cells in the sign-side k-boundary of the atom cl{x}.
+///
+/// For the common case `dim == k+1`, this directly reads the face table.
+/// For `dim > k+1`, it constructs the atom via `traverse` and calls `extremal`.
+pub(super) fn signed_k_boundary_of_cell(
+    g: &Arc<Ogposet>,
+    sign: Sign,
+    k: usize,
+    dim: usize,
+    pos: usize,
+) -> IntSet {
+    if dim <= k {
+        return vec![];
+    }
+    if dim == k + 1 {
+        return g.faces_of(sign, dim, pos);
+    }
+    // General case: build the atom and extract the extremal cells at level k.
+    let seeds: IntSet = vec![pos];
+    let (atom, emb) = traverse(g, vec![(dim, seeds)], false);
+    let extremal = atom.extremal(sign, k);
+    // Map atom-local indices back to g-indices via the embedding.
+    if k < emb.map.len() {
+        intset::collect_sorted(extremal.iter().map(|&i| emb.map[k][i]))
+    } else {
+        vec![]
+    }
+}
+
 /// Clear all memoisation caches.  Call between independent interpreter runs
 /// if long-lived threads are reused.
 #[allow(dead_code)]
