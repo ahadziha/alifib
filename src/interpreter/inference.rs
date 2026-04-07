@@ -309,9 +309,11 @@ pub struct HoleEntry {
 /// absence of `SharedBoundary` constraints):
 ///
 /// 1. Decompose `Eq` and `Parallel` into `DimEq` + `BoundaryEq` facts.
-/// 2. Apply `BoundaryEq` to fill / check boundary slots.
-/// 3. Apply `DimEq`.
-/// 4. Fill remaining empty slots from `PartialBoundary` constraints.
+/// 2. Globular propagation on `BoundaryEq`: from `(s,k)` derive `(s',j)` for j < k.
+/// 3. Apply `BoundaryEq` to fill / check boundary slots (`Known`).
+/// 4. Apply `DimEq`.
+/// 5. Globular propagation on `PartialBoundary`: from `(s,k)` derive `(s',j)` for j < k.
+/// 6. Fill remaining empty slots from `PartialBoundary` (`Partial`, weaker than `Known`).
 ///
 /// Constraints for unknown hole ids (not in `entries`) are silently ignored so
 /// that callers do not need to filter.
@@ -407,6 +409,34 @@ pub fn solve(entries: &[HoleEntry], constraints: &[Constraint]) -> Vec<SolvedHol
     for (hole, dim, origin) in dim_eqs {
         if let Some(h) = get_mut!(hole) {
             h.set_dim(dim, &origin);
+        }
+    }
+
+    // ---- globular propagation for PartialBoundary ----
+    // For each PartialBoundary at (s, k) with k > 0, derive PartialBoundary at every (s', j) for j < k.
+    // Same globular identity as for BoundaryEq: ∂^{s'}_j(∂^s_k(H)) = ∂^{s'}_j(H).
+    // The same `map` applies because globular propagation is taken in the source scope.
+    {
+        let mut i = 0;
+        while i < partial_bds.len() {
+            let (hole, slot, boundary, map, scope, origin) = partial_bds[i].clone();
+            if slot.dim > 0 {
+                for j in 0..slot.dim {
+                    for &sign2 in &[DiagramSign::Source, DiagramSign::Target] {
+                        if let Ok(bd) = Diagram::boundary_normal(sign2, j, &boundary) {
+                            partial_bds.push((
+                                hole,
+                                BdSlot { sign: sign2, dim: j },
+                                bd,
+                                map.clone(),
+                                scope.clone(),
+                                origin.clone(),
+                            ));
+                        }
+                    }
+                }
+            }
+            i += 1;
         }
     }
 
