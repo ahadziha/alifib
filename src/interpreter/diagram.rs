@@ -312,8 +312,21 @@ fn interpret_paste(
 
 /// Interpret a juxtaposition sequence of diagram expressions.
 ///
-/// A single expression evaluates to its term; multiple expressions are
-/// implicitly pasted at the highest compatible dimension.
+/// A single expression evaluates to its term (diagram or map). Multiple
+/// expressions are pasted left-to-right; all must be diagrams.
+///
+/// Holes do not abort the loop. Instead, evaluation continues past each
+/// hole so that both its left and right boundary can be inferred from the
+/// concrete diagrams immediately adjacent to it. Two paste accumulators are
+/// maintained:
+///
+/// * `left_acc` — paste of concrete diagrams before the first hole.
+/// * `right_acc` — paste of concrete diagrams since the most recent hole;
+///   reset to `None` whenever a new hole block begins.
+///
+/// `last_hole_block_start` records the first index (into `result.holes`) of
+/// the current run of consecutive holes so that the next concrete diagram can
+/// enrich the right boundary of all of them.
 fn interpret_sequence_as_term(
     context: &Context,
     scope: &Complex,
@@ -324,85 +337,55 @@ fn interpret_sequence_as_term(
         return fail(context, span, "Empty diagram expression");
     }
 
-    let (first_opt, first_result) = interpret_dexpr(context, scope, &exprs[0]);
-    let Some(first_term) = first_opt else {
-        return enrich_hole_with_right_context(first_result, scope, &exprs[1..]);
-    };
-
+    // Single expression: evaluate directly (may be a diagram or a map).
     if exprs.len() == 1 {
-        return (Some(first_term), first_result);
+        return interpret_dexpr(context, scope, &exprs[0]);
     }
 
-    // Multiple exprs: first must be a diagram
-    let Term::Diag(d_first) = first_term else {
-        let mut r = first_result;
-        r.add_error(make_error(exprs[0].span, "Not a diagram"));
-        return (None, r);
-    };
+    let mut left_acc: Option<Diagram> = None;
+    let mut right_acc: Option<Diagram> = None;
+    let mut last_hole_block_start: Option<usize> = None;
+    let mut has_holes = false;
+    let mut result = InterpResult::ok(context.clone());
 
-    accumulate_paste(d_first, first_result, scope, &exprs[1..], span)
-}
-
-/// When the first expression in a principal diagram fails (typically a hole),
-/// peek at the next expression to fill in the hole's right boundary.
-fn enrich_hole_with_right_context(
-    mut result: InterpResult,
-    scope: &Complex,
-    rest: &[Spanned<DExpr>],
-) -> (Option<Term>, InterpResult) {
-    if result.holes.is_empty() || rest.is_empty() {
-        return (None, result);
-    }
-    let (next_opt, next_result) = interpret_dexpr(&result.context, scope, &rest[0]);
-    result = result.merge(next_result);
-    if let Some(Term::Diag(d_right)) = next_opt {
-        let k = d_right.top_dim().saturating_sub(1);
-        if let Ok(in_bd) = Diagram::boundary(DiagramSign::Source, k, &d_right)
-            && let Some(last_hole) = result.holes.last_mut() {
-            let bd_out = HoleBd::Full(in_bd, Arc::new(scope.clone()));
-            match &mut last_hole.boundary {
-                Some(existing) => existing.boundary_out = bd_out,
-                None => last_hole.boundary = Some(HoleBoundaryInfo {
-                    boundary_in: HoleBd::Unknown,
-                    boundary_out: bd_out,
-                }),
-            }
-        }
-    }
-    (None, result)
-}
-
-/// Paste a sequence of diagram expressions onto an accumulator.
-///
-/// Any newly introduced hole is enriched with the left boundary of the accumulator
-/// at the point where the hole appears.
-fn accumulate_paste(
-    d_first: Diagram,
-    first_result: InterpResult,
-    scope: &Complex,
-    rest: &[Spanned<DExpr>],
-    outer_span: Span,
-) -> (Option<Term>, InterpResult) {
-    let mut acc = d_first;
-    let mut result = first_result;
-
-    for expr in rest {
+    for expr in exprs {
         let prev_hole_count = result.holes.len();
         let (term_opt, expr_result) = interpret_dexpr(&result.context, scope, expr);
         result = result.merge(expr_result);
+        let new_holes = result.holes.len() > prev_hole_count;
+
         match term_opt {
-            None => {
-                // Enrich any newly added hole with the left-context boundary
-                if result.holes.len() > prev_hole_count {
-                    let k = acc.top_dim().saturating_sub(1);
-                    if let Ok(out_bd) = Diagram::boundary(DiagramSign::Target, k, &acc)
-                        && let Some(last_hole) = result.holes.last_mut() {
-                        last_hole.boundary = Some(HoleBoundaryInfo {
-                            boundary_in: HoleBd::Full(out_bd, Arc::new(scope.clone())),
-                            boundary_out: HoleBd::Unknown,
-                        });
+            None if new_holes => {
+                // Enrich each new hole's left boundary from the most recent concrete diagram.
+                let left_ref = right_acc.as_ref().or(left_acc.as_ref());
+                if let Some(left_diag) = left_ref {
+                    let k = left_diag.top_dim().saturating_sub(1);
+                    if let Ok(out_bd) = Diagram::boundary(DiagramSign::Target, k, left_diag) {
+                        for hole in &mut result.holes[prev_hole_count..] {
+                            match &mut hole.boundary {
+                                None => hole.boundary = Some(HoleBoundaryInfo {
+                                    boundary_in: HoleBd::Full(out_bd.clone(), Arc::new(scope.clone())),
+                                    boundary_out: HoleBd::Unknown,
+                                }),
+                                Some(bd) if matches!(bd.boundary_in, HoleBd::Unknown) => {
+                                    bd.boundary_in = HoleBd::Full(out_bd.clone(), Arc::new(scope.clone()));
+                                }
+                                _ => {}
+                            }
+                        }
                     }
                 }
+                // Start a new hole block only when not already in one;
+                // adjacent holes share the same block so they all get right
+                // context from the next concrete diagram.
+                if last_hole_block_start.is_none() {
+                    last_hole_block_start = Some(prev_hole_count);
+                }
+                right_acc = None;
+                has_holes = true;
+            }
+            None => {
+                // An error occurred (not a hole): abort.
                 return (None, result);
             }
             Some(Term::Map(_)) => {
@@ -410,14 +393,38 @@ fn accumulate_paste(
                 return (None, result);
             }
             Some(Term::Diag(d_right)) => {
-                let k = acc.top_dim().min(d_right.top_dim()).saturating_sub(1);
-                match Diagram::paste(k, &acc, &d_right) {
-                    Ok(d) => acc = d,
+                // Enrich the right boundary of every hole in the current block.
+                if let Some(start) = last_hole_block_start {
+                    let k = d_right.top_dim().saturating_sub(1);
+                    if let Ok(in_bd) = Diagram::boundary(DiagramSign::Source, k, &d_right) {
+                        for hole in &mut result.holes[start..prev_hole_count] {
+                            match &mut hole.boundary {
+                                None => hole.boundary = Some(HoleBoundaryInfo {
+                                    boundary_in: HoleBd::Unknown,
+                                    boundary_out: HoleBd::Full(in_bd.clone(), Arc::new(scope.clone())),
+                                }),
+                                Some(bd) if matches!(bd.boundary_out, HoleBd::Unknown) => {
+                                    bd.boundary_out = HoleBd::Full(in_bd.clone(), Arc::new(scope.clone()));
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    last_hole_block_start = None;
+                }
+                // Paste into the appropriate accumulator.
+                let acc = if has_holes { &mut right_acc } else { &mut left_acc };
+                let next = match acc.take() {
+                    None => Ok(d_right),
+                    Some(prev) => {
+                        let k = prev.top_dim().min(d_right.top_dim()).saturating_sub(1);
+                        Diagram::paste(k, &prev, &d_right)
+                    }
+                };
+                match next {
+                    Ok(d) => *acc = Some(d),
                     Err(e) => {
-                        result.add_error(make_error(
-                            outer_span,
-                            format!("Failed to paste diagrams: {}", e),
-                        ));
+                        result.add_error(make_error(span, format!("Failed to paste diagrams: {}", e)));
                         return (None, result);
                     }
                 }
@@ -425,7 +432,14 @@ fn accumulate_paste(
         }
     }
 
-    (Some(Term::Diag(acc)), result)
+    if has_holes {
+        (None, result)
+    } else {
+        match left_acc {
+            Some(d) => (Some(Term::Diag(d)), result),
+            None => fail(&result.context, span, "Empty diagram expression"),
+        }
+    }
 }
 
 // ---- Boundaries ----
