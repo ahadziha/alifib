@@ -32,7 +32,10 @@ pub struct LoadedFile {
     pub canonical_path: String,
     pub source: String,
     pub program: Program,
-    pub modules: ModuleStore,
+    /// Resolution mappings for all transitive dependencies.
+    pub resolutions: ModuleResolutions,
+    /// Dependency modules in topological order (leaves first, root excluded).
+    pub dep_modules: Vec<(String, ResolvedModule)>,
 }
 
 #[derive(Debug)]
@@ -152,8 +155,8 @@ impl Loader {
                 source: source.clone(),
                 errors,
             })?;
-        let modules = resolve_all_modules(&file_loader, &canonical_path, &program)?;
-        Ok(LoadedFile { canonical_path, source, program, modules })
+        let (resolutions, dep_modules) = resolve_all_modules(&file_loader, &canonical_path, &program)?;
+        Ok(LoadedFile { canonical_path, source, program, resolutions, dep_modules })
     }
 }
 
@@ -191,13 +194,9 @@ impl ModuleResolutions {
     }
 }
 
-/// All pre-resolved dependency modules for a loaded file.
-pub struct ModuleStore {
+struct ModuleStore {
     modules: HashMap<String, ResolvedModule>,
     resolutions: ModuleResolutions,
-    /// Canonical paths of dependency modules in the order they must be
-    /// interpreted (leaves first, root excluded).  Populated in post-order
-    /// by `resolve_recursive`.
     dep_order: Vec<String>,
 }
 
@@ -223,18 +222,12 @@ impl ModuleStore {
         self.modules.insert(canonical_path, ResolvedModule { program, source });
     }
 
-    /// Consume this store and split it into the resolution mappings (needed
-    /// during interpretation) and an ordered list of dependency modules
-    /// (needed for the pre-interpretation loop).
-    pub fn into_parts(self) -> (ModuleResolutions, Vec<(String, ResolvedModule)>) {
+    fn into_parts(self) -> (ModuleResolutions, Vec<(String, ResolvedModule)>) {
         let ModuleStore { mut modules, resolutions, dep_order } = self;
-        let dep_order_modules = dep_order.into_iter()
-            .filter_map(|path| {
-                let module = modules.remove(&path)?;
-                Some((path, module))
-            })
+        let ordered = dep_order.into_iter()
+            .map(|path| { let m = modules.remove(&path).unwrap(); (path, m) })
             .collect();
-        (resolutions, dep_order_modules)
+        (resolutions, ordered)
     }
 }
 
@@ -265,7 +258,7 @@ fn resolve_all_modules(
     loader: &Loader,
     root_path: &str,
     root_program: &Program,
-) -> Result<ModuleStore, LoadFileError> {
+) -> Result<(ModuleResolutions, Vec<(String, ResolvedModule)>), LoadFileError> {
     let mut store = ModuleStore::new();
     // `visited` tracks all paths encountered in the DFS.  The root is seeded
     // here but never inserted into the store (it is handled separately).  Any
@@ -275,7 +268,7 @@ fn resolve_all_modules(
     let mut visited: HashSet<String> = HashSet::new();
     visited.insert(root_path.to_owned());
     resolve_recursive(loader, root_path, root_program, &mut store, &mut visited)?;
-    Ok(store)
+    Ok(store.into_parts())
 }
 
 fn resolve_recursive(

@@ -107,12 +107,11 @@ impl InterpretedFile {
             Err(e) => return LoadResult::LoadError(e),
         };
 
-        let (resolutions, topo_modules) = loaded.modules.into_parts();
-        let resolutions = Arc::new(resolutions);
+        let resolutions = Arc::new(loaded.resolutions);
 
         // Phase 3a: interpret dependency modules in topological order (leaves first).
         let mut prev_state = Arc::new(GlobalStore::default());
-        for (dep_path, dep_module) in &topo_modules {
+        for (dep_path, dep_module) in &loaded.dep_modules {
             let dep_context = Context::new_with_resolutions(
                 dep_path.clone(),
                 Arc::clone(&resolutions),
