@@ -1,9 +1,8 @@
 use super::diagram::interpret_diagram_as_term;
-use super::scope::interpret_address;
+use super::resolve::{interpret_address, resolve_map_domain_complex, resolve_type_complex};
 use super::types::{
     Context, EvalMap, HoleBd, HoleBoundaryInfo, HoleInfo, InterpResult, Step, Term,
-    fail, get_cell_data, make_error, make_error_from_core, resolve_map_domain_complex,
-    resolve_type_complex, sorted_generators,
+    fail, get_cell_data, make_error, make_error_from_core, sorted_generators,
 };
 use crate::aux::{self, LocalId, Tag};
 use crate::core::{

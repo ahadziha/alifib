@@ -10,10 +10,10 @@ use crate::language::ast::{self, IncludeModule, Span};
 
 use super::global_store::GlobalStore;
 use super::partial_map::interpret_pmap_def;
-use super::scope::interpret_address;
+use super::resolve::{interpret_address, resolve_type_complex};
 use super::types::{
     Context, InterpResult, Mode, NameKind, ensure_name_free, error_result, identity_map,
-    make_error, qualify_name, resolve_type_complex, sorted_generators,
+    make_error, qualify_name, sorted_generators,
 };
 
 /// A generator to import: `(qualified_name, tag, classifier_diagram)`.

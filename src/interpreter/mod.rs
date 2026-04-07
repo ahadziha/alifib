@@ -9,6 +9,7 @@ mod eval;
 mod global_store;
 mod include;
 mod partial_map;
+mod resolve;
 mod scope;
 mod types;
 

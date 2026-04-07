@@ -1,7 +1,7 @@
+use super::resolve::resolve_map_domain_complex;
 use super::types::{
     Component, Context, EvalMap, HoleBd, HoleBoundaryInfo, HoleInfo, InterpResult, Step,
-    Term, TermPair, fail, make_error, make_error_from_core, resolve_map_domain_complex,
-    sorted_generators,
+    Term, TermPair, fail, make_error, make_error_from_core, sorted_generators,
 };
 use crate::core::{
     complex::Complex,

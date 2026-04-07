@@ -13,12 +13,13 @@ use super::include::{
     interpret_attach_instr, interpret_include_instr, interpret_include_module_instr,
 };
 use super::partial_map::interpret_def_pmap;
+use super::resolve::resolve_type_scope;
 use super::scope::{
     cell_dim, create_generator_diagram, current_module_scope, initialize_module_context,
     insert_complex_diagram_binding, insert_complex_map_binding, insert_module_diagram_binding,
     insert_module_map_binding, insert_type_diagram_binding, insert_type_map_binding,
     interpret_generator_boundaries, interpret_items, interpret_items_in_complex_scope,
-    interpret_items_in_type_scope, resolve_type_scope,
+    interpret_items_in_type_scope,
 };
 pub use super::types::{Context, InterpResult};
 use super::types::{Mode, NameKind, TypeScope, ensure_name_free, error_result, identity_map, make_error};

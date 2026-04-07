@@ -2,7 +2,7 @@ use super::global_store::GlobalStore;
 use crate::aux::{GlobalId, LocalId, Tag};
 use crate::aux::loader::ModuleResolutions;
 use crate::core::{
-    complex::{Complex, MapDomain},
+    complex::Complex,
     diagram::{CellData, Diagram, Sign as DiagramSign},
     partial_map::PartialMap,
 };
@@ -354,71 +354,6 @@ pub fn qualify_name(prefix: &str, name: &str) -> LocalId {
         prefix.to_owned()
     } else {
         format!("{}.{}", prefix, name)
-    }
-}
-
-/// Find the global ID of the root (unnamed) generator in a module scope.
-pub fn resolve_root_owner_type_id(
-    context: &Context,
-    module_space: &Complex,
-    span: Span,
-) -> Step<GlobalId> {
-    let empty_name: LocalId = String::new();
-    let mut result = InterpResult::ok(context.clone());
-
-    let Some((root_tag, _)) = module_space.find_generator(&empty_name) else {
-        result.add_error(make_error(span, "Root generator not found"));
-        return (None, result);
-    };
-
-    match root_tag {
-        Tag::Global(id) => (Some(*id), result),
-        Tag::Local(_) => {
-            result.add_error(make_error(span, "Root has local tag (unexpected)"));
-            (None, result)
-        }
-    }
-}
-
-/// Look up the definition complex for a type by its global ID.
-///
-/// `missing_prefix` is prepended to the ID in the error message when the type is not found.
-pub fn resolve_type_complex(
-    context: &Context,
-    type_id: GlobalId,
-    span: Span,
-    missing_prefix: &str,
-) -> Step<Arc<Complex>> {
-    let mut result = InterpResult::ok(context.clone());
-    let Some(type_entry) = context.state.find_type(type_id) else {
-        result.add_error(make_error(span, format!("{} {}", missing_prefix, type_id)));
-        return (None, result);
-    };
-    (Some(Arc::clone(&type_entry.complex)), result)
-}
-
-/// Resolve a map domain (type or module) to its defining complex.
-pub fn resolve_map_domain_complex(
-    context: &Context,
-    domain: &MapDomain,
-    span: Span,
-) -> Step<Arc<Complex>> {
-    let mut result = InterpResult::ok(context.clone());
-    match domain {
-        MapDomain::Type(id) => {
-            let Some(type_entry) = context.state.find_type(*id) else {
-                result.add_error(make_error(span, format!("Type {} not found", id)));
-                return (None, result);
-            };
-            (Some(Arc::clone(&type_entry.complex)), result)
-        }
-        MapDomain::Module(mid) => {
-            let Some(module_arc) = context.state.find_module_arc(mid) else {
-                result.add_error(make_error(span, format!("Module `{}` not found", mid)));
-                return (None, result);
-            };
-            (Some(module_arc), result)
-        }
     }
 }
 
