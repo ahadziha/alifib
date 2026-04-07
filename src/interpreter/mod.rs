@@ -9,6 +9,7 @@ mod diagram;
 mod eval;
 mod global_store;
 mod include;
+pub mod inference;
 pub mod load;
 mod partial_map;
 mod resolve;
@@ -16,5 +17,6 @@ mod types;
 
 pub use eval::{Context, InterpResult, interpret_program};
 pub use global_store::GlobalStore;
+pub use inference::{HoleEntry, HoleId, SolvedHole};
 pub use load::{InterpretedFile, LoadResult};
-pub use types::{HoleBd, HoleInfo};
+pub use types::HoleInfo;

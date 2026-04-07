@@ -94,7 +94,7 @@ fn run_interpreter(loader: &Loader, input: &str, output_path: Option<&str>) -> R
     let file = InterpretedFile::load(loader, input).into_result()?;
     write_output(output_path, &file.to_string())?;
     if file.has_holes() {
-        output::report_holes(&file);
+        output::report_solved_holes(&file);
     }
     Ok(())
 }

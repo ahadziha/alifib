@@ -1,7 +1,8 @@
 use super::diagram::interpret_diagram_as_term;
+use super::inference::{BdSlot, Constraint, ConstraintOrigin};
 use super::resolve::{interpret_address, resolve_map_domain_complex, resolve_type_complex};
 use super::types::{
-    Context, EvalMap, HoleBd, HoleBoundaryInfo, HoleInfo, InterpResult, Step, Term,
+    Context, EvalMap, InterpResult, Step, Term,
     fail, get_cell_data, make_error, make_error_from_core, sorted_generators,
 };
 use crate::aux::{self, LocalId, Tag};
@@ -15,68 +16,8 @@ use std::sync::Arc;
 
 // ---- Hole boundary enrichment ----
 
-/// Construct a hole boundary descriptor by applying a partial map to a boundary diagram.
-///
-/// Returns `HoleBd::Full` if the map is total on the boundary, `HoleBd::Partial` otherwise.
-fn make_hole_bd(scope: &Complex, map: &PartialMap, boundary: &Diagram) -> HoleBd {
-    let dim = boundary.top_dim();
-    match PartialMap::apply(map, boundary) {
-        Ok(mapped_boundary) => HoleBd::Full { diagram: mapped_boundary, scope: Arc::new(scope.clone()), dim },
-        Err(_) => HoleBd::Partial {
-            boundary: boundary.clone(),
-            map: map.clone(),
-            scope: Arc::new(scope.clone()),
-            dim,
-        },
-    }
-}
-
-/// Fill in boundary context for a hole using the source cell's boundary data and the map so far.
-///
-/// Only acts when the hole has a `source_tag` and that tag has boundary data in the domain.
-fn enrich_hole(
-    hole: &mut HoleInfo,
-    scope: &Complex,
-    domain: &Complex,
-    map: &PartialMap,
-    context: &Context,
-) {
-    let Some(source_tag) = &hole.source_tag else {
-        return;
-    };
-    let Some(cell_data) = get_cell_data(context, domain, source_tag) else {
-        return;
-    };
-    let CellData::Boundary {
-        boundary_in,
-        boundary_out,
-    } = &cell_data
-    else {
-        return;
-    };
-
-    let hbd_in = make_hole_bd(scope, map, boundary_in);
-    let hbd_out = make_hole_bd(scope, map, boundary_out);
-
-    match &mut hole.boundary {
-        Some(existing) => {
-            if matches!(existing.boundary_in, HoleBd::Unknown) {
-                existing.boundary_in = hbd_in;
-            }
-            if matches!(existing.boundary_out, HoleBd::Unknown) {
-                existing.boundary_out = hbd_out;
-            }
-        }
-        None => {
-            hole.boundary = Some(HoleBoundaryInfo {
-                boundary_in: hbd_in,
-                boundary_out: hbd_out,
-            });
-        }
-    }
-}
-
-/// Enrich all holes in a result with boundary information from the given partial map.
+/// Emit boundary constraints for all holes that have a source tag, using the
+/// current partial map state.
 fn enrich_holes(
     result: &mut InterpResult,
     scope: &Complex,
@@ -84,9 +25,62 @@ fn enrich_holes(
     map: &PartialMap,
 ) {
     let context = result.context.clone();
-    for hole in &mut result.holes {
-        enrich_hole(hole, scope, domain, map, &context);
+    let scope_arc = Arc::new(scope.clone());
+
+    // Collect constraints to emit (can't push to result.constraints while also
+    // reading result.holes, since both are fields of `result`).
+    let mut new_constraints: Vec<Constraint> = vec![];
+
+    for hole in &result.holes {
+        // Constraint system: emit BoundaryEq or PartialBoundary for each boundary slot.
+        let Some(source_tag) = &hole.source_tag else { continue; };
+        let Some(cell_data) = get_cell_data(&context, domain, source_tag) else { continue; };
+        let CellData::Boundary { boundary_in, boundary_out } = &cell_data else { continue; };
+
+        let origin = ConstraintOrigin::PartialMap { source_tag: source_tag.clone() };
+        let k_in = boundary_in.top_dim();
+        let k_out = boundary_out.top_dim();
+
+        // Source slot: apply the map to boundary_in.
+        match PartialMap::apply(map, boundary_in) {
+            Ok(mapped) => new_constraints.push(Constraint::BoundaryEq {
+                hole: hole.id,
+                slot: BdSlot { sign: DiagramSign::Source, dim: k_in },
+                diagram: mapped,
+                scope: scope_arc.clone(),
+                origin: origin.clone(),
+            }),
+            Err(_) => new_constraints.push(Constraint::PartialBoundary {
+                hole: hole.id,
+                slot: BdSlot { sign: DiagramSign::Source, dim: k_in },
+                boundary: (**boundary_in).clone(),
+                map: map.clone(),
+                scope: scope_arc.clone(),
+                origin: origin.clone(),
+            }),
+        }
+
+        // Target slot: apply the map to boundary_out.
+        match PartialMap::apply(map, boundary_out) {
+            Ok(mapped) => new_constraints.push(Constraint::BoundaryEq {
+                hole: hole.id,
+                slot: BdSlot { sign: DiagramSign::Target, dim: k_out },
+                diagram: mapped,
+                scope: scope_arc.clone(),
+                origin: origin.clone(),
+            }),
+            Err(_) => new_constraints.push(Constraint::PartialBoundary {
+                hole: hole.id,
+                slot: BdSlot { sign: DiagramSign::Target, dim: k_out },
+                boundary: (**boundary_out).clone(),
+                map: map.clone(),
+                scope: scope_arc.clone(),
+                origin: origin.clone(),
+            }),
+        }
     }
+
+    result.constraints.extend(new_constraints);
 }
 
 /// Interpret an anonymous map component (inline map definition with an explicit target complex).
@@ -248,22 +242,22 @@ fn interpret_partial_map_ext(ctx: &PartialMapCtx<'_>, ext: &PartialMapExt) -> St
     (Some(EvalMap { map: current_map, domain: effective_domain }), result)
 }
 
-/// Tag the most recently added hole with the source cell, for deferred boundary enrichment.
+/// Tag all holes added since `prev_hole_count` with the source cell tag, so that
+/// `enrich_holes` can later look up boundary data for each.
 ///
 /// Only acts when the source term is a single cell diagram with a top label.
-fn mark_last_hole_source_tag(result: &mut InterpResult, source_term: &Term) {
+fn mark_new_hole_source_tags(result: &mut InterpResult, prev_hole_count: usize, source_term: &Term) {
     let Term::Diag(source_diagram) = source_term else {
         return;
     };
     if !source_diagram.is_cell() {
         return;
     }
-
     let Some(tag) = source_diagram.top_label() else {
         return;
     };
-    if let Some(last_hole) = result.holes.last_mut() {
-        last_hole.source_tag = Some(tag.clone());
+    for hole in &mut result.holes[prev_hole_count..] {
+        hole.source_tag = Some(tag.clone());
     }
 }
 
@@ -275,17 +269,19 @@ fn interpret_partial_map_clause(ctx: &PartialMapCtx<'_>, map: PartialMap, clause
     let (left_opt, left_result) = interpret_diagram_as_term(ctx.context, ctx.domain, &clause.inner.lhs);
     let Some(left_term) = left_opt else { return (None, left_result); };
 
+    let prev_hole_count = left_result.holes.len();
     let (right_opt, right_result) =
         interpret_diagram_as_term(&left_result.context, ctx.scope, &clause.inner.rhs);
     let mut combined = left_result.merge(right_result);
 
     let Some(right_term) = right_opt else {
-        // Right side failed. If a hole was recorded, tag it with the left-side source and
-        // return the partially-built map; otherwise the whole clause fails.
-        if combined.holes.is_empty() {
+        // Right side failed. If any holes were recorded, tag all of them with the
+        // left-side source cell and return the partially-built map; otherwise fail.
+        let new_holes = combined.holes.len() > prev_hole_count;
+        if !new_holes {
             return (None, combined);
         }
-        mark_last_hole_source_tag(&mut combined, &left_term);
+        mark_new_hole_source_tags(&mut combined, prev_hole_count, &left_term);
         return (Some(map), combined);
     };
 

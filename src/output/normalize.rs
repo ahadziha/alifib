@@ -12,7 +12,8 @@ use crate::core::{
     diagram::{CellData, Diagram, Sign},
     partial_map::PartialMap,
 };
-use crate::interpreter::{GlobalStore, HoleBd, InterpretedFile};
+use crate::interpreter::{GlobalStore, InterpretedFile};
+use crate::interpreter::inference::{BdSlot, SolvedBd, SolvedHole};
 use std::fmt;
 use super::types::{Cell, Dim, Map, Module, Store, Type};
 
@@ -164,15 +165,6 @@ pub fn render_boundary_partial(boundary: &Diagram, map: &PartialMap, scope: &Com
     }
 }
 
-/// Render a hole boundary for use in a diagnostic message.
-fn render_hole_bd(bd: &HoleBd) -> String {
-    match bd {
-        HoleBd::Unknown => "?".to_string(),
-        HoleBd::Full { diagram, scope, .. } => render_diagram(diagram, scope),
-        HoleBd::Partial { boundary, map, scope, .. } => render_boundary_partial(boundary, map, scope),
-    }
-}
-
 /// Convert a generator's [`CellData`] into a [`Cell`], resolving boundary
 /// labels against `complex`.
 fn cell_from_data(name: &str, data: &CellData, complex: &Complex) -> Cell {
@@ -222,17 +214,65 @@ fn render_domain(domain: &MapDomain, module_complex: &Complex) -> String {
 
 // ---- Hole reporting ----
 
-/// Print a diagnostic for each unsolved hole in `file` to stderr.
-pub fn report_holes(file: &InterpretedFile) {
-    for hole in &file.holes {
-        let message = match &hole.boundary {
-            Some(bd) => format!(
-                "{} -> {}",
-                render_hole_bd(&bd.boundary_in),
-                render_hole_bd(&bd.boundary_out)
-            ),
-            None => "unknown boundary".to_string(),
-        };
+/// Render one side of a solved hole boundary.
+fn render_solved_bd(bd: &SolvedBd) -> String {
+    match bd {
+        SolvedBd::Known { diagram, scope, .. } => render_diagram(diagram, scope),
+        SolvedBd::Partial { boundary, map, scope, .. } => render_boundary_partial(boundary, map, scope),
+    }
+}
+
+/// Render a solved hole as a diagnostic message.
+///
+/// Reports the principal boundary `src -> tgt` when the hole's dimension and
+/// principal slots are known; falls back to listing all known slots otherwise.
+fn render_solved_hole(hole: &SolvedHole) -> String {
+    // If an Eq constraint determined the exact value, report it.
+    if let Some((ref diag, ref scope)) = hole.value {
+        return format!("= {}", render_diagram(diag, scope));
+    }
+
+    // Try to report the principal boundary (src, n-1) and (tgt, n-1).
+    if let Some(n) = hole.dim {
+        if n > 0 {
+            let src_slot = BdSlot { sign: Sign::Source, dim: n - 1 };
+            let tgt_slot = BdSlot { sign: Sign::Target, dim: n - 1 };
+            if let (Some(src_bd), Some(tgt_bd)) =
+                (hole.boundaries.get(&src_slot), hole.boundaries.get(&tgt_slot))
+            {
+                let mut msg = format!("{} -> {}", render_solved_bd(src_bd), render_solved_bd(tgt_bd));
+                if !hole.inconsistencies.is_empty() {
+                    msg.push_str(&format!(" [inconsistencies: {}]", hole.inconsistencies.join("; ")));
+                }
+                return msg;
+            }
+        }
+    }
+
+    // Fall back: list all known slots.
+    if hole.boundaries.is_empty() {
+        if hole.inconsistencies.is_empty() {
+            "unknown boundary".to_string()
+        } else {
+            format!("inconsistent constraints: {}", hole.inconsistencies.join("; "))
+        }
+    } else {
+        let parts: Vec<String> = hole.boundaries.iter().map(|(slot, bd)| {
+            let sign_str = match slot.sign { Sign::Source => "src", Sign::Target => "tgt" };
+            format!("∂^{}_{} = {}", sign_str, slot.dim, render_solved_bd(bd))
+        }).collect();
+        let mut msg = parts.join(", ");
+        if !hole.inconsistencies.is_empty() {
+            msg.push_str(&format!(" [inconsistencies: {}]", hole.inconsistencies.join("; ")));
+        }
+        msg
+    }
+}
+
+/// Print a diagnostic for each unsolved hole using constraint-solver output.
+pub fn report_solved_holes(file: &InterpretedFile) {
+    for hole in &file.solved_holes {
+        let message = render_solved_hole(hole);
         crate::language::error::report_hole(hole.span, &message, &file.source, &file.path);
     }
 }

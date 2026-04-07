@@ -1,4 +1,5 @@
 use super::global_store::GlobalStore;
+use super::inference::{Constraint, HoleId};
 use crate::aux::{GlobalId, LocalId, Tag};
 use crate::aux::loader::ModuleResolutions;
 use crate::core::{
@@ -74,61 +75,25 @@ impl Context {
 // ---- Hole info ----
 
 /// Structured boundary data for a hole, stored without rendering.
-/// Rendering is deferred to the output module.
-#[derive(Debug, Clone)]
-pub enum HoleBd {
-    /// Boundary context is unknown.
-    Unknown,
-    /// A complete boundary diagram with the complex needed to look up generator names.
-    ///
-    /// `dim` records the dimension at which this constraint was derived:
-    /// for paste contexts it is the paste dimension k; for boundary-declaration
-    /// companions and assertion equality constraints it is the dimension of
-    /// `diagram` itself.
-    Full {
-        diagram: Diagram,
-        scope: Arc<Complex>,
-        dim: usize,
-    },
-    /// A boundary diagram through a partial map (some entries may be unmapped).
-    ///
-    /// `dim` records the dimension of `boundary` (which equals the dimension of
-    /// the mapped image when the map is total).
-    Partial {
-        boundary: Diagram,
-        map: PartialMap,
-        scope: Arc<Complex>,
-        dim: usize,
-    },
-}
-
-/// The structured source/target boundary context for a hole.
-#[derive(Debug, Clone)]
-pub struct HoleBoundaryInfo {
-    /// Boundary on the source (input) side of the hole.
-    pub boundary_in: HoleBd,
-    /// Boundary on the target (output) side of the hole.
-    pub boundary_out: HoleBd,
-}
-
 /// Tracks a `?` hole encountered during interpretation.
 ///
-/// Holes are created without boundary information and enriched with
-/// `HoleBoundaryInfo` later when a surrounding `partial_map` clause provides context.
+/// Boundary information is derived after the fact by the constraint solver in
+/// [`super::inference::solve`]; see [`super::load::InterpretedFile::solved_holes`].
 #[derive(Debug, Clone)]
 pub struct HoleInfo {
+    /// Unique identifier used to link this hole to constraints in the solver.
+    pub id: HoleId,
     /// Source location of the hole.
     pub span: Span,
-    /// Boundary context for the hole; `None` until the enclosing map clause provides it.
-    pub boundary: Option<HoleBoundaryInfo>,
-    /// Source cell tag, for deferred boundary computation in partial_map context.
+    /// Source cell tag set when the hole appears as the RHS of a partial-map
+    /// clause, so that `enrich_holes` can look up boundary data for it.
     pub source_tag: Option<Tag>,
 }
 
 impl HoleInfo {
     /// Create a hole record at the given source location, with no boundary information yet.
     pub fn new(span: Span) -> Self {
-        Self { span, boundary: None, source_tag: None }
+        Self { id: HoleId::fresh(), span, source_tag: None }
     }
 }
 
@@ -148,6 +113,8 @@ pub struct InterpResult {
     pub errors: Vec<Error>,
     /// Holes (`?`) found during this step, possibly enriched with boundary info.
     pub holes: Vec<HoleInfo>,
+    /// Constraints emitted by inference sites for later solving.
+    pub constraints: Vec<Constraint>,
 }
 
 /// A failable interpretation step: an optional produced value paired with an `InterpResult`.
@@ -163,6 +130,7 @@ impl InterpResult {
             context,
             errors: vec![],
             holes: vec![],
+            constraints: vec![],
         }
     }
 
@@ -176,10 +144,17 @@ impl InterpResult {
         self.holes.push(hole);
     }
 
-    /// Merge two sequential results: concatenate errors and holes, advance to `next`'s context.
+    /// Append a constraint to this result.
+    pub fn add_constraint(&mut self, c: Constraint) {
+        self.constraints.push(c);
+    }
+
+    /// Merge two sequential results: concatenate errors, holes, and constraints;
+    /// advance to `next`'s context.
     pub fn merge(mut self, next: InterpResult) -> InterpResult {
         self.errors.extend(next.errors);
         self.holes.extend(next.holes);
+        self.constraints.extend(next.constraints);
         self.context = next.context;
         self
     }
@@ -319,6 +294,7 @@ pub fn error_result(context: &Context, span: Span, message: impl Into<String>) -
         context: context.clone(),
         errors: vec![make_error(span, message)],
         holes: vec![],
+        constraints: vec![],
     }
 }
 

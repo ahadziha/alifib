@@ -15,7 +15,7 @@ use std::sync::Arc;
 ///
 /// Unlike [`OgSign`], which also has a `Both` variant used by traversal
 /// queries, diagram operations always act on exactly one boundary.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Sign {
     Source,
     Target,

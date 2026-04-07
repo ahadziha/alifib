@@ -1,6 +1,7 @@
+use super::inference::{BdSlot, Constraint, ConstraintOrigin};
 use super::resolve::resolve_map_domain_complex;
 use super::types::{
-    Component, Context, EvalMap, HoleBd, HoleBoundaryInfo, HoleInfo, InterpResult, Step,
+    Component, Context, EvalMap, HoleInfo, InterpResult, Step,
     Term, TermPair, fail, make_error, make_error_from_core, sorted_generators,
 };
 use crate::core::{
@@ -250,37 +251,27 @@ pub fn interpret_assert(
         interpret_diagram_as_term(&left_result.context, scope, &assert_stmt.rhs);
     let mut combined = left_result.merge(right_result);
 
-    // Cross-enrich diagram holes from the concrete opposite side.
-    // After merge, combined.holes = [LHS holes (..lhs_hole_count)] ++ [RHS holes].
-    let enrich = |holes: &mut [crate::interpreter::types::HoleInfo], d: &Diagram, scope: &Complex| {
-        let k = d.top_dim().saturating_sub(1);
-        if let (Ok(in_bd), Ok(out_bd)) = (
-            Diagram::boundary(DiagramSign::Source, k, d),
-            Diagram::boundary(DiagramSign::Target, k, d),
-        ) {
-            for hole in holes {
-                match &mut hole.boundary {
-                    None => hole.boundary = Some(HoleBoundaryInfo {
-                        boundary_in: HoleBd::Full { diagram: in_bd.clone(), scope: Arc::new(scope.clone()), dim: k },
-                        boundary_out: HoleBd::Full { diagram: out_bd.clone(), scope: Arc::new(scope.clone()), dim: k },
-                    }),
-                    Some(bd) => {
-                        if matches!(bd.boundary_in, HoleBd::Unknown) {
-                            bd.boundary_in = HoleBd::Full { diagram: in_bd.clone(), scope: Arc::new(scope.clone()), dim: k };
-                        }
-                        if matches!(bd.boundary_out, HoleBd::Unknown) {
-                            bd.boundary_out = HoleBd::Full { diagram: out_bd.clone(), scope: Arc::new(scope.clone()), dim: k };
-                        }
-                    }
-                }
-            }
-        }
-    };
+    // Constraint system: Eq constraints — the hole must equal the concrete side.
+    let scope_arc = Arc::new(scope.clone());
     if let Some(Term::Diag(ref d)) = right_opt {
-        enrich(&mut combined.holes[..lhs_hole_count], d, scope);
+        for hole in &combined.holes[..lhs_hole_count] {
+            combined.constraints.push(Constraint::Eq {
+                hole: hole.id,
+                diagram: d.clone(),
+                scope: scope_arc.clone(),
+                origin: ConstraintOrigin::Assertion,
+            });
+        }
     }
     if let Some(Term::Diag(ref d)) = left_opt {
-        enrich(&mut combined.holes[lhs_hole_count..], d, scope);
+        for hole in &combined.holes[lhs_hole_count..] {
+            combined.constraints.push(Constraint::Eq {
+                hole: hole.id,
+                diagram: d.clone(),
+                scope: scope_arc.clone(),
+                origin: ConstraintOrigin::Assertion,
+            });
+        }
     }
 
     match (left_opt, right_opt) {
@@ -352,38 +343,33 @@ fn interpret_paste(
         None => None,
     };
 
-    // Cross-enrich holes: a concrete RHS enriches LHS holes (boundary_out = RHS.source_k);
-    // a concrete LHS enriches RHS holes (boundary_in = LHS.target_k).
-    // After merge, combined.holes = [RHS holes (0..rhs_hole_count)] ++ [LHS holes].
+    // Constraint system: BoundaryEq constraints from each concrete side.
+    // LHS holes (index rhs_hole_count..) get boundary_out from RHS.source_k.
+    // RHS holes (index ..rhs_hole_count) get boundary_in from LHS.target_k.
+    let scope_arc = Arc::new(scope.clone());
     if let Some(ref d_right) = d_right_opt {
         if let Ok(in_bd) = Diagram::boundary(DiagramSign::Source, k, d_right) {
-            for hole in &mut combined.holes[rhs_hole_count..] {
-                match &mut hole.boundary {
-                    None => hole.boundary = Some(HoleBoundaryInfo {
-                        boundary_in: HoleBd::Unknown,
-                        boundary_out: HoleBd::Full { diagram: in_bd.clone(), scope: Arc::new(scope.clone()), dim: k },
-                    }),
-                    Some(bd) if matches!(bd.boundary_out, HoleBd::Unknown) => {
-                        bd.boundary_out = HoleBd::Full { diagram: in_bd.clone(), scope: Arc::new(scope.clone()), dim: k };
-                    }
-                    _ => {}
-                }
+            for hole in &combined.holes[rhs_hole_count..] {
+                combined.constraints.push(Constraint::BoundaryEq {
+                    hole: hole.id,
+                    slot: BdSlot { sign: DiagramSign::Target, dim: k },
+                    diagram: in_bd.clone(),
+                    scope: scope_arc.clone(),
+                    origin: ConstraintOrigin::Paste { paste_dim: k },
+                });
             }
         }
     }
     if let Some(ref d_left) = d_left_opt {
         if let Ok(out_bd) = Diagram::boundary(DiagramSign::Target, k, d_left) {
-            for hole in &mut combined.holes[..rhs_hole_count] {
-                match &mut hole.boundary {
-                    None => hole.boundary = Some(HoleBoundaryInfo {
-                        boundary_in: HoleBd::Full { diagram: out_bd.clone(), scope: Arc::new(scope.clone()), dim: k },
-                        boundary_out: HoleBd::Unknown,
-                    }),
-                    Some(bd) if matches!(bd.boundary_in, HoleBd::Unknown) => {
-                        bd.boundary_in = HoleBd::Full { diagram: out_bd.clone(), scope: Arc::new(scope.clone()), dim: k };
-                    }
-                    _ => {}
-                }
+            for hole in &combined.holes[..rhs_hole_count] {
+                combined.constraints.push(Constraint::BoundaryEq {
+                    hole: hole.id,
+                    slot: BdSlot { sign: DiagramSign::Source, dim: k },
+                    diagram: out_bd.clone(),
+                    scope: scope_arc.clone(),
+                    origin: ConstraintOrigin::Paste { paste_dim: k },
+                });
             }
         }
     }
@@ -451,17 +437,17 @@ fn interpret_sequence_as_term(
                 if let Some(left_diag) = left_ref {
                     let k = left_diag.top_dim().saturating_sub(1);
                     if let Ok(out_bd) = Diagram::boundary(DiagramSign::Target, k, left_diag) {
-                        for hole in &mut result.holes[prev_hole_count..] {
-                            match &mut hole.boundary {
-                                None => hole.boundary = Some(HoleBoundaryInfo {
-                                    boundary_in: HoleBd::Full { diagram: out_bd.clone(), scope: Arc::new(scope.clone()), dim: k },
-                                    boundary_out: HoleBd::Unknown,
-                                }),
-                                Some(bd) if matches!(bd.boundary_in, HoleBd::Unknown) => {
-                                    bd.boundary_in = HoleBd::Full { diagram: out_bd.clone(), scope: Arc::new(scope.clone()), dim: k };
-                                }
-                                _ => {}
-                            }
+                        // Constraint system: BoundaryEq from left neighbor.
+                        let scope_arc = Arc::new(scope.clone());
+                        let new_hole_ids: Vec<_> = result.holes[prev_hole_count..].iter().map(|h| h.id).collect();
+                        for id in new_hole_ids {
+                            result.constraints.push(Constraint::BoundaryEq {
+                                hole: id,
+                                slot: BdSlot { sign: DiagramSign::Source, dim: k },
+                                diagram: out_bd.clone(),
+                                scope: scope_arc.clone(),
+                                origin: ConstraintOrigin::Paste { paste_dim: k },
+                            });
                         }
                     }
                 }
@@ -487,17 +473,17 @@ fn interpret_sequence_as_term(
                 if let Some(start) = last_hole_block_start {
                     let k = d_right.top_dim().saturating_sub(1);
                     if let Ok(in_bd) = Diagram::boundary(DiagramSign::Source, k, &d_right) {
-                        for hole in &mut result.holes[start..prev_hole_count] {
-                            match &mut hole.boundary {
-                                None => hole.boundary = Some(HoleBoundaryInfo {
-                                    boundary_in: HoleBd::Unknown,
-                                    boundary_out: HoleBd::Full { diagram: in_bd.clone(), scope: Arc::new(scope.clone()), dim: k },
-                                }),
-                                Some(bd) if matches!(bd.boundary_out, HoleBd::Unknown) => {
-                                    bd.boundary_out = HoleBd::Full { diagram: in_bd.clone(), scope: Arc::new(scope.clone()), dim: k };
-                                }
-                                _ => {}
-                            }
+                        // Constraint system: BoundaryEq from right neighbor.
+                        let scope_arc = Arc::new(scope.clone());
+                        let block_hole_ids: Vec<_> = result.holes[start..prev_hole_count].iter().map(|h| h.id).collect();
+                        for id in block_hole_ids {
+                            result.constraints.push(Constraint::BoundaryEq {
+                                hole: id,
+                                slot: BdSlot { sign: DiagramSign::Target, dim: k },
+                                diagram: in_bd.clone(),
+                                scope: scope_arc.clone(),
+                                origin: ConstraintOrigin::Paste { paste_dim: k },
+                            });
                         }
                     }
                     last_hole_block_start = None;
@@ -552,36 +538,29 @@ pub fn interpret_boundaries(
         interpret_diagram(&source_result.context, scope, &boundaries.inner.target);
     let mut combined = source_result.merge(target_result);
 
-    // Enrich source-side holes with the target diagram and vice versa.
-    // After merge, combined.holes = [source holes (0..pre_target_holes)] ++ [target holes].
+    // Constraint system: Parallel constraints — a hole in source position must be
+    // parallel to the target, and vice versa.
+    let scope_arc = Arc::new(scope.clone());
     if let Some(ref tgt) = target_opt {
-        let bd = HoleBd::Full { diagram: tgt.clone(), scope: Arc::new(scope.clone()), dim: tgt.top_dim() };
-        for hole in &mut combined.holes[..pre_target_holes] {
-            match &mut hole.boundary {
-                None => hole.boundary = Some(HoleBoundaryInfo {
-                    boundary_in: HoleBd::Unknown,
-                    boundary_out: bd.clone(),
-                }),
-                Some(existing) if matches!(existing.boundary_out, HoleBd::Unknown) => {
-                    existing.boundary_out = bd.clone();
-                }
-                _ => {}
-            }
+        let src_hole_ids: Vec<_> = combined.holes[..pre_target_holes].iter().map(|h| h.id).collect();
+        for id in src_hole_ids {
+            combined.constraints.push(Constraint::Parallel {
+                hole: id,
+                companion: tgt.clone(),
+                scope: scope_arc.clone(),
+                origin: ConstraintOrigin::Declaration,
+            });
         }
     }
     if let Some(ref src) = source_opt {
-        let bd = HoleBd::Full { diagram: src.clone(), scope: Arc::new(scope.clone()), dim: src.top_dim() };
-        for hole in &mut combined.holes[pre_target_holes..] {
-            match &mut hole.boundary {
-                None => hole.boundary = Some(HoleBoundaryInfo {
-                    boundary_in: bd.clone(),
-                    boundary_out: HoleBd::Unknown,
-                }),
-                Some(existing) if matches!(existing.boundary_in, HoleBd::Unknown) => {
-                    existing.boundary_in = bd.clone();
-                }
-                _ => {}
-            }
+        let tgt_hole_ids: Vec<_> = combined.holes[pre_target_holes..].iter().map(|h| h.id).collect();
+        for id in tgt_hole_ids {
+            combined.constraints.push(Constraint::Parallel {
+                hole: id,
+                companion: src.clone(),
+                scope: scope_arc.clone(),
+                origin: ConstraintOrigin::Declaration,
+            });
         }
     }
 
