@@ -314,7 +314,7 @@ pub fn interpret_assert(
                     scope: scope_arc.clone(),
                     origin: ConstraintOrigin::Assertion,
                 });
-                push_parallel_constraints(hole.id, d, &scope_arc, ConstraintOrigin::Assertion, &mut combined.constraints);
+                // DimEq and principal BoundaryEq are derived by the solver from Value.
             }
         }
     }
@@ -327,7 +327,7 @@ pub fn interpret_assert(
                     scope: scope_arc.clone(),
                     origin: ConstraintOrigin::Assertion,
                 });
-                push_parallel_constraints(hole.id, d, &scope_arc, ConstraintOrigin::Assertion, &mut combined.constraints);
+                // DimEq and principal BoundaryEq are derived by the solver from Value.
             }
         }
     }

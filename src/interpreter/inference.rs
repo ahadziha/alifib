@@ -97,9 +97,9 @@ impl std::fmt::Display for ConstraintOrigin {
 
 /// A constraint on a single hole, emitted during interpretation.
 ///
-/// All composite constraints (`Parallel`, `Eq`) are decomposed into atomic
-/// `BoundaryEq` and `DimEq` facts at the emission site, so the solver only
-/// ever processes the four variants below.
+/// Composite information (parallelism, equality) is decomposed into atomic
+/// `BoundaryEq` and `DimEq` facts at the emission site; the solver only ever
+/// processes the four variants below.
 #[derive(Debug, Clone)]
 pub enum Constraint {
     /// `∂^sign_k(hole) = diagram`.
@@ -230,14 +230,14 @@ impl SolvedHole {
 
     /// Record `value = diagram`, checking consistency with any prior `Value`.
     /// Returns `true` if the value was newly set (i.e. was `None` before).
-    fn set_value(&mut self, diagram: Diagram, scope: Arc<Complex>, origin: &ConstraintOrigin) -> bool {
+    fn set_value(&mut self, diagram: &Diagram, scope: &Arc<Complex>, origin: &ConstraintOrigin) -> bool {
         match self.value {
             None => {
-                self.value = Some((diagram, scope));
+                self.value = Some((diagram.clone(), scope.clone()));
                 true
             }
             Some((ref existing, _)) => {
-                if !Diagram::isomorphic(existing, &diagram) {
+                if !Diagram::isomorphic(existing, diagram) {
                     self.inconsistencies.push(format!(
                         "conflicting Value constraints: from {}",
                         origin
@@ -257,18 +257,21 @@ impl SolvedHole {
     fn set_known(
         &mut self,
         slot: BdSlot,
-        diagram: Diagram,
-        scope: Arc<Complex>,
-        origin: ConstraintOrigin,
+        diagram: &Diagram,
+        scope: &Arc<Complex>,
+        origin: &ConstraintOrigin,
     ) -> bool {
         match self.boundaries.get(&slot) {
             None | Some(SolvedBd::Partial { .. }) => {
-                self.boundaries
-                    .insert(slot, SolvedBd::Known { diagram, scope, origin });
+                self.boundaries.insert(slot, SolvedBd::Known {
+                    diagram: diagram.clone(),
+                    scope: scope.clone(),
+                    origin: origin.clone(),
+                });
                 true
             }
             Some(SolvedBd::Known { diagram: existing, .. }) => {
-                if !Diagram::isomorphic(existing, &diagram) {
+                if !Diagram::isomorphic(existing, diagram) {
                     self.inconsistencies.push(format!(
                         "conflicting ∂{}{}: from {}",
                         match slot.sign { DiagramSign::Source => "⁻", DiagramSign::Target => "⁺" },
@@ -291,33 +294,32 @@ impl SolvedHole {
     fn set_partial(
         &mut self,
         slot: BdSlot,
-        boundary: Diagram,
-        map: PartialMap,
-        scope: Arc<Complex>,
-        origin: ConstraintOrigin,
+        boundary: &Diagram,
+        map: &PartialMap,
+        scope: &Arc<Complex>,
+        origin: &ConstraintOrigin,
     ) -> bool {
         match self.boundaries.get(&slot) {
             None => {
-                self.boundaries.insert(slot, SolvedBd::Partial { boundary, map, scope, origin });
+                self.boundaries.insert(slot, SolvedBd::Partial {
+                    boundary: boundary.clone(),
+                    map: map.clone(),
+                    scope: scope.clone(),
+                    origin: origin.clone(),
+                });
                 true
             }
             Some(SolvedBd::Partial { .. }) => {
-                // Clone to release the immutable borrow before re-inserting.
-                let existing = self.boundaries[&slot].clone();
-                if let SolvedBd::Partial {
-                    map: existing_map,
+                // Take ownership via remove to avoid cloning the existing entry.
+                let SolvedBd::Partial { map: existing_map, boundary: existing_bd, scope: existing_scope, origin: existing_origin }
+                    = self.boundaries.remove(&slot).unwrap() else { unreachable!() };
+                let merged = PartialMap::merge(&existing_map, map);
+                self.boundaries.insert(slot, SolvedBd::Partial {
                     boundary: existing_bd,
+                    map: merged,
                     scope: existing_scope,
                     origin: existing_origin,
-                } = existing {
-                    let merged = PartialMap::merge(&existing_map, &map);
-                    self.boundaries.insert(slot, SolvedBd::Partial {
-                        boundary: existing_bd,
-                        map: merged,
-                        scope: existing_scope,
-                        origin: existing_origin,
-                    });
-                }
+                });
                 // No new slot opened: sub-slots were already propagated at first insertion.
                 false
             }
@@ -390,7 +392,7 @@ pub fn solve(entries: &[HoleEntry], constraints: &[Constraint]) -> Vec<SolvedHol
 fn process_constraint(hole: &mut SolvedHole, hole_id: HoleId, constraint: Constraint) -> Vec<Constraint> {
     match constraint {
         Constraint::Value { hole: _, diagram, scope, origin } => {
-            if !hole.set_value(diagram.clone(), scope.clone(), &origin) {
+            if !hole.set_value(&diagram, &scope, &origin) {
                 return vec![];
             }
             // Derive: DimEq from the value's dimension, then BoundaryEq at
@@ -401,6 +403,8 @@ fn process_constraint(hole: &mut SolvedHole, hole_id: HoleId, constraint: Constr
                 Constraint::DimEq { hole: hole_id, dim: n, origin: origin.clone() },
             ];
             if n > 0 {
+                // Emit only the two principal slots (sign, n-1); their processing
+                // will derive all globular sub-slots via globular_sub_boundaries.
                 for &sign in &[DiagramSign::Source, DiagramSign::Target] {
                     if let Ok(bd) = Diagram::boundary_normal(sign, n - 1, &diagram) {
                         derived.push(Constraint::BoundaryEq {
@@ -423,83 +427,62 @@ fn process_constraint(hole: &mut SolvedHole, hole_id: HoleId, constraint: Constr
         }
 
         Constraint::BoundaryEq { hole: _, slot, diagram, scope, origin } => {
-            if !hole.set_known(slot, diagram.clone(), scope.clone(), origin.clone()) {
+            if !hole.set_known(slot, &diagram, &scope, &origin) {
                 return vec![];
             }
             // Derive: globular BoundaryEq at all sub-slots.
-            globular_boundary_eq(hole_id, slot, &diagram, &scope, &origin)
+            globular_sub_boundaries(slot, &diagram)
+                .into_iter()
+                .map(|(sub_slot, bd)| Constraint::BoundaryEq {
+                    hole: hole_id,
+                    slot: sub_slot,
+                    diagram: bd,
+                    scope: scope.clone(),
+                    origin: origin.clone(),
+                })
+                .collect()
         }
 
         Constraint::PartialBoundary { hole: _, slot, boundary, map, scope, origin } => {
-            if !hole.set_partial(slot, boundary.clone(), map.clone(), scope.clone(), origin.clone()) {
+            if !hole.set_partial(slot, &boundary, &map, &scope, &origin) {
                 return vec![];
             }
             // Derive: globular PartialBoundary at all sub-slots.
             // Only done on first insertion (Empty → Partial); Partial → Partial
             // merges do not re-propagate since sub-slots were already handled.
-            globular_partial_boundary(hole_id, slot, &boundary, &map, &scope, &origin)
-        }
-    }
-}
-
-/// Derive globular `BoundaryEq` constraints at all sub-slots of `(slot.sign, slot.dim)`.
-///
-/// For each `j < slot.dim` and both signs `s'`, computes `∂^{s'}_j(diagram)`
-/// and emits `BoundaryEq(hole, (s', j), ∂^{s'}_j(diagram))`.  Failures in
-/// `boundary_normal` are skipped (the slot remains unconstrained from this
-/// derivation path).
-fn globular_boundary_eq(
-    hole: HoleId,
-    slot: BdSlot,
-    diagram: &Diagram,
-    scope: &Arc<Complex>,
-    origin: &ConstraintOrigin,
-) -> Vec<Constraint> {
-    let mut derived = vec![];
-    for j in 0..slot.dim {
-        for &sign in &[DiagramSign::Source, DiagramSign::Target] {
-            if let Ok(bd) = Diagram::boundary_normal(sign, j, diagram) {
-                derived.push(Constraint::BoundaryEq {
-                    hole,
-                    slot: BdSlot { sign, dim: j },
-                    diagram: bd,
-                    scope: scope.clone(),
-                    origin: origin.clone(),
-                });
-            }
-        }
-    }
-    derived
-}
-
-/// Derive globular `PartialBoundary` constraints at all sub-slots of `(slot.sign, slot.dim)`.
-///
-/// Same globular identity as for `BoundaryEq`: `∂^{s'}_j(∂^s_k(H)) = ∂^{s'}_j(H)`.
-/// The same `map` applies because globular propagation is taken in the source scope.
-fn globular_partial_boundary(
-    hole: HoleId,
-    slot: BdSlot,
-    boundary: &Diagram,
-    map: &PartialMap,
-    scope: &Arc<Complex>,
-    origin: &ConstraintOrigin,
-) -> Vec<Constraint> {
-    let mut derived = vec![];
-    for j in 0..slot.dim {
-        for &sign in &[DiagramSign::Source, DiagramSign::Target] {
-            if let Ok(bd) = Diagram::boundary_normal(sign, j, boundary) {
-                derived.push(Constraint::PartialBoundary {
-                    hole,
-                    slot: BdSlot { sign, dim: j },
+            globular_sub_boundaries(slot, &boundary)
+                .into_iter()
+                .map(|(sub_slot, bd)| Constraint::PartialBoundary {
+                    hole: hole_id,
+                    slot: sub_slot,
                     boundary: bd,
                     map: map.clone(),
                     scope: scope.clone(),
                     origin: origin.clone(),
-                });
+                })
+                .collect()
+        }
+    }
+}
+
+/// Compute the globular sub-boundaries of `diagram` below `slot`.
+///
+/// For each `j < slot.dim` and both signs `s'`, computes `∂^{s'}_j(diagram)`.
+/// The `slot.sign` is not used; only `slot.dim` determines the range.
+/// Failures in `boundary_normal` are silently skipped.
+///
+/// Used by both `BoundaryEq` and `PartialBoundary` derivation so the globular
+/// logic lives in exactly one place.
+fn globular_sub_boundaries(slot: BdSlot, diagram: &Diagram) -> Vec<(BdSlot, Diagram)> {
+    let mut result = vec![];
+    for j in 0..slot.dim {
+        for &sign in &[DiagramSign::Source, DiagramSign::Target] {
+            if let Ok(bd) = Diagram::boundary_normal(sign, j, diagram) {
+                result.push((BdSlot { sign, dim: j }, bd));
             }
         }
     }
-    derived
+    result
 }
 
 #[cfg(test)]
