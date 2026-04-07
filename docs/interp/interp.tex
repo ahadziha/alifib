@@ -1033,9 +1033,10 @@ $\EvalM{\State}{\Complex}{(\PMapDef, \Complex_S)}{\Map{F}}$
   & Evaluate partial map definition $\PMapDef$ in state $\State$ \\
   & at location~$\Complex$ with source complex $\Complex_S$; \\
   & yields a partial map $\Map{F}$. \\[6pt]
-$\ResJ{\State}{\Cpx}{(\GId, \Complex)}$
+$\ResJ{\State}{\Cpx}{(\State', \GId, \Complex)}$
   & Resolve complex reference $\Cpx$ in state $\State$; \\
-  & yields a type identifier $\GId$ and its complex $\Complex$. \\[6pt]
+  & yields updated state $\State'$, type identifier $\GId$, \\
+  & and its complex $\Complex$. \\[6pt]
 $\AddrJ{\State}{\Addr}{\GId}$
   & Resolve address $\Addr$ in state $\State$; \\
   & yields the type identifier $\GId$ it refers to. \\[6pt]
@@ -1045,14 +1046,18 @@ $\AssertJ{\State}{\Complex}{\mathit{assertion}}$
 \end{tabular}
 \caption{Summary of judgment forms.  The state $\State$ and location
   $\Complex$ are inputs; the right-hand side of $\Downarrow$ (or
-  $\checkmark$) is the output.}
+  $\checkmark$) is the output.  Complex resolution ($\vdash_{\mathsf{cpx}}$)
+  returns an updated state because interpreting a complex body may
+  register new cells.}
 \label{fig:judgments}
 \end{figure}
 
-In the Rust implementation, $\State$ is wrapped in \texttt{Arc<State>} and
-mutated via \texttt{Arc::make\_mut}. This copy-on-write discipline is not
-observable in the formal rules but explains why the implementation freely
-clones contexts before potentially-failing operations.
+In the Rust implementation, $\State$ is wrapped in
+\texttt{Arc<GlobalStore>} and mutated via \texttt{Arc::make\_mut}. This
+copy-on-write discipline is not observable in the formal rules but
+explains why the implementation freely clones contexts before
+potentially-failing operations.
+
 % ===========================================================================
 \section{Program Interpretation}
 \label{sec:prog}
@@ -1103,15 +1108,16 @@ declared by the first $\kwtype$ block that has no explicit address.
     {\IntJ{\State}{\cdot}{\kwtype\;\overline{\TyInst}}{\State'}}
   \and
   \inferrule*[lab=\textsc{Blk-Local}]
-    {\ResJ{\State}{\Cpx}{(\GId_r, \Complex)} \\
-     \IntJ{\State}{\Complex}{\overline{\LocInst}}{\State'}}
+    {\ResJ{\State}{\Cpx}{(\State_1, \GId_r, \Complex)} \\
+     \IntJ{\State_1}{\Complex}{\overline{\LocInst}}{\State'}}
     {\IntJ{\State}{\cdot}{\mathsf{@}\Cpx\;\overline{\LocInst}}{\State'}}
 \end{mathpar}
 
 A type block interprets its instructions within the module complex. A local
 block first resolves its complex reference to a namespace
-$(\GId_r, \Complex)$ and then interprets local instructions within that
-complex.
+$(\GId_r, \Complex)$, obtaining the updated state $\State_1$
+(which reflects any cells created during complex-body interpretation),
+and then interprets local instructions within that complex.
 
 % ===========================================================================
 \section{Type-Level Instructions}
@@ -1124,13 +1130,13 @@ complex.
 \begin{mathpar}
   \inferrule*[lab=\textsc{TyDecl}]
     {n \notin \mathit{used}(\findmod{m}) \\
-     \ResJ{\State}{\Cpx}{(\_, \Complex_{\mathit{def}})} \\
+     \ResJ{\State}{\Cpx}{(\State_1, \_, \Complex_{\mathit{def}})} \\\\
      \GId_T = \fresh \\
      D_T = \CellOf{\TagG{\GId_T}}{\CZero} \\\\
      F_{\mathit{id}} = \idmap{\Complex_{\mathit{def}}} \\
      \Complex'_{\mathit{def}} = \Complex_{\mathit{def}}
        [\mathit{maps}(n) \mapsto (\TyDom(\GId_T), F_{\mathit{id}})] \\\\
-     \State' = \State[\types(\GId_T) \mapsto
+     \State' = \State_1[\types(\GId_T) \mapsto
        (\CZero, \Complex'_{\mathit{def}}),\;
        \modules(m)(n) \mapsto D_T]}
     {\IntJ{\State}{\findmod{m}}{n \;\decl\; \Cpx}{\State'}}
@@ -1142,6 +1148,11 @@ constructs the identity map $F_{\mathit{id}}$ on the definition complex,
 and adds this identity map to the type's own complex under its own name.
 The classifier diagram $D_T$ is added to both the generator and diagram
 namespaces of the module complex.
+
+Note that the final state $\State'$ is computed from $\State_1$ (the state
+after complex resolution), not from the original $\State$.  This is
+essential: if the complex body declares generators in global mode, those
+cells are registered in $\State_1$ and must not be lost.
 
 \paragraph{The self-referencing identity map.}
 The identity map is added to the type's own complex under the type's name.
@@ -1200,63 +1211,69 @@ As with \textsc{TyLet}, name uniqueness is not checked at the type level.
     {\mathit{alias} = n'\text{ if given, else }n \\
      \mathit{alias} \notin \mathit{used}(\findmod{m}) \\
      m' = \mathsf{resolve}(m, n) \\
-     \IntJ{\State}{\cdot}{\Prog(m')}{\State_1} \\\\
-     \Complex_{m'} = \State_1.\modules(m') \\
+     \findmod{m'}\dn \\\\
+     \Complex_{m'} = \findmod{m'} \\
      F_{\mathit{id}} = \idmap{\Complex_{m'}} \\
      \mathit{gs} = \{ (\mathit{alias}.n_g, t_g, k_g, D_g) \mid
        (n_g, (t_g, k_g, D_g)) \in \Complex_{m'}.\mathit{gens},\;
        n_g \neq \varepsilon \} \\\\
-     \State' = \State_1[
+     \State' = \State[
        \modules(m).\mathit{gens} \mathbin{{+}{=}} \mathit{gs},\;
        \modules(m).\mathit{maps}(\mathit{alias}) \mapsto
          (\ModDom(m'), F_{\mathit{id}})]}
     {\IntJ{\State}{\findmod{m}}{\kwinclude\;n\;[\kwas\;n']}{\State'}}
 \end{mathpar}
 
-Module inclusion resolves $n$ to a canonical path $m'$, recursively
-interprets $m'$ (which may transitively include further modules), and then
-merges the included module's generators into the current module's complex.
-The alias defaults to $n$ when no $\kwas$ clause is given; in either case,
-the alias is checked for uniqueness in the current module.
+Module inclusion resolves $n$ to a canonical path $m'$ and looks up
+the already-interpreted module complex $\Complex_{m'}$.  Modules are
+pre-interpreted in topological order during the loading phase: all
+transitive dependencies are parsed and interpreted before the root
+module begins, so by the time a $\kwinclude$ instruction is reached,
+$\findmod{m'}$ is always defined.  This is semantically equivalent to
+recursive interpretation guarded by \textsc{Prog-Skip} idempotency, but
+the implementation avoids re-entering the interpreter.
+
 Generators are prefixed with the alias and
 duplicates---identified by tag, not by name---are silently skipped. This
 is how diamond dependencies are handled: if two imports bring in the same
 cell (same $\GId$), only the first copy is kept.
-
-The state $\State_1$ from the recursive interpretation is carried forward
-as the base for further modifications, ensuring that all types, cells, and
-modules registered during the recursive call are visible.
+The alias defaults to $n$ when no $\kwas$ clause is given; in either case,
+the alias is checked for uniqueness in the current module.
 
 % ===========================================================================
 \section{Complex Resolution}
 \label{sec:complex}
 % ===========================================================================
 
-Complex references resolve to namespaces $(\GId, \Complex)$:
+Complex references resolve to namespaces $(\State', \GId, \Complex)$.
+The returned state $\State'$ may differ from the input when the
+reference includes a body (\textsc{Cpx-Block}), since interpreting
+the body can register new cells in the global store.
 
 \begin{mathpar}
   \inferrule*[lab=\textsc{Cpx-Root}]
     {\findmod{m}.\mathit{gens}(\varepsilon) = (\TagG{\GId_r}, \_, \_) \\
      \Complex = \findtype{\GId_r}.\Complex}
-    {\ResJ{\State}{\varepsilon}{(\GId_r, \Complex)}}
+    {\ResJ{\State}{\varepsilon}{(\State, \GId_r, \Complex)}}
   \and
   \inferrule*[lab=\textsc{Cpx-Addr}]
     {\AddrJ{\State}{\Addr}{\GId} \\
      \Complex = \findtype{\GId}.\Complex}
-    {\ResJ{\State}{\Addr}{(\GId, \Complex)}}
+    {\ResJ{\State}{\Addr}{(\State, \GId, \Complex)}}
   \and
   \inferrule*[lab=\textsc{Cpx-Block}]
-    {\ResJ{\State}{\Addr}{(\GId, \Complex_0)} \\
-     \IntJ{\State}{\Complex_0}{\overline{\CInst}}{(\State', \Complex')}}
-    {\ResJ{\State}{\Addr\;\{\overline{\CInst}\}}{(\GId, \Complex')}}
+    {\ResJ{\State}{\Addr}{(\State_1, \GId, \Complex_0)} \\
+     \IntJ{\State_1}{\Complex_0}{\overline{\CInst}}{(\State_2, \Complex')}}
+    {\ResJ{\State}{\Addr\;\{\overline{\CInst}\}}{(\State_2, \GId, \Complex')}}
 \end{mathpar}
 
 \textsc{Cpx-Root} handles the empty address by looking up the anonymous root
 generator in the module complex. \textsc{Cpx-Addr} resolves a non-empty
-address to a type's complex. \textsc{Cpx-Block} first resolves the
-address, then interprets the body instructions, threading both state and
-location; the body may add generators, diagrams, maps, includes, and
-attaches. State changes from the body persist to the outer context.
+address to a type's complex. Neither modifies the state.  \textsc{Cpx-Block}
+first resolves the address, then interprets the body instructions, threading
+both state and location; the body may add generators, diagrams, maps,
+includes, and attaches. The state $\State_2$ reflects all cells created
+during body interpretation.
 
 \subsection{Address Resolution}
 \label{sec:complex:addr}
@@ -1367,8 +1384,8 @@ $\Complex'.\mathit{locals}(n)$.
           {\State, \Complex[\mathit{maps}(n) \mapsto (\TyDom(\GId_S), F)]}}
 \end{mathpar}
 
-All \texttt{let} forms---type-level, complex-body, and local---check name
-uniqueness.
+Unlike type-level \texttt{let} forms (which silently overwrite),
+complex-body and local-block \texttt{let} forms check name uniqueness.
 
 \subsection{Include}
 \label{sec:cinstr:include}
@@ -1545,8 +1562,7 @@ sides produce isomorphic ogposets.
     {\EvalD{\State}{\Complex}{\DExpr_1\;\cdots\;\DExpr_k}{D}}
 \end{mathpar}
 
-Juxtaposition is left-associative. The Rust implementation evaluates
-implicit pasting left to right: the first expression is evaluated, then
+Juxtaposition is left-associative. The first expression is evaluated, then
 each subsequent expression is evaluated and pasted onto the accumulator.
 This differs from explicit pasting, which evaluates the right side before
 the left (\cref{sec:diag:paste}). The paste dimension is
@@ -1567,8 +1583,7 @@ composition).
       \overline{\DExpr}_R}{D}}
 \end{mathpar}
 
-The right-hand side is evaluated before the left-hand side, matching
-the OCaml reference implementation's evaluation order.
+The right-hand side is evaluated before the left-hand side.
 The paste is defined only when $D_L$'s output $k$-boundary
 matches $D_R$'s input $k$-boundary. The result is computed as a pushout
 of the two boundary embeddings, merging labels and paste trees.
@@ -1600,7 +1615,7 @@ of the two boundary embeddings, merging labels and paste trees.
 
 \begin{mathpar}
   \inferrule*[lab=\textsc{Comp-AnonMap}]
-    {\ResJ{\State}{\Cpx}{(\_, \Complex_T)} \\
+    {\ResJ{\State}{\Cpx}{(\_, \_, \Complex_T)} \\
      \EvalM{\State}{\Complex_T}{(\PMapDef, \Complex)}{F}}
     {\EvalT{\State}{\Complex}{(\,\kwmap\;\PMapDef :: \Cpx\,)}
       {\MTerm{F, \Complex}}}
@@ -1821,8 +1836,7 @@ $t \mapsto D$ in $G$'s table, the result maps $t$ to $\apply{F}{D}$.
 
   \item \textbf{Evaluation order.} Implicit pasting is left-associative
     and evaluates left to right.
-    Explicit pasting ($\paste{k}$) evaluates the right side first,
-    matching the OCaml reference implementation.
+    Explicit pasting ($\paste{k}$) evaluates the right side first.
 
   \item \textbf{Source complex switch.} Dotting into a map evaluates the
     right component in the map's source complex, not the ambient complex.
@@ -1846,7 +1860,9 @@ $t \mapsto D$ in $G$'s table, the result maps $t$ to $\apply{F}{D}$.
   \item \textbf{Totality is post-hoc.} Checked after all clauses,
     non-fatal.
 
-  \item \textbf{Module idempotency.} A module is interpreted at most once.
+  \item \textbf{Module pre-interpretation.} Modules are parsed and
+    interpreted in topological dependency order during the loading phase,
+    before the root module begins. Each module is interpreted at most once.
     Import order can affect visible state.
 
   \item \textbf{Structural equality only.} Unit laws fail; middle-four
@@ -1867,6 +1883,11 @@ $t \mapsto D$ in $G$'s table, the result maps $t$ to $\apply{F}{D}$.
   \item \textbf{Type-level name uniqueness.} Name collisions are checked
     in complex bodies and local blocks but not in type blocks, where a
     duplicate $\kwlet$ silently overwrites.
+
+  \item \textbf{State threading through complex resolution.} Resolving
+    a complex with an inline body ($\Addr\;\{\ldots\}$) may register new
+    cells in the global state. Subsequent rules must use the state
+    returned by complex resolution, not the original input state.
 \end{enumerate}
 
 \end{document}
