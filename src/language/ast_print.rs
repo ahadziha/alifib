@@ -314,18 +314,27 @@ impl Printer {
 
     /// `Prefix? [ Clause, Clause, ... ]`
     ///
-    /// Always rendered on a single line; commas separate clauses.
+    /// Each clause is placed on its own indented line.
     fn partial_map_ext(&mut self, ext: &PartialMapExt) {
         if let Some(prefix) = &ext.prefix {
             self.partial_map(&prefix.inner);
             self.s(" ");
         }
-        self.s("[");
-        for (i, clause) in ext.clauses.iter().enumerate() {
-            if i == 0 { self.s(" "); } else { self.s(", "); }
-            self.partial_map_clause(&clause.inner);
+        if ext.clauses.is_empty() {
+            self.s("[]");
+            return;
         }
-        if !ext.clauses.is_empty() { self.s(" "); }
+        self.s("[");
+        self.depth += 1;
+        for (i, clause) in ext.clauses.iter().enumerate() {
+            self.newline();
+            self.partial_map_clause(&clause.inner);
+            if i + 1 < ext.clauses.len() {
+                self.s(",");
+            }
+        }
+        self.depth -= 1;
+        self.newline();
         self.s("]");
     }
 
