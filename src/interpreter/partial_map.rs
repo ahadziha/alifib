@@ -1,4 +1,4 @@
-use super::diagram::interpret_diagram_as_term;
+use super::diagram::{interpret_diagram_as_term, is_pure_hole_diagram};
 use super::inference::{BdSlot, Constraint, ConstraintOrigin};
 use super::resolve::{interpret_address, resolve_map_domain_complex, resolve_type_complex};
 use super::types::{
@@ -41,27 +41,67 @@ fn enrich_holes(
         let k_in = boundary_in.top_dim();
         let k_out = boundary_out.top_dim();
 
-        // Always emit PartialBoundary, never BoundaryEq.
-        // Rationale: the partial map constraint on target may be wrong for embedded holes
-        // (e.g. `arr => ? g` — the map's target-boundary applies to the whole `? g`, not
-        // just `?`). BoundaryEq constraints from paste contexts take precedence via the
-        // Known > Partial priority in the solver.
-        new_constraints.push(Constraint::PartialBoundary {
-            hole: hole.id,
-            slot: BdSlot { sign: DiagramSign::Source, dim: k_in },
-            boundary: (**boundary_in).clone(),
-            map: map.clone(),
-            scope: scope_arc.clone(),
-            origin: origin.clone(),
-        });
-        new_constraints.push(Constraint::PartialBoundary {
-            hole: hole.id,
-            slot: BdSlot { sign: DiagramSign::Target, dim: k_out },
-            boundary: (**boundary_out).clone(),
-            map: map.clone(),
-            scope: scope_arc.clone(),
-            origin: origin.clone(),
-        });
+        // For direct holes (`source_cell => ?`), try a full `PartialMap::apply`:
+        // if the map covers all generators in the boundary, we get a fully determined
+        // image and can emit the stronger `BoundaryEq`. If the map is incomplete, fall
+        // back to `PartialBoundary` as for embedded holes.
+        //
+        // For embedded holes (`source_cell => ? g`), always use `PartialBoundary`:
+        // the map's target-boundary applies to the whole composite, not to `?` alone,
+        // so a BoundaryEq would be incorrect and could conflict with paste constraints.
+        if hole.direct_in_partial_map {
+            match PartialMap::apply(map, boundary_in) {
+                Ok(mapped_in) => new_constraints.push(Constraint::BoundaryEq {
+                    hole: hole.id,
+                    slot: BdSlot { sign: DiagramSign::Source, dim: k_in },
+                    diagram: mapped_in,
+                    scope: scope_arc.clone(),
+                    origin: origin.clone(),
+                }),
+                Err(_) => new_constraints.push(Constraint::PartialBoundary {
+                    hole: hole.id,
+                    slot: BdSlot { sign: DiagramSign::Source, dim: k_in },
+                    boundary: (**boundary_in).clone(),
+                    map: map.clone(),
+                    scope: scope_arc.clone(),
+                    origin: origin.clone(),
+                }),
+            }
+            match PartialMap::apply(map, boundary_out) {
+                Ok(mapped_out) => new_constraints.push(Constraint::BoundaryEq {
+                    hole: hole.id,
+                    slot: BdSlot { sign: DiagramSign::Target, dim: k_out },
+                    diagram: mapped_out,
+                    scope: scope_arc.clone(),
+                    origin: origin.clone(),
+                }),
+                Err(_) => new_constraints.push(Constraint::PartialBoundary {
+                    hole: hole.id,
+                    slot: BdSlot { sign: DiagramSign::Target, dim: k_out },
+                    boundary: (**boundary_out).clone(),
+                    map: map.clone(),
+                    scope: scope_arc.clone(),
+                    origin: origin.clone(),
+                }),
+            }
+        } else {
+            new_constraints.push(Constraint::PartialBoundary {
+                hole: hole.id,
+                slot: BdSlot { sign: DiagramSign::Source, dim: k_in },
+                boundary: (**boundary_in).clone(),
+                map: map.clone(),
+                scope: scope_arc.clone(),
+                origin: origin.clone(),
+            });
+            new_constraints.push(Constraint::PartialBoundary {
+                hole: hole.id,
+                slot: BdSlot { sign: DiagramSign::Target, dim: k_out },
+                boundary: (**boundary_out).clone(),
+                map: map.clone(),
+                scope: scope_arc.clone(),
+                origin: origin.clone(),
+            });
+        }
     }
 
     result.constraints.extend(new_constraints);
@@ -229,19 +269,23 @@ fn interpret_partial_map_ext(ctx: &PartialMapCtx<'_>, ext: &PartialMapExt) -> St
 /// Tag all holes added since `prev_hole_count` with the source cell tag, so that
 /// `enrich_holes` can later look up boundary data for each.
 ///
+/// `is_direct` is true when the RHS of the clause is a bare `?` (not a
+/// composite involving a hole).  That flag is forwarded to `enrich_holes` so it
+/// can emit the stronger `BoundaryEq` constraint when the map is complete.
+///
 /// Only acts when the source term is a single cell diagram with a top label.
-fn mark_new_hole_source_tags(result: &mut InterpResult, prev_hole_count: usize, source_term: &Term) {
-    let Term::Diag(source_diagram) = source_term else {
-        return;
-    };
-    if !source_diagram.is_cell() {
-        return;
-    }
-    let Some(tag) = source_diagram.top_label() else {
-        return;
-    };
+fn mark_new_hole_source_tags(
+    result: &mut InterpResult,
+    prev_hole_count: usize,
+    source_term: &Term,
+    is_direct: bool,
+) {
+    let Term::Diag(source_diagram) = source_term else { return; };
+    if !source_diagram.is_cell() { return; }
+    let Some(tag) = source_diagram.top_label() else { return; };
     for hole in &mut result.holes[prev_hole_count..] {
         hole.source_tag = Some(tag.clone());
+        hole.direct_in_partial_map = is_direct;
     }
 }
 
@@ -265,7 +309,11 @@ fn interpret_partial_map_clause(ctx: &PartialMapCtx<'_>, map: PartialMap, clause
         if !new_holes {
             return (None, combined);
         }
-        mark_new_hole_source_tags(&mut combined, prev_hole_count, &left_term);
+        // A "direct" hole is one where the entire RHS is literally `?` (possibly
+        // parenthesized).  For those, `enrich_holes` can use the stronger
+        // BoundaryEq constraint when the map covers the boundary completely.
+        let is_direct = is_pure_hole_diagram(&clause.inner.rhs.inner);
+        mark_new_hole_source_tags(&mut combined, prev_hole_count, &left_term, is_direct);
         return (Some(map), combined);
     };
 

@@ -40,7 +40,7 @@ fn parse_paste_dim(context: &Context, dim: &Spanned<String>) -> Step<usize> {
 
 
 /// Returns `true` if `diagram` is a single un-parenthesized or parenthesized `?`.
-fn is_pure_hole_diagram(diagram: &ast::Diagram) -> bool {
+pub(super) fn is_pure_hole_diagram(diagram: &ast::Diagram) -> bool {
     match diagram {
         ast::Diagram::PrincipalPaste(exprs) if exprs.len() == 1 => {
             is_pure_hole_dexpr(&exprs[0].inner)
@@ -49,7 +49,7 @@ fn is_pure_hole_diagram(diagram: &ast::Diagram) -> bool {
     }
 }
 
-fn is_pure_hole_dexpr(expr: &ast::DExpr) -> bool {
+pub(super) fn is_pure_hole_dexpr(expr: &ast::DExpr) -> bool {
     match expr {
         ast::DExpr::Component(ast::DComponent::Hole) => true,
         ast::DExpr::Component(ast::DComponent::Paren(inner)) => {

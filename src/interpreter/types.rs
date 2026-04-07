@@ -88,12 +88,19 @@ pub struct HoleInfo {
     /// Source cell tag set when the hole appears as the RHS of a partial-map
     /// clause, so that `enrich_holes` can look up boundary data for it.
     pub source_tag: Option<Tag>,
+    /// True when the hole is the *entire* RHS of a partial-map clause
+    /// (e.g. `arr => ?`), not embedded in a composite (e.g. `arr => ? g`).
+    ///
+    /// When true, `enrich_holes` will attempt a full `PartialMap::apply` on the
+    /// source cell's boundary diagrams and emit `BoundaryEq` if the map covers
+    /// them completely, enabling consistency checking against other constraints.
+    pub direct_in_partial_map: bool,
 }
 
 impl HoleInfo {
     /// Create a hole record at the given source location, with no boundary information yet.
     pub fn new(span: Span) -> Self {
-        Self { id: HoleId::fresh(), span, source_tag: None }
+        Self { id: HoleId::fresh(), span, source_tag: None, direct_in_partial_map: false }
     }
 }
 
