@@ -15,13 +15,13 @@ enum RunMode {
     Interpret,
     Ast,
     Print,
+    Bench(usize),
 }
 
 struct Args {
     input: String,
     output: Option<String>,
     mode: RunMode,
-    bench: Option<usize>,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -29,7 +29,6 @@ fn parse_args() -> Result<Args, String> {
     let mut input = None;
     let mut output = None;
     let mut mode = RunMode::Interpret;
-    let mut bench = None;
 
     let mut arg_iter = cli_args.iter();
     while let Some(arg) = arg_iter.next() {
@@ -55,7 +54,7 @@ fn parse_args() -> Result<Args, String> {
                 let run_count: usize = run_count_str
                     .parse()
                     .map_err(|_| format!("--bench: invalid number '{}'", run_count_str))?;
-                bench = Some(run_count);
+                mode = RunMode::Bench(run_count);
             }
             s if s.starts_with('-') => return Err(format!("Unknown option: {}", s)),
             s => {
@@ -71,7 +70,6 @@ fn parse_args() -> Result<Args, String> {
         input: input.ok_or(USAGE)?,
         output,
         mode,
-        bench,
     })
 }
 
@@ -158,14 +156,11 @@ fn main() {
         }
     };
     let loader = Loader::default(vec![]);
-    let ok = if let Some(n) = args.bench {
-        run_bench(&loader, &args.input, n)
-    } else {
-        match args.mode {
-            RunMode::Ast => run_ast(&loader, &args.input, args.output.as_deref()),
-            RunMode::Print => run_print(&loader, &args.input, args.output.as_deref()),
-            RunMode::Interpret => run_interpreter(&loader, &args.input, args.output.as_deref()),
-        }
+    let ok = match args.mode {
+        RunMode::Ast => run_ast(&loader, &args.input, args.output.as_deref()),
+        RunMode::Print => run_print(&loader, &args.input, args.output.as_deref()),
+        RunMode::Interpret => run_interpreter(&loader, &args.input, args.output.as_deref()),
+        RunMode::Bench(n) => run_bench(&loader, &args.input, n),
     };
     if !ok {
         process::exit(1);
