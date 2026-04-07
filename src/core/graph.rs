@@ -347,3 +347,107 @@ fn topo_backtrack(
 
     BacktrackOutcome::Done
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use super::{DiGraph, TopoSortResult, all_topological_sorts, contract, flow_graph};
+    use super::super::ogposet::Ogposet;
+
+    fn chain_graph(n: usize) -> DiGraph {
+        let mut g = DiGraph::new(n);
+        for i in 0..n.saturating_sub(1) { g.add_edge(i, i + 1); }
+        g
+    }
+
+    // ---- all_topological_sorts ----
+
+    #[test]
+    fn topo_sorts_empty_graph() {
+        // 0-node graph has exactly one (empty) topological sort.
+        let g = DiGraph::new(0);
+        let TopoSortResult::Sorts(sorts) = all_topological_sorts(&g, None) else { panic!("expected Sorts"); };
+        assert_eq!(sorts, vec![Vec::<usize>::new()]);
+    }
+
+    #[test]
+    fn topo_sorts_chain() {
+        // 0 → 1 → 2 has exactly one topological sort.
+        let TopoSortResult::Sorts(sorts) = all_topological_sorts(&chain_graph(3), None) else { panic!(); };
+        assert_eq!(sorts, vec![vec![0usize, 1, 2]]);
+    }
+
+    #[test]
+    fn topo_sorts_diamond() {
+        // 0 → {1, 2} → 3 has two topological sorts.
+        let mut g = DiGraph::new(4);
+        g.add_edge(0, 1); g.add_edge(0, 2);
+        g.add_edge(1, 3); g.add_edge(2, 3);
+        let TopoSortResult::Sorts(sorts) = all_topological_sorts(&g, None) else { panic!(); };
+        assert_eq!(sorts.len(), 2);
+        assert!(sorts.contains(&vec![0usize, 1, 2, 3]));
+        assert!(sorts.contains(&vec![0usize, 2, 1, 3]));
+    }
+
+    #[test]
+    fn topo_sorts_cycle() {
+        // 0 → 1 → 0 has no topological sort.
+        let mut g = DiGraph::new(2);
+        g.add_edge(0, 1); g.add_edge(1, 0);
+        assert!(matches!(all_topological_sorts(&g, None), TopoSortResult::HasCycle));
+    }
+
+    // ---- contract ----
+
+    #[test]
+    fn contract_merges_connected_subset() {
+        // Graph: 0 → 1 → 2.  Contract subset {0, 1}: they are connected (edge 0→1),
+        // so they collapse to one node, leaving a 2-node quotient.
+        let g = chain_graph(3);
+        let (quotient, mapping) = contract(&g, &[0, 1]);
+        assert_eq!(mapping[0], mapping[1], "0 and 1 are in the same component");
+        assert_ne!(mapping[1], mapping[2], "node 2 is separate");
+        assert_eq!(quotient.node_count(), 2);
+        // Edge component → 2 must exist (from original 1 → 2).
+        assert!(quotient.has_edge(mapping[0], mapping[2]));
+        // No self-loop from the contracted 0→1 edge.
+        assert!(!quotient.has_edge(mapping[0], mapping[0]));
+    }
+
+    // ---- flow_graph ----
+
+    #[test]
+    fn flow_graph_two_arrow_paste() {
+        // Build the 2-arrow paste directly as an Ogposet:
+        //   0-cells: a(0), m(1), b(2)
+        //   1-cells: f(0): a → m,  g(1): m → b
+        //
+        // F_0 should have 2 nodes (f and g) and 1 edge (f → g), because
+        //   Δ⁺_0(f) = {m}  and  Δ⁻_0(g) = {m}  share the midpoint m.
+        let u = Arc::new(Ogposet::make(
+            1,
+            vec![
+                vec![vec![], vec![], vec![]],   // dim 0: 0-cells have no faces
+                vec![vec![0], vec![1]],          // dim 1: f's in-face = {a(0)}, g's = {m(1)}
+            ],
+            vec![
+                vec![vec![], vec![], vec![]],
+                vec![vec![1], vec![2]],          // f's out-face = {m(1)}, g's = {b(2)}
+            ],
+            vec![
+                vec![vec![0], vec![1], vec![]],  // dim 0 in-cofaces: a→{f}, m→{g}, b→{}
+                vec![vec![], vec![]],
+            ],
+            vec![
+                vec![vec![], vec![0], vec![1]],  // dim 0 out-cofaces: a→{}, m→{f}, b→{g}
+                vec![vec![], vec![]],
+            ],
+        ));
+        let (fg, node_map) = flow_graph(&u, 0);
+        assert_eq!(fg.node_count(), 2, "one node per 1-cell");
+        assert_eq!(node_map.len(), 2);
+        // Node 0 = f, node 1 = g (in order of node_map construction).
+        assert!(fg.has_edge(0, 1), "f → g edge must exist (shared midpoint m)");
+        assert!(!fg.has_edge(1, 0), "no g → f edge (endpoints a and b are disjoint)");
+    }
+}

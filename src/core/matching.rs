@@ -621,3 +621,153 @@ fn check_sort_condition(
         "rewritable submolecule: recursive check for dim > 3 not yet implemented"
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use super::{molecule_inclusions, is_rewritable_submolecule};
+    use super::super::diagram::{CellData, Diagram};
+    use super::super::ogposet::Ogposet;
+    use crate::aux::Tag;
+
+    // ---- Helpers ----
+
+    fn pt() -> Diagram {
+        Diagram::cell(Tag::Local("pt".into()), &CellData::Zero).unwrap()
+    }
+
+    /// Build an n-dimensional globular atom: a chain of endomorphisms
+    /// pt ← c₁ → c₂ ← ... where each cell has the same boundary on both sides.
+    /// dim 0 = point; dim 1 = arrow(pt,pt); dim 2 = 2-cell(arrow,arrow); etc.
+    fn globular_atom(n: usize) -> Diagram {
+        let mut d = pt();
+        for _ in 0..n {
+            d = Diagram::cell(Tag::Local("c".into()), &CellData::Boundary {
+                boundary_in:  Arc::new(d.clone()),
+                boundary_out: Arc::new(d.clone()),
+            }).unwrap();
+        }
+        d
+    }
+
+    // ---- molecule_inclusions ----
+
+    #[test]
+    fn inclusions_dim0_point_into_two_points() {
+        // V = 1 point; U = 2 isolated points (non-regular, but molecule_inclusions
+        // handles the 0-dim case by enumeration).
+        let v = Arc::new(Ogposet::make(
+            0,
+            vec![vec![vec![]]],
+            vec![vec![vec![]]],
+            vec![vec![vec![]]],
+            vec![vec![vec![]]],
+        ));
+        let u = Arc::new(Ogposet::make(
+            0,
+            vec![vec![vec![], vec![]]],
+            vec![vec![vec![], vec![]]],
+            vec![vec![vec![], vec![]]],
+            vec![vec![vec![], vec![]]],
+        ));
+        let inclusions = molecule_inclusions(&v, &u).unwrap();
+        assert_eq!(inclusions.len(), 2, "one inclusion per target 0-cell");
+    }
+
+    #[test]
+    fn inclusions_dim1_self() {
+        // An arrow matches itself exactly once (the identity inclusion).
+        let f = globular_atom(1);
+        let inclusions = molecule_inclusions(&f.shape, &f.shape).unwrap();
+        assert_eq!(inclusions.len(), 1);
+    }
+
+    #[test]
+    fn inclusions_dim1_arrow_in_two_arrow_paste() {
+        // A single arrow appears at exactly 2 positions in a 2-arrow paste.
+        let p = pt();
+        let f = globular_atom(1);
+        let ff = Diagram::paste(0, &f, &f).unwrap();
+        let inclusions = molecule_inclusions(&f.shape, &ff.shape).unwrap();
+        assert_eq!(inclusions.len(), 2, "arrow sits at each of the two positions");
+    }
+
+    #[test]
+    fn inclusions_dim_mismatch_returns_err() {
+        let p = pt();
+        let f = globular_atom(1);
+        assert!(molecule_inclusions(&p.shape, &f.shape).is_err());
+    }
+
+    #[test]
+    fn inclusions_non_round_returns_err() {
+        // A 1-dim ogposet with an isolated 0-cell x (no cofaces) is not pure,
+        // hence not round.  Specifically: 0-cells a(0), b(1), x(2); 1-cell f(0): a→b.
+        // x has no cofaces → is_pure = false → is_round = false.
+        let non_round = Arc::new(Ogposet::make(
+            1,
+            vec![
+                vec![vec![], vec![], vec![]],  // dim 0: no faces for 0-cells
+                vec![vec![0]],                  // dim 1: f's in-face = {a(0)}
+            ],
+            vec![
+                vec![vec![], vec![], vec![]],
+                vec![vec![1]],                  // f's out-face = {b(1)}
+            ],
+            vec![
+                vec![vec![0], vec![], vec![]],  // a's in-coface = {f}, b's = {}, x's = {}
+                vec![vec![]],
+            ],
+            vec![
+                vec![vec![], vec![0], vec![]],  // a's out-coface = {}, b's = {f}, x's = {}
+                vec![vec![]],
+            ],
+        ));
+        assert!(!non_round.is_round(), "sanity-check: construction must be non-round");
+        assert!(molecule_inclusions(&non_round, &non_round).is_err());
+    }
+
+    // ---- is_rewritable_submolecule ----
+
+    #[test]
+    fn rewritable_dim2_always_true() {
+        // Corollary 120 / Theorem 121: every inclusion of round ≤2-dim molecules
+        // is a rewritable submolecule inclusion.
+        let d2 = globular_atom(2);
+        let inclusions = molecule_inclusions(&d2.shape, &d2.shape).unwrap();
+        assert_eq!(inclusions.len(), 1);
+        assert_eq!(
+            is_rewritable_submolecule(&inclusions[0]).unwrap(),
+            true,
+            "dim ≤ 2 → always Ok(true)"
+        );
+    }
+
+    #[test]
+    fn inclusions_dim3_atom_self() {
+        // A 3-cell globular atom matches itself exactly once.
+        // (Exercises Algorithm 68 at dim 3 and is_rewritable_submolecule at dim 3.)
+        let d3 = globular_atom(3);
+        let inclusions = molecule_inclusions(&d3.shape, &d3.shape).unwrap();
+        assert_eq!(inclusions.len(), 1, "3-dim atom matches itself exactly once");
+        assert_eq!(
+            is_rewritable_submolecule(&inclusions[0]).unwrap(),
+            true,
+            "self-inclusion of a 3-dim atom is rewritable"
+        );
+    }
+
+    #[test]
+    fn rewritable_dim4_returns_err() {
+        // The rewritable submolecule check for dim 4 is an open problem (Section 125).
+        // molecule_inclusions should still find the inclusion, but
+        // is_rewritable_submolecule must return Err rather than a wrong answer.
+        let d4 = globular_atom(4);
+        let inclusions = molecule_inclusions(&d4.shape, &d4.shape).unwrap();
+        assert_eq!(inclusions.len(), 1, "molecule_inclusions works for dim 4");
+        assert!(
+            is_rewritable_submolecule(&inclusions[0]).is_err(),
+            "dim 4 rewritability is not implemented (open problem)"
+        );
+    }
+}
