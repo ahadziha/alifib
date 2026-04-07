@@ -261,15 +261,15 @@ pub fn interpret_assert(
             for hole in holes {
                 match &mut hole.boundary {
                     None => hole.boundary = Some(HoleBoundaryInfo {
-                        boundary_in: HoleBd::Full(in_bd.clone(), Arc::new(scope.clone())),
-                        boundary_out: HoleBd::Full(out_bd.clone(), Arc::new(scope.clone())),
+                        boundary_in: HoleBd::Full { diagram: in_bd.clone(), scope: Arc::new(scope.clone()), dim: k },
+                        boundary_out: HoleBd::Full { diagram: out_bd.clone(), scope: Arc::new(scope.clone()), dim: k },
                     }),
                     Some(bd) => {
                         if matches!(bd.boundary_in, HoleBd::Unknown) {
-                            bd.boundary_in = HoleBd::Full(in_bd.clone(), Arc::new(scope.clone()));
+                            bd.boundary_in = HoleBd::Full { diagram: in_bd.clone(), scope: Arc::new(scope.clone()), dim: k };
                         }
                         if matches!(bd.boundary_out, HoleBd::Unknown) {
-                            bd.boundary_out = HoleBd::Full(out_bd.clone(), Arc::new(scope.clone()));
+                            bd.boundary_out = HoleBd::Full { diagram: out_bd.clone(), scope: Arc::new(scope.clone()), dim: k };
                         }
                     }
                 }
@@ -361,10 +361,10 @@ fn interpret_paste(
                 match &mut hole.boundary {
                     None => hole.boundary = Some(HoleBoundaryInfo {
                         boundary_in: HoleBd::Unknown,
-                        boundary_out: HoleBd::Full(in_bd.clone(), Arc::new(scope.clone())),
+                        boundary_out: HoleBd::Full { diagram: in_bd.clone(), scope: Arc::new(scope.clone()), dim: k },
                     }),
                     Some(bd) if matches!(bd.boundary_out, HoleBd::Unknown) => {
-                        bd.boundary_out = HoleBd::Full(in_bd.clone(), Arc::new(scope.clone()));
+                        bd.boundary_out = HoleBd::Full { diagram: in_bd.clone(), scope: Arc::new(scope.clone()), dim: k };
                     }
                     _ => {}
                 }
@@ -376,11 +376,11 @@ fn interpret_paste(
             for hole in &mut combined.holes[..rhs_hole_count] {
                 match &mut hole.boundary {
                     None => hole.boundary = Some(HoleBoundaryInfo {
-                        boundary_in: HoleBd::Full(out_bd.clone(), Arc::new(scope.clone())),
+                        boundary_in: HoleBd::Full { diagram: out_bd.clone(), scope: Arc::new(scope.clone()), dim: k },
                         boundary_out: HoleBd::Unknown,
                     }),
                     Some(bd) if matches!(bd.boundary_in, HoleBd::Unknown) => {
-                        bd.boundary_in = HoleBd::Full(out_bd.clone(), Arc::new(scope.clone()));
+                        bd.boundary_in = HoleBd::Full { diagram: out_bd.clone(), scope: Arc::new(scope.clone()), dim: k };
                     }
                     _ => {}
                 }
@@ -454,11 +454,11 @@ fn interpret_sequence_as_term(
                         for hole in &mut result.holes[prev_hole_count..] {
                             match &mut hole.boundary {
                                 None => hole.boundary = Some(HoleBoundaryInfo {
-                                    boundary_in: HoleBd::Full(out_bd.clone(), Arc::new(scope.clone())),
+                                    boundary_in: HoleBd::Full { diagram: out_bd.clone(), scope: Arc::new(scope.clone()), dim: k },
                                     boundary_out: HoleBd::Unknown,
                                 }),
                                 Some(bd) if matches!(bd.boundary_in, HoleBd::Unknown) => {
-                                    bd.boundary_in = HoleBd::Full(out_bd.clone(), Arc::new(scope.clone()));
+                                    bd.boundary_in = HoleBd::Full { diagram: out_bd.clone(), scope: Arc::new(scope.clone()), dim: k };
                                 }
                                 _ => {}
                             }
@@ -491,10 +491,10 @@ fn interpret_sequence_as_term(
                             match &mut hole.boundary {
                                 None => hole.boundary = Some(HoleBoundaryInfo {
                                     boundary_in: HoleBd::Unknown,
-                                    boundary_out: HoleBd::Full(in_bd.clone(), Arc::new(scope.clone())),
+                                    boundary_out: HoleBd::Full { diagram: in_bd.clone(), scope: Arc::new(scope.clone()), dim: k },
                                 }),
                                 Some(bd) if matches!(bd.boundary_out, HoleBd::Unknown) => {
-                                    bd.boundary_out = HoleBd::Full(in_bd.clone(), Arc::new(scope.clone()));
+                                    bd.boundary_out = HoleBd::Full { diagram: in_bd.clone(), scope: Arc::new(scope.clone()), dim: k };
                                 }
                                 _ => {}
                             }
@@ -555,7 +555,7 @@ pub fn interpret_boundaries(
     // Enrich source-side holes with the target diagram and vice versa.
     // After merge, combined.holes = [source holes (0..pre_target_holes)] ++ [target holes].
     if let Some(ref tgt) = target_opt {
-        let bd = HoleBd::Full(tgt.clone(), Arc::new(scope.clone()));
+        let bd = HoleBd::Full { diagram: tgt.clone(), scope: Arc::new(scope.clone()), dim: tgt.top_dim() };
         for hole in &mut combined.holes[..pre_target_holes] {
             match &mut hole.boundary {
                 None => hole.boundary = Some(HoleBoundaryInfo {
@@ -570,7 +570,7 @@ pub fn interpret_boundaries(
         }
     }
     if let Some(ref src) = source_opt {
-        let bd = HoleBd::Full(src.clone(), Arc::new(scope.clone()));
+        let bd = HoleBd::Full { diagram: src.clone(), scope: Arc::new(scope.clone()), dim: src.top_dim() };
         for hole in &mut combined.holes[pre_target_holes..] {
             match &mut hole.boundary {
                 None => hole.boundary = Some(HoleBoundaryInfo {

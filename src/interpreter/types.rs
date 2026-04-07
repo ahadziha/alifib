@@ -80,12 +80,25 @@ pub enum HoleBd {
     /// Boundary context is unknown.
     Unknown,
     /// A complete boundary diagram with the complex needed to look up generator names.
-    Full(Diagram, Arc<Complex>),
+    ///
+    /// `dim` records the dimension at which this constraint was derived:
+    /// for paste contexts it is the paste dimension k; for boundary-declaration
+    /// companions and assertion equality constraints it is the dimension of
+    /// `diagram` itself.
+    Full {
+        diagram: Diagram,
+        scope: Arc<Complex>,
+        dim: usize,
+    },
     /// A boundary diagram through a partial map (some entries may be unmapped).
+    ///
+    /// `dim` records the dimension of `boundary` (which equals the dimension of
+    /// the mapped image when the map is total).
     Partial {
         boundary: Diagram,
         map: PartialMap,
         scope: Arc<Complex>,
+        dim: usize,
     },
 }
 

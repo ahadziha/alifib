@@ -19,12 +19,14 @@ use std::sync::Arc;
 ///
 /// Returns `HoleBd::Full` if the map is total on the boundary, `HoleBd::Partial` otherwise.
 fn make_hole_bd(scope: &Complex, map: &PartialMap, boundary: &Diagram) -> HoleBd {
+    let dim = boundary.top_dim();
     match PartialMap::apply(map, boundary) {
-        Ok(mapped_boundary) => HoleBd::Full(mapped_boundary, Arc::new(scope.clone())),
+        Ok(mapped_boundary) => HoleBd::Full { diagram: mapped_boundary, scope: Arc::new(scope.clone()), dim },
         Err(_) => HoleBd::Partial {
             boundary: boundary.clone(),
             map: map.clone(),
             scope: Arc::new(scope.clone()),
+            dim,
         },
     }
 }
