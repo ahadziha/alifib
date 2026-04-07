@@ -279,6 +279,10 @@ pub fn interpret_diagram_as_term(
 
 /// Interpret an explicit paste `lhs *k rhs`. The right-hand side is evaluated first
 /// (it determines the context for the left), then both are pasted at dimension k.
+///
+/// Both sides are evaluated even when one has a hole or error, so that holes are
+/// reported in a single pass and each side's holes can be enriched with the other
+/// side's k-dimensional boundary.
 fn interpret_paste(
     context: &Context,
     scope: &Complex,
@@ -290,23 +294,68 @@ fn interpret_paste(
     let (k_opt, k_result) = parse_paste_dim(context, dim);
     let Some(k) = k_opt else { return (None, k_result); };
 
-    // Right side evaluated first: its input boundary constrains the left side.
+    // Evaluate RHS first; record how many holes it produced before evaluating LHS.
     let (right_term, right_result) = interpret_sequence_as_term(context, scope, rhs, span);
-    let (d_right, right_result) = require_diagram_term(right_term, right_result, span);
-    let Some(d_right) = d_right else { return (None, right_result); };
+    let (d_right_opt, right_result) = require_diagram_term(right_term, right_result, span);
+    let rhs_hole_count = right_result.holes.len();
 
+    // Always evaluate LHS, even if RHS has holes or errors.
     let (left_term, left_result) = interpret_diagram_as_term(&right_result.context, scope, lhs);
-    let combined = right_result.merge(left_result);
-    let (d_left, combined) = require_diagram_term(left_term, combined, span);
-    let Some(d_left) = d_left else { return (None, combined); };
-
-    match Diagram::paste(k, &d_left, &d_right) {
-        Ok(d) => (Some(Term::Diag(d)), combined),
-        Err(e) => {
-            let mut r = combined;
-            r.add_error(make_error(span, format!("Failed to paste diagrams: {}", e)));
-            (None, r)
+    let mut combined = right_result.merge(left_result);
+    let d_left_opt = match left_term {
+        Some(Term::Diag(d)) => Some(d),
+        Some(Term::Map(_)) => {
+            combined.add_error(make_error(span, "Not a diagram"));
+            None
         }
+        None => None,
+    };
+
+    // Cross-enrich holes: a concrete RHS enriches LHS holes (boundary_out = RHS.source_k);
+    // a concrete LHS enriches RHS holes (boundary_in = LHS.target_k).
+    // After merge, combined.holes = [RHS holes (0..rhs_hole_count)] ++ [LHS holes].
+    if let Some(ref d_right) = d_right_opt {
+        if let Ok(in_bd) = Diagram::boundary(DiagramSign::Source, k, d_right) {
+            for hole in &mut combined.holes[rhs_hole_count..] {
+                match &mut hole.boundary {
+                    None => hole.boundary = Some(HoleBoundaryInfo {
+                        boundary_in: HoleBd::Unknown,
+                        boundary_out: HoleBd::Full(in_bd.clone(), Arc::new(scope.clone())),
+                    }),
+                    Some(bd) if matches!(bd.boundary_out, HoleBd::Unknown) => {
+                        bd.boundary_out = HoleBd::Full(in_bd.clone(), Arc::new(scope.clone()));
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    if let Some(ref d_left) = d_left_opt {
+        if let Ok(out_bd) = Diagram::boundary(DiagramSign::Target, k, d_left) {
+            for hole in &mut combined.holes[..rhs_hole_count] {
+                match &mut hole.boundary {
+                    None => hole.boundary = Some(HoleBoundaryInfo {
+                        boundary_in: HoleBd::Full(out_bd.clone(), Arc::new(scope.clone())),
+                        boundary_out: HoleBd::Unknown,
+                    }),
+                    Some(bd) if matches!(bd.boundary_in, HoleBd::Unknown) => {
+                        bd.boundary_in = HoleBd::Full(out_bd.clone(), Arc::new(scope.clone()));
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    match (d_left_opt, d_right_opt) {
+        (Some(d_left), Some(d_right)) => match Diagram::paste(k, &d_left, &d_right) {
+            Ok(d) => (Some(Term::Diag(d)), combined),
+            Err(e) => {
+                combined.add_error(make_error(span, format!("Failed to paste diagrams: {}", e)));
+                (None, combined)
+            }
+        },
+        _ => (None, combined),
     }
 }
 
@@ -445,23 +494,66 @@ fn interpret_sequence_as_term(
 // ---- Boundaries ----
 
 /// Interpret a source/target boundary pair and wrap the result as `CellData::Boundary`.
+///
+/// Both sides are always evaluated so that holes in either boundary are detected in a
+/// single pass.  Holes in the source boundary are enriched with the target diagram as
+/// their `boundary_out` (and vice versa), so the reported context reads naturally as
+/// `? -> target` or `source -> ?`.
 pub fn interpret_boundaries(
     context: &Context,
     scope: &Complex,
     boundaries: &Spanned<ast::Boundary>,
 ) -> (Option<CellData>, InterpResult) {
     let (source_opt, source_result) = interpret_diagram(context, scope, &boundaries.inner.source);
-    let Some(boundary_in) = source_opt else { return (None, source_result); };
+    let pre_target_holes = source_result.holes.len();
+    // Always evaluate the target even if the source has a hole or error.
     let (target_opt, target_result) =
         interpret_diagram(&source_result.context, scope, &boundaries.inner.target);
-    let combined = source_result.merge(target_result);
-    (
-        target_opt.map(|boundary_out| CellData::Boundary {
-            boundary_in: Arc::new(boundary_in),
-            boundary_out: Arc::new(boundary_out),
-        }),
-        combined,
-    )
+    let mut combined = source_result.merge(target_result);
+
+    // Enrich source-side holes with the target diagram and vice versa.
+    // After merge, combined.holes = [source holes (0..pre_target_holes)] ++ [target holes].
+    if let Some(ref tgt) = target_opt {
+        let bd = HoleBd::Full(tgt.clone(), Arc::new(scope.clone()));
+        for hole in &mut combined.holes[..pre_target_holes] {
+            match &mut hole.boundary {
+                None => hole.boundary = Some(HoleBoundaryInfo {
+                    boundary_in: HoleBd::Unknown,
+                    boundary_out: bd.clone(),
+                }),
+                Some(existing) if matches!(existing.boundary_out, HoleBd::Unknown) => {
+                    existing.boundary_out = bd.clone();
+                }
+                _ => {}
+            }
+        }
+    }
+    if let Some(ref src) = source_opt {
+        let bd = HoleBd::Full(src.clone(), Arc::new(scope.clone()));
+        for hole in &mut combined.holes[pre_target_holes..] {
+            match &mut hole.boundary {
+                None => hole.boundary = Some(HoleBoundaryInfo {
+                    boundary_in: bd.clone(),
+                    boundary_out: HoleBd::Unknown,
+                }),
+                Some(existing) if matches!(existing.boundary_in, HoleBd::Unknown) => {
+                    existing.boundary_in = bd.clone();
+                }
+                _ => {}
+            }
+        }
+    }
+
+    match (source_opt, target_opt) {
+        (Some(boundary_in), Some(boundary_out)) => (
+            Some(CellData::Boundary {
+                boundary_in: Arc::new(boundary_in),
+                boundary_out: Arc::new(boundary_out),
+            }),
+            combined,
+        ),
+        _ => (None, combined),
+    }
 }
 
 // ---- Diagram naming ----
