@@ -125,12 +125,16 @@ impl fmt::Display for Type {
             }
         }
         if !self.diagrams.is_empty() {
-            let diagrams = self.diagrams.iter().map(|d| d.to_string()).collect::<Vec<_>>();
-            writeln!(f, "  Diagrams: {}", diagrams.join(", "))?;
+            writeln!(f, "  Diagrams")?;
+            for diagram in &self.diagrams {
+                writeln!(f, "    {}", diagram)?;
+            }
         }
         if !self.maps.is_empty() {
-            let maps = self.maps.iter().map(|m| m.to_string()).collect::<Vec<_>>();
-            writeln!(f, "  Maps: {}", maps.join(", "))?;
+            writeln!(f, "  Maps")?;
+            for map in &self.maps {
+                writeln!(f, "    {}", map)?;
+            }
         }
         Ok(())
     }
