@@ -40,81 +40,50 @@ fn enrich_holes(
 
         let origin = ConstraintOrigin::PartialMap { source_tag: source_tag.clone() };
         let scope_arc = scope_arc.get_or_insert_with(|| Arc::new(scope.clone())).clone();
-        let k_in = boundary_in.top_dim();
-        let k_out = boundary_out.top_dim();
+        // boundary_in and boundary_out are parallel, so they share the same top_dim.
+        let k = boundary_in.top_dim();
 
-        // For direct holes the image equals the source cell's image, so the
-        // hole's dimension is exactly k_in + 1. For embedded holes (e.g.
-        // `source_cell => ? g`), the hole's dimension comes from the paste
-        // context instead — emitting DimEq here could produce a false conflict.
         if hole.direct_in_partial_map {
+            // The image equals the source cell's image, so the hole's dimension is k+1.
+            // For embedded holes (`source_cell => ? g`) the paste context determines dim.
             new_constraints.push(Constraint::DimEq {
                 hole: hole.id,
-                dim: k_in + 1,
+                dim: k + 1,
                 origin: origin.clone(),
             });
-        }
-
-        // For direct holes (`source_cell => ?`), try a full `PartialMap::apply`:
-        // if the map covers all generators in the boundary, we get a fully determined
-        // image and can emit the stronger `BoundaryEq`. If the map is incomplete, fall
-        // back to `PartialBoundary` as for embedded holes.
-        //
-        // For embedded holes (`source_cell => ? g`), always use `PartialBoundary`:
-        // the map's target-boundary applies to the whole composite, not to `?` alone,
-        // so a BoundaryEq would be incorrect and could conflict with paste constraints.
-        if hole.direct_in_partial_map {
-            match PartialMap::apply(map, boundary_in) {
-                Ok(mapped_in) => new_constraints.push(Constraint::BoundaryEq {
-                    hole: hole.id,
-                    slot: BdSlot { sign: DiagramSign::Source, dim: k_in },
-                    diagram: mapped_in,
-                    scope: scope_arc.clone(),
-                    origin: origin.clone(),
-                }),
-                Err(_) => new_constraints.push(Constraint::PartialBoundary {
-                    hole: hole.id,
-                    slot: BdSlot { sign: DiagramSign::Source, dim: k_in },
-                    boundary: (**boundary_in).clone(),
-                    map: map.clone(),
-                    scope: scope_arc.clone(),
-                    origin: origin.clone(),
-                }),
-            }
-            match PartialMap::apply(map, boundary_out) {
-                Ok(mapped_out) => new_constraints.push(Constraint::BoundaryEq {
-                    hole: hole.id,
-                    slot: BdSlot { sign: DiagramSign::Target, dim: k_out },
-                    diagram: mapped_out,
-                    scope: scope_arc.clone(),
-                    origin: origin.clone(),
-                }),
-                Err(_) => new_constraints.push(Constraint::PartialBoundary {
-                    hole: hole.id,
-                    slot: BdSlot { sign: DiagramSign::Target, dim: k_out },
-                    boundary: (**boundary_out).clone(),
-                    map: map.clone(),
-                    scope: scope_arc.clone(),
-                    origin: origin.clone(),
-                }),
+            // Try a full apply: if the map covers the boundary, emit the strong BoundaryEq;
+            // otherwise fall back to PartialBoundary.  For embedded holes the map's
+            // target-boundary applies to the whole composite, so always use PartialBoundary.
+            for (sign, boundary) in [
+                (DiagramSign::Source, boundary_in),
+                (DiagramSign::Target, boundary_out),
+            ] {
+                let slot = BdSlot { sign, dim: k };
+                match PartialMap::apply(map, boundary) {
+                    Ok(mapped) => new_constraints.push(Constraint::BoundaryEq {
+                        hole: hole.id, slot, diagram: mapped,
+                        scope: scope_arc.clone(), origin: origin.clone(),
+                    }),
+                    Err(_) => new_constraints.push(Constraint::PartialBoundary {
+                        hole: hole.id, slot, boundary: (**boundary).clone(),
+                        map: map.clone(), scope: scope_arc.clone(), origin: origin.clone(),
+                    }),
+                }
             }
         } else {
-            new_constraints.push(Constraint::PartialBoundary {
-                hole: hole.id,
-                slot: BdSlot { sign: DiagramSign::Source, dim: k_in },
-                boundary: (**boundary_in).clone(),
-                map: map.clone(),
-                scope: scope_arc.clone(),
-                origin: origin.clone(),
-            });
-            new_constraints.push(Constraint::PartialBoundary {
-                hole: hole.id,
-                slot: BdSlot { sign: DiagramSign::Target, dim: k_out },
-                boundary: (**boundary_out).clone(),
-                map: map.clone(),
-                scope: scope_arc.clone(),
-                origin: origin.clone(),
-            });
+            for (sign, boundary) in [
+                (DiagramSign::Source, boundary_in),
+                (DiagramSign::Target, boundary_out),
+            ] {
+                new_constraints.push(Constraint::PartialBoundary {
+                    hole: hole.id,
+                    slot: BdSlot { sign, dim: k },
+                    boundary: (**boundary).clone(),
+                    map: map.clone(),
+                    scope: scope_arc.clone(),
+                    origin: origin.clone(),
+                });
+            }
         }
     }
 

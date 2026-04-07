@@ -39,6 +39,35 @@ fn parse_paste_dim(context: &Context, dim: &Spanned<String>) -> Step<usize> {
 }
 
 
+/// Emit `DimEq` and principal `BoundaryEq` constraints for `hole_id` parallel to `companion`.
+///
+/// Pushes `DimEq(hole, n)` and, when `n > 0`, `BoundaryEq` at the two principal
+/// slots `(Source, n-1)` and `(Target, n-1)`.  Lower-dimensional slots are derived
+/// afterwards by `globular_propagate` in the solver.
+pub(super) fn push_parallel_constraints(
+    hole_id: HoleId,
+    companion: &Diagram,
+    scope: &Arc<Complex>,
+    origin: ConstraintOrigin,
+    constraints: &mut Vec<Constraint>,
+) {
+    let n = companion.top_dim();
+    constraints.push(Constraint::DimEq { hole: hole_id, dim: n, origin: origin.clone() });
+    if n > 0 {
+        for &sign in &[DiagramSign::Source, DiagramSign::Target] {
+            if let Ok(bd) = Diagram::boundary_normal(sign, n - 1, companion) {
+                constraints.push(Constraint::BoundaryEq {
+                    hole: hole_id,
+                    slot: BdSlot { sign, dim: n - 1 },
+                    diagram: bd,
+                    scope: scope.clone(),
+                    origin: origin.clone(),
+                });
+            }
+        }
+    }
+}
+
 /// Returns `true` if `diagram` is a single un-parenthesized or parenthesized `?`.
 pub(super) fn is_pure_hole_diagram(diagram: &ast::Diagram) -> bool {
     match diagram {
@@ -271,32 +300,34 @@ pub fn interpret_assert(
         interpret_diagram_as_term(&left_result.context, scope, &assert_stmt.rhs);
     let mut combined = left_result.merge(right_result);
 
-    // Constraint system: Eq constraints.
-    // Only emit Eq when the entire other side is a single `?` expression; for embedded
-    // holes (e.g., `f ? g = h`) the paste context already emits BoundaryEq constraints,
-    // and claiming Eq(hole, h) would be wrong.
+    // Constraint system: when the entire other side is a single `?`, pin the hole's
+    // exact value and emit parallel boundary constraints.  For embedded holes (e.g.,
+    // `f ? g = h`) the paste context already emits BoundaryEq; claiming Value(hole, h)
+    // would be wrong.
     let scope_arc = Arc::new(scope.clone());
     if let Some(Term::Diag(ref d)) = right_opt {
         if is_pure_hole_diagram(&assert_stmt.lhs.inner) {
             for hole in &combined.holes[..lhs_hole_count] {
-                combined.constraints.push(Constraint::Eq {
+                combined.constraints.push(Constraint::Value {
                     hole: hole.id,
                     diagram: d.clone(),
                     scope: scope_arc.clone(),
                     origin: ConstraintOrigin::Assertion,
                 });
+                push_parallel_constraints(hole.id, d, &scope_arc, ConstraintOrigin::Assertion, &mut combined.constraints);
             }
         }
     }
     if let Some(Term::Diag(ref d)) = left_opt {
         if is_pure_hole_diagram(&assert_stmt.rhs.inner) {
             for hole in &combined.holes[lhs_hole_count..] {
-                combined.constraints.push(Constraint::Eq {
+                combined.constraints.push(Constraint::Value {
                     hole: hole.id,
                     diagram: d.clone(),
                     scope: scope_arc.clone(),
                     origin: ConstraintOrigin::Assertion,
                 });
+                push_parallel_constraints(hole.id, d, &scope_arc, ConstraintOrigin::Assertion, &mut combined.constraints);
             }
         }
     }
@@ -636,29 +667,17 @@ pub fn interpret_boundaries(
         interpret_diagram(&source_result.context, scope, &boundaries.inner.target);
     let mut combined = source_result.merge(target_result);
 
-    // Constraint system: Parallel constraints — a hole in source position must be
-    // parallel to the target, and vice versa.
+    // Constraint system: a hole in source position must be parallel to the target,
+    // and vice versa.  Decomposed eagerly into DimEq + BoundaryEq at principal slots.
     let scope_arc = Arc::new(scope.clone());
     if let Some(ref tgt) = target_opt {
-        let src_hole_ids: Vec<_> = combined.holes[..pre_target_holes].iter().map(|h| h.id).collect();
-        for id in src_hole_ids {
-            combined.constraints.push(Constraint::Parallel {
-                hole: id,
-                companion: tgt.clone(),
-                scope: scope_arc.clone(),
-                origin: ConstraintOrigin::Declaration,
-            });
+        for hole in &combined.holes[..pre_target_holes] {
+            push_parallel_constraints(hole.id, tgt, &scope_arc, ConstraintOrigin::Declaration, &mut combined.constraints);
         }
     }
     if let Some(ref src) = source_opt {
-        let tgt_hole_ids: Vec<_> = combined.holes[pre_target_holes..].iter().map(|h| h.id).collect();
-        for id in tgt_hole_ids {
-            combined.constraints.push(Constraint::Parallel {
-                hole: id,
-                companion: src.clone(),
-                scope: scope_arc.clone(),
-                origin: ConstraintOrigin::Declaration,
-            });
+        for hole in &combined.holes[pre_target_holes..] {
+            push_parallel_constraints(hole.id, src, &scope_arc, ConstraintOrigin::Declaration, &mut combined.constraints);
         }
     }
 

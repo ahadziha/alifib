@@ -10,10 +10,11 @@
 //!    the collected constraints in one pass and produces a [`SolvedHole`] for
 //!    each registered hole.
 //!
-//! The solver decomposes composite constraints (`Eq`, `Parallel`) into atomic
-//! `BoundaryEq` facts, checks consistency where slots are claimed more than
-//! once, and fills remaining slots with weaker `PartialBoundary` evidence from
-//! partial-map contexts.
+//! The solver checks consistency where slots are claimed more than once and
+//! fills remaining slots with weaker `PartialBoundary` evidence from
+//! partial-map contexts.  All composite constraints are decomposed into atomic
+//! `BoundaryEq`/`DimEq` facts at emission time, so the solver only ever sees
+//! already-atomic constraints.
 
 use crate::aux::{self, Tag};
 use crate::core::{
@@ -95,41 +96,18 @@ impl std::fmt::Display for ConstraintOrigin {
 // ---- Constraints ------------------------------------------------------------
 
 /// A constraint on a single hole, emitted during interpretation.
+///
+/// All composite constraints (`Parallel`, `Eq`) are decomposed into atomic
+/// `BoundaryEq` and `DimEq` facts at the emission site, so the solver only
+/// ever processes the four variants below.
 #[derive(Debug, Clone)]
 pub enum Constraint {
     /// `∂^sign_k(hole) = diagram`.
     ///
-    /// Emitted from paste/juxtaposition contexts: the target-k boundary of the
-    /// left neighbour must equal the source-k boundary of the hole (and
-    /// symmetrically for the right neighbour).
+    /// Emitted from paste/juxtaposition contexts and boundary declarations.
     BoundaryEq {
         hole: HoleId,
         slot: BdSlot,
-        diagram: Diagram,
-        scope: Arc<Complex>,
-        origin: ConstraintOrigin,
-    },
-
-    /// `hole` is parallel to `companion`.
-    ///
-    /// Equivalent to: `dim(hole) = dim(companion)` and, for every `j <
-    /// dim(companion)` and both signs `s`: `∂^s_j(hole) = ∂^s_j(companion)`.
-    ///
-    /// Emitted when a hole appears in a boundary declaration position:
-    /// `hole -> tgt` means the hole must be a diagram parallel to `tgt`.
-    Parallel {
-        hole: HoleId,
-        companion: Diagram,
-        scope: Arc<Complex>,
-        origin: ConstraintOrigin,
-    },
-
-    /// `hole = diagram` (full equality).
-    ///
-    /// Subsumes `Parallel` and all `BoundaryEq`.  Emitted from assertions:
-    /// `assert hole = d` means the hole must equal `d`.
-    Eq {
-        hole: HoleId,
         diagram: Diagram,
         scope: Arc<Complex>,
         origin: ConstraintOrigin,
@@ -139,6 +117,18 @@ pub enum Constraint {
     DimEq {
         hole: HoleId,
         dim: usize,
+        origin: ConstraintOrigin,
+    },
+
+    /// `hole = diagram` (exact value).
+    ///
+    /// Emitted from assertions (`assert ? = d`).  Records the hole's exact
+    /// value; the boundary constraints implied by equality are emitted as
+    /// separate `BoundaryEq`/`DimEq` constraints at the same site.
+    Value {
+        hole: HoleId,
+        diagram: Diagram,
+        scope: Arc<Complex>,
         origin: ConstraintOrigin,
     },
 
@@ -163,9 +153,8 @@ impl Constraint {
     pub fn hole(&self) -> HoleId {
         match self {
             Self::BoundaryEq { hole, .. }
-            | Self::Parallel { hole, .. }
-            | Self::Eq { hole, .. }
             | Self::DimEq { hole, .. }
+            | Self::Value { hole, .. }
             | Self::PartialBoundary { hole, .. } => *hole,
         }
     }
@@ -319,7 +308,8 @@ pub struct HoleEntry {
 /// The solver runs in a single pass (no fixpoint iteration needed in the
 /// absence of `SharedBoundary` constraints):
 ///
-/// 1. Decompose `Eq` and `Parallel` into `DimEq` + `BoundaryEq` facts.
+/// 1. Partition constraints: `Value` records the exact value; `BoundaryEq`,
+///    `DimEq`, and `PartialBoundary` are collected into separate vecs.
 /// 2. Globular propagation on `BoundaryEq`: from `(s,k)` derive `(s',j)` for j < k.
 /// 3. Apply `BoundaryEq` to fill / check boundary slots (`Known`).
 /// 4. Apply `DimEq`.
@@ -345,9 +335,9 @@ pub fn solve(entries: &[HoleEntry], constraints: &[Constraint]) -> Vec<SolvedHol
         };
     }
 
-    // ---- pass 1: expand Eq and Parallel into atomic constraints, then apply ----
-    // Collect atomic BoundaryEq, DimEq, and PartialBoundary into separate vecs
-    // so we can apply them in deterministic order.
+    // ---- pass 1: partition constraints ----
+    // Value records the hole's exact value; the other three are collected into
+    // separate vecs so they can be applied in deterministic order.
     let mut boundary_eqs: Vec<(HoleId, BdSlot, Diagram, Arc<Complex>, ConstraintOrigin)> = vec![];
     let mut dim_eqs: Vec<(HoleId, usize, ConstraintOrigin)> = vec![];
     let mut partial_bds: Vec<(HoleId, BdSlot, Diagram, PartialMap, Arc<Complex>, ConstraintOrigin)> =
@@ -355,25 +345,20 @@ pub fn solve(entries: &[HoleEntry], constraints: &[Constraint]) -> Vec<SolvedHol
 
     for constraint in constraints {
         match constraint {
-            Constraint::Eq { hole, diagram, scope, origin } => {
-                // Eq: record value (checking for conflicts), then expand like Parallel.
+            Constraint::Value { hole, diagram, scope, origin } => {
                 if let Some(h) = get_mut!(*hole) {
                     match h.value {
                         None => h.value = Some((diagram.clone(), scope.clone())),
                         Some((ref existing, _)) => {
                             if !Diagram::isomorphic(existing, diagram) {
                                 h.inconsistencies.push(format!(
-                                    "conflicting Eq constraints: from {}",
+                                    "conflicting Value constraints: from {}",
                                     origin
                                 ));
                             }
                         }
                     }
                 }
-                expand_parallel(*hole, diagram, scope, origin, &mut dim_eqs, &mut boundary_eqs);
-            }
-            Constraint::Parallel { hole, companion, scope, origin } => {
-                expand_parallel(*hole, companion, scope, origin, &mut dim_eqs, &mut boundary_eqs);
             }
             Constraint::BoundaryEq { hole, slot, diagram, scope, origin } => {
                 boundary_eqs.push((*hole, *slot, diagram.clone(), scope.clone(), origin.clone()));
@@ -571,9 +556,9 @@ mod tests {
     }
 
     #[test]
-    fn solve_eq_sets_value() {
+    fn solve_value_sets_value() {
         let id = HoleId::fresh();
-        let c = Constraint::Eq {
+        let c = Constraint::Value {
             hole: id,
             diagram: zero_cell("a"),
             scope: empty_scope(),
@@ -585,31 +570,31 @@ mod tests {
     }
 
     #[test]
-    fn solve_eq_conflict_records_inconsistency() {
-        // Two Eq constraints with different diagrams: inconsistency recorded, value = first.
+    fn solve_value_conflict_records_inconsistency() {
+        // Two Value constraints with different diagrams: inconsistency recorded, value = first.
         let id = HoleId::fresh();
-        let c1 = Constraint::Eq {
+        let c1 = Constraint::Value {
             hole: id, diagram: zero_cell("a"), scope: empty_scope(),
             origin: ConstraintOrigin::Assertion,
         };
-        let c2 = Constraint::Eq {
+        let c2 = Constraint::Value {
             hole: id, diagram: zero_cell("b"), scope: empty_scope(),
             origin: ConstraintOrigin::Assertion,
         };
         let result = solve(&[entry(id)], &[c1, c2]);
         assert_eq!(result[0].inconsistencies.len(), 1);
-        assert!(result[0].value.is_some(), "value should be set from first Eq");
+        assert!(result[0].value.is_some(), "value should be set from first Value");
     }
 
     #[test]
-    fn solve_eq_consistent_no_inconsistency() {
-        // Two Eq constraints with the same diagram: no conflict.
+    fn solve_value_consistent_no_inconsistency() {
+        // Two Value constraints with the same diagram: no conflict.
         let id = HoleId::fresh();
-        let c1 = Constraint::Eq {
+        let c1 = Constraint::Value {
             hole: id, diagram: zero_cell("a"), scope: empty_scope(),
             origin: ConstraintOrigin::Assertion,
         };
-        let c2 = Constraint::Eq {
+        let c2 = Constraint::Value {
             hole: id, diagram: zero_cell("a"), scope: empty_scope(),
             origin: ConstraintOrigin::Assertion,
         };
@@ -656,36 +641,4 @@ where
     }
 }
 
-/// Expand a `Parallel` (or `Eq`) constraint into `DimEq` + `BoundaryEq` atoms.
-///
-/// For a companion of dimension n, emits `DimEq(hole, n)` and the two
-/// **principal** boundary slots `(Source, n-1)` and `(Target, n-1)`.
-/// Lower-dimensional slots are derived by `globular_propagate` afterwards,
-/// so they do not need to be emitted here.
-///
-/// Uses `Diagram::boundary_normal` for canonical forms.
-fn expand_parallel(
-    hole: HoleId,
-    companion: &Diagram,
-    scope: &Arc<Complex>,
-    origin: &ConstraintOrigin,
-    dim_eqs: &mut Vec<(HoleId, usize, ConstraintOrigin)>,
-    boundary_eqs: &mut Vec<(HoleId, BdSlot, Diagram, Arc<Complex>, ConstraintOrigin)>,
-) {
-    let n = companion.top_dim();
-    dim_eqs.push((hole, n, origin.clone()));
-    if n > 0 {
-        for &sign in &[DiagramSign::Source, DiagramSign::Target] {
-            if let Ok(bd) = Diagram::boundary_normal(sign, n - 1, companion) {
-                boundary_eqs.push((
-                    hole,
-                    BdSlot { sign, dim: n - 1 },
-                    bd,
-                    scope.clone(),
-                    origin.clone(),
-                ));
-            }
-        }
-    }
-}
 
