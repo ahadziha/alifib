@@ -14,7 +14,7 @@ use super::include::{
 };
 use super::partial_map::interpret_def_pmap;
 use super::resolve::resolve_type_scope;
-use super::scope::{
+use super::binding::{
     cell_dim, create_generator_diagram, current_module_scope, initialize_module_context,
     insert_complex_diagram_binding, insert_complex_map_binding, insert_module_diagram_binding,
     insert_module_map_binding, insert_type_diagram_binding, insert_type_map_binding,
