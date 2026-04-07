@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use alifib::aux::loader::Loader;
-use alifib::output::{InterpretedFile, Store};
+use alifib::interpreter::InterpretedFile;
+use alifib::output::Store;
 
 fn example_path(name: &str) -> String {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

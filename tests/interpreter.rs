@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use alifib::aux::loader::Loader;
-use alifib::output::{Cell, Dim, InterpretedFile, Map, Module, Store, Type};
+use alifib::interpreter::InterpretedFile;
+use alifib::output::{Cell, Dim, Map, Module, Store, Type};
 
 fn fixture(name: &str) -> String {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

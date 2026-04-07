@@ -165,7 +165,7 @@ pub fn render_boundary_partial(boundary: &Diagram, map: &PartialMap, scope: &Com
 }
 
 /// Render a hole boundary for use in a diagnostic message.
-pub(super) fn render_hole_bd(bd: &HoleBd) -> String {
+pub(crate) fn render_hole_bd(bd: &HoleBd) -> String {
     match bd {
         HoleBd::Unknown => "?".to_string(),
         HoleBd::Full(diagram, scope) => render_diagram(diagram, scope),

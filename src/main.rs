@@ -3,8 +3,8 @@ use std::process;
 use std::time::Instant;
 
 use alifib::aux::loader::Loader;
+use alifib::interpreter::{InterpretedFile, LoadResult};
 use alifib::language;
-use alifib::output::{InterpretedFile, LoadResult};
 
 const USAGE: &str = "Usage: alifib <input-file> [-o|--output <output-file>] [--ast] [--print] [--bench N]";
 
