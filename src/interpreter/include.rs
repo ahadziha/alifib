@@ -8,7 +8,6 @@ use crate::core::{
 };
 use crate::language::ast::{self, IncludeModule, Span};
 
-use super::global_store::GlobalStore;
 use super::partial_map::interpret_pmap_def;
 use super::resolve::{interpret_address, resolve_type_complex};
 use super::types::{
@@ -70,22 +69,22 @@ fn mapped_cell_data(map: &PartialMap, source_cell_data: &CellData) -> Option<Cel
 ///
 /// In `Global` mode, each new generator gets a fresh global ID registered in the store.
 /// In `Local` mode, generators are added as local cells.
-/// Returns the updated scope, state, and extended map.
+/// Returns the updated scope and extended map.
 fn extend_scope_with_attached_generators(
     mode: Mode,
     mut scope: Complex,
-    mut state: Arc<GlobalStore>,
+    context: &mut Context,
     mut map: PartialMap,
     prefix: &str,
     attachment_scope: &Complex,
-) -> (Complex, Arc<GlobalStore>, PartialMap) {
+) -> (Complex, PartialMap) {
     for (generator_dim, generator_name, generator_tag) in sorted_generators(attachment_scope) {
         if map.is_defined_at(&generator_tag) {
             continue;
         }
 
         let Tag::Global(global_id) = generator_tag else { continue; };
-        let Some(cell_entry) = state.find_cell(global_id) else { continue; };
+        let Some(cell_entry) = context.state.find_cell(global_id) else { continue; };
         let source_cell_data = cell_entry.data.clone();
 
         let Some(image_cell_data) = mapped_cell_data(&map, &source_cell_data) else { continue; };
@@ -94,7 +93,7 @@ fn extend_scope_with_attached_generators(
         let image_tag = match mode {
             Mode::Global => {
                 let image_id = crate::aux::GlobalId::fresh();
-                Arc::make_mut(&mut state).set_cell(image_id, generator_dim, image_cell_data.clone());
+                context.state_mut().set_cell(image_id, generator_dim, image_cell_data.clone());
                 Tag::Global(image_id)
             }
             Mode::Local => {
@@ -109,7 +108,7 @@ fn extend_scope_with_attached_generators(
         map.insert_raw(Tag::Global(global_id), generator_dim, source_cell_data, image_classifier);
     }
 
-    (scope, state, map)
+    (scope, map)
 }
 
 /// Interpret an `include module` instruction at the top level.
@@ -231,17 +230,16 @@ pub fn interpret_attach_instr(
         return (None, InterpResult::combine(attach_result, attachment_result));
     };
 
-    let (mut current_scope, current_state, current_map) = extend_scope_with_attached_generators(
+    let mut r = attach_result;
+    let (mut current_scope, current_map) = extend_scope_with_attached_generators(
         mode,
         scope.clone(),
-        Arc::clone(&context_after.state),
+        &mut r.context,
         map,
         &name,
         &attachment,
     );
     current_scope.add_map(name, domain, current_map);
-    let mut r = attach_result;
-    r.context.state = current_state;
     (Some(current_scope), r)
 }
 
