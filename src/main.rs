@@ -149,18 +149,6 @@ fn run_bench(loader: &Loader, input: &str, n: usize) -> bool {
     true
 }
 
-fn run(args: Args) -> bool {
-    let loader = Loader::default(vec![]);
-    if let Some(n) = args.bench {
-        return run_bench(&loader, &args.input, n);
-    }
-    match args.mode {
-        RunMode::Ast => run_ast(&loader, &args.input, args.output.as_deref()),
-        RunMode::Print => run_print(&loader, &args.input, args.output.as_deref()),
-        RunMode::Interpret => run_interpreter(&loader, &args.input, args.output.as_deref()),
-    }
-}
-
 fn main() {
     let args = match parse_args() {
         Ok(args) => args,
@@ -169,7 +157,17 @@ fn main() {
             process::exit(1);
         }
     };
-    if !run(args) {
+    let loader = Loader::default(vec![]);
+    let ok = if let Some(n) = args.bench {
+        run_bench(&loader, &args.input, n)
+    } else {
+        match args.mode {
+            RunMode::Ast => run_ast(&loader, &args.input, args.output.as_deref()),
+            RunMode::Print => run_print(&loader, &args.input, args.output.as_deref()),
+            RunMode::Interpret => run_interpreter(&loader, &args.input, args.output.as_deref()),
+        }
+    };
+    if !ok {
         process::exit(1);
     }
 }
