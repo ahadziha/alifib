@@ -180,18 +180,34 @@ pub struct Type {
     pub name: String,
     /// Generators grouped by dimension in ascending order.
     pub dims: Vec<Dim>,
-    /// Named diagrams rendered as `"name : src -> tgt"`, sorted by name.
-    pub diagrams: Vec<String>,
-    /// Named maps rendered as `"name :: Domain"`, sorted by name.
-    pub maps: Vec<String>,
+    /// Named diagrams, sorted by name.
+    pub diagrams: Vec<Cell>,
+    /// Named maps to other types or modules, sorted by name.
+    pub maps: Vec<Map>,
 }
 
 /// Generators of a single dimension within a [`Type`].
 #[derive(Debug, PartialEq)]
 pub struct Dim {
     pub dim: usize,
-    /// Each cell rendered as `"name : src -> tgt"` or `"name"` for 0-dim, sorted by name.
-    pub cells: Vec<String>,
+    /// Generators at this dimension, sorted by name.
+    pub cells: Vec<Cell>,
+}
+
+/// A named generator or diagram, with its source and target boundary expressed
+/// as lists of generator names. Both lists are empty for 0-dimensional cells.
+#[derive(Debug, PartialEq)]
+pub struct Cell {
+    pub name: String,
+    pub src: Vec<String>,
+    pub tgt: Vec<String>,
+}
+
+/// A named map to another type or module.
+#[derive(Debug, PartialEq)]
+pub struct Map {
+    pub name: String,
+    pub domain: String,
 }
 
 impl GlobalStore {
@@ -264,7 +280,7 @@ fn normalize_type(
                     let data = store
                         .cell_data_for_tag(tc, tag)
                         .expect("interpreter invariant violated: generator has no cell data");
-                    render_cell(n, &data, tc)
+                    cell_from_data(n, &data, tc)
                 })
                 .collect();
             Dim { dim, cells }
@@ -276,7 +292,7 @@ fn normalize_type(
     diag_entries.sort_by_key(|(n, _)| *n);
     let diagrams = diag_entries
         .iter()
-        .map(|(n, d)| render_named_diagram(n, d, tc))
+        .map(|(n, d)| cell_from_diagram(n, d, tc))
         .collect();
 
     let mut map_entries: Vec<(&str, &MapDomain)> =
@@ -284,7 +300,7 @@ fn normalize_type(
     map_entries.sort_by_key(|(n, _)| *n);
     let maps = map_entries
         .iter()
-        .map(|(n, dom)| format!("{} :: {}", name_or_empty(n), render_domain(dom, module_complex)))
+        .map(|(n, dom)| Map { name: n.to_string(), domain: render_domain(dom, module_complex) })
         .collect();
 
     Type { name: name.to_owned(), dims, diagrams, maps }
@@ -322,16 +338,37 @@ impl fmt::Display for Type {
             writeln!(f, "  (no cells)")?;
         } else {
             for dg in &self.dims {
-                writeln!(f, "  [{}] {}", dg.dim, dg.cells.join(", "))?;
+                let cells = dg.cells.iter().map(|c| c.to_string()).collect::<Vec<_>>();
+                writeln!(f, "  [{}] {}", dg.dim, cells.join(", "))?;
             }
         }
         if !self.diagrams.is_empty() {
-            writeln!(f, "  Diagrams: {}", self.diagrams.join(", "))?;
+            let diagrams = self.diagrams.iter().map(|d| d.to_string()).collect::<Vec<_>>();
+            writeln!(f, "  Diagrams: {}", diagrams.join(", "))?;
         }
         if !self.maps.is_empty() {
-            writeln!(f, "  Maps: {}", self.maps.join(", "))?;
+            let maps = self.maps.iter().map(|m| m.to_string()).collect::<Vec<_>>();
+            writeln!(f, "  Maps: {}", maps.join(", "))?;
         }
         Ok(())
+    }
+}
+
+impl fmt::Display for Cell {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let label = if self.name.is_empty() { "<empty>" } else { &self.name };
+        if self.src.is_empty() && self.tgt.is_empty() {
+            write!(f, "{}", label)
+        } else {
+            write!(f, "{} : {} -> {}", label, self.src.join(" "), self.tgt.join(" "))
+        }
+    }
+}
+
+impl fmt::Display for Map {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let label = if self.name.is_empty() { "<empty>" } else { &self.name };
+        write!(f, "{} :: {}", label, self.domain)
     }
 }
 
@@ -341,28 +378,39 @@ fn name_or_empty(s: &str) -> &str {
     if s.is_empty() { "<empty>" } else { s }
 }
 
-fn top_labels_rendered(diagram: &Diagram, f: impl Fn(&Tag) -> String) -> String {
+/// Resolve the top-level labels of `diagram` to generator names in `scope`.
+fn diagram_labels(diagram: &Diagram, scope: &Complex) -> Vec<String> {
     match diagram.labels_at(diagram.top_dim()) {
-        Some(labels) if !labels.is_empty() => labels.iter().map(f).collect::<Vec<_>>().join(" "),
-        _ => "?".to_string(),
+        Some(labels) if !labels.is_empty() => labels
+            .iter()
+            .map(|tag| {
+                scope
+                    .find_generator_by_tag(tag)
+                    .filter(|n| !n.is_empty())
+                    .cloned()
+                    .unwrap_or_else(|| format!("{}", tag))
+            })
+            .collect(),
+        _ => vec!["?".to_string()],
     }
 }
 
 pub fn render_diagram(diagram: &Diagram, scope: &Complex) -> String {
-    top_labels_rendered(diagram, |tag| {
-        scope
-            .find_generator_by_tag(tag)
-            .filter(|n| !n.is_empty())
-            .cloned()
-            .unwrap_or_else(|| format!("{}", tag))
-    })
+    diagram_labels(diagram, scope).join(" ")
 }
 
 pub fn render_boundary_partial(boundary: &Diagram, map: &PartialMap, scope: &Complex) -> String {
-    top_labels_rendered(boundary, |tag| match map.image(tag) {
-        Ok(img) => render_diagram(img, scope),
-        Err(_) => "?".to_string(),
-    })
+    match boundary.labels_at(boundary.top_dim()) {
+        Some(labels) if !labels.is_empty() => labels
+            .iter()
+            .map(|tag| match map.image(tag) {
+                Ok(img) => render_diagram(img, scope),
+                Err(_) => "?".to_string(),
+            })
+            .collect::<Vec<_>>()
+            .join(" "),
+        _ => "?".to_string(),
+    }
 }
 
 fn render_hole_bd(bd: &HoleBd) -> String {
@@ -373,35 +421,32 @@ fn render_hole_bd(bd: &HoleBd) -> String {
     }
 }
 
-fn render_cell(name: &str, data: &CellData, complex: &Complex) -> String {
-    let label = name_or_empty(name);
+fn cell_from_data(name: &str, data: &CellData, complex: &Complex) -> Cell {
     match data {
-        CellData::Zero => label.to_owned(),
-        CellData::Boundary { boundary_in, boundary_out } => {
-            let src = render_diagram(boundary_in, complex);
-            let tgt = render_diagram(boundary_out, complex);
-            format!("{} : {} -> {}", label, src, tgt)
-        }
+        CellData::Zero => Cell { name: name.to_owned(), src: vec![], tgt: vec![] },
+        CellData::Boundary { boundary_in, boundary_out } => Cell {
+            name: name.to_owned(),
+            src: diagram_labels(boundary_in, complex),
+            tgt: diagram_labels(boundary_out, complex),
+        },
     }
 }
 
-fn render_named_diagram(name: &str, diag: &Diagram, complex: &Complex) -> String {
-    let label = name_or_empty(name);
+fn cell_from_diagram(name: &str, diag: &Diagram, complex: &Complex) -> Cell {
     let Some(k) = diag.top_dim().checked_sub(1) else {
-        return label.to_owned();
+        return Cell { name: name.to_owned(), src: vec![], tgt: vec![] };
     };
-    let (Ok(src), Ok(tgt)) = (
+    let (Ok(src_diag), Ok(tgt_diag)) = (
         Diagram::boundary(Sign::Source, k, diag),
         Diagram::boundary(Sign::Target, k, diag),
     ) else {
-        return label.to_owned();
+        return Cell { name: name.to_owned(), src: vec![], tgt: vec![] };
     };
-    format!(
-        "{} : {} -> {}",
-        label,
-        render_diagram(&src, complex),
-        render_diagram(&tgt, complex),
-    )
+    Cell {
+        name: name.to_owned(),
+        src: diagram_labels(&src_diag, complex),
+        tgt: diagram_labels(&tgt_diag, complex),
+    }
 }
 
 fn render_domain(domain: &MapDomain, module_complex: &Complex) -> String {
