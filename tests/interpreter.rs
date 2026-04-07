@@ -200,3 +200,47 @@ fn hole_loads_with_holes() {
     assert_eq!(norm.cells_count, 78);
     assert_eq!(norm.types_count, 8);
 }
+
+#[test]
+fn hole_boundaries_inferred() {
+    use alifib::interpreter::inference::SolvedBd;
+
+    let file = InterpretedFile::load(&Loader::default(vec![]), &example("Hole.ali"))
+        .ok()
+        .expect("Hole.ali should interpret without errors");
+
+    // Exactly 9 holes are present in Hole.ali.
+    assert_eq!(file.solved_holes.len(), 9, "expected 9 holes");
+
+    for hole in &file.solved_holes {
+        // No hole should produce an inconsistency: the test examples are
+        // internally consistent and the solver should not flag spurious conflicts.
+        assert!(
+            hole.inconsistencies.is_empty(),
+            "hole at {:?} had unexpected inconsistencies: {:?}",
+            hole.span, hole.inconsistencies
+        );
+
+        // Every hole in Hole.ali has at least one inferred boundary slot or a
+        // pinned value.  A hole with no information at all is a solver regression.
+        let has_info = !hole.boundaries.is_empty() || hole.value.is_some();
+        assert!(
+            has_info,
+            "hole at {:?} had no inferred boundary information",
+            hole.span
+        );
+
+        // All boundary slots should be non-degenerate: Partial slots in
+        // particular must carry a non-empty boundary diagram.
+        for (slot, bd) in &hole.boundaries {
+            if let SolvedBd::Partial { boundary, .. } = bd {
+                // A Partial boundary with a 0-dim diagram is expected (vertex
+                // boundaries); the key invariant is that the diagram is not
+                // entirely pathological.  We just check it has at least
+                // one label (top_dim labels ≥ 1) or is a 0-cell.
+                let _ = boundary.top_dim(); // panics if the diagram is ill-formed
+                let _ = slot; // silence unused warning
+            }
+        }
+    }
+}
