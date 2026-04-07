@@ -1,0 +1,189 @@
+---
+source: tests/golden_examples.rs
+expression: "load_example(\"Category.ali\")"
+---
+NormalizedStore {
+    cells_count: 45,
+    types_count: 5,
+    modules: [
+        NormalizedModule {
+            path: "Category.ali",
+            types: [
+                NormalizedType {
+                    name: "",
+                    dims: [],
+                    diagrams: [],
+                    maps: [],
+                },
+                NormalizedType {
+                    name: "Eq",
+                    dims: [
+                        NormalizedDim {
+                            dim: 0,
+                            cells: [
+                                "cod",
+                                "dom",
+                            ],
+                        },
+                        NormalizedDim {
+                            dim: 1,
+                            cells: [
+                                "lhs : dom -> cod",
+                                "rhs : dom -> cod",
+                            ],
+                        },
+                        NormalizedDim {
+                            dim: 2,
+                            cells: [
+                                "dir : lhs -> rhs",
+                                "inv : rhs -> lhs",
+                            ],
+                        },
+                    ],
+                    diagrams: [
+                        "cod",
+                        "dir : lhs -> rhs",
+                        "dom",
+                        "inv : rhs -> lhs",
+                        "lhs : dom -> cod",
+                        "rhs : dom -> cod",
+                    ],
+                    maps: [
+                        "Eq :: Eq",
+                    ],
+                },
+                NormalizedType {
+                    name: "Mor",
+                    dims: [
+                        NormalizedDim {
+                            dim: 0,
+                            cells: [
+                                "Cod.ob",
+                                "Dom.ob",
+                            ],
+                        },
+                        NormalizedDim {
+                            dim: 1,
+                            cells: [
+                                "Cod.id : Cod.ob -> Cod.ob",
+                                "Dom.id : Dom.ob -> Dom.ob",
+                                "mor : Dom.ob -> Cod.ob",
+                            ],
+                        },
+                        NormalizedDim {
+                            dim: 2,
+                            cells: [
+                                "Cod.Id_id.dir : Cod.id Cod.id -> Cod.id",
+                                "Cod.Id_id.inv : Cod.id -> Cod.id Cod.id",
+                                "Dom.Id_id.dir : Dom.id Dom.id -> Dom.id",
+                                "Dom.Id_id.inv : Dom.id -> Dom.id Dom.id",
+                                "Left_id.dir : Dom.id mor -> mor",
+                                "Left_id.inv : mor -> Dom.id mor",
+                                "Right_id.dir : mor Cod.id -> mor",
+                                "Right_id.inv : mor -> mor Cod.id",
+                            ],
+                        },
+                    ],
+                    diagrams: [
+                        "mor : Dom.ob -> Cod.ob",
+                    ],
+                    maps: [
+                        "Cod :: Ob",
+                        "Dom :: Ob",
+                        "Left_id :: Eq",
+                        "Mor :: Mor",
+                        "Right_id :: Eq",
+                    ],
+                },
+                NormalizedType {
+                    name: "Ob",
+                    dims: [
+                        NormalizedDim {
+                            dim: 0,
+                            cells: [
+                                "ob",
+                            ],
+                        },
+                        NormalizedDim {
+                            dim: 1,
+                            cells: [
+                                "id : ob -> ob",
+                            ],
+                        },
+                        NormalizedDim {
+                            dim: 2,
+                            cells: [
+                                "Id_id.dir : id id -> id",
+                                "Id_id.inv : id -> id id",
+                            ],
+                        },
+                    ],
+                    diagrams: [
+                        "id : ob -> ob",
+                        "ob",
+                    ],
+                    maps: [
+                        "Id :: Mor",
+                        "Id_id :: Eq",
+                        "Ob :: Ob",
+                    ],
+                },
+                NormalizedType {
+                    name: "Pair",
+                    dims: [
+                        NormalizedDim {
+                            dim: 0,
+                            cells: [
+                                "Fst.Cod.ob",
+                                "Fst.Dom.ob",
+                                "Snd.Cod.ob",
+                            ],
+                        },
+                        NormalizedDim {
+                            dim: 1,
+                            cells: [
+                                "Fst.Cod.id : Fst.Cod.ob -> Fst.Cod.ob",
+                                "Fst.Dom.id : Fst.Dom.ob -> Fst.Dom.ob",
+                                "Fst.mor : Fst.Dom.ob -> Fst.Cod.ob",
+                                "Snd.Cod.id : Snd.Cod.ob -> Snd.Cod.ob",
+                                "Snd.mor : Fst.Cod.ob -> Snd.Cod.ob",
+                            ],
+                        },
+                        NormalizedDim {
+                            dim: 2,
+                            cells: [
+                                "Fst.Cod.Id_id.dir : Fst.Cod.id Fst.Cod.id -> Fst.Cod.id",
+                                "Fst.Cod.Id_id.inv : Fst.Cod.id -> Fst.Cod.id Fst.Cod.id",
+                                "Fst.Dom.Id_id.dir : Fst.Dom.id Fst.Dom.id -> Fst.Dom.id",
+                                "Fst.Dom.Id_id.inv : Fst.Dom.id -> Fst.Dom.id Fst.Dom.id",
+                                "Fst.Left_id.dir : Fst.Dom.id Fst.mor -> Fst.mor",
+                                "Fst.Left_id.inv : Fst.mor -> Fst.Dom.id Fst.mor",
+                                "Fst.Right_id.dir : Fst.mor Fst.Cod.id -> Fst.mor",
+                                "Fst.Right_id.inv : Fst.mor -> Fst.mor Fst.Cod.id",
+                                "Snd.Cod.Id_id.dir : Snd.Cod.id Snd.Cod.id -> Snd.Cod.id",
+                                "Snd.Cod.Id_id.inv : Snd.Cod.id -> Snd.Cod.id Snd.Cod.id",
+                                "Snd.Left_id.dir : Fst.Cod.id Snd.mor -> Snd.mor",
+                                "Snd.Left_id.inv : Snd.mor -> Fst.Cod.id Snd.mor",
+                                "Snd.Right_id.dir : Snd.mor Snd.Cod.id -> Snd.mor",
+                                "Snd.Right_id.inv : Snd.mor -> Snd.mor Snd.Cod.id",
+                            ],
+                        },
+                    ],
+                    diagrams: [
+                        "mor : Fst.Dom.ob -> Snd.Cod.ob",
+                    ],
+                    maps: [
+                        "Cod :: Ob",
+                        "Comp :: Mor",
+                        "Dom :: Ob",
+                        "Fst :: Mor",
+                        "Left_id :: Eq",
+                        "Pair :: Pair",
+                        "Right_id :: Eq",
+                        "Snd :: Mor",
+                    ],
+                },
+            ],
+        },
+    ],
+}
