@@ -12,7 +12,7 @@ use std::sync::Arc;
 use crate::aux::Error;
 use super::diagram::Diagram;
 use super::embeddings::{Embedding, NO_PREIMAGE};
-use super::graph::{self, DiGraph};
+use super::graph::{self, DiGraph, TopoSortResult};
 use super::intset::{self, IntSet};
 use super::ogposet::{self, Ogposet, Sign};
 
@@ -165,10 +165,9 @@ pub(super) fn molecule_inclusions(
             continue;
         }
 
-        // Apply the isomorphism to the partial map.
-        apply_iso_to_partial(
-            &iso, &v_atoms[first_v].emb, &u_atoms[first_u].emb,
-            &mut partial, n,
+        // Apply the isomorphism to the partial map; track newly-assigned positions.
+        let newly = apply_iso_to_partial(
+            &iso, &v_atoms[first_v].emb, &u_atoms[first_u].emb, &mut partial,
         );
         used[first_u] = true;
 
@@ -179,10 +178,8 @@ pub(super) fn molecule_inclusions(
             &v_sizes, &u_sizes, &mut results,
         );
 
-        // Undo.
-        undo_iso_from_partial(
-            &iso, &v_atoms[first_v].emb, &mut partial, n,
-        );
+        // Undo exactly what we assigned.
+        undo_iso_from_partial(&newly, &mut partial);
         used[first_u] = false;
     }
 
@@ -205,7 +202,7 @@ fn backtrack_match(
     u_sizes: &[usize],
     results: &mut Vec<Embedding>,
 ) {
-    let n = v.dim as usize;
+    let _n = v.dim as usize;
 
     if step == v_order.len() {
         // All V top-cells matched. Convert partial map to Embedding.
@@ -229,13 +226,13 @@ fn backtrack_match(
             continue;
         }
 
-        apply_iso_to_partial(&iso, &v_atoms[vi].emb, &u_atoms[ui].emb, partial, n);
+        let newly = apply_iso_to_partial(&iso, &v_atoms[vi].emb, &u_atoms[ui].emb, partial);
         used[ui] = true;
 
         backtrack_match(v, u, v_atoms, u_atoms, v_order, step + 1,
             partial, used, u_n, v_sizes, u_sizes, results);
 
-        undo_iso_from_partial(&iso, &v_atoms[vi].emb, partial, n);
+        undo_iso_from_partial(&newly, partial);
         used[ui] = false;
     }
 }
@@ -301,15 +298,17 @@ fn atom_iso_consistent(
 
 /// Apply an atom isomorphism to the partial map (write assignments).
 ///
-/// For each atom cell c, assigns `partial[dim][v_pos] = u_pos`.
-/// Does not overwrite existing consistent assignments.
+/// For each atom cell c, assigns `partial[dim][v_pos] = u_pos` if not yet set.
+/// Returns the list of `(dim, v_pos)` positions that were **newly assigned**
+/// (transitioned from None to Some).  The caller must pass this list to
+/// `undo_iso_from_partial` to correctly reverse the effect on backtrack.
 fn apply_iso_to_partial(
     iso: &Embedding,
     atom_emb_v: &Embedding,
     atom_emb_u: &Embedding,
     partial: &mut Vec<Vec<Option<usize>>>,
-    _n: usize,
-) {
+) -> Vec<(usize, usize)> {
+    let mut newly_assigned: Vec<(usize, usize)> = Vec::new();
     for (dim, iso_row) in iso.map.iter().enumerate() {
         let Some(ev_row) = atom_emb_v.map.get(dim) else { continue; };
         let Some(eu_row) = atom_emb_u.map.get(dim) else { continue; };
@@ -319,33 +318,27 @@ fn apply_iso_to_partial(
             if let Some(row) = partial.get_mut(dim) {
                 if row[v_pos].is_none() {
                     row[v_pos] = Some(u_pos);
+                    newly_assigned.push((dim, v_pos));
                 }
             }
         }
     }
+    newly_assigned
 }
 
-/// Undo the effect of `apply_iso_to_partial`, clearing only assignments that
-/// were introduced (i.e., were `None` before the apply).
+/// Undo the effect of `apply_iso_to_partial` by clearing exactly the positions
+/// that were newly assigned.
 ///
-/// We track which assignments belong to this atom by checking that the current
-/// assignment matches what the iso would have set.
+/// Only the positions returned by the corresponding `apply_iso_to_partial` call
+/// are cleared; cells that were already set (shared with a previously-matched
+/// atom) are left untouched.
 fn undo_iso_from_partial(
-    iso: &Embedding,
-    atom_emb_v: &Embedding,
+    newly_assigned: &[(usize, usize)],
     partial: &mut Vec<Vec<Option<usize>>>,
-    _n: usize,
 ) {
-    // To undo correctly we need to know which cells were assigned by this atom.
-    // We conservatively clear all cells that appear in this atom's V-image.
-    // Cells shared with a previously matched atom will be re-set by a later apply.
-    // This is safe because backtracking restores state fully.
-    for (dim, _iso_row) in iso.map.iter().enumerate() {
-        let Some(ev_row) = atom_emb_v.map.get(dim) else { continue; };
-        for &v_pos in ev_row {
-            if let Some(row) = partial.get_mut(dim) {
-                row[v_pos] = None;
-            }
+    for &(dim, v_pos) in newly_assigned {
+        if let Some(row) = partial.get_mut(dim) {
+            row[v_pos] = None;
         }
     }
 }
@@ -427,8 +420,11 @@ fn is_rewritable_inner(
 
     // Enumerate topological sorts of G (with a limit).
     let sorts = match graph::all_topological_sorts(&g_contracted, Some(10_000)) {
-        Ok(s) => s,
-        Err(_) => return Err(Error::new(
+        TopoSortResult::Sorts(s) => s,
+        // A cycle means the contracted graph is not a DAG, so by Lemma 89
+        // the induced subgraph on V's image is not path-induced → V ⋢ U.
+        TopoSortResult::HasCycle => return Ok(false),
+        TopoSortResult::LimitExceeded => return Err(Error::new(
             "rewritable submolecule: too many topological sorts (limit exceeded)"
         )),
     };
@@ -558,14 +554,14 @@ fn check_sort_condition(
     }
 
     // Recursive check: verify that ∂⁻V ⊑ ∂⁻U^(q) at dimension k.
-    // For dimensions n ≤ 2 this is trivially true (handled by base case in
-    // is_rewritable_submolecule). For higher dimensions, recurse.
+    // For k ≤ 2, the submolecule inclusion at dimension ≤ 2 is trivially true
+    // (Corollary 120), so the boundary containment checked above is sufficient.
     if k <= 2 { return Ok(true); }
 
-    // Build the k-dimensional boundary of V and U^(q) and recurse.
-    // This is a simplified check: in full generality this requires constructing
-    // U^(q) and recursing. We approximate by checking the k=n-1 level only.
-    // (Full recursive descent omitted here; the n≤2 base case covers all
-    //  practical cases for dimension ≤ 3, per Theorem 121 of the paper.)
-    Ok(true)
+    // For k > 2 the recursive submolecule check at dimension k is not yet
+    // implemented.  The polynomial algorithm for dim > 3 is an open problem
+    // (Section 125 of the paper).
+    Err(Error::new(
+        "rewritable submolecule: recursive check for dim > 3 not yet implemented"
+    ))
 }

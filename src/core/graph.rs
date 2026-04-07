@@ -8,7 +8,6 @@
 //! - [`all_topological_sorts`] — enumerate all topological orderings of a DAG
 
 use std::sync::Arc;
-use crate::aux::Error;
 use super::intset::{self, IntSet};
 use super::ogposet::{self, Ogposet, Sign};
 
@@ -255,14 +254,22 @@ pub(super) fn contract(graph: &DiGraph, subset: &[usize]) -> (DiGraph, Vec<usize
 
 // ---- Topological sort enumeration ----
 
+/// Outcome of enumerating topological orderings.
+pub(super) enum TopoSortResult {
+    /// All orderings collected (up to the optional limit).
+    Sorts(Vec<Vec<usize>>),
+    /// The graph contains a cycle; no ordering exists.
+    HasCycle,
+    /// The number of orderings exceeded the requested limit.
+    LimitExceeded,
+}
+
 /// Enumerate all topological orderings of a DAG using Kahn's algorithm with backtracking.
 ///
-/// Returns at most `limit` orderings (or all if `limit` is `None`).
-/// Returns `Err` if the graph contains a cycle or the limit is exceeded.
-pub(super) fn all_topological_sorts(
-    graph: &DiGraph,
-    limit: Option<usize>,
-) -> Result<Vec<Vec<usize>>, Error> {
+/// Returns `TopoSortResult::Sorts` (up to `limit` orderings, or all if `None`),
+/// `TopoSortResult::HasCycle` if the graph is not a DAG, or
+/// `TopoSortResult::LimitExceeded` if the number of orderings exceeds the limit.
+pub(super) fn all_topological_sorts(graph: &DiGraph, limit: Option<usize>) -> TopoSortResult {
     let n = graph.node_count();
     let lim = limit.unwrap_or(usize::MAX);
 
@@ -270,9 +277,14 @@ pub(super) fn all_topological_sorts(
     let mut result: Vec<Vec<usize>> = Vec::new();
     let mut current: Vec<usize> = Vec::with_capacity(n);
 
-    topo_backtrack(graph, &mut indegrees, &mut current, n, &mut result, lim)?;
-    Ok(result)
+    match topo_backtrack(graph, &mut indegrees, &mut current, n, &mut result, lim) {
+        BacktrackOutcome::Done => TopoSortResult::Sorts(result),
+        BacktrackOutcome::Cycle => TopoSortResult::HasCycle,
+        BacktrackOutcome::LimitExceeded => TopoSortResult::LimitExceeded,
+    }
 }
+
+enum BacktrackOutcome { Done, Cycle, LimitExceeded }
 
 fn topo_backtrack(
     graph: &DiGraph,
@@ -281,51 +293,55 @@ fn topo_backtrack(
     total: usize,
     result: &mut Vec<Vec<usize>>,
     limit: usize,
-) -> Result<(), Error> {
+) -> BacktrackOutcome {
     if current.len() == total {
         result.push(current.clone());
-        return Ok(());
+        return BacktrackOutcome::Done;
     }
 
-    // Collect nodes with in-degree 0 that haven't been scheduled yet.
     // usize::MAX is the sentinel for "already scheduled".
-    let ready: Vec<usize> = (0..total)
-        .filter(|&v| indegrees[v] == 0)
-        .collect();
+    let ready: Vec<usize> = (0..total).filter(|&v| indegrees[v] == 0).collect();
 
-    if ready.is_empty() && current.len() < total {
-        return Err(Error::new("topological sort: graph contains a cycle"));
+    if ready.is_empty() {
+        // Nodes remain but none have in-degree 0: the graph has a cycle.
+        return BacktrackOutcome::Cycle;
     }
 
     for v in ready {
-        // Pick v: was indegree 0, mark as scheduled.
         current.push(v);
         indegrees[v] = usize::MAX;
 
-        // Decrement successors' in-degrees.
         let succs: Vec<usize> = graph.successors[v].clone();
         for &s in &succs {
-            // Only decrement if not already scheduled (sentinel check).
-            if indegrees[s] != usize::MAX {
-                indegrees[s] -= 1;
-            }
+            if indegrees[s] != usize::MAX { indegrees[s] -= 1; }
         }
 
-        topo_backtrack(graph, indegrees, current, total, result, limit)?;
-
-        // Restore.
-        for &s in &succs {
-            if indegrees[s] != usize::MAX {
-                indegrees[s] += 1;
+        match topo_backtrack(graph, indegrees, current, total, result, limit) {
+            BacktrackOutcome::Cycle => {
+                // Restore before propagating.
+                for &s in &succs { if indegrees[s] != usize::MAX { indegrees[s] += 1; } }
+                indegrees[v] = 0;
+                current.pop();
+                // A cycle is a global property; propagate immediately.
+                return BacktrackOutcome::Cycle;
             }
+            BacktrackOutcome::LimitExceeded => {
+                for &s in &succs { if indegrees[s] != usize::MAX { indegrees[s] += 1; } }
+                indegrees[v] = 0;
+                current.pop();
+                return BacktrackOutcome::LimitExceeded;
+            }
+            BacktrackOutcome::Done => {}
         }
-        indegrees[v] = 0; // it was 0 when we picked it
+
+        for &s in &succs { if indegrees[s] != usize::MAX { indegrees[s] += 1; } }
+        indegrees[v] = 0;
         current.pop();
 
         if result.len() >= limit {
-            return Err(Error::new("topological sort: limit exceeded"));
+            return BacktrackOutcome::LimitExceeded;
         }
     }
 
-    Ok(())
+    BacktrackOutcome::Done
 }
