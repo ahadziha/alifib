@@ -118,8 +118,10 @@ impl fmt::Display for Type {
             writeln!(f, "  (no cells)")?;
         } else {
             for dg in &self.dims {
-                let cells = dg.cells.iter().map(|c| c.to_string()).collect::<Vec<_>>();
-                writeln!(f, "  [{}] {}", dg.dim, cells.join(", "))?;
+                writeln!(f, "  [{}]", dg.dim)?;
+                for cell in &dg.cells {
+                    writeln!(f, "    {}", cell)?;
+                }
             }
         }
         if !self.diagrams.is_empty() {
