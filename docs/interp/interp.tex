@@ -1037,8 +1037,8 @@ $\ResJ{\State}{\Cpx}{(\State', \GId, \Complex)}$
   & Resolve complex reference $\Cpx$ in state $\State$; \\
   & yields updated state $\State'$, type identifier $\GId$, \\
   & and its complex $\Complex$. \\[6pt]
-$\AddrJ{\State}{\Addr}{\GId}$
-  & Resolve address $\Addr$ in state $\State$; \\
+$\AddrJ{\State;\Complex}{\Addr}{\GId}$
+  & Resolve address $\Addr$ starting from scope $\Complex$; \\
   & yields the type identifier $\GId$ it refers to. \\[6pt]
 $\AssertJ{\State}{\Complex}{\mathit{assertion}}$
   & Check assertion in state $\State$ at location~$\Complex$; \\
@@ -1085,11 +1085,11 @@ anonymous root type:
     {\IntJ{\State}{\cdot}{\Prog(m)}{\State'}}
 \end{mathpar}
 
-\textsc{Prog-Skip} ensures idempotent module loading: if $m$ is already
-loaded, its interpretation is skipped entirely. This prevents
-double-interpretation when two modules include the same dependency, but
-it also means that the order of includes can affect what state a module
-sees.
+\textsc{Prog-Skip} specifies idempotent module loading: if $m$ is already
+loaded, its interpretation is skipped.  In the implementation, this
+situation never arises: the loading phase interprets every module exactly
+once, in topological dependency order, before the root module begins.
+The rule is included to make the formal account self-contained.
 
 \textsc{Prog-Init} allocates a fresh $\GId_r$ for an anonymous root type,
 creates its cell diagram $D_r$, and registers both the type (with an
@@ -1185,7 +1185,7 @@ a duplicate name silently overwrites the previous binding.
 
 \begin{mathpar}
   \inferrule*[lab=\textsc{TyMap}]
-    {\AddrJ{\State}{\Addr}{\GId_S} \\
+    {\AddrJ{\State;\findmod{m}}{\Addr}{\GId_S} \\
      \Complex_S = \findtype{\GId_S}.\Complex \\
      \EvalM{\State}{\findmod{m}}{(\PMapDef, \Complex_S)}{F}}
     {\IntJ{\State}{\findmod{m}}{\kwlet\;n \mathbin{::} \Addr = \PMapDef}%
@@ -1257,7 +1257,7 @@ the body can register new cells in the global store.
     {\ResJ{\State}{\varepsilon}{(\State, \GId_r, \Complex)}}
   \and
   \inferrule*[lab=\textsc{Cpx-Addr}]
-    {\AddrJ{\State}{\Addr}{\GId} \\
+    {\AddrJ{\State;\findmod{m}}{\Addr}{\GId} \\
      \Complex = \findtype{\GId}.\Complex}
     {\ResJ{\State}{\Addr}{(\State, \GId, \Complex)}}
   \and
@@ -1283,14 +1283,14 @@ during body interpretation.
     {\Complex.\mathit{diags}(n) = D \\
      D\;\text{is a cell} \\
      \mathit{top}(D) = \TagG{\GId}}
-    {\AddrJ{\State}{n}{\GId}}
+    {\AddrJ{\State;\Complex}{n}{\GId}}
   \and
   \inferrule*[lab=\textsc{Addr-Step}]
     {\Complex.\mathit{maps}(n_1) = (\ModDom(m'), \_) \\
      \Complex' = \findmod{m'} \\
-     \AddrJ{\State[\Complex']}
+     \AddrJ{\State;\Complex'}
        {n_2.\cdots.n_k}{\GId}}
-    {\AddrJ{\State}{n_1.n_2.\cdots.n_k}{\GId}}
+    {\AddrJ{\State;\Complex}{n_1.n_2.\cdots.n_k}{\GId}}
 \end{mathpar}
 
 Address resolution navigates the \emph{map} namespace, not the generator
@@ -1378,7 +1378,8 @@ $\Complex'.\mathit{locals}(n)$.
   \and
   \inferrule*[lab=\textsc{CDef}]
     {n \notin \mathit{used}(\Complex) \\
-     \AddrJ{\State}{\Addr}{\GId_S} \\
+     \AddrJ{\State;\findmod{m}}{\Addr}{\GId_S} \\
+     \Complex_S = \findtype{\GId_S}.\Complex \\
      \EvalM{\State}{\Complex}{(\PMapDef, \Complex_S)}{F}}
     {\IntJ{\State}{\Complex}{\kwlet\;n \mathbin{::} \Addr = \PMapDef}
           {\State, \Complex[\mathit{maps}(n) \mapsto (\TyDom(\GId_S), F)]}}
@@ -1392,7 +1393,7 @@ complex-body and local-block \texttt{let} forms check name uniqueness.
 
 \begin{mathpar}
   \inferrule*[lab=\textsc{CInclude}]
-    {\AddrJ{\State}{\Addr}{\GId} \\
+    {\AddrJ{\State;\findmod{m}}{\Addr}{\GId} \\
      \Complex_S = \findtype{\GId}.\Complex \\
      n \notin \mathit{used}(\Complex) \\
      F_{\mathit{id}} = \idmap{\Complex_S} \\\\
@@ -1420,7 +1421,7 @@ types requires an explicit alias.
 
 \begin{mathpar}
   \inferrule*[lab=\textsc{CAttach}]
-    {\AddrJ{\State}{\Addr}{\GId_A} \\
+    {\AddrJ{\State;\findmod{m}}{\Addr}{\GId_A} \\
      \Complex_A = \findtype{\GId_A}.\Complex \\
      n \notin \mathit{used}(\Complex) \\
      F_0 = \text{(evaluate along map, or } \emptyset \text{ if omitted)} \\\\
