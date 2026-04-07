@@ -2,37 +2,37 @@
 source: tests/golden_examples.rs
 expression: "load_example(\"Category.ali\")"
 ---
-NormalizedStore {
+Store {
     cells_count: 45,
     types_count: 5,
     modules: [
-        NormalizedModule {
+        Module {
             path: "Category.ali",
             types: [
-                NormalizedType {
+                Type {
                     name: "",
                     dims: [],
                     diagrams: [],
                     maps: [],
                 },
-                NormalizedType {
+                Type {
                     name: "Eq",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "cod",
                                 "dom",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "lhs : dom -> cod",
                                 "rhs : dom -> cod",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "dir : lhs -> rhs",
@@ -52,17 +52,17 @@ NormalizedStore {
                         "Eq :: Eq",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Mor",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "Cod.ob",
                                 "Dom.ob",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "Cod.id : Cod.ob -> Cod.ob",
@@ -70,7 +70,7 @@ NormalizedStore {
                                 "mor : Dom.ob -> Cod.ob",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "Cod.Id_id.dir : Cod.id Cod.id -> Cod.id",
@@ -95,22 +95,22 @@ NormalizedStore {
                         "Right_id :: Eq",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Ob",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "ob",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "id : ob -> ob",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "Id_id.dir : id id -> id",
@@ -128,10 +128,10 @@ NormalizedStore {
                         "Ob :: Ob",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Pair",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "Fst.Cod.ob",
@@ -139,7 +139,7 @@ NormalizedStore {
                                 "Snd.Cod.ob",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "Fst.Cod.id : Fst.Cod.ob -> Fst.Cod.ob",
@@ -149,7 +149,7 @@ NormalizedStore {
                                 "Snd.mor : Fst.Cod.ob -> Snd.Cod.ob",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "Fst.Cod.Id_id.dir : Fst.Cod.id Fst.Cod.id -> Fst.Cod.id",

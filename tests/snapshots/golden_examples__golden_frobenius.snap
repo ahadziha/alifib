@@ -2,43 +2,43 @@
 source: tests/golden_examples.rs
 expression: "load_example(\"Frobenius.ali\")"
 ---
-NormalizedStore {
+Store {
     cells_count: 428,
     types_count: 22,
     modules: [
-        NormalizedModule {
+        Module {
             path: "Theory.ali",
             types: [
-                NormalizedType {
+                Type {
                     name: "",
                     dims: [],
                     diagrams: [],
                     maps: [],
                 },
-                NormalizedType {
+                Type {
                     name: "Equation",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "cod : pt -> pt",
                                 "dom : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "lhs : dom -> cod",
                                 "rhs : dom -> cod",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "dir : lhs -> rhs",
@@ -59,23 +59,23 @@ NormalizedStore {
                         "Equation :: Equation",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Function",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "Cod.set : pt -> pt",
                                 "Dom.set : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "Cod.id : Cod.set -> Cod.set",
@@ -83,7 +83,7 @@ NormalizedStore {
                                 "fun : Dom.set -> Cod.set",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "Cod.Id_id.dir : Cod.id Cod.id -> Cod.id",
@@ -111,28 +111,28 @@ NormalizedStore {
                         "Id_fun :: Equation",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Set",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "set : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "id : set -> set",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "Id_id.dir : id id -> id",
@@ -153,25 +153,25 @@ NormalizedStore {
                 },
             ],
         },
-        NormalizedModule {
+        Module {
             path: "Semigroup.ali",
             types: [
-                NormalizedType {
+                Type {
                     name: "",
                     dims: [],
                     diagrams: [],
                     maps: [],
                 },
-                NormalizedType {
+                Type {
                     name: "Bicomodule",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "L.Set.set : pt -> pt",
@@ -179,7 +179,7 @@ NormalizedStore {
                                 "Set.set : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "L.Set.id : L.Set.set -> L.Set.set",
@@ -191,7 +191,7 @@ NormalizedStore {
                                 "Set.id : Set.set -> Set.set",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "L.Assoc.dir : L.split L.split -> L.split L.split",
@@ -238,16 +238,16 @@ NormalizedStore {
                         "Set :: Theory.Set",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Bimodule",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "L.Set.set : pt -> pt",
@@ -255,7 +255,7 @@ NormalizedStore {
                                 "Set.set : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "L.Set.id : L.Set.set -> L.Set.set",
@@ -267,7 +267,7 @@ NormalizedStore {
                                 "Set.id : Set.set -> Set.set",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "L.Assoc.dir : L.merge L.merge -> L.merge L.merge",
@@ -314,29 +314,29 @@ NormalizedStore {
                         "Set :: Theory.Set",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Cosemigroup",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "Set.set : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "Set.id : Set.set -> Set.set",
                                 "split : Set.set -> Set.set Set.set",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "Assoc.dir : split split -> split split",
@@ -367,23 +367,23 @@ NormalizedStore {
                         "Split_right_id :: Theory.Equation",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Left_comodule",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "L.Set.set : pt -> pt",
                                 "Set.set : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "L.Set.id : L.Set.set -> L.Set.set",
@@ -392,7 +392,7 @@ NormalizedStore {
                                 "coaction : Set.set -> L.Set.set Set.set",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "L.Assoc.dir : L.split L.split -> L.split L.split",
@@ -423,23 +423,23 @@ NormalizedStore {
                         "Set :: Theory.Set",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Left_module",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "L.Set.set : pt -> pt",
                                 "Set.set : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "L.Set.id : L.Set.set -> L.Set.set",
@@ -448,7 +448,7 @@ NormalizedStore {
                                 "action : L.Set.set Set.set -> Set.set",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "L.Assoc.dir : L.merge L.merge -> L.merge L.merge",
@@ -479,23 +479,23 @@ NormalizedStore {
                         "Set :: Theory.Set",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Right_comodule",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "R.Set.set : pt -> pt",
                                 "Set.set : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "R.Set.id : R.Set.set -> R.Set.set",
@@ -504,7 +504,7 @@ NormalizedStore {
                                 "coaction : Set.set -> Set.set R.Set.set",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "R.Assoc.dir : R.split R.split -> R.split R.split",
@@ -535,23 +535,23 @@ NormalizedStore {
                         "Set :: Theory.Set",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Right_module",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "R.Set.set : pt -> pt",
                                 "Set.set : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "R.Set.id : R.Set.set -> R.Set.set",
@@ -560,7 +560,7 @@ NormalizedStore {
                                 "action : Set.set R.Set.set -> Set.set",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "Merge_right_act.dir : R.merge action -> action action",
@@ -591,29 +591,29 @@ NormalizedStore {
                         "Set :: Theory.Set",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Semigroup",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "Set.set : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "Set.id : Set.set -> Set.set",
                                 "merge : Set.set Set.set -> Set.set",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "Assoc.dir : merge merge -> merge merge",
@@ -644,30 +644,30 @@ NormalizedStore {
                         "Set :: Theory.Set",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Theory.Equation",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "cod : pt -> pt",
                                 "dom : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "lhs : dom -> cod",
                                 "rhs : dom -> cod",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "dir : lhs -> rhs",
@@ -688,23 +688,23 @@ NormalizedStore {
                         "Equation :: Theory.Equation",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Theory.Function",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "Cod.set : pt -> pt",
                                 "Dom.set : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "Cod.id : Cod.set -> Cod.set",
@@ -712,7 +712,7 @@ NormalizedStore {
                                 "fun : Dom.set -> Cod.set",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "Cod.Id_id.dir : Cod.id Cod.id -> Cod.id",
@@ -740,28 +740,28 @@ NormalizedStore {
                         "Id_fun :: Theory.Equation",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Theory.Set",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "set : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "id : set -> set",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "Id_id.dir : id id -> id",
@@ -782,25 +782,25 @@ NormalizedStore {
                 },
             ],
         },
-        NormalizedModule {
+        Module {
             path: "Frobenius.ali",
             types: [
-                NormalizedType {
+                Type {
                     name: "",
                     dims: [],
                     diagrams: [],
                     maps: [],
                 },
-                NormalizedType {
+                Type {
                     name: "Bimodule",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "LF.Set.set : pt -> pt",
@@ -808,7 +808,7 @@ NormalizedStore {
                                 "Set.set : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "LF.C.split : LF.Set.set -> LF.Set.set LF.Set.set",
@@ -824,7 +824,7 @@ NormalizedStore {
                                 "Set.id : Set.set -> Set.set",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "BC.Right_coact_left_coact.dir : LFM.LC.coaction RFM.RC.coaction -> RFM.RC.coaction LFM.LC.coaction",
@@ -916,22 +916,22 @@ NormalizedStore {
                         "Set :: Theory.Set",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Frobenius",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "Set.set : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "C.split : Set.set -> Set.set Set.set",
@@ -939,7 +939,7 @@ NormalizedStore {
                                 "Set.id : Set.set -> Set.set",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "C.Assoc.dir : C.split C.split -> C.split C.split",
@@ -983,23 +983,23 @@ NormalizedStore {
                         "Set :: Theory.Set",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Left_module",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "F.Set.set : pt -> pt",
                                 "Set.set : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "F.C.split : F.Set.set -> F.Set.set F.Set.set",
@@ -1010,7 +1010,7 @@ NormalizedStore {
                                 "Set.id : Set.set -> Set.set",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "F.C.Assoc.dir : F.C.split F.C.split -> F.C.split F.C.split",
@@ -1063,23 +1063,23 @@ NormalizedStore {
                         "Split_left_act :: Theory.Equation",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Right_module",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "F.Set.set : pt -> pt",
                                 "Set.set : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "F.C.split : F.Set.set -> F.Set.set F.Set.set",
@@ -1090,7 +1090,7 @@ NormalizedStore {
                                 "Set.id : Set.set -> Set.set",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "F.C.Assoc.dir : F.C.split F.C.split -> F.C.split F.C.split",
@@ -1143,16 +1143,16 @@ NormalizedStore {
                         "Split_right_act :: Theory.Equation",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Semigroup.Bicomodule",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "L.Set.set : pt -> pt",
@@ -1160,7 +1160,7 @@ NormalizedStore {
                                 "Set.set : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "L.Set.id : L.Set.set -> L.Set.set",
@@ -1172,7 +1172,7 @@ NormalizedStore {
                                 "Set.id : Set.set -> Set.set",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "L.Assoc.dir : L.split L.split -> L.split L.split",
@@ -1219,16 +1219,16 @@ NormalizedStore {
                         "Set :: Theory.Set",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Semigroup.Bimodule",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "L.Set.set : pt -> pt",
@@ -1236,7 +1236,7 @@ NormalizedStore {
                                 "Set.set : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "L.Set.id : L.Set.set -> L.Set.set",
@@ -1248,7 +1248,7 @@ NormalizedStore {
                                 "Set.id : Set.set -> Set.set",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "L.Assoc.dir : L.merge L.merge -> L.merge L.merge",
@@ -1295,29 +1295,29 @@ NormalizedStore {
                         "Set :: Theory.Set",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Semigroup.Cosemigroup",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "Set.set : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "Set.id : Set.set -> Set.set",
                                 "split : Set.set -> Set.set Set.set",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "Assoc.dir : split split -> split split",
@@ -1348,23 +1348,23 @@ NormalizedStore {
                         "Split_right_id :: Theory.Equation",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Semigroup.Left_comodule",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "L.Set.set : pt -> pt",
                                 "Set.set : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "L.Set.id : L.Set.set -> L.Set.set",
@@ -1373,7 +1373,7 @@ NormalizedStore {
                                 "coaction : Set.set -> L.Set.set Set.set",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "L.Assoc.dir : L.split L.split -> L.split L.split",
@@ -1404,23 +1404,23 @@ NormalizedStore {
                         "Set :: Theory.Set",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Semigroup.Left_module",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "L.Set.set : pt -> pt",
                                 "Set.set : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "L.Set.id : L.Set.set -> L.Set.set",
@@ -1429,7 +1429,7 @@ NormalizedStore {
                                 "action : L.Set.set Set.set -> Set.set",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "L.Assoc.dir : L.merge L.merge -> L.merge L.merge",
@@ -1460,23 +1460,23 @@ NormalizedStore {
                         "Set :: Theory.Set",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Semigroup.Right_comodule",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "R.Set.set : pt -> pt",
                                 "Set.set : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "R.Set.id : R.Set.set -> R.Set.set",
@@ -1485,7 +1485,7 @@ NormalizedStore {
                                 "coaction : Set.set -> Set.set R.Set.set",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "R.Assoc.dir : R.split R.split -> R.split R.split",
@@ -1516,23 +1516,23 @@ NormalizedStore {
                         "Set :: Theory.Set",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Semigroup.Right_module",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "R.Set.set : pt -> pt",
                                 "Set.set : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "R.Set.id : R.Set.set -> R.Set.set",
@@ -1541,7 +1541,7 @@ NormalizedStore {
                                 "action : Set.set R.Set.set -> Set.set",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "Merge_right_act.dir : R.merge action -> action action",
@@ -1572,29 +1572,29 @@ NormalizedStore {
                         "Set :: Theory.Set",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Semigroup.Semigroup",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "Set.set : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "Set.id : Set.set -> Set.set",
                                 "merge : Set.set Set.set -> Set.set",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "Assoc.dir : merge merge -> merge merge",
@@ -1625,22 +1625,22 @@ NormalizedStore {
                         "Set :: Theory.Set",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Special",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "Set.set : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "C.split : Set.set -> Set.set Set.set",
@@ -1648,7 +1648,7 @@ NormalizedStore {
                                 "Set.id : Set.set -> Set.set",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "C.Assoc.dir : C.split C.split -> C.split C.split",
@@ -1696,16 +1696,16 @@ NormalizedStore {
                         "Split_merge :: Theory.Equation",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Special_bimodule",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "LF.Set.set : pt -> pt",
@@ -1713,7 +1713,7 @@ NormalizedStore {
                                 "Set.set : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "LF.C.split : LF.Set.set -> LF.Set.set LF.Set.set",
@@ -1729,7 +1729,7 @@ NormalizedStore {
                                 "Set.id : Set.set -> Set.set",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "BC.Right_coact_left_coact.dir : LFM.LC.coaction RFM.RC.coaction -> RFM.RC.coaction LFM.LC.coaction",
@@ -1834,23 +1834,23 @@ NormalizedStore {
                         "Special_bimodule :: Special_bimodule",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Special_left_module",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "F.Set.set : pt -> pt",
                                 "Set.set : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "F.C.split : F.Set.set -> F.Set.set F.Set.set",
@@ -1861,7 +1861,7 @@ NormalizedStore {
                                 "Set.id : Set.set -> Set.set",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "F.C.Assoc.dir : F.C.split F.C.split -> F.C.split F.C.split",
@@ -1921,23 +1921,23 @@ NormalizedStore {
                         "Split_left_act :: Theory.Equation",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Special_right_module",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "F.Set.set : pt -> pt",
                                 "Set.set : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "F.C.split : F.Set.set -> F.Set.set F.Set.set",
@@ -1948,7 +1948,7 @@ NormalizedStore {
                                 "Set.id : Set.set -> Set.set",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "F.C.Assoc.dir : F.C.split F.C.split -> F.C.split F.C.split",
@@ -2008,30 +2008,30 @@ NormalizedStore {
                         "Split_right_act :: Theory.Equation",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Theory.Equation",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "cod : pt -> pt",
                                 "dom : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "lhs : dom -> cod",
                                 "rhs : dom -> cod",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "dir : lhs -> rhs",
@@ -2052,23 +2052,23 @@ NormalizedStore {
                         "Equation :: Theory.Equation",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Theory.Function",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "Cod.set : pt -> pt",
                                 "Dom.set : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "Cod.id : Cod.set -> Cod.set",
@@ -2076,7 +2076,7 @@ NormalizedStore {
                                 "fun : Dom.set -> Cod.set",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "Cod.Id_id.dir : Cod.id Cod.id -> Cod.id",
@@ -2104,28 +2104,28 @@ NormalizedStore {
                         "Id_fun :: Theory.Equation",
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Theory.Set",
                     dims: [
-                        NormalizedDim {
+                        Dim {
                             dim: 0,
                             cells: [
                                 "pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 1,
                             cells: [
                                 "set : pt -> pt",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 2,
                             cells: [
                                 "id : set -> set",
                             ],
                         },
-                        NormalizedDim {
+                        Dim {
                             dim: 3,
                             cells: [
                                 "Id_id.dir : id id -> id",

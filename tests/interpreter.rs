@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use alifib::aux::loader::Loader;
-use alifib::output::{InterpretedFile, NormalizedDim, NormalizedModule, NormalizedStore, NormalizedType};
+use alifib::output::{Dim, InterpretedFile, Module, Store, Type};
 
 fn fixture(name: &str) -> String {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -29,34 +29,34 @@ fn magma_interpretation() {
 
     let norm = file.state.normalize();
 
-    assert_eq!(norm, NormalizedStore {
+    assert_eq!(norm, Store {
         cells_count: 12,
         types_count: 5,
-        modules: vec![NormalizedModule {
+        modules: vec![Module {
             path: fixture("Magma.ali"),
             types: vec![
-                NormalizedType {
+                Type {
                     name: String::new(),
                     dims: vec![],
                     diagrams: vec![],
                     maps: vec![],
                 },
-                NormalizedType {
+                Type {
                     name: "Comagma".into(),
                     dims: vec![
-                        NormalizedDim { dim: 0, cells: vec!["Ob.pt".into()] },
-                        NormalizedDim { dim: 1, cells: vec!["Ob.ob : Ob.pt -> Ob.pt".into()] },
-                        NormalizedDim { dim: 2, cells: vec!["c : Ob.ob -> Ob.ob Ob.ob".into()] },
+                        Dim { dim: 0, cells: vec!["Ob.pt".into()] },
+                        Dim { dim: 1, cells: vec!["Ob.ob : Ob.pt -> Ob.pt".into()] },
+                        Dim { dim: 2, cells: vec!["c : Ob.ob -> Ob.ob Ob.ob".into()] },
                     ],
                     diagrams: vec!["c : Ob.ob -> Ob.ob Ob.ob".into()],
                     maps: vec!["Comagma :: Comagma".into(), "Ob :: Ob".into()],
                 },
-                NormalizedType {
+                Type {
                     name: "FrobeniusMagma".into(),
                     dims: vec![
-                        NormalizedDim { dim: 0, cells: vec!["Ob.pt".into()] },
-                        NormalizedDim { dim: 1, cells: vec!["Ob.ob : Ob.pt -> Ob.pt".into()] },
-                        NormalizedDim { dim: 2, cells: vec![
+                        Dim { dim: 0, cells: vec!["Ob.pt".into()] },
+                        Dim { dim: 1, cells: vec!["Ob.ob : Ob.pt -> Ob.pt".into()] },
+                        Dim { dim: 2, cells: vec![
                             "Comagma.c : Ob.ob -> Ob.ob Ob.ob".into(),
                             "Magma.m : Ob.ob Ob.ob -> Ob.ob".into(),
                         ]},
@@ -69,21 +69,21 @@ fn magma_interpretation() {
                         "Ob :: Ob".into(),
                     ],
                 },
-                NormalizedType {
+                Type {
                     name: "Magma".into(),
                     dims: vec![
-                        NormalizedDim { dim: 0, cells: vec!["Ob.pt".into()] },
-                        NormalizedDim { dim: 1, cells: vec!["Ob.ob : Ob.pt -> Ob.pt".into()] },
-                        NormalizedDim { dim: 2, cells: vec!["m : Ob.ob Ob.ob -> Ob.ob".into()] },
+                        Dim { dim: 0, cells: vec!["Ob.pt".into()] },
+                        Dim { dim: 1, cells: vec!["Ob.ob : Ob.pt -> Ob.pt".into()] },
+                        Dim { dim: 2, cells: vec!["m : Ob.ob Ob.ob -> Ob.ob".into()] },
                     ],
                     diagrams: vec!["m : Ob.ob Ob.ob -> Ob.ob".into()],
                     maps: vec!["Magma :: Magma".into(), "Ob :: Ob".into()],
                 },
-                NormalizedType {
+                Type {
                     name: "Ob".into(),
                     dims: vec![
-                        NormalizedDim { dim: 0, cells: vec!["pt".into()] },
-                        NormalizedDim { dim: 1, cells: vec!["ob : pt -> pt".into()] },
+                        Dim { dim: 0, cells: vec!["pt".into()] },
+                        Dim { dim: 1, cells: vec!["ob : pt -> pt".into()] },
                     ],
                     diagrams: vec!["ob : pt -> pt".into(), "pt".into()],
                     maps: vec!["Ob :: Ob".into()],
@@ -103,7 +103,7 @@ fn empty2_single_type_with_one_cell() {
     assert_eq!(norm.cells_count, 1);
     assert_eq!(norm.types_count, 2);
     let c = norm.modules[0].types.iter().find(|t| t.name == "C").unwrap();
-    assert_eq!(c.dims, vec![NormalizedDim { dim: 0, cells: vec!["c".into()] }]);
+    assert_eq!(c.dims, vec![Dim { dim: 0, cells: vec!["c".into()] }]);
     assert_eq!(c.maps, vec!["C :: C".to_string()]);
 }
 
@@ -119,7 +119,7 @@ fn empty_maps_across_types() {
     let module = &norm.modules[0];
     // D reuses C's generators
     let d = module.types.iter().find(|t| t.name == "D").unwrap();
-    assert_eq!(d.dims, vec![NormalizedDim { dim: 0, cells: vec!["c".into()] }]);
+    assert_eq!(d.dims, vec![Dim { dim: 0, cells: vec!["c".into()] }]);
     // E has a module-level let g :: D = f, exposed as a map alongside f :: C
     let e = module.types.iter().find(|t| t.name == "E").unwrap();
     assert!(e.maps.contains(&"f :: C".to_string()));

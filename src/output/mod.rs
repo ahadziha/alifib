@@ -152,6 +152,189 @@ impl fmt::Display for InterpretedFile {
     }
 }
 
+// ---- Store ----
+
+/// A name-keyed view of a [`GlobalStore`], free of opaque [`crate::aux::GlobalId`]s.
+///
+/// Suitable for structural equality tests and as the intermediate form for the
+/// string renderer. Produced by [`GlobalStore::normalize`].
+#[derive(Debug, PartialEq)]
+pub struct Store {
+    pub cells_count: usize,
+    pub types_count: usize,
+    pub modules: Vec<Module>,
+}
+
+/// A single module section in a [`Store`], in load order.
+#[derive(Debug, PartialEq)]
+pub struct Module {
+    pub path: String,
+    /// Types (named generators) sorted by name.
+    pub types: Vec<Type>,
+}
+
+/// A single type within a [`Module`].
+#[derive(Debug, PartialEq)]
+pub struct Type {
+    /// Empty string for the unnamed root type (displayed as `<empty>`).
+    pub name: String,
+    /// Generators grouped by dimension in ascending order.
+    pub dims: Vec<Dim>,
+    /// Named diagrams rendered as `"name : src -> tgt"`, sorted by name.
+    pub diagrams: Vec<String>,
+    /// Named maps rendered as `"name :: Domain"`, sorted by name.
+    pub maps: Vec<String>,
+}
+
+/// Generators of a single dimension within a [`Type`].
+#[derive(Debug, PartialEq)]
+pub struct Dim {
+    pub dim: usize,
+    /// Each cell rendered as `"name : src -> tgt"` or `"name"` for 0-dim, sorted by name.
+    pub cells: Vec<String>,
+}
+
+impl GlobalStore {
+    /// Convert this store into a [`Store`]: a plain, name-keyed tree with
+    /// no opaque IDs, suitable for `assert_eq!` in tests and as the renderer's input.
+    ///
+    /// Panics if an interpreter invariant is violated (e.g. a module generator
+    /// has no corresponding type entry). Those are interpreter bugs, not caller errors.
+    pub fn normalize(&self) -> Store {
+        let modules = self
+            .modules_iter()
+            .map(|(path, mc)| normalize_module(self, path, mc))
+            .collect();
+        Store {
+            cells_count: self.cells_count(),
+            types_count: self.types_count(),
+            modules,
+        }
+    }
+}
+
+fn normalize_module(store: &GlobalStore, path: &str, mc: &Complex) -> Module {
+    let mut gen_entries: Vec<(&str, &Tag)> = mc
+        .generators_iter()
+        .map(|(name, tag, _)| (name.as_str(), tag))
+        .collect();
+    gen_entries.sort_by_key(|(name, _)| *name);
+
+    let types = gen_entries
+        .iter()
+        .map(|(gen_name, gen_tag)| {
+            let Tag::Global(gid) = gen_tag else {
+                panic!(
+                    "interpreter invariant violated: module generator '{}' has a local tag",
+                    gen_name
+                );
+            };
+            let type_entry = store
+                .find_type(*gid)
+                .expect("interpreter invariant violated: module generator has no type entry");
+            normalize_type(store, gen_name, mc, &type_entry.complex)
+        })
+        .collect();
+
+    Module { path: path.to_owned(), types }
+}
+
+fn normalize_type(
+    store: &GlobalStore,
+    name: &str,
+    module_complex: &Complex,
+    tc: &Complex,
+) -> Type {
+    let mut dim_set: Vec<usize> = tc.generators_iter().map(|(_, _, d)| d).collect();
+    dim_set.sort_unstable();
+    dim_set.dedup();
+
+    let dims = dim_set
+        .iter()
+        .map(|&dim| {
+            let mut gens: Vec<(&str, &Tag)> = tc
+                .generators_iter()
+                .filter(|(_, _, d)| *d == dim)
+                .map(|(n, tag, _)| (n.as_str(), tag))
+                .collect();
+            gens.sort_by_key(|(n, _)| *n);
+            let cells = gens
+                .iter()
+                .map(|(n, tag)| {
+                    let data = store
+                        .cell_data_for_tag(tc, tag)
+                        .expect("interpreter invariant violated: generator has no cell data");
+                    render_cell(n, &data, tc)
+                })
+                .collect();
+            Dim { dim, cells }
+        })
+        .collect();
+
+    let mut diag_entries: Vec<(&str, &Diagram)> =
+        tc.diagrams_iter().map(|(n, d)| (n.as_str(), d)).collect();
+    diag_entries.sort_by_key(|(n, _)| *n);
+    let diagrams = diag_entries
+        .iter()
+        .map(|(n, d)| render_named_diagram(n, d, tc))
+        .collect();
+
+    let mut map_entries: Vec<(&str, &MapDomain)> =
+        tc.maps_iter().map(|(n, _, dom)| (n.as_str(), dom)).collect();
+    map_entries.sort_by_key(|(n, _)| *n);
+    let maps = map_entries
+        .iter()
+        .map(|(n, dom)| format!("{} :: {}", name_or_empty(n), render_domain(dom, module_complex)))
+        .collect();
+
+    Type { name: name.to_owned(), dims, diagrams, maps }
+}
+
+// ---- Display for Store ----
+
+impl fmt::Display for Store {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "{} cells, {} types, {} modules",
+                 self.cells_count, self.types_count, self.modules.len())?;
+        for module in &self.modules {
+            write!(f, "{}", module)?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for Module {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "\n* Module {}\n", self.path)?;
+        for (i, t) in self.types.iter().enumerate() {
+            if i > 0 { writeln!(f)?; }
+            write!(f, "{}", t)?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let label = if self.name.is_empty() { "<empty>" } else { &self.name };
+        writeln!(f, "Type {}", label)?;
+        if self.dims.is_empty() {
+            writeln!(f, "  (no cells)")?;
+        } else {
+            for dg in &self.dims {
+                writeln!(f, "  [{}] {}", dg.dim, dg.cells.join(", "))?;
+            }
+        }
+        if !self.diagrams.is_empty() {
+            writeln!(f, "  Diagrams: {}", self.diagrams.join(", "))?;
+        }
+        if !self.maps.is_empty() {
+            writeln!(f, "  Maps: {}", self.maps.join(", "))?;
+        }
+        Ok(())
+    }
+}
+
 // ---- Rendering helpers ----
 
 fn name_or_empty(s: &str) -> &str {
@@ -238,108 +421,6 @@ fn render_domain(domain: &MapDomain, module_complex: &Complex) -> String {
 
 impl fmt::Display for GlobalStore {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(
-            f,
-            "{} cells, {} types, {} modules",
-            self.cells_count(),
-            self.types_count(),
-            self.modules_count(),
-        )?;
-
-        let module_entries: Vec<_> = self.modules_iter().collect();
-        fmt_module_entries(self, f, &module_entries)
+        write!(f, "{}", self.normalize())
     }
-}
-
-fn fmt_module_entries(
-    store: &GlobalStore,
-    f: &mut fmt::Formatter<'_>,
-    module_entries: &[(&str, &Complex)],
-) -> fmt::Result {
-    for (module_id, module_complex) in module_entries {
-        write!(f, "\n* Module {}\n", module_id)?;
-
-        let mut gen_entries: Vec<(&str, &Tag)> = module_complex
-            .generators_iter()
-            .map(|(name, tag, _)| (name.as_str(), tag))
-            .collect();
-        gen_entries.sort_by_key(|(name, _)| *name);
-
-        for (i, (gen_name, gen_tag)) in gen_entries.iter().enumerate() {
-            if i > 0 {
-                writeln!(f)?;
-            }
-            let type_label = name_or_empty(gen_name);
-
-            let Tag::Global(gid) = gen_tag else {
-                writeln!(f, "Type {} (local)", type_label)?;
-                continue;
-            };
-            let Some(type_entry) = store.find_type(*gid) else {
-                writeln!(f, "Type {} (not found)", type_label)?;
-                continue;
-            };
-
-            writeln!(f, "Type {}", type_label)?;
-            let tc = &type_entry.complex;
-
-            // Cells grouped by dimension, with boundaries
-            let mut dims: Vec<usize> = tc.generators_iter().map(|(_, _, dim)| dim).collect();
-            dims.sort_unstable();
-            dims.dedup();
-
-            if dims.is_empty() {
-                writeln!(f, "  (no cells)")?;
-            } else {
-                for dim in &dims {
-                    let mut gens: Vec<(&str, &Tag)> = tc
-                        .generators_iter()
-                        .filter(|(_, _, d)| d == dim)
-                        .map(|(name, tag, _)| (name.as_str(), tag))
-                        .collect();
-                    gens.sort_by_key(|(name, _)| *name);
-
-                    let rendered: Vec<String> = gens
-                        .iter()
-                        .filter_map(|(name, tag)| {
-                            let data = store.cell_data_for_tag(tc, tag)?;
-                            Some(render_cell(name, &data, tc))
-                        })
-                        .collect();
-
-                    if !rendered.is_empty() {
-                        writeln!(f, "  [{}] {}", dim, rendered.join(", "))?;
-                    }
-                }
-            }
-
-            // Diagrams
-            let mut diag_entries: Vec<(&str, &Diagram)> =
-                tc.diagrams_iter().map(|(name, diag)| (name.as_str(), diag)).collect();
-            if !diag_entries.is_empty() {
-                diag_entries.sort_by_key(|(name, _)| *name);
-                let diags: Vec<String> = diag_entries
-                    .iter()
-                    .map(|(name, diag)| render_named_diagram(name, diag, tc))
-                    .collect();
-                writeln!(f, "  Diagrams: {}", diags.join(", "))?;
-            }
-
-            // Maps
-            let mut map_entries: Vec<(&str, &MapDomain)> =
-                tc.maps_iter().map(|(name, _, domain)| (name.as_str(), domain)).collect();
-            if !map_entries.is_empty() {
-                map_entries.sort_by_key(|(name, _)| *name);
-                let maps: Vec<String> = map_entries
-                    .iter()
-                    .map(|(name, domain)| {
-                        let dom = render_domain(domain, module_complex);
-                        format!("{} :: {}", name_or_empty(name), dom)
-                    })
-                    .collect();
-                writeln!(f, "  Maps: {}", maps.join(", "))?;
-            }
-        }
-    }
-    Ok(())
 }

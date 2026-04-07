@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use alifib::aux::loader::Loader;
-use alifib::output::{InterpretedFile, NormalizedStore};
+use alifib::output::{InterpretedFile, Store};
 
 fn example_path(name: &str) -> String {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -11,7 +11,7 @@ fn example_path(name: &str) -> String {
         .into_owned()
 }
 
-fn load_example(name: &str) -> NormalizedStore {
+fn load_example(name: &str) -> Store {
     InterpretedFile::load(&Loader::default(vec![]), &example_path(name))
         .ok()
         .unwrap_or_else(|| panic!("{} should interpret without errors", name))
