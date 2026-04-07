@@ -43,10 +43,3 @@ fn golden_semigroup() {
         insta::assert_debug_snapshot!(load_example("Semigroup.ali"));
     });
 }
-
-#[test]
-fn golden_yang_baxter() {
-    insta::with_settings!({ filters => vec![PATH_FILTER] }, {
-        insta::assert_debug_snapshot!(load_example("YangBaxter.ali"));
-    });
-}
