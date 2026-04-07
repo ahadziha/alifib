@@ -575,14 +575,26 @@ fn interpret_sequence_as_term(
                         }
                     }
 
-                    // Dimension constraint: holes must match the right neighbour's dimension.
-                    let n = d_right.top_dim();
+                    // Dimension constraints: holes must match both neighbours' dimensions.
+                    // Emitting from both sides means a left/right dimension mismatch (which
+                    // would make the paste ill-typed) is caught as a DimEq inconsistency.
+                    let n_right = d_right.top_dim();
                     for &id in &block_hole_ids {
                         result.constraints.push(Constraint::DimEq {
                             hole: id,
-                            dim: n,
+                            dim: n_right,
                             origin: ConstraintOrigin::Paste { paste_dim: k },
                         });
+                    }
+                    if let Some(ref left_diag) = hole_block_left {
+                        let n_left = left_diag.top_dim();
+                        for &id in &block_hole_ids {
+                            result.constraints.push(Constraint::DimEq {
+                                hole: id,
+                                dim: n_left,
+                                origin: ConstraintOrigin::Paste { paste_dim: k },
+                            });
+                        }
                     }
 
                     last_hole_block_start = None;

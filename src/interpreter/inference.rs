@@ -263,6 +263,12 @@ impl SolvedHole {
     ) -> bool {
         match self.boundaries.get(&slot) {
             None | Some(SolvedBd::Partial { .. }) => {
+                // Upgrade Empty or Partial to Known.  We do NOT consistency-check
+                // Partial against Known here: a Partial entry for an embedded hole
+                // carries the source cell's boundary (under the partial map), which
+                // represents the *composite's* boundary, not the hole's own boundary.
+                // Applying the map to that boundary would give the composite's target,
+                // which is legitimately different from the hole's direct boundary.
                 self.boundaries.insert(slot, SolvedBd::Known {
                     diagram: diagram.clone(),
                     scope: scope.clone(),
@@ -299,7 +305,7 @@ impl SolvedHole {
         scope: &Arc<Complex>,
         origin: &ConstraintOrigin,
     ) -> bool {
-        match self.boundaries.get(&slot) {
+        match self.boundaries.remove(&slot) {
             None => {
                 self.boundaries.insert(slot, SolvedBd::Partial {
                     boundary: boundary.clone(),
@@ -309,10 +315,18 @@ impl SolvedHole {
                 });
                 true
             }
-            Some(SolvedBd::Partial { .. }) => {
-                // Take ownership via remove to avoid cloning the existing entry.
-                let SolvedBd::Partial { map: existing_map, boundary: existing_bd, scope: existing_scope, origin: existing_origin }
-                    = self.boundaries.remove(&slot).unwrap() else { unreachable!() };
+            Some(SolvedBd::Partial { map: existing_map, boundary: existing_bd, scope: existing_scope, origin: existing_origin }) => {
+                // Bug B fix: two PartialBoundary constraints at the same slot should carry
+                // isomorphic boundary diagrams (globularity guarantees this for valid inputs).
+                // Record an inconsistency if they disagree, but keep the existing entry.
+                if !Diagram::isomorphic(&existing_bd, boundary) {
+                    self.inconsistencies.push(format!(
+                        "conflicting partial ∂{}{}: boundary diagrams disagree (from {})",
+                        match slot.sign { DiagramSign::Source => "⁻", DiagramSign::Target => "⁺" },
+                        aux::dim_subscript(slot.dim),
+                        origin
+                    ));
+                }
                 let merged = PartialMap::merge(&existing_map, map);
                 self.boundaries.insert(slot, SolvedBd::Partial {
                     boundary: existing_bd,
@@ -323,7 +337,21 @@ impl SolvedHole {
                 // No new slot opened: sub-slots were already propagated at first insertion.
                 false
             }
-            Some(SolvedBd::Known { .. }) => false,
+            Some(SolvedBd::Known { diagram: known_diagram, scope: known_scope, origin: known_origin }) => {
+                // Known takes priority; no consistency check needed here.
+                // For direct holes, enrich_holes emits BoundaryEq (not PartialBoundary) when
+                // the map covers the boundary, so there is nothing to compare.
+                // For embedded holes, the PartialBoundary boundary represents the source
+                // cell's boundary (the composite's target), which is distinct from the
+                // hole's direct boundary — applying the map would give the composite's
+                // boundary, not the hole's, so a comparison would be semantically wrong.
+                self.boundaries.insert(slot, SolvedBd::Known {
+                    diagram: known_diagram,
+                    scope: known_scope,
+                    origin: known_origin,
+                });
+                false
+            }
         }
     }
 }
@@ -718,6 +746,175 @@ mod tests {
         assert!(
             matches!(result[0].boundaries.get(&slot), Some(SolvedBd::Known { .. })),
             "BoundaryEq should upgrade the slot from Partial to Known"
+        );
+        assert!(result[0].inconsistencies.is_empty());
+    }
+
+    #[test]
+    fn solve_partial_boundary_fills_slot() {
+        // A PartialBoundary in isolation should fill the slot as Partial.
+        use crate::core::partial_map::PartialMap;
+        let id = HoleId::fresh();
+        let slot = BdSlot { sign: DiagramSign::Source, dim: 0 };
+        let c = Constraint::PartialBoundary {
+            hole: id, slot,
+            boundary: zero_cell("a"),
+            map: PartialMap::empty(),
+            scope: empty_scope(),
+            origin: ConstraintOrigin::PartialMap {
+                source_tag: crate::aux::Tag::Local("src".into())
+            },
+        };
+        let result = solve(&[entry(id)], &[c]);
+        assert!(
+            matches!(result[0].boundaries.get(&slot), Some(SolvedBd::Partial { .. })),
+            "PartialBoundary should fill slot as Partial"
+        );
+        assert!(result[0].inconsistencies.is_empty());
+    }
+
+    #[test]
+    fn solve_partial_partial_merge() {
+        // Two PartialBoundary at the same slot with the same boundary and disjoint maps
+        // should merge their maps without producing an inconsistency.
+        use crate::core::partial_map::PartialMap;
+        use crate::aux::Tag;
+
+        let id = HoleId::fresh();
+        let slot = BdSlot { sign: DiagramSign::Source, dim: 0 };
+        let boundary = zero_cell("a");
+        let origin = ConstraintOrigin::PartialMap { source_tag: Tag::Local("src".into()) };
+        let c1 = Constraint::PartialBoundary {
+            hole: id, slot, boundary: boundary.clone(), map: PartialMap::empty(),
+            scope: empty_scope(), origin: origin.clone(),
+        };
+        let c2 = Constraint::PartialBoundary {
+            hole: id, slot, boundary: boundary.clone(), map: PartialMap::empty(),
+            scope: empty_scope(), origin,
+        };
+        let result = solve(&[entry(id)], &[c1, c2]);
+        assert!(
+            matches!(result[0].boundaries.get(&slot), Some(SolvedBd::Partial { .. })),
+            "slot should remain Partial after merge"
+        );
+        assert!(result[0].inconsistencies.is_empty(), "same boundary should not conflict");
+    }
+
+    #[test]
+    fn solve_partial_partial_inconsistent_boundary() {
+        // Two PartialBoundary at the same slot with different boundary diagrams
+        // should record an inconsistency (Bug B).
+        use crate::core::partial_map::PartialMap;
+        use crate::aux::Tag;
+
+        let id = HoleId::fresh();
+        let slot = BdSlot { sign: DiagramSign::Source, dim: 0 };
+        let origin = ConstraintOrigin::PartialMap { source_tag: Tag::Local("src".into()) };
+        let c1 = Constraint::PartialBoundary {
+            hole: id, slot, boundary: zero_cell("a"), map: PartialMap::empty(),
+            scope: empty_scope(), origin: origin.clone(),
+        };
+        let c2 = Constraint::PartialBoundary {
+            hole: id, slot, boundary: zero_cell("b"), map: PartialMap::empty(),
+            scope: empty_scope(), origin,
+        };
+        let result = solve(&[entry(id)], &[c1, c2]);
+        assert_eq!(result[0].inconsistencies.len(), 1, "different boundaries should record inconsistency");
+    }
+
+    #[test]
+    fn solve_known_then_partial_dropped() {
+        // BoundaryEq then PartialBoundary at the same slot: slot stays Known.
+        use crate::core::partial_map::PartialMap;
+        use crate::aux::Tag;
+
+        let id = HoleId::fresh();
+        let slot = BdSlot { sign: DiagramSign::Source, dim: 0 };
+        let diag = zero_cell("a");
+        let c_known = Constraint::BoundaryEq {
+            hole: id, slot, diagram: diag.clone(), scope: empty_scope(),
+            origin: ConstraintOrigin::Declaration,
+        };
+        let c_partial = Constraint::PartialBoundary {
+            hole: id, slot, boundary: diag, map: PartialMap::empty(),
+            scope: empty_scope(),
+            origin: ConstraintOrigin::PartialMap { source_tag: Tag::Local("src".into()) },
+        };
+        let result = solve(&[entry(id)], &[c_known, c_partial]);
+        assert!(
+            matches!(result[0].boundaries.get(&slot), Some(SolvedBd::Known { .. })),
+            "Known should not be downgraded by Partial"
+        );
+        assert!(result[0].inconsistencies.is_empty());
+    }
+
+    #[test]
+    fn solve_value_higher_dim() {
+        // A Value constraint on a 1-cell should derive DimEq(1) and BoundaryEq at
+        // the two principal slots (Source, 0) and (Target, 0).
+        use crate::core::diagram::{CellData, Diagram};
+        use crate::aux::Tag;
+
+        let src_tag = Tag::Local("x".into());
+        let tgt_tag = Tag::Local("y".into());
+        let src = Diagram::cell(src_tag, &CellData::Zero).unwrap();
+        let tgt = Diagram::cell(tgt_tag, &CellData::Zero).unwrap();
+        let arr_tag = Tag::Local("f".into());
+        let arr = Diagram::cell(
+            arr_tag,
+            &CellData::Boundary { boundary_in: src.clone().into(), boundary_out: tgt.clone().into() },
+        ).unwrap();
+
+        let id = HoleId::fresh();
+        let c = Constraint::Value {
+            hole: id, diagram: arr, scope: empty_scope(),
+            origin: ConstraintOrigin::Assertion,
+        };
+        let result = solve(&[entry(id)], &[c]);
+        assert_eq!(result[0].dim, Some(1), "dim should be 1 for a 1-cell Value");
+        let src_slot = BdSlot { sign: DiagramSign::Source, dim: 0 };
+        let tgt_slot = BdSlot { sign: DiagramSign::Target, dim: 0 };
+        assert!(
+            matches!(result[0].boundaries.get(&src_slot), Some(SolvedBd::Known { .. })),
+            "source boundary should be Known after Value derivation"
+        );
+        assert!(
+            matches!(result[0].boundaries.get(&tgt_slot), Some(SolvedBd::Known { .. })),
+            "target boundary should be Known after Value derivation"
+        );
+        assert!(result[0].inconsistencies.is_empty());
+    }
+
+    #[test]
+    fn solve_globular_cascade() {
+        // A BoundaryEq at dim 1 should derive BoundaryEq at dim 0 via globular_sub_boundaries.
+        use crate::core::diagram::{CellData, Diagram};
+        use crate::aux::Tag;
+
+        let x = Diagram::cell(Tag::Local("x".into()), &CellData::Zero).unwrap();
+        let y = Diagram::cell(Tag::Local("y".into()), &CellData::Zero).unwrap();
+        let f = Diagram::cell(
+            Tag::Local("f".into()),
+            &CellData::Boundary { boundary_in: x.clone().into(), boundary_out: y.clone().into() },
+        ).unwrap();
+
+        let id = HoleId::fresh();
+        let slot = BdSlot { sign: DiagramSign::Source, dim: 1 };
+        let c = Constraint::BoundaryEq {
+            hole: id, slot, diagram: f, scope: empty_scope(),
+            origin: ConstraintOrigin::Declaration,
+        };
+        let result = solve(&[entry(id)], &[c]);
+        // The BoundaryEq at dim 1 should cascade to fill dim-0 slots.
+        let sub_src = BdSlot { sign: DiagramSign::Source, dim: 0 };
+        let sub_tgt = BdSlot { sign: DiagramSign::Target, dim: 0 };
+        assert!(
+            result[0].boundaries.contains_key(&sub_src),
+            "globular cascade should fill (Source, 0)"
+        );
+        assert!(
+            result[0].boundaries.contains_key(&sub_tgt),
+            "globular cascade should fill (Target, 0)"
         );
         assert!(result[0].inconsistencies.is_empty());
     }

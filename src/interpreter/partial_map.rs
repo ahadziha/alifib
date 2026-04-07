@@ -36,6 +36,14 @@ fn enrich_holes(
         // Constraint system: emit BoundaryEq or PartialBoundary for each boundary slot.
         let Some(source_tag) = &hole.source_tag else { continue; };
         let Some(cell_data) = get_cell_data(context, domain, source_tag) else { continue; };
+        // 0-cells have no boundary, but a direct hole mapped from a 0-cell must itself be a 0-cell.
+        if matches!(cell_data, CellData::Zero) {
+            if hole.direct_in_partial_map {
+                let origin = ConstraintOrigin::PartialMap { source_tag: source_tag.clone() };
+                new_constraints.push(Constraint::DimEq { hole: hole.id, dim: 0, origin });
+            }
+            continue;
+        }
         let CellData::Boundary { boundary_in, boundary_out } = &cell_data else { continue; };
 
         let origin = ConstraintOrigin::PartialMap { source_tag: source_tag.clone() };

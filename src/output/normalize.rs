@@ -239,7 +239,11 @@ fn render_solved_bd(bd: &SolvedBd) -> String {
 pub fn render_solved_hole(hole: &SolvedHole) -> String {
     // If an Eq constraint determined the exact value, report it.
     if let Some((ref diag, ref scope)) = hole.value {
-        return format!("= {}", render_diagram(diag, scope));
+        let mut msg = format!("= {}", render_diagram(diag, scope));
+        if !hole.inconsistencies.is_empty() {
+            msg.push_str(&format!(" [inconsistencies: {}]", hole.inconsistencies.join("; ")));
+        }
+        return msg;
     }
 
     // Determine the best dimension k to display as "src -> tgt".
@@ -289,10 +293,11 @@ pub fn render_solved_hole(hole: &SolvedHole) -> String {
 
     // Fall back: list all known slots grouped by dimension, highest first.
     if hole.boundaries.is_empty() {
+        let dim_info = hole.dim.map(|d| format!(" (dim {})", d)).unwrap_or_default();
         if hole.inconsistencies.is_empty() {
-            "unknown boundary".to_string()
+            format!("unknown boundary{}", dim_info)
         } else {
-            format!("inconsistent constraints: {}", hole.inconsistencies.join("; "))
+            format!("inconsistent constraints{}: {}", dim_info, hole.inconsistencies.join("; "))
         }
     } else {
         // Collect distinct dims and iterate descending so higher dimensions come first.
@@ -330,5 +335,94 @@ pub fn report_solved_holes(file: &InterpretedFile) {
 impl fmt::Display for GlobalStore {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.normalize())
+    }
+}
+
+// ---- Tests for render_solved_hole ----
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::interpreter::inference::{HoleId, SolvedHole};
+    use crate::language::ast::Span;
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    fn dummy_span() -> Span { Span { start: 0, end: 0 } }
+
+    fn empty_hole() -> SolvedHole {
+        SolvedHole {
+            id: HoleId::fresh(),
+            span: dummy_span(),
+            dim: None,
+            boundaries: BTreeMap::new(),
+            value: None,
+            inconsistencies: vec![],
+        }
+    }
+
+    #[test]
+    fn render_unknown_boundary() {
+        let hole = empty_hole();
+        assert_eq!(render_solved_hole(&hole), "unknown boundary");
+    }
+
+    #[test]
+    fn render_dim_only() {
+        // When only dim is known (no boundary slots), dim should appear in output.
+        let mut hole = empty_hole();
+        hole.dim = Some(2);
+        let msg = render_solved_hole(&hole);
+        assert!(msg.contains("dim 2"), "expected dim in output, got: {msg}");
+    }
+
+    #[test]
+    fn render_value_only() {
+        // A Value-resolved hole shows "= <diagram>".
+        use crate::core::diagram::{Diagram, CellData};
+        use crate::aux::Tag;
+        let cell = Diagram::cell(Tag::Local("x".into()), &CellData::Zero).unwrap();
+        let scope = Arc::new(Complex::empty());
+        let mut hole = empty_hole();
+        hole.value = Some((cell, scope));
+        let msg = render_solved_hole(&hole);
+        assert!(msg.starts_with("= "), "expected '= ' prefix, got: {msg}");
+        assert!(!msg.contains("inconsistencies"), "no inconsistencies expected");
+    }
+
+    #[test]
+    fn render_value_with_inconsistencies() {
+        // Bug E: a Value-resolved hole with inconsistencies should show both.
+        use crate::core::diagram::{Diagram, CellData};
+        use crate::aux::Tag;
+        let cell = Diagram::cell(Tag::Local("x".into()), &CellData::Zero).unwrap();
+        let scope = Arc::new(Complex::empty());
+        let mut hole = empty_hole();
+        hole.value = Some((cell, scope));
+        hole.inconsistencies.push("some conflict".to_string());
+        let msg = render_solved_hole(&hole);
+        assert!(msg.starts_with("= "), "expected value prefix");
+        assert!(msg.contains("inconsistencies"), "inconsistencies should appear even when value is set");
+    }
+
+    #[test]
+    fn render_inconsistencies_no_boundaries() {
+        // Inconsistencies with no boundaries: shows inconsistent constraints message.
+        let mut hole = empty_hole();
+        hole.inconsistencies.push("conflict A".to_string());
+        let msg = render_solved_hole(&hole);
+        assert!(msg.contains("inconsistent constraints"), "expected inconsistent constraints message");
+        assert!(msg.contains("conflict A"));
+    }
+
+    #[test]
+    fn render_dim_with_inconsistencies() {
+        // Dim known + inconsistencies + no boundaries: shows dim in inconsistency message.
+        let mut hole = empty_hole();
+        hole.dim = Some(1);
+        hole.inconsistencies.push("conflict B".to_string());
+        let msg = render_solved_hole(&hole);
+        assert!(msg.contains("dim 1"), "dim should appear in output: {msg}");
+        assert!(msg.contains("conflict B"));
     }
 }
