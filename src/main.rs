@@ -2,6 +2,7 @@ use std::fs;
 use std::process;
 use std::time::Instant;
 
+use alifib::aux::error::report_load_file_error;
 use alifib::aux::loader::Loader;
 use alifib::interpreter::{InterpretedFile, LoadResult};
 use alifib::language;
@@ -84,8 +85,34 @@ fn write_output(path: Option<&str>, text: &str) -> Result<(), String> {
     }
 }
 
-fn run_interpreter(input: &str, output_path: Option<&str>) -> bool {
-    let result = InterpretedFile::load(&Loader::default(vec![]), input);
+fn run_ast(loader: &Loader, input: &str, output: Option<&str>) -> bool {
+    match loader.parse_root(input) {
+        Err(e) => { report_load_file_error(&e); false }
+        Ok(program) => {
+            if let Err(msg) = write_output(output, &program.to_string()) {
+                eprintln!("error: {}", msg);
+                return false;
+            }
+            true
+        }
+    }
+}
+
+fn run_print(loader: &Loader, input: &str, output: Option<&str>) -> bool {
+    match loader.parse_root(input) {
+        Err(e) => { report_load_file_error(&e); false }
+        Ok(program) => {
+            if let Err(msg) = write_output(output, &language::print_program(&program)) {
+                eprintln!("error: {}", msg);
+                return false;
+            }
+            true
+        }
+    }
+}
+
+fn run_interpreter(loader: &Loader, input: &str, output_path: Option<&str>) -> bool {
+    let result = InterpretedFile::load(loader, input);
     let file = match result {
         LoadResult::Loaded(f) => f,
         other => { other.report(); return false; }
@@ -100,9 +127,8 @@ fn run_interpreter(input: &str, output_path: Option<&str>) -> bool {
     true
 }
 
-fn run_bench(input: &str, n: usize) -> bool {
-    let loader = Loader::default(vec![]);
-    match InterpretedFile::load(&loader, input) {
+fn run_bench(loader: &Loader, input: &str, n: usize) -> bool {
+    match InterpretedFile::load(loader, input) {
         LoadResult::Loaded(file) if file.has_holes() => {
             eprintln!("error: benchmark file contains holes");
             return false;
@@ -116,50 +142,22 @@ fn run_bench(input: &str, n: usize) -> bool {
     }
     let start = Instant::now();
     for _ in 0..n {
-        let _ = InterpretedFile::load(&loader, input);
+        let _ = InterpretedFile::load(loader, input);
     }
     let elapsed = start.elapsed();
     println!("{:.3}", elapsed.as_secs_f64() * 1000.0 / n as f64);
     true
 }
 
-fn parse_file(input: &str) -> Option<language::Program> {
-    let source = match fs::read_to_string(input) {
-        Ok(s) => s,
-        Err(e) => { eprintln!("error: could not read `{}`: {}", input, e); return None; }
-    };
-    match language::parse(&source) {
-        Ok(p) => Some(p),
-        Err(errors) => { language::report_errors(&errors, &source, input); None }
-    }
-}
-
-fn run_ast(input: &str, output: Option<&str>) -> bool {
-    let Some(program) = parse_file(input) else { return false; };
-    if let Err(msg) = write_output(output, &program.to_string()) {
-        eprintln!("error: {}", msg);
-        return false;
-    }
-    true
-}
-
-fn run_print(input: &str, output: Option<&str>) -> bool {
-    let Some(program) = parse_file(input) else { return false; };
-    if let Err(msg) = write_output(output, &language::print_program(&program)) {
-        eprintln!("error: {}", msg);
-        return false;
-    }
-    true
-}
-
 fn run(args: Args) -> bool {
+    let loader = Loader::default(vec![]);
     if let Some(n) = args.bench {
-        return run_bench(&args.input, n);
+        return run_bench(&loader, &args.input, n);
     }
     match args.mode {
-        RunMode::Ast => run_ast(&args.input, args.output.as_deref()),
-        RunMode::Print => run_print(&args.input, args.output.as_deref()),
-        RunMode::Interpret => run_interpreter(&args.input, args.output.as_deref()),
+        RunMode::Ast => run_ast(&loader, &args.input, args.output.as_deref()),
+        RunMode::Print => run_print(&loader, &args.input, args.output.as_deref()),
+        RunMode::Interpret => run_interpreter(&loader, &args.input, args.output.as_deref()),
     }
 }
 

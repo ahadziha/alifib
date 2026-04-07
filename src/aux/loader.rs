@@ -107,6 +107,27 @@ impl Loader {
         Self { inner: FileLoader { search_paths, read_file } }
     }
 
+    /// Read and parse the root file only, without resolving any dependencies.
+    /// Use this when only the AST of a single file is needed.
+    pub fn parse_root(&self, path: &str) -> Result<Program, LoadFileError> {
+        let canonical_path = super::path::canonicalize_existing(path)
+            .map_err(|e| LoadFileError::Load {
+                path: path.to_owned(),
+                cause: if e.kind() == std::io::ErrorKind::NotFound {
+                    LoadError::NotFound
+                } else {
+                    LoadError::IoError(e.to_string())
+                },
+            })?;
+        let source = (self.inner.read_file)(&canonical_path)
+            .map_err(|cause| LoadFileError::Load { path: path.to_owned(), cause })?;
+        language::parse(&source).map_err(|errors| LoadFileError::Parse {
+            path: canonical_path,
+            source,
+            errors,
+        })
+    }
+
     pub fn load(&self, path: &str) -> Result<LoadedFile, LoadFileError> {
         // Strictly canonicalize up front so the path used as a module ID is
         // always the true canonical path, regardless of how the caller spelled it.
