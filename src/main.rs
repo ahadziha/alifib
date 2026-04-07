@@ -4,8 +4,8 @@ use std::time::Instant;
 
 use alifib::aux::error::report_load_file_error;
 use alifib::aux::loader::Loader;
-use alifib::interpreter::{InterpretedFile, LoadResult};
-use alifib::language::{self, Program};
+use alifib::interpreter::InterpretedFile;
+use alifib::language;
 use alifib::output;
 
 const USAGE: &str = "Usage: alifib <input-file> [-o|--output <output-file>] [--ast] [--print] [--bench N]";
@@ -80,16 +80,18 @@ fn write_output(path: Option<&str>, text: &str) -> Result<(), ()> {
     }
 }
 
-fn run_parse(loader: &Loader, input: &str, output: Option<&str>, render: impl Fn(&Program) -> String) -> Result<(), ()> {
+fn run_ast(loader: &Loader, input: &str, output: Option<&str>) -> Result<(), ()> {
     let program = loader.load_only_root(input).map_err(|e| report_load_file_error(&e))?;
-    write_output(output, &render(&program))
+    write_output(output, &program.to_string())
+}
+
+fn run_print(loader: &Loader, input: &str, output: Option<&str>) -> Result<(), ()> {
+    let program = loader.load_only_root(input).map_err(|e| report_load_file_error(&e))?;
+    write_output(output, &language::print_program(&program))
 }
 
 fn run_interpreter(loader: &Loader, input: &str, output_path: Option<&str>) -> Result<(), ()> {
-    let file = match InterpretedFile::load(loader, input) {
-        LoadResult::Loaded(f) => f,
-        other => { other.report(); return Err(()); }
-    };
+    let file = InterpretedFile::load(loader, input).into_result()?;
     write_output(output_path, &file.to_string())?;
     if file.has_holes() {
         output::report_holes(&file);
@@ -98,17 +100,10 @@ fn run_interpreter(loader: &Loader, input: &str, output_path: Option<&str>) -> R
 }
 
 fn run_bench(loader: &Loader, input: &str, n: usize) -> Result<(), ()> {
-    match InterpretedFile::load(loader, input) {
-        LoadResult::Loaded(file) if file.has_holes() => {
-            eprintln!("error: benchmark file contains holes");
-            return Err(());
-        }
-        LoadResult::Loaded(_) => {}
-        other => {
-            other.report();
-            eprintln!("error: benchmark file failed on warmup");
-            return Err(());
-        }
+    let file = InterpretedFile::load(loader, input).into_result()?;
+    if file.has_holes() {
+        eprintln!("error: benchmark file contains holes");
+        return Err(());
     }
     let start = Instant::now();
     for _ in 0..n {
@@ -126,8 +121,8 @@ fn main() {
     };
     let loader = Loader::default(vec![]);
     let result = match args.mode {
-        RunMode::Ast   => run_parse(&loader, &args.input, args.output.as_deref(), |p| p.to_string()),
-        RunMode::Print => run_parse(&loader, &args.input, args.output.as_deref(), language::print_program),
+        RunMode::Ast   => run_ast(&loader, &args.input, args.output.as_deref()),
+        RunMode::Print => run_print(&loader, &args.input, args.output.as_deref()),
         RunMode::Interpret => run_interpreter(&loader, &args.input, args.output.as_deref()),
         RunMode::Bench(n)  => run_bench(&loader, &args.input, n),
     };

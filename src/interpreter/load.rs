@@ -61,6 +61,14 @@ impl LoadResult {
     pub fn is_ok(&self) -> bool {
         matches!(self, LoadResult::Loaded(_))
     }
+
+    /// Print diagnostics and convert to `Result`, returning `Err(())` on failure.
+    pub fn into_result(self) -> Result<InterpretedFile, ()> {
+        match self {
+            LoadResult::Loaded(f) => Ok(f),
+            other => { other.report(); Err(()) }
+        }
+    }
 }
 
 // ---- InterpretedFile ----
