@@ -77,9 +77,7 @@ pub fn interpret_program(
         return initialization;
     }
 
-    interpret_items(&initialization.context, &program.blocks, |step_context, block| {
-        interpret_block(step_context, block)
-    })
+    interpret_items(&initialization.context, &program.blocks, interpret_block)
 }
 
 /// Dispatch a top-level block to the appropriate handler (type block or local block).
@@ -178,7 +176,7 @@ fn interpret_type_generator(context: &Context, generator: &ast::Generator) -> In
 
     let ctx = result.context.clone();
     let (type_scope_opt, complex_result) = interpret_complex(&ctx, Mode::Global, &generator.complex);
-    result = InterpResult::combine(result, complex_result);
+    result = result.merge(complex_result);
 
     let Some(type_scope) = type_scope_opt else {
         return result;
@@ -259,7 +257,7 @@ pub(super) fn interpret_complex(
             let initial_scope = scope.working_complex;
             let (final_scope, block_result) =
                 interpret_complex_body(&result.context, mode, initial_scope.clone(), body);
-            result = InterpResult::combine(result, block_result);
+            result = result.merge(block_result);
             let ns = TypeScope {
                 owner_type_id,
                 working_complex: final_scope,
@@ -370,7 +368,7 @@ fn interpret_local_block(
     let (scope_opt, result) = interpret_complex(&context, Mode::Global, complex);
     let Some(scope) = scope_opt else { return result; };
     let (_, local_result) = interpret_local_body(&result.context, scope, body);
-    InterpResult::combine(result, local_result)
+    result.merge(local_result)
 }
 
 /// Interpret the body of a local block, threading the type scope through each instruction.

@@ -28,7 +28,7 @@ pub fn interpret_items<T>(
 
     for item in items {
         let step_result = step(result.context.clone(), item);
-        result = InterpResult::combine(result, step_result);
+        result = result.merge(step_result);
     }
 
     result
@@ -46,7 +46,7 @@ pub fn interpret_items_in_complex_scope<T>(
     for item in items {
         let (next_scope, step_result) = step(result.context.clone(), scope, item);
         scope = next_scope;
-        result = InterpResult::combine(result, step_result);
+        result = result.merge(step_result);
     }
 
     (scope, result)
@@ -68,7 +68,7 @@ pub fn interpret_items_in_type_scope<T>(
 
     for item in items {
         let (next_complex, step_result) = step(&result.context, &scope, item);
-        result = InterpResult::combine(result, step_result);
+        result = result.merge(step_result);
         if let Some(working_complex) = next_complex {
             scope = TypeScope {
                 owner_type_id: scope.owner_type_id,
@@ -93,7 +93,7 @@ fn insert_complex_binding(
     update: impl FnOnce(&mut Complex),
 ) -> (Complex, InterpResult) {
     if let Some(name_result) = ensure_name_free(&result.context, &scope, &name, name_span, kind) {
-        return (scope, InterpResult::combine(result, name_result));
+        return (scope, result.merge(name_result));
     }
     update(&mut scope);
     (scope, result)
@@ -165,7 +165,7 @@ fn insert_type_binding(
     update_store: impl FnOnce(&mut Complex),
 ) -> (Option<Complex>, InterpResult) {
     if let Some(r) = ensure_name_free(&result.context, scope, &name, name_span, kind) {
-        return (None, InterpResult::combine(result, r));
+        return (None, result.merge(r));
     }
     if has_local_labels {
         result.add_error(make_error(value_span, local_label_msg));

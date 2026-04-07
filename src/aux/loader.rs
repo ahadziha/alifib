@@ -173,9 +173,12 @@ pub struct ResolvedModule {
 /// Resolution mapping from `(parent canonical path, module name)` to the
 /// dependency's canonical path.  This is the only part of the pre-resolution
 /// data needed during interpretation.
+///
+/// Stored as a nested map `parent -> (module_name -> canonical_path)` so that
+/// both levels can be looked up by `&str` without any allocation.
 #[derive(Debug)]
 pub struct ModuleResolutions {
-    resolutions: HashMap<(String, String), String>,
+    resolutions: HashMap<String, HashMap<String, String>>,
 }
 
 impl ModuleResolutions {
@@ -184,13 +187,11 @@ impl ModuleResolutions {
     }
 
     pub fn resolve(&self, parent_path: &str, module_name: &str) -> Option<&str> {
-        self.resolutions
-            .get(&(parent_path.to_owned(), module_name.to_owned()))
-            .map(|s| s.as_str())
+        self.resolutions.get(parent_path)?.get(module_name).map(|s| s.as_str())
     }
 
     fn insert(&mut self, parent_path: &str, module_name: String, canonical_path: String) {
-        self.resolutions.insert((parent_path.to_owned(), module_name), canonical_path);
+        self.resolutions.entry(parent_path.to_owned()).or_default().insert(module_name, canonical_path);
     }
 }
 
@@ -235,19 +236,19 @@ fn find_file(loader: &Loader, module_name: &str) -> Result<(String, String), Loa
     let filename = format!("{}.ali", module_name);
     for dir in &loader.search_paths {
         let candidate = format!("{}/{}", dir, filename);
-        match (loader.read_file)(&candidate) {
-            Ok(contents) => {
-                // File confirmed readable; strict canonicalization must succeed.
-                let canonical = path::canonicalize_existing(&candidate)
-                    .map_err(|e| LoadFileError::ModuleIoError {
-                        path: candidate,
-                        reason: e.to_string(),
-                    })?;
-                return Ok((canonical, contents));
-            }
+        // Canonicalize first: this confirms the file exists and resolves symlinks.
+        // If the file doesn't exist we skip to the next search directory.
+        let canonical = match path::canonicalize_existing(&candidate) {
+            Ok(c) => c,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(LoadFileError::ModuleIoError { path: candidate, reason: e.to_string() }),
+        };
+        // File confirmed to exist; now read its contents via the canonical path.
+        match (loader.read_file)(&canonical) {
+            Ok(contents) => return Ok((canonical, contents)),
             Err(LoadError::NotFound) => continue,
             Err(LoadError::IoError(reason)) => {
-                return Err(LoadFileError::ModuleIoError { path: candidate, reason });
+                return Err(LoadFileError::ModuleIoError { path: canonical, reason });
             }
         }
     }

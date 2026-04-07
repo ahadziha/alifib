@@ -6,6 +6,8 @@ mod lexer;
 mod parser;
 mod token;
 
+use std::collections::HashSet;
+
 use chumsky::input::Input as _;
 use chumsky::prelude::*;
 
@@ -72,6 +74,7 @@ pub fn report_errors(errors: &[Error], source: &str, filename: &str) {
 /// `@Local`-block `include` statements refer to types already in scope and are
 /// resolved at interpretation time — they do not name external files.
 pub(crate) fn collect_includes(program: &Program) -> Vec<String> {
+    let mut seen = HashSet::new();
     program.blocks.iter()
         .filter_map(|b| match &b.inner { ast::Block::TypeBlock(body) => Some(body), _ => None })
         .flat_map(|body| body.iter())
@@ -79,6 +82,7 @@ pub(crate) fn collect_includes(program: &Program) -> Vec<String> {
             ast::TypeInst::IncludeModule(im) => Some(im.name.inner.clone()),
             _ => None,
         })
+        .filter(|name| seen.insert(name.clone()))
         .collect()
 }
 

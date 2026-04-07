@@ -67,6 +67,7 @@ impl GlobalStore {
     ///
     /// Silently does nothing if the module id is not found.
     pub fn modify_module(&mut self, id: &str, f: impl FnOnce(&mut Complex)) {
+        debug_assert!(self.modules.contains_key(id), "modify_module: module `{}` not found", id);
         if let Some(arc) = self.modules.get_mut(id) {
             f(Arc::make_mut(arc));
             self.assert_invariants();
@@ -77,6 +78,7 @@ impl GlobalStore {
     ///
     /// Silently does nothing if the type id is not found.
     pub fn modify_type_complex(&mut self, id: GlobalId, f: impl FnOnce(&mut Complex)) {
+        debug_assert!(self.types.contains_key(&id), "modify_type_complex: type {} not found", id);
         if let Some(entry) = self.types.get_mut(&id) {
             f(Arc::make_mut(&mut entry.complex));
             self.assert_invariants();

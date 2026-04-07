@@ -126,7 +126,7 @@ pub fn resolve_type_scope(
 
     let (scope, scope_result) =
         open_type_scope(&owner_result.context, owner_type_id, span, not_found_msg);
-    (scope, InterpResult::combine(owner_result, scope_result))
+    (scope, owner_result.merge(scope_result))
 }
 
 // ---- Address resolution ----
@@ -232,7 +232,7 @@ pub fn interpret_address(context: &Context, address: &Address, addr_span: Span) 
 
     if segments.is_empty() {
         let (id_opt, root_result) = resolve_root_owner_type_id(context, &module_scope, addr_span);
-        return (id_opt, InterpResult::combine(module_result, root_result));
+        return (id_opt, module_result.merge(root_result));
     }
 
     let last_idx = segments.len() - 1;
@@ -241,13 +241,10 @@ pub fn interpret_address(context: &Context, address: &Address, addr_span: Span) 
 
     let (target_scope, prefix_result) = resolve_address_prefix_scope(context, module_scope, prefix);
     let Some(target_scope) = target_scope else {
-        return (None, InterpResult::combine(module_result, prefix_result));
+        return (None, module_result.merge(prefix_result));
     };
 
     let (id_opt, id_result) =
         type_id_of_named_diagram(&target_scope, last_name, *last_span, context);
-    (
-        id_opt,
-        InterpResult::combine(InterpResult::combine(module_result, prefix_result), id_result),
-    )
+    (id_opt, module_result.merge(prefix_result).merge(id_result))
 }

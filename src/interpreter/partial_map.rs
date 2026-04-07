@@ -99,7 +99,7 @@ pub fn interpret_anon_map_component(
     let Some(ns) = ns_opt else { return (None, target_result); };
     let (mc_opt, def_result) =
         interpret_pmap_def(&target_result.context, &ns.working_complex, domain, def);
-    (mc_opt, InterpResult::combine(target_result, def_result))
+    (mc_opt, target_result.merge(def_result))
 }
 
 // ---- PartialMap interpretation ----
@@ -140,7 +140,7 @@ fn eval_partial_map(ctx: &PartialMapCtx<'_>, partial_map: &ast::PartialMap, span
             // Dot traversal: the new lookup scope is the base map's domain.
             let (rest_opt, rest_result) =
                 interpret_partial_map(&base_result.context, &base_map.domain, ctx.domain, rest);
-            let combined = InterpResult::combine(base_result, rest_result);
+            let combined = base_result.merge(rest_result);
             let Some(rest_map) = rest_opt else { return (None, combined); };
             let composed = PartialMap::compose(&base_map.map, &rest_map.map);
             (Some(EvalMap { map: composed, domain: rest_map.domain }), combined)
@@ -211,7 +211,7 @@ fn eval_pmap_clauses(
     for clause in clauses {
         let step_ctx = PartialMapCtx { context: &result.context, ..*ctx };
         let (next_map, clause_result) = interpret_partial_map_clause(&step_ctx, map, clause);
-        result = InterpResult::combine(result, clause_result);
+        result = result.merge(clause_result);
         let Some(updated_map) = next_map else {
             return (None, result);
         };
@@ -238,10 +238,10 @@ fn interpret_partial_map_ext(ctx: &PartialMapCtx<'_>, ext: &PartialMapExt) -> St
     let clauses_ctx = PartialMapCtx { context: &prefix_result.context, domain: &effective_domain, ..*ctx };
     let (map_opt, clause_result) = eval_pmap_clauses(&clauses_ctx, initial.map, &ext.clauses);
     let Some(current_map) = map_opt else {
-        return (None, InterpResult::combine(prefix_result, clause_result));
+        return (None, prefix_result.merge(clause_result));
     };
 
-    let mut result = InterpResult::combine(prefix_result, clause_result);
+    let mut result = prefix_result.merge(clause_result);
     enrich_holes(&mut result, ctx.scope, &effective_domain, &current_map);
     (Some(EvalMap { map: current_map, domain: effective_domain }), result)
 }
@@ -275,7 +275,7 @@ fn interpret_partial_map_clause(ctx: &PartialMapCtx<'_>, map: PartialMap, clause
 
     let (right_opt, right_result) =
         interpret_diagram_as_term(&left_result.context, ctx.scope, &clause.inner.rhs);
-    let mut combined = InterpResult::combine(left_result, right_result);
+    let mut combined = left_result.merge(right_result);
 
     let Some(right_term) = right_opt else {
         // Right side failed. If a hole was recorded, tag it with the left-side source and
@@ -511,11 +511,11 @@ pub fn interpret_def_pmap(
     let (domain_opt, domain_result) =
         resolve_type_complex(&context_after, id, dp.address.span, "Type not found");
     let Some(domain) = domain_opt else {
-        return (None, InterpResult::combine(addr_result, domain_result));
+        return (None, addr_result.merge(domain_result));
     };
 
     let (eval_map_opt, def_result) = interpret_pmap_def(&context_after, scope, &domain, &dp.value);
-    let mut combined = InterpResult::combine(addr_result, def_result);
+    let mut combined = addr_result.merge(def_result);
 
     let Some(eval_map) = eval_map_opt else {
         return (None, combined);

@@ -164,16 +164,11 @@ impl InterpResult {
     }
 
     /// Merge two sequential results: concatenate errors and holes, advance to `next`'s context.
-    pub fn combine(prev: InterpResult, next: InterpResult) -> InterpResult {
-        let mut errors = prev.errors;
-        errors.extend(next.errors);
-        let mut holes = prev.holes;
-        holes.extend(next.holes);
-        InterpResult {
-            context: next.context,
-            errors,
-            holes,
-        }
+    pub fn merge(mut self, next: InterpResult) -> InterpResult {
+        self.errors.extend(next.errors);
+        self.holes.extend(next.holes);
+        self.context = next.context;
+        self
     }
 
     /// Returns `true` if any errors have been recorded.
@@ -307,9 +302,11 @@ pub fn make_error_from_core(span: Span, error: crate::aux::Error) -> Error {
 
 /// Create an `InterpResult` containing a single error at the given span.
 pub fn error_result(context: &Context, span: Span, message: impl Into<String>) -> InterpResult {
-    let mut result = InterpResult::ok(context.clone());
-    result.add_error(make_error(span, message));
-    result
+    InterpResult {
+        context: context.clone(),
+        errors: vec![make_error(span, message)],
+        holes: vec![],
+    }
 }
 
 /// Create a failed `Step` with no value and a single error at the given span.

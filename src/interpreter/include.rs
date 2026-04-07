@@ -176,13 +176,13 @@ pub fn interpret_include_instr(
     };
 
     if let Some(r) = ensure_name_free(&include_result.context, scope, &name, span, NameKind::PartialMap) {
-        return (None, InterpResult::combine(include_result, r));
+        return (None, include_result.merge(r));
     }
 
     let (subtype_opt, subtype_result) =
         resolve_type_complex(&context_after, id, span, "Type not found in global record");
     let Some(subtype) = subtype_opt else {
-        return (None, InterpResult::combine(include_result, subtype_result));
+        return (None, include_result.merge(subtype_result));
     };
 
     let mut new_scope = scope.clone();
@@ -212,7 +212,7 @@ pub fn interpret_attach_instr(
     };
 
     if let Some(r) = ensure_name_free(&attach_result.context, scope, &name, attach_stmt.name.span, NameKind::PartialMap) {
-        return (None, InterpResult::combine(attach_result, r));
+        return (None, attach_result.merge(r));
     }
 
     let attachment_id = match domain {
@@ -227,7 +227,7 @@ pub fn interpret_attach_instr(
         "Type not found in global record",
     );
     let Some(attachment) = attachment_opt else {
-        return (None, InterpResult::combine(attach_result, attachment_result));
+        return (None, attach_result.merge(attachment_result));
     };
 
     let mut r = attach_result;
@@ -312,11 +312,11 @@ fn resolve_attach(
             let (domain_opt, domain_result) =
                 resolve_type_complex(&context_after, id, span, "Type not found");
             let Some(domain) = domain_opt else {
-                return (None, InterpResult::combine(addr_result, domain_result));
+                return (None, addr_result.merge(domain_result));
             };
             let (eval_map_opt, pmap_result) =
                 interpret_pmap_def(&context_after, scope, &domain, pmap_node);
-            let combined = InterpResult::combine(addr_result, pmap_result);
+            let combined = addr_result.merge(pmap_result);
             let Some(eval_map) = eval_map_opt else {
                 return (None, combined);
             };

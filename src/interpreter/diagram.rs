@@ -157,7 +157,7 @@ fn interpret_dot_access(
         Some(Term::Diag(diagram)) => {
             let (comp_opt, comp_result) =
                 interpret_dcomponent(&left_result.context, scope, &field.inner, field.span);
-            let combined = InterpResult::combine(left_result, comp_result);
+            let combined = left_result.merge(comp_result);
             match comp_opt {
                 None => (None, combined),
                 Some(Component::Bd(sign)) => {
@@ -182,7 +182,7 @@ fn interpret_dot_access(
                 &field.inner,
                 field.span,
             );
-            let combined = InterpResult::combine(left_result, comp_result);
+            let combined = left_result.merge(comp_result);
             match comp_opt {
                 None => (None, combined),
                 Some(component) => apply_map_component(&eval_map, component, field.span, combined),
@@ -242,7 +242,7 @@ pub fn interpret_assert(
 
     let (right_opt, right_result) =
         interpret_diagram_as_term(&left_result.context, scope, &assert_stmt.rhs);
-    let mut combined = InterpResult::combine(left_result, right_result);
+    let mut combined = left_result.merge(right_result);
     let Some(right_term) = right_opt else { return (None, combined); };
 
     match (left_term, right_term) {
@@ -296,7 +296,7 @@ fn interpret_paste(
     let Some(d_right) = d_right else { return (None, right_result); };
 
     let (left_term, left_result) = interpret_diagram_as_term(&right_result.context, scope, lhs);
-    let combined = InterpResult::combine(right_result, left_result);
+    let combined = right_result.merge(left_result);
     let (d_left, combined) = require_diagram_term(left_term, combined, span);
     let Some(d_left) = d_left else { return (None, combined); };
 
@@ -354,7 +354,7 @@ fn enrich_hole_with_right_context(
         return (None, result);
     }
     let (next_opt, next_result) = interpret_dexpr(&result.context, scope, &rest[0]);
-    result = InterpResult::combine(result, next_result);
+    result = result.merge(next_result);
     if let Some(Term::Diag(d_right)) = next_opt {
         let k = d_right.top_dim().saturating_sub(1);
         if let Ok(in_bd) = Diagram::boundary(DiagramSign::Source, k, &d_right)
@@ -389,7 +389,7 @@ fn accumulate_paste(
     for expr in rest {
         let prev_hole_count = result.holes.len();
         let (term_opt, expr_result) = interpret_dexpr(&result.context, scope, expr);
-        result = InterpResult::combine(result, expr_result);
+        result = result.merge(expr_result);
         match term_opt {
             None => {
                 // Enrich any newly added hole with the left-context boundary
@@ -440,7 +440,7 @@ pub fn interpret_boundaries(
     let Some(boundary_in) = source_opt else { return (None, source_result); };
     let (target_opt, target_result) =
         interpret_diagram(&source_result.context, scope, &boundaries.inner.target);
-    let combined = InterpResult::combine(source_result, target_result);
+    let combined = source_result.merge(target_result);
     (
         target_opt.map(|boundary_out| CellData::Boundary {
             boundary_in: Arc::new(boundary_in),
