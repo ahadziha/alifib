@@ -12,7 +12,7 @@ use crate::core::{
     diagram::{CellData, Diagram, Sign},
     partial_map::PartialMap,
 };
-use crate::interpreter::{GlobalStore, HoleBd};
+use crate::interpreter::{GlobalStore, HoleBd, InterpretedFile};
 use std::fmt;
 use super::types::{Cell, Dim, Map, Module, Store, Type};
 
@@ -165,7 +165,7 @@ pub fn render_boundary_partial(boundary: &Diagram, map: &PartialMap, scope: &Com
 }
 
 /// Render a hole boundary for use in a diagnostic message.
-pub(crate) fn render_hole_bd(bd: &HoleBd) -> String {
+fn render_hole_bd(bd: &HoleBd) -> String {
     match bd {
         HoleBd::Unknown => "?".to_string(),
         HoleBd::Full(diagram, scope) => render_diagram(diagram, scope),
@@ -217,6 +217,23 @@ fn render_domain(domain: &MapDomain, module_complex: &Complex) -> String {
                 .unwrap_or_else(|| format!("{}", gid))
         }
         MapDomain::Module(mid) => mid.clone(),
+    }
+}
+
+// ---- Hole reporting ----
+
+/// Print a diagnostic for each unsolved hole in `file` to stderr.
+pub fn report_holes(file: &InterpretedFile) {
+    for hole in &file.holes {
+        let message = match &hole.boundary {
+            Some(bd) => format!(
+                "{} -> {}",
+                render_hole_bd(&bd.boundary_in),
+                render_hole_bd(&bd.boundary_out)
+            ),
+            None => "unknown boundary".to_string(),
+        };
+        crate::language::error::report_hole(hole.span, &message, &file.source, &file.path);
     }
 }
 

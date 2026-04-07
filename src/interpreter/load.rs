@@ -6,7 +6,6 @@
 
 use crate::aux::loader::{LoadFileError, Loader};
 use crate::language::Error as LangError;
-use crate::output::normalize::render_hole_bd;
 use std::fmt;
 use std::sync::Arc;
 use super::{Context, GlobalStore, HoleInfo, interpret_program};
@@ -149,21 +148,6 @@ impl InterpretedFile {
     /// Returns `true` if interpretation left any unsolved holes (`?`).
     pub fn has_holes(&self) -> bool {
         !self.holes.is_empty()
-    }
-
-    /// Print a diagnostic for each unsolved hole to stderr.
-    pub fn report_holes(&self) {
-        for hole in &self.holes {
-            let message = match &hole.boundary {
-                Some(bd) => format!(
-                    "{} -> {}",
-                    render_hole_bd(&bd.boundary_in),
-                    render_hole_bd(&bd.boundary_out)
-                ),
-                None => "unknown boundary".to_string(),
-            };
-            crate::language::error::report_hole(hole.span, &message, &self.source, &self.path);
-        }
     }
 }
 
