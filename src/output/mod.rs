@@ -1,3 +1,11 @@
+//! Entry point for loading and interpreting alifib source files.
+//!
+//! The two main types are [`LoadResult`] and [`InterpretedFile`].
+//! After a successful load, [`InterpretedFile::state`] holds the accumulated
+//! interpreter state, which can be turned into a structured [`Store`] via
+//! [`crate::interpreter::GlobalStore::normalize`], or rendered directly as
+//! human-readable text via its [`std::fmt::Display`] impl.
+
 mod normalize;
 mod types;
 
@@ -14,20 +22,29 @@ use std::sync::Arc;
 
 /// The outcome of attempting to load and interpret a source file.
 ///
-/// Callers that only want success can call `.ok()` or pattern-match.
-/// Callers that want to print diagnostics can call `.report()`.
+/// On success the variant is [`LoadResult::Loaded`]. On failure, call
+/// [`LoadResult::report`] to print diagnostics to stderr, then handle or
+/// discard the error as needed.
 #[must_use]
 pub enum LoadResult {
-    /// Interpretation succeeded.
+    /// Interpretation succeeded with no errors (holes may still be present).
     Loaded(InterpretedFile),
-    /// File loading or dependency resolution failed.
+    /// The source file or one of its dependencies could not be read from disk.
     LoadError(LoadFileError),
-    /// Parsing or interpretation of a module produced errors.
-    InterpError { errors: Vec<LangError>, source: String, path: String },
+    /// Parsing or interpretation of a module produced one or more errors.
+    InterpError {
+        errors: Vec<LangError>,
+        /// Original source text of the failing module, for diagnostic rendering.
+        source: String,
+        /// Path of the failing module.
+        path: String,
+    },
 }
 
 impl LoadResult {
-    /// Print diagnostics to stderr, mirroring the previous `Option`-based behaviour.
+    /// Print diagnostics for the failure case to stderr.
+    ///
+    /// Does nothing if the result is [`LoadResult::Loaded`].
     pub fn report(&self) {
         match self {
             LoadResult::Loaded(_) => {}
@@ -38,8 +55,9 @@ impl LoadResult {
         }
     }
 
-    /// Consume, returning `Some(InterpretedFile)` on success, `None` otherwise.
-    /// Diagnostics are NOT printed; call `report()` first if you need them.
+    /// Consume the result, returning `Some(InterpretedFile)` on success and
+    /// `None` on any failure. Diagnostics are **not** printed; call
+    /// [`report`](Self::report) first if you need them.
     pub fn ok(self) -> Option<InterpretedFile> {
         match self {
             LoadResult::Loaded(f) => Some(f),
@@ -55,11 +73,19 @@ impl LoadResult {
 
 // ---- InterpretedFile ----
 
-/// The result of interpreting a single alifib source file, ready for display.
+/// The result of successfully interpreting a single alifib source file.
+///
+/// Displaying this value (via [`std::fmt::Display`]) prints the human-readable
+/// summary of all types defined in the file. For structural access, call
+/// [`state.normalize()`](crate::interpreter::GlobalStore::normalize).
 pub struct InterpretedFile {
+    /// Accumulated interpreter state for the file and all its dependencies.
     pub state: Arc<GlobalStore>,
+    /// Any unsolved holes (`?`) encountered during interpretation.
     pub holes: Vec<HoleInfo>,
+    /// Original source text of the root file, kept for diagnostic rendering.
     pub source: String,
+    /// Canonical path of the root file.
     pub path: String,
 }
 
@@ -127,11 +153,12 @@ impl InterpretedFile {
         })
     }
 
+    /// Returns `true` if interpretation left any unsolved holes (`?`).
     pub fn has_holes(&self) -> bool {
         !self.holes.is_empty()
     }
 
-    /// Print hole diagnostics to stderr using ariadne.
+    /// Print a diagnostic for each unsolved hole to stderr.
     pub fn report_holes(&self) {
         for hole in &self.holes {
             let message = match &hole.boundary {

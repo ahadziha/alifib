@@ -1,3 +1,11 @@
+//! Normalization of [`GlobalStore`] into the plain [`Store`] data type, and
+//! low-level rendering helpers that convert internal diagram representations
+//! to strings.
+//!
+//! The main entry point is [`GlobalStore::normalize`]. The public `render_*`
+//! functions are also used by the hole-reporting machinery in
+//! [`super::InterpretedFile::report_holes`].
+
 use crate::aux::Tag;
 use crate::core::{
     complex::{Complex, MapDomain},
@@ -29,6 +37,7 @@ impl GlobalStore {
     }
 }
 
+/// Collect all named generators of `mc` into a [`Module`], sorted by name.
 fn normalize_module(store: &GlobalStore, path: &str, mc: &Complex) -> Module {
     let mut gen_entries: Vec<(&str, &Tag)> = mc
         .generators_iter()
@@ -55,6 +64,8 @@ fn normalize_module(store: &GlobalStore, path: &str, mc: &Complex) -> Module {
     Module { path: path.to_owned(), types }
 }
 
+/// Build a [`Type`] from a type complex `tc`, grouping its generators by
+/// dimension and resolving diagrams and maps against `module_complex`.
 fn normalize_type(
     store: &GlobalStore,
     name: &str,
@@ -108,6 +119,7 @@ fn normalize_type(
 
 // ---- Rendering helpers ----
 
+/// Return `"<empty>"` for the empty string, otherwise the string itself.
 fn name_or_empty(s: &str) -> &str {
     if s.is_empty() { "<empty>" } else { s }
 }
@@ -129,10 +141,15 @@ fn diagram_labels(diagram: &Diagram, scope: &Complex) -> Vec<String> {
     }
 }
 
+/// Render the top-level labels of `diagram` as a space-separated string of
+/// generator names, resolved against `scope`.
 pub fn render_diagram(diagram: &Diagram, scope: &Complex) -> String {
     diagram_labels(diagram, scope).join(" ")
 }
 
+/// Render a partial boundary: each top-level label of `boundary` is mapped
+/// through `map` and the result rendered against `scope`. Labels outside the
+/// domain of `map` are rendered as `?`.
 pub fn render_boundary_partial(boundary: &Diagram, map: &PartialMap, scope: &Complex) -> String {
     match boundary.labels_at(boundary.top_dim()) {
         Some(labels) if !labels.is_empty() => labels
@@ -147,6 +164,7 @@ pub fn render_boundary_partial(boundary: &Diagram, map: &PartialMap, scope: &Com
     }
 }
 
+/// Render a hole boundary for use in a diagnostic message.
 pub(super) fn render_hole_bd(bd: &HoleBd) -> String {
     match bd {
         HoleBd::Unknown => "?".to_string(),
@@ -155,6 +173,8 @@ pub(super) fn render_hole_bd(bd: &HoleBd) -> String {
     }
 }
 
+/// Convert a generator's [`CellData`] into a [`Cell`], resolving boundary
+/// labels against `complex`.
 fn cell_from_data(name: &str, data: &CellData, complex: &Complex) -> Cell {
     match data {
         CellData::Zero => Cell { name: name.to_owned(), src: vec![], tgt: vec![] },
@@ -166,6 +186,9 @@ fn cell_from_data(name: &str, data: &CellData, complex: &Complex) -> Cell {
     }
 }
 
+/// Convert a named diagram into a [`Cell`] by extracting its source and target
+/// boundaries and resolving their labels against `complex`. Falls back to a
+/// 0-dimensional cell if the boundary cannot be computed.
 fn cell_from_diagram(name: &str, diag: &Diagram, complex: &Complex) -> Cell {
     let Some(k) = diag.top_dim().checked_sub(1) else {
         return Cell { name: name.to_owned(), src: vec![], tgt: vec![] };
@@ -183,6 +206,7 @@ fn cell_from_diagram(name: &str, diag: &Diagram, complex: &Complex) -> Cell {
     }
 }
 
+/// Resolve a [`MapDomain`] to the name of the target type or module.
 fn render_domain(domain: &MapDomain, module_complex: &Complex) -> String {
     match domain {
         MapDomain::Type(gid) => {

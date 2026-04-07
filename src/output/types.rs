@@ -1,60 +1,88 @@
+//! Plain data types representing the normalized output of the interpreter.
+//!
+//! These types form a name-keyed, ID-free view of the interpreter's internal
+//! state. They are produced by [`crate::interpreter::GlobalStore::normalize`]
+//! and consumed by the [`std::fmt::Display`] impls that render human-readable
+//! output.
+//!
+//! The hierarchy is: [`Store`] → [`Module`] → [`Type`] → [`Dim`] / [`Cell`] / [`Map`].
+
 use std::fmt;
 
 // ---- Data types ----
 
-/// A name-keyed view of a [`super::normalize::GlobalStore`], free of opaque IDs.
+/// A name-keyed, ID-free snapshot of the interpreter state after a full run.
 ///
-/// Suitable for structural equality tests and as the intermediate form for the
-/// string renderer. Produced by [`crate::interpreter::GlobalStore::normalize`].
+/// Produced by [`crate::interpreter::GlobalStore::normalize`]. Suitable for
+/// structural equality tests (`assert_eq!`) and as the source for the
+/// human-readable text renderer.
 #[derive(Debug, PartialEq)]
 pub struct Store {
+    /// Total number of non-type cells across all modules.
     pub cells_count: usize,
+    /// Total number of named types across all modules.
     pub types_count: usize,
+    /// Modules in load order (dependencies before dependents).
     pub modules: Vec<Module>,
 }
 
-/// A single module section in a [`Store`], in load order.
+/// One module's worth of types within a [`Store`], in load order.
 #[derive(Debug, PartialEq)]
 pub struct Module {
+    /// Canonical file-system path to the source file.
     pub path: String,
-    /// Types (named generators) sorted by name.
+    /// All named types defined in this module, sorted by name.
     pub types: Vec<Type>,
 }
 
-/// A single type within a [`Module`].
+/// A single named type (or the unnamed root type) within a [`Module`].
 #[derive(Debug, PartialEq)]
 pub struct Type {
-    /// Empty string for the unnamed root type (displayed as `<empty>`).
+    /// The type's name. Empty string for the unnamed root type, which is
+    /// displayed as `<empty>`.
     pub name: String,
-    /// Generators grouped by dimension in ascending order.
+    /// Generators of this type grouped by dimension, in ascending order.
     pub dims: Vec<Dim>,
-    /// Named diagrams, sorted by name.
+    /// Diagrams explicitly named inside this type's body, sorted by name.
     pub diagrams: Vec<Cell>,
-    /// Named maps to other types or modules, sorted by name.
+    /// Maps from this type to other types or modules, sorted by name.
     pub maps: Vec<Map>,
 }
 
-/// Generators of a single dimension within a [`Type`].
+/// The generators of a single dimension within a [`Type`].
 #[derive(Debug, PartialEq)]
 pub struct Dim {
+    /// The dimension (0 = points, 1 = arrows, 2 = 2-cells, …).
     pub dim: usize,
     /// Generators at this dimension, sorted by name.
     pub cells: Vec<Cell>,
 }
 
-/// A named generator or diagram, with its source and target boundary expressed
-/// as lists of generator names. Both lists are empty for 0-dimensional cells.
+/// A named generator or diagram together with its boundary.
+///
+/// The boundary is expressed as lists of generator names. Both `src` and `tgt`
+/// are empty for 0-dimensional generators, which have no boundary.
+///
+/// The [`std::fmt::Display`] impl renders this as `name : src -> tgt` for
+/// higher-dimensional cells and as `name` for 0-dimensional ones.
 #[derive(Debug, PartialEq)]
 pub struct Cell {
+    /// Generator name. Empty string is displayed as `<empty>`.
     pub name: String,
+    /// Source boundary: names of the top-level generators of the input face.
     pub src: Vec<String>,
+    /// Target boundary: names of the top-level generators of the output face.
     pub tgt: Vec<String>,
 }
 
-/// A named map to another type or module.
+/// A named map from a type to another type or module.
+///
+/// The [`std::fmt::Display`] impl renders this as `name :: domain`.
 #[derive(Debug, PartialEq)]
 pub struct Map {
+    /// Map name. Empty string is displayed as `<empty>`.
     pub name: String,
+    /// Name of the target type or module.
     pub domain: String,
 }
 
