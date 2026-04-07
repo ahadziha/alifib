@@ -6,7 +6,7 @@
 //! functions are also used by the hole-reporting machinery in
 //! [`super::InterpretedFile::report_holes`].
 
-use crate::aux::Tag;
+use crate::aux::{self, Tag};
 use crate::core::{
     complex::{Complex, MapDomain},
     diagram::{CellData, Diagram, Sign},
@@ -219,18 +219,9 @@ fn sign_superscript(sign: Sign) -> &'static str {
     match sign { Sign::Source => "⁻", Sign::Target => "⁺" }
 }
 
-/// Format a non-negative integer as unicode subscript digits.
-fn dim_subscript(n: usize) -> String {
-    const SUBS: [char; 10] = ['₀','₁','₂','₃','₄','₅','₆','₇','₈','₉'];
-    n.to_string()
-        .chars()
-        .map(|c| c.to_digit(10).and_then(|d| SUBS.get(d as usize)).copied().unwrap_or(c))
-        .collect()
-}
-
 /// Format a boundary slot as `∂⁻ₖ` or `∂⁺ₖ`.
 fn format_slot(slot: &BdSlot) -> String {
-    format!("∂{}{}", sign_superscript(slot.sign), dim_subscript(slot.dim))
+    format!("∂{}{}", sign_superscript(slot.sign), aux::dim_subscript(slot.dim))
 }
 
 /// Render one side of a solved hole boundary.

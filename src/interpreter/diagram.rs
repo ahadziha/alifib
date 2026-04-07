@@ -376,7 +376,7 @@ fn interpret_paste(
     // Both sides also learn their dimension from the concrete partner.
     let scope_arc = Arc::new(scope.clone());
     if let Some(ref d_right) = d_right_opt {
-        if let Ok(in_bd) = Diagram::boundary(DiagramSign::Source, k, d_right) {
+        if let Ok(in_bd) = Diagram::boundary_normal(DiagramSign::Source, k, d_right) {
             for hole in &combined.holes[rhs_hole_count..] {
                 combined.constraints.push(Constraint::BoundaryEq {
                     hole: hole.id,
@@ -397,7 +397,7 @@ fn interpret_paste(
         }
     }
     if let Some(ref d_left) = d_left_opt {
-        if let Ok(out_bd) = Diagram::boundary(DiagramSign::Target, k, d_left) {
+        if let Ok(out_bd) = Diagram::boundary_normal(DiagramSign::Target, k, d_left) {
             for hole in &combined.holes[..rhs_hole_count] {
                 combined.constraints.push(Constraint::BoundaryEq {
                     hole: hole.id,
@@ -518,7 +518,7 @@ fn interpret_sequence_as_term(
 
                     // Deferred source constraints (from left neighbour).
                     if let Some(ref left_diag) = hole_block_left {
-                        if let Ok(out_bd) = Diagram::boundary(DiagramSign::Target, k, left_diag) {
+                        if let Ok(out_bd) = Diagram::boundary_normal(DiagramSign::Target, k, left_diag) {
                             for &id in &block_hole_ids {
                                 result.constraints.push(Constraint::BoundaryEq {
                                     hole: id,
@@ -532,7 +532,7 @@ fn interpret_sequence_as_term(
                     }
 
                     // Target constraints (from right neighbour).
-                    if let Ok(in_bd) = Diagram::boundary(DiagramSign::Source, k, &d_right) {
+                    if let Ok(in_bd) = Diagram::boundary_normal(DiagramSign::Source, k, &d_right) {
                         for &id in &block_hole_ids {
                             result.constraints.push(Constraint::BoundaryEq {
                                 hole: id,
@@ -584,7 +584,7 @@ fn interpret_sequence_as_term(
             let n = left_diag.top_dim();
             let scope_arc = Arc::new(scope.clone());
             let trailing_ids: Vec<HoleId> = result.holes[start..].iter().map(|h| h.id).collect();
-            if let Ok(out_bd) = Diagram::boundary(DiagramSign::Target, k, left_diag) {
+            if let Ok(out_bd) = Diagram::boundary_normal(DiagramSign::Target, k, left_diag) {
                 for &id in &trailing_ids {
                     result.constraints.push(Constraint::BoundaryEq {
                         hole: id,

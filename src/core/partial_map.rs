@@ -178,6 +178,26 @@ impl PartialMap {
         }
     }
 
+    /// Merge two partial maps, taking the union of their domains.
+    ///
+    /// For tags in both domains the entry from `a` is kept (first-wins).
+    /// The result covers all generators that either input covers, so it is
+    /// always at least as informative as either argument alone.
+    pub fn merge(a: &PartialMap, b: &PartialMap) -> PartialMap {
+        let mut result = a.clone();
+        for (dim, tags) in b.domain_by_dim() {
+            for tag in tags {
+                if !result.is_defined_at(&tag) {
+                    let entry = b.table.get(&tag).expect("tag from domain_by_dim is in table");
+                    result.cellular = result.cellular && entry.image.is_cell();
+                    result.table.insert(tag.clone(), entry.clone());
+                    result.by_dim.entry(dim).or_default().push(tag);
+                }
+            }
+        }
+        result
+    }
+
     /// Compose partial maps: `g` after `f` (`g ∘ f`).
     ///
     /// The result is defined on the subset of `f`'s domain where `f`'s image

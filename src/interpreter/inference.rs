@@ -15,7 +15,7 @@
 //! once, and fills remaining slots with weaker `PartialBoundary` evidence from
 //! partial-map contexts.
 
-use crate::aux::Tag;
+use crate::aux::{self, Tag};
 use crate::core::{
     complex::Complex,
     diagram::{Diagram, Sign as DiagramSign},
@@ -25,16 +25,6 @@ use crate::language::ast::Span;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-
-// ---- Notation helpers -------------------------------------------------------
-
-fn dim_subscript(n: usize) -> String {
-    const SUBS: [char; 10] = ['₀','₁','₂','₃','₄','₅','₆','₇','₈','₉'];
-    n.to_string()
-        .chars()
-        .map(|c| c.to_digit(10).and_then(|d| SUBS.get(d as usize)).copied().unwrap_or(c))
-        .collect()
-}
 
 // ---- Hole identity ----------------------------------------------------------
 
@@ -262,7 +252,7 @@ impl SolvedHole {
                     self.inconsistencies.push(format!(
                         "conflicting ∂{}{}: from {}",
                         match slot.sign { DiagramSign::Source => "⁻", DiagramSign::Target => "⁺" },
-                        dim_subscript(slot.dim),
+                        aux::dim_subscript(slot.dim),
                         origin
                     ));
                 }
@@ -272,9 +262,10 @@ impl SolvedHole {
     }
 
     /// Fill `slot` with a `Partial` boundary.  If the slot is empty, insert
-    /// unconditionally.  If it already holds a `Partial`, keep whichever map
-    /// has a larger domain (more defined entries → richer rendering).  If it
-    /// already holds a `Known`, do nothing (`Known` takes priority).
+    /// unconditionally.  If it already holds a `Partial`, merge the two maps
+    /// so that the result covers all generators from either input (first-wins
+    /// on overlap), giving the richest possible rendering.  If it already holds
+    /// a `Known`, do nothing (`Known` takes priority).
     fn set_partial(
         &mut self,
         slot: BdSlot,
@@ -287,9 +278,22 @@ impl SolvedHole {
             None => {
                 self.boundaries.insert(slot, SolvedBd::Partial { boundary, map, scope, origin });
             }
-            Some(SolvedBd::Partial { map: existing_map, .. }) => {
-                if map.domain_size() > existing_map.domain_size() {
-                    self.boundaries.insert(slot, SolvedBd::Partial { boundary, map, scope, origin });
+            Some(SolvedBd::Partial { .. }) => {
+                // Clone to release the immutable borrow before re-inserting.
+                let existing = self.boundaries[&slot].clone();
+                if let SolvedBd::Partial {
+                    map: existing_map,
+                    boundary: existing_bd,
+                    scope: existing_scope,
+                    origin: existing_origin,
+                } = existing {
+                    let merged = PartialMap::merge(&existing_map, &map);
+                    self.boundaries.insert(slot, SolvedBd::Partial {
+                        boundary: existing_bd,
+                        map: merged,
+                        scope: existing_scope,
+                        origin: existing_origin,
+                    });
                 }
             }
             Some(SolvedBd::Known { .. }) => {}
@@ -325,6 +329,9 @@ pub struct HoleEntry {
 /// Constraints for unknown hole ids (not in `entries`) are silently ignored so
 /// that callers do not need to filter.
 pub fn solve(entries: &[HoleEntry], constraints: &[Constraint]) -> Vec<SolvedHole> {
+    // Note: `scope` fields on constraints are pass-through — the solver never
+    // inspects them; they are stored on `SolvedBd` for downstream rendering only.
+
     // Build an index: HoleId -> position in the output vec.
     let mut holes: Vec<SolvedHole> =
         entries.iter().map(|e| SolvedHole::new(e.id, e.span)).collect();
@@ -387,32 +394,16 @@ pub fn solve(entries: &[HoleEntry], constraints: &[Constraint]) -> Vec<SolvedHol
         }
     }
 
-    // ---- globular propagation ----
+    // ---- globular propagation for BoundaryEq ----
     // For each BoundaryEq at (s, k) with k > 0, derive BoundaryEq at every (s', j) for j < k.
-    // Justified by the globular identity: for well-formed diagrams (which are always round),
-    // ∂^{s'}_j(∂^s_k(H)) = ∂^{s'}_j(H), so knowing ∂^s_k(H) = D implies ∂^{s'}_j(H) = ∂^{s'}_j(D).
-    // A HashSet de-duplicates derived entries so each (hole, slot) pair is pushed at most once.
-    {
-        let mut seen: HashSet<(HoleId, BdSlot)> =
-            boundary_eqs.iter().map(|(h, s, ..)| (*h, *s)).collect();
-        let mut i = 0;
-        while i < boundary_eqs.len() {
-            let (hole, slot, diagram, scope, origin) = boundary_eqs[i].clone();
-            if slot.dim > 0 {
-                for j in 0..slot.dim {
-                    for &sign2 in &[DiagramSign::Source, DiagramSign::Target] {
-                        let new_slot = BdSlot { sign: sign2, dim: j };
-                        if seen.insert((hole, new_slot)) {
-                            if let Ok(bd) = Diagram::boundary_normal(sign2, j, &diagram) {
-                                boundary_eqs.push((hole, new_slot, bd, scope.clone(), origin.clone()));
-                            }
-                        }
-                    }
-                }
-            }
-            i += 1;
-        }
-    }
+    // Justified by the globular identity: ∂^{s'}_j(∂^s_k(H)) = ∂^{s'}_j(H), so knowing
+    // ∂^s_k(H) = D implies ∂^{s'}_j(H) = ∂^{s'}_j(D).
+    globular_propagate(
+        &mut boundary_eqs,
+        |e| (e.0, e.1),
+        |e| &e.2,
+        |e, new_slot, bd| (e.0, new_slot, bd, e.3.clone(), e.4.clone()),
+    );
 
     // ---- pass 2: apply BoundaryEq ----
     for (hole, slot, diagram, scope, origin) in boundary_eqs {
@@ -432,28 +423,12 @@ pub fn solve(entries: &[HoleEntry], constraints: &[Constraint]) -> Vec<SolvedHol
     // For each PartialBoundary at (s, k) with k > 0, derive PartialBoundary at every (s', j) for j < k.
     // Same globular identity as for BoundaryEq: ∂^{s'}_j(∂^s_k(H)) = ∂^{s'}_j(H).
     // The same `map` applies because globular propagation is taken in the source scope.
-    // A HashSet de-duplicates derived entries so each (hole, slot) pair is pushed at most once.
-    {
-        let mut seen: HashSet<(HoleId, BdSlot)> =
-            partial_bds.iter().map(|(h, s, ..)| (*h, *s)).collect();
-        let mut i = 0;
-        while i < partial_bds.len() {
-            let (hole, slot, boundary, map, scope, origin) = partial_bds[i].clone();
-            if slot.dim > 0 {
-                for j in 0..slot.dim {
-                    for &sign2 in &[DiagramSign::Source, DiagramSign::Target] {
-                        let new_slot = BdSlot { sign: sign2, dim: j };
-                        if seen.insert((hole, new_slot)) {
-                            if let Ok(bd) = Diagram::boundary_normal(sign2, j, &boundary) {
-                                partial_bds.push((hole, new_slot, bd, map.clone(), scope.clone(), origin.clone()));
-                            }
-                        }
-                    }
-                }
-            }
-            i += 1;
-        }
-    }
+    globular_propagate(
+        &mut partial_bds,
+        |e| (e.0, e.1),
+        |e| &e.2,
+        |e, new_slot, bd| (e.0, new_slot, bd, e.3.clone(), e.4.clone(), e.5.clone()),
+    );
 
     // ---- pass 4: fill remaining slots from PartialBoundary ----
     for (hole, slot, boundary, map, scope, origin) in partial_bds {
@@ -644,6 +619,42 @@ mod tests {
 }
 
 // ---- Internal helpers -------------------------------------------------------
+
+/// Propagate constraints to lower-dimensional slots using the globular identity.
+///
+/// For each entry at slot `(s, k)` with `k > 0`, derives new entries at every
+/// `(s', j)` for `j < k` and both signs, using:
+///   `∂^{s'}_j(∂^s_k(H)) = ∂^{s'}_j(H)`
+///
+/// A `HashSet` on `(HoleId, BdSlot)` de-duplicates entries so each
+/// `(hole, slot)` pair is pushed at most once.
+fn globular_propagate<T, K, B, D>(entries: &mut Vec<T>, key: K, boundary: B, derive: D)
+where
+    T: Clone,
+    K: Fn(&T) -> (HoleId, BdSlot),
+    B: Fn(&T) -> &Diagram,
+    D: Fn(&T, BdSlot, Diagram) -> T,
+{
+    let mut seen: HashSet<(HoleId, BdSlot)> = entries.iter().map(|e| key(e)).collect();
+    let mut i = 0;
+    while i < entries.len() {
+        let entry = entries[i].clone();
+        let (hole, slot) = key(&entry);
+        if slot.dim > 0 {
+            for j in 0..slot.dim {
+                for &sign2 in &[DiagramSign::Source, DiagramSign::Target] {
+                    let new_slot = BdSlot { sign: sign2, dim: j };
+                    if seen.insert((hole, new_slot)) {
+                        if let Ok(bd) = Diagram::boundary_normal(sign2, j, boundary(&entry)) {
+                            entries.push(derive(&entry, new_slot, bd));
+                        }
+                    }
+                }
+            }
+        }
+        i += 1;
+    }
+}
 
 /// Expand a `Parallel` (or `Eq`) constraint into `DimEq` + `BoundaryEq` atoms.
 ///
