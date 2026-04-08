@@ -110,7 +110,8 @@ pub fn replay_session(session: SessionFile) -> Result<SessionState, String> {
             ));
         }
 
-        current = apply_rewrite(candidate);
+        current = apply_rewrite(&store, &type_complex, &current, candidate)
+            .map_err(|e| format!("replay failed at step {}: {}", step_idx + 1, e))?;
     }
 
     // 7. Compute available rewrites at the final state.

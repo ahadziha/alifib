@@ -2,5 +2,7 @@
 Idem <<= {
   ob,
   id : ob -> ob,
-  idem : id id -> id
+  idem : id id -> id,
+  let lhs = id id id,
+  let rhs = id
 }
