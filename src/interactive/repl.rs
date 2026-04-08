@@ -255,7 +255,16 @@ pub fn run_repl(
 
                     // ── Rewriting-phase commands (require engine) ─────
                     cmd => match engine.as_mut() {
-                        None => display.error("set type, source, and target first"),
+                        None => {
+                            let msg = match (type_complex.is_some(), pending_source.is_some(), pending_target.is_some()) {
+                                (false, _, _) => "no type selected — use '@ <TypeName>'",
+                                (true, false, false) => "set source and target first",
+                                (true, true, false) => "set target first",
+                                (true, false, true) => "set source first",
+                                (true, true, true) => "engine failed to start — check source/target names",
+                            };
+                            display.error(msg);
+                        }
                         Some(e) => dispatch_engine_cmd(e, cmd, &display),
                     },
                 }
