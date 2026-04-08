@@ -20,7 +20,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::core::complex::Complex;
-use crate::core::diagram::Diagram;
+use crate::core::diagram::{CellData, Diagram};
 use crate::core::rewrite::CandidateRewrite;
 use crate::output::render_diagram;
 use super::engine::RewriteEngine;
@@ -98,6 +98,9 @@ pub struct ResponseData {
     pub proof: Option<ProofInfo>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub history: Vec<HistoryEntry>,
+    /// All rewrite rules at the current dimension; only populated by `list_rules`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub rules: Vec<RuleInfo>,
 }
 
 /// Rich information about a diagram for client display.
@@ -131,6 +134,14 @@ pub struct RewriteInfo {
     pub match_positions: Vec<usize>,
     /// Current diagram with matched cells bracketed, e.g. `"[id id] id"`.
     pub match_display: String,
+}
+
+/// A rewrite rule (n+1-generator) in the type, independent of the current diagram.
+#[derive(Debug, Serialize)]
+pub struct RuleInfo {
+    pub name: String,
+    pub source: DiagramInfo,
+    pub target: DiagramInfo,
 }
 
 /// A summary of the running proof diagram.
@@ -179,7 +190,7 @@ pub fn diagram_info(diagram: &Diagram, scope: &Complex) -> DiagramInfo {
     DiagramInfo { label, dim, cell_count, cells_by_dim }
 }
 
-/// Build the full [`ResponseData`] from an engine snapshot.
+/// Build the standard [`ResponseData`] from an engine snapshot.
 pub fn build_response(engine: &RewriteEngine, include_history: bool) -> ResponseData {
     let scope = engine.type_complex();
     let current = engine.current_diagram();
@@ -208,9 +219,7 @@ pub fn build_response(engine: &RewriteEngine, include_history: bool) -> Response
     });
 
     let history = if include_history {
-        let sf = engine.to_session_file();
-        sf.moves
-            .iter()
+        engine.history_moves()
             .enumerate()
             .map(|(i, m)| HistoryEntry {
                 step: i + 1,
@@ -231,7 +240,35 @@ pub fn build_response(engine: &RewriteEngine, include_history: bool) -> Response
         rewrites,
         proof,
         history,
+        rules: vec![],
     }
+}
+
+/// Build a [`ResponseData`] that lists all (n+1)-generators in the type,
+/// regardless of whether they match the current diagram.
+pub fn build_list_rules_response(engine: &RewriteEngine) -> ResponseData {
+    let scope = engine.type_complex();
+    let store = engine.store();
+    let n = engine.current_diagram().top_dim();
+
+    let rules: Vec<RuleInfo> = scope
+        .generators_iter()
+        .filter(|(_, _, dim)| *dim == n + 1)
+        .filter_map(|(name, tag, _)| {
+            match store.cell_data_for_tag(scope, tag)? {
+                CellData::Boundary { boundary_in, boundary_out } => Some(RuleInfo {
+                    name: name.clone(),
+                    source: diagram_info(&boundary_in, scope),
+                    target: diagram_info(&boundary_out, scope),
+                }),
+                CellData::Zero => None,
+            }
+        })
+        .collect();
+
+    let mut data = build_response(engine, false);
+    data.rules = rules;
+    data
 }
 
 fn build_rewrite_info(

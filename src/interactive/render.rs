@@ -13,6 +13,7 @@ use crate::output::render_diagram;
 /// positions appear in `match_positions`.
 ///
 /// Example: labels `[id, id, id]`, positions `[0, 1]` → `"[id id] id"`.
+/// Handles any set of positions, including non-contiguous ones.
 pub fn render_match_highlight(
     diagram: &Diagram,
     scope: &Complex,
@@ -37,49 +38,30 @@ pub fn render_match_highlight(
         return labels.join(" ");
     }
 
-    // Sort positions for contiguous-group detection.
     let mut positions: Vec<usize> = match_positions.to_vec();
     positions.sort_unstable();
 
-    let mut result = String::new();
-    let mut in_bracket = false;
-
-    for (i, label) in labels.iter().enumerate() {
-        let matched = positions.binary_search(&i).is_ok();
-
-        if matched && !in_bracket {
-            if !result.is_empty() {
-                result.push(' ');
+    let mut out = String::new();
+    let mut i = 0;
+    while i < labels.len() {
+        if !out.is_empty() { out.push(' '); }
+        if positions.binary_search(&i).is_ok() {
+            // Consume all contiguous matched positions as one bracketed group.
+            out.push('[');
+            let mut first = true;
+            while i < labels.len() && positions.binary_search(&i).is_ok() {
+                if !first { out.push(' '); }
+                out.push_str(&labels[i]);
+                first = false;
+                i += 1;
             }
-            result.push('[');
-            in_bracket = true;
-        } else if !matched && in_bracket {
-            result.push(']');
-            in_bracket = false;
-            result.push(' ');
-        } else if !result.is_empty() && !in_bracket {
-            result.push(' ');
+            out.push(']');
+        } else {
+            out.push_str(&labels[i]);
+            i += 1;
         }
-
-        if in_bracket && i > *positions.first().unwrap_or(&0) && matched {
-            result.push(' ');
-        }
-
-        result.push_str(label);
     }
-
-    if in_bracket {
-        result.push(']');
-    }
-
-    result
-}
-
-/// Per-dimension cell-count summary for a diagram, e.g. "dim 1, 3 cells".
-pub fn render_dim_summary(diagram: &Diagram) -> String {
-    let dim = diagram.top_dim();
-    let count = diagram.labels_at(dim).map(|ls| ls.len()).unwrap_or(0);
-    format!("dim {}, {} cell{}", dim, count, if count == 1 { "" } else { "s" })
+    out
 }
 
 /// Print a compact state display to stdout for the REPL.

@@ -21,7 +21,7 @@
 use std::io::{BufRead, Write};
 
 use super::engine::RewriteEngine;
-use super::protocol::{Request, Response, build_response};
+use super::protocol::{Request, Response, build_response, build_list_rules_response};
 use super::session::SessionFile;
 
 /// Run the daemon loop: read requests from stdin, write responses to stdout.
@@ -65,10 +65,7 @@ pub fn run_daemon(initial: Option<RewriteEngine>) -> Result<(), ()> {
 
         match dispatch(&mut engine, request) {
             DispatchResult::Respond(resp) => emit(&stdout, &resp),
-            DispatchResult::Shutdown => {
-                emit(&stdout, &Response::error("shutdown acknowledged"));
-                break;
-            }
+            DispatchResult::Shutdown => break,
         }
     }
 
@@ -113,7 +110,7 @@ fn dispatch(engine: &mut Option<RewriteEngine>, req: Request) -> DispatchResult 
         }
         Step { choice } => {
             with_engine(engine, |e| {
-                e.step(choice).map_err(|err| err)?;
+                e.step(choice)?;
                 Ok(build_response(e, false))
             })
         }
@@ -139,10 +136,7 @@ fn dispatch(engine: &mut Option<RewriteEngine>, req: Request) -> DispatchResult 
             })
         }
         ListRules => {
-            with_engine(engine, |e| {
-                // Reuse the rewrites already in the state; just return full response.
-                Ok(build_response(e, false))
-            })
+            with_engine(engine, |e| Ok(build_list_rules_response(e)))
         }
         History => {
             with_engine(engine, |e| Ok(build_response(e, true)))

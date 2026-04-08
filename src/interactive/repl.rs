@@ -79,7 +79,9 @@ pub fn run_goal_loop(engine: &mut RewriteEngine) -> GoalOutcome {
             _ => {}
         }
 
-        dispatch_rewrite_command(engine, line);
+        if dispatch_rewrite_command(engine, line) == DispatchResult::Quit {
+            return GoalOutcome::Abandoned;
+        }
     }
 }
 

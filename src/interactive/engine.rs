@@ -292,7 +292,6 @@ impl RewriteEngine {
 
         let n = self.current_diagram.top_dim();
         let rule_name = candidate.rule_name.clone();
-        let rule_tag_for_mov = rule_name.clone();
 
         let step = apply_rewrite(&self.current_diagram, candidate)
             .map_err(|e| format!("apply rewrite failed: {}", e))?;
@@ -311,7 +310,7 @@ impl RewriteEngine {
         ).map_err(|e| format!("target boundary failed: {}", e))?;
 
         self.history.push(HistoryEntry {
-            mov: Move { choice, rule_name: rule_tag_for_mov },
+            mov: Move { choice, rule_name: rule_name.clone() },
             prev_diagram,
             prev_running,
         });
@@ -360,9 +359,12 @@ impl RewriteEngine {
     pub fn running_diagram(&self) -> Option<&Diagram> { self.running_diagram.as_ref() }
     pub fn available_rewrites(&self) -> &[CandidateRewrite] { &self.available_rewrites }
     pub fn store(&self) -> &GlobalStore { &self.store }
-    pub fn store_arc(&self) -> &Arc<GlobalStore> { &self.store }
     pub fn type_complex(&self) -> &Complex { &self.type_complex }
-    pub fn type_complex_arc(&self) -> &Arc<Complex> { &self.type_complex }
+
+    /// Iterate over the moves in history order without materialising a [`SessionFile`].
+    pub fn history_moves(&self) -> impl Iterator<Item = &Move> {
+        self.history.iter().map(|e| &e.mov)
+    }
     pub fn source_file(&self) -> &str { &self.source_file }
     pub fn type_name(&self) -> &str { &self.type_name }
     pub fn source_diagram_name(&self) -> &str { &self.source_diagram_name }

@@ -5,7 +5,6 @@
 //!   alifib rewrite step   --session <p> --choice <n> [--format text|json]
 //!   alifib rewrite undo   --session <p> [--format text|json]
 //!   alifib rewrite show   --session <p> [--format text|json]
-//!   alifib rewrite done   --session <p> [--format text|json]
 //!   alifib repl <file> --type <t> --source <s> [--target <t>]
 
 use serde::Serialize;
@@ -24,7 +23,6 @@ Subcommands:
   step   --session <p> --choice <n> [--format text|json]
   undo   --session <p> [--format text|json]
   show   --session <p> [--format text|json]
-  done   --session <p> [--format text|json]
 ";
 
 // ── Output types ──────────────────────────────────────────────────────────────
@@ -159,10 +157,6 @@ pub enum RewriteCommand {
         session: String,
         format: OutputFormat,
     },
-    Done {
-        session: String,
-        format: OutputFormat,
-    },
 }
 
 /// Arguments for the `alifib repl` subcommand.
@@ -202,7 +196,6 @@ pub fn parse_rewrite_args(args: &[String]) -> Result<RewriteCommand, String> {
         "step" => parse_step(rest),
         "undo" => parse_undo(rest),
         "show" => parse_show(rest),
-        "done" => parse_done(rest),
         "-h" | "--help" => Err(REWRITE_USAGE.to_string()),
         other => Err(format!("unknown rewrite subcommand '{}'\n{}", other, REWRITE_USAGE)),
     }
@@ -319,11 +312,6 @@ fn parse_show(args: &[String]) -> Result<RewriteCommand, String> {
     Ok(RewriteCommand::Show { session, format })
 }
 
-fn parse_done(args: &[String]) -> Result<RewriteCommand, String> {
-    let (session, format) = parse_session_and_format(args, "done")?;
-    Ok(RewriteCommand::Done { session, format })
-}
-
 fn parse_session_and_format(args: &[String], sub: &str) -> Result<(String, OutputFormat), String> {
     let mut session = None;
     let mut format = OutputFormat::Text;
@@ -408,18 +396,6 @@ pub fn run_rewrite(cmd: RewriteCommand) -> Result<(), ()> {
             Ok(())
         }
         RewriteCommand::Show { session: session_path, format } => {
-            let sf = match SessionFile::read(&session_path) {
-                Ok(s) => s,
-                Err(e) => { RewriteResponse::error(e).print(format); return Err(()); }
-            };
-            let engine = match RewriteEngine::from_session(sf) {
-                Ok(e) => e,
-                Err(e) => { RewriteResponse::error(e).print(format); return Err(()); }
-            };
-            RewriteResponse::from_engine(&engine).print(format);
-            Ok(())
-        }
-        RewriteCommand::Done { session: session_path, format } => {
             let sf = match SessionFile::read(&session_path) {
                 Ok(s) => s,
                 Err(e) => { RewriteResponse::error(e).print(format); return Err(()); }
