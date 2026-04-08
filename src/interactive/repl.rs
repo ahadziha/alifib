@@ -343,21 +343,38 @@ fn handle_at_command(
 
 /// List all types declared in the file.
 fn dispatch_types(store: &GlobalStore, canonical_path: &str, display: &Display) {
-    let Some(mc) = store.find_module(canonical_path) else {
+    let normalized = store.normalize();
+    let Some(module) = normalized.modules.iter().find(|m| m.path == canonical_path) else {
         display.error("module not found");
         return;
     };
-    let mut any = false;
-    for (name, tag, _dim) in mc.generators_iter() {
-        if let crate::aux::Tag::Global(gid) = tag {
-            if store.find_type(*gid).is_some() {
-                display.meta(&format!("  {}", name));
-                any = true;
-            }
-        }
-    }
-    if !any {
+    if module.types.is_empty() {
         display.meta("  (no types found)");
+        return;
+    }
+    for ty in module.types.iter().filter(|t| !t.name.is_empty()) {
+        let total_generators: usize = ty.dims.iter().map(|d| d.cells.len()).sum();
+        let max_dim = ty.dims.iter().map(|d| d.dim).max();
+        let mut parts = Vec::new();
+        if let Some(d) = max_dim {
+            parts.push(format!("dim {}", d));
+        }
+        if total_generators > 0 {
+            parts.push(format!("{} generator{}", total_generators, if total_generators == 1 { "" } else { "s" }));
+        }
+        if !ty.diagrams.is_empty() {
+            let n = ty.diagrams.len();
+            parts.push(format!("{} diagram{}", n, if n == 1 { "" } else { "s" }));
+        }
+        if !ty.maps.is_empty() {
+            let n = ty.maps.len();
+            parts.push(format!("{} map{}", n, if n == 1 { "" } else { "s" }));
+        }
+        if parts.is_empty() {
+            display.inspect(&format!("  {}", ty.name));
+        } else {
+            display.inspect(&format!("  {}  —  {}", ty.name, parts.join(", ")));
+        }
     }
 }
 
