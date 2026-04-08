@@ -164,6 +164,9 @@ pub struct HistoryEntry {
 // ── Builders ──────────────────────────────────────────────────────────────────
 
 /// Build a [`DiagramInfo`] from a diagram and its rendering scope.
+///
+/// Collects the flat top-level label string, dimension, top-dim cell count,
+/// and the full `cells_by_dim` breakdown for all dimensions 0..=top_dim.
 pub fn diagram_info(diagram: &Diagram, scope: &Complex) -> DiagramInfo {
     let dim = diagram.top_dim();
     let label = render_diagram(diagram, scope);
@@ -190,7 +193,11 @@ pub fn diagram_info(diagram: &Diagram, scope: &Complex) -> DiagramInfo {
     DiagramInfo { label, dim, cell_count, cells_by_dim }
 }
 
-/// Build the standard [`ResponseData`] from an engine snapshot.
+/// Build the standard [`ResponseData`] snapshot from an engine.
+///
+/// Includes current/source/target diagrams, available rewrites, proof info
+/// (if steps have been taken), and optionally the full move history.
+/// Call with `include_history: false` for every response except `History`.
 pub fn build_response(engine: &RewriteEngine, include_history: bool) -> ResponseData {
     let scope = engine.type_complex();
     let current = engine.current_diagram();
@@ -244,8 +251,11 @@ pub fn build_response(engine: &RewriteEngine, include_history: bool) -> Response
     }
 }
 
-/// Build a [`ResponseData`] that lists all (n+1)-generators in the type,
-/// regardless of whether they match the current diagram.
+/// Build a [`ResponseData`] that lists all (n+1)-generators in the type.
+///
+/// Used by the `list_rules` daemon request.  Unlike `build_response`, this
+/// populates `rules` with every rewrite rule at dimension `current_dim + 1`,
+/// independent of which ones match the current diagram.
 pub fn build_list_rules_response(engine: &RewriteEngine) -> ResponseData {
     let scope = engine.type_complex();
     let store = engine.store();

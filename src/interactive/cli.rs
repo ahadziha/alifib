@@ -1,11 +1,14 @@
 //! CLI argument parsing and command dispatch for `alifib rewrite` and `alifib repl`.
 //!
-//! Commands:
-//!   alifib rewrite init   --file <f> --type <t> --source <s> [--target <t>] --session <p> [--format text|json]
-//!   alifib rewrite step   --session <p> --choice <n> [--format text|json]
-//!   alifib rewrite undo   --session <p> [--format text|json]
-//!   alifib rewrite show   --session <p> [--format text|json]
-//!   alifib repl <file> --type <t> --source <s> [--target <t>]
+//! # Commands
+//!
+//! ```text
+//! alifib rewrite init   --file <f> --type <t> --source <s> [--target <t>] --session <p> [--format text|json]
+//! alifib rewrite step   --session <p> --choice <n> [--format text|json]
+//! alifib rewrite undo   --session <p> [--format text|json]
+//! alifib rewrite show   --session <p> [--format text|json]
+//! alifib repl <file>    [--type <t>] [--source <s>] [--target <t>] [--emacs]
+//! ```
 
 use serde::Serialize;
 
@@ -27,10 +30,17 @@ Subcommands:
 
 // ── Output types ──────────────────────────────────────────────────────────────
 
+/// Output format for `alifib rewrite` commands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OutputFormat { Text, Json }
+pub enum OutputFormat {
+    /// Human-readable text (the default).
+    Text,
+    /// Pretty-printed JSON, suitable for machine consumption.
+    Json,
+}
 
 impl OutputFormat {
+    /// Parse `"text"` or `"json"`, returning an error for anything else.
     pub fn parse(s: &str) -> Result<Self, String> {
         match s {
             "text" => Ok(Self::Text),
@@ -136,24 +146,37 @@ impl RewriteResponse {
 
 /// A parsed `alifib rewrite` subcommand and its arguments.
 pub enum RewriteCommand {
+    /// Initialise a fresh session from a source diagram and write the move log.
     Init {
+        /// Path to the `.ali` source file.
         file: String,
+        /// Name of the type whose generators are the rewrite rules.
         type_name: String,
+        /// Name of the source diagram within the type.
         source: String,
+        /// Optional name of the target (goal) diagram.
         target: Option<String>,
+        /// Path where the session JSON file will be written.
         session: String,
         format: OutputFormat,
     },
+    /// Apply one rewrite step and update the session file.
     Step {
+        /// Path to the existing session JSON file.
         session: String,
+        /// Index into the sorted candidate list at the current state.
         choice: usize,
         format: OutputFormat,
     },
+    /// Undo the last step and update the session file.
     Undo {
+        /// Path to the existing session JSON file.
         session: String,
         format: OutputFormat,
     },
+    /// Display the current session state without mutating the file.
     Show {
+        /// Path to the existing session JSON file.
         session: String,
         format: OutputFormat,
     },
@@ -161,17 +184,25 @@ pub enum RewriteCommand {
 
 /// Arguments for the `alifib repl` subcommand.
 pub struct ReplArgs {
+    /// Path to the `.ali` source file.
     pub file: String,
+    /// Pre-selected type name (set via `@ <TypeName>` interactively if absent).
     pub type_name: Option<String>,
+    /// Pre-selected source diagram name.
     pub source: Option<String>,
+    /// Pre-selected target diagram name.
     pub target: Option<String>,
+    /// Use Emacs keybindings instead of the default vi mode.
     pub emacs: bool,
 }
 
 /// Arguments for the `alifib session` subcommand.
 pub struct SessionArgs {
+    /// Path to the `.ali` source file.
     pub file: String,
+    /// Name of the type to work in (required).
     pub type_name: String,
+    /// Use Emacs keybindings instead of the default vi mode.
     pub emacs: bool,
 }
 
@@ -181,9 +212,13 @@ pub struct SessionArgs {
 /// and waits for an `Init` request; with arguments it pre-loads the session
 /// and emits an initial state response before entering the request loop.
 pub struct ServeArgs {
+    /// Path to the `.ali` source file (required if any of the others are given).
     pub file: Option<String>,
+    /// Name of the type to load (required if `file` is given).
     pub type_name: Option<String>,
+    /// Name of the source diagram (required if `file` is given).
     pub source: Option<String>,
+    /// Optional name of the target (goal) diagram.
     pub target: Option<String>,
 }
 

@@ -830,32 +830,56 @@ fn print_help(display: &Display) {
 
 // ── Command parsing ───────────────────────────────────────────────────────────
 
+/// A parsed REPL command.
 enum Cmd {
-    AtExpr(String),  // everything after the @ (handed to language::parse_complex)
+    /// `@ <expr>` — select a type; the string is handed to `language::parse_complex`.
+    AtExpr(String),
+    /// `types` — list all types in the file.
     Types,
+    /// `status` — show module/type/proof state.
     Status,
+    /// `print` — print the full source file.
     PrintFile,
+    /// `print type <name>` — print a type and its generators.
     PrintType(String),
+    /// `print cell <name>` — print a generator or let-binding with its boundary.
     PrintCell(String),
+    /// `source <name>` — set the source diagram.
     Source(String),
+    /// `target <name>` — set the target (goal) diagram.
     Target(String),
+    /// `apply <n>` — apply the nth candidate rewrite.
     Apply(usize),
+    /// `undo [<n>]` — undo the last step, or undo back to step n.
     Undo(Option<usize>),
+    /// `undo all` — undo all steps.
     UndoAll,
+    /// `restart` — alias for `undo all`.
     Restart,
+    /// `clear` — destroy engine and type selection, return to setup phase.
     Clear,
+    /// `show` — redisplay the current state.
     Show,
+    /// `rules` — list generators (or rewrite rules when engine active).
     Rules,
+    /// `info <name>` — show source → target of a named generator.
     Info(String),
+    /// `history` — display the move log.
     History,
+    /// `proof` — display the running proof cell.
     Proof,
+    /// `store <name>` — register the current proof as a local definition.
     Store(String),
+    /// `save <path>` — write the original file with stored definitions appended.
     Save(String),
+    /// `load <path>` — load and replay a session file.
     Load(String),
     Help,
     Quit,
-    Unknown(String),    // unrecognised command word
-    UsageError(String), // recognised command, wrong arguments
+    /// Unrecognised command word.
+    Unknown(String),
+    /// Recognised command with wrong arguments.
+    UsageError(String),
 }
 
 fn parse_command(line: &str) -> Cmd {

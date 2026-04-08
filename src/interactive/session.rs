@@ -31,6 +31,7 @@ pub struct Move {
 }
 
 impl SessionFile {
+    /// Deserialise a session from a JSON file at `path`.
     pub fn read(path: &str) -> Result<Self, String> {
         let content = std::fs::read_to_string(path)
             .map_err(|e| format!("cannot read session file '{}': {}", path, e))?;
@@ -38,6 +39,7 @@ impl SessionFile {
             .map_err(|e| format!("invalid session file '{}': {}", path, e))
     }
 
+    /// Serialise the session as pretty-printed JSON and write it to `path`.
     pub fn write(&self, path: &str) -> Result<(), String> {
         let content = serde_json::to_string_pretty(self)
             .map_err(|e| format!("cannot serialize session: {}", e))?;

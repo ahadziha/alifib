@@ -395,22 +395,47 @@ impl RewriteEngine {
 // ── Read-only accessors ───────────────────────────────────────────────────────
 
 impl RewriteEngine {
+    /// Number of rewrite steps applied so far.
     pub fn step_count(&self) -> usize { self.history.len() }
+
+    /// The n-diagram being actively rewritten (changes after each [`step`](Self::step)).
     pub fn current_diagram(&self) -> &Diagram { &self.current_diagram }
+
+    /// The fixed source n-diagram that the session started from.
     pub fn source_diagram(&self) -> &Diagram { &self.source_diagram }
+
+    /// The declared goal diagram, or `None` if no target was specified.
     pub fn target_diagram(&self) -> Option<&Diagram> { self.target_diagram.as_ref() }
+
+    /// The accumulated (n+1)-dimensional proof cell, or `None` if no steps have
+    /// been taken.  Each [`step`](Self::step) pastes a new rewrite onto this.
     pub fn running_diagram(&self) -> Option<&Diagram> { self.running_diagram.as_ref() }
+
+    /// The candidate rewrites applicable to the current diagram, precomputed
+    /// after each [`step`](Self::step) or [`undo`](Self::undo).
     pub fn available_rewrites(&self) -> &[CandidateRewrite] { &self.available_rewrites }
+
+    /// The interpreter's global store, shared read-only across the session.
     pub fn store(&self) -> &GlobalStore { &self.store }
+
+    /// The type complex whose (n+1)-generators are the rewrite rules.
     pub fn type_complex(&self) -> &Complex { &self.type_complex }
 
     /// Iterate over the moves in history order without materialising a [`SessionFile`].
     pub fn history_moves(&self) -> impl Iterator<Item = &Move> {
         self.history.iter().map(|e| &e.mov)
     }
+
+    /// Canonical path to the `.ali` source file for this session.
     pub fn source_file(&self) -> &str { &self.source_file }
+
+    /// Name of the type whose generators serve as rewrite rules.
     pub fn type_name(&self) -> &str { &self.type_name }
+
+    /// Name of the source n-diagram (as declared in the type or module).
     pub fn source_diagram_name(&self) -> &str { &self.source_diagram_name }
+
+    /// Name of the target diagram, or `None` if no goal was declared.
     pub fn target_diagram_name(&self) -> Option<&str> { self.target_diagram_name.as_deref() }
 
     /// Returns true only if the current diagram equals the target AND at least
