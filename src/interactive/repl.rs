@@ -410,7 +410,9 @@ fn maybe_start_engine(
             Ok(e) => {
                 *engine = Some(e);
                 display.meta("Ready.");
-                show_state(engine.as_ref().unwrap(), display);
+                let e = engine.as_ref().unwrap();
+                dispatch_print_cell(e.type_complex(), src, display);
+                dispatch_print_cell(e.type_complex(), tgt, display);
             }
             Err(e) => display.error(&e),
         }
