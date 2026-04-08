@@ -377,6 +377,15 @@ fn build_diagram<'tokens, 'src: 'tokens>() -> RDiagram<'tokens, 'src> {
 
 /// Build and return a parser for a single `Complex` expression.
 ///
+/// Parses a single diagram expression (the right-hand side of `let name = ...`).
+/// Used by `language::parse_diagram` to re-interpret proof expressions for
+/// round-trip typechecking.
+pub fn diagram_parser<'tokens, 'src: 'tokens>()
+-> impl Parser<'tokens, TokenInput<'tokens, 'src>, Spanned<Diagram>, extra::Err<Rich<'tokens, Token<'src>, SimpleSpan>>>
+{
+    build_diagram()
+}
+
 /// Parses `Address? { ComplexInstr, ... }` or a bare `Address`.
 /// Used by `language::parse_complex` to parse the expression following `@`
 /// at the interactive REPL prompt.

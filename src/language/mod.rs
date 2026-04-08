@@ -62,6 +62,34 @@ pub fn parse(source: &str) -> Result<Program, Vec<Error>> {
     }
 }
 
+/// Parse a single diagram expression (the right-hand side of a `let` binding).
+///
+/// Returns the parsed [`ast::Diagram`] node wrapped in a span, or an error message.
+/// Used for round-trip typechecking of proof diagrams before storing them.
+pub fn parse_diagram(source: &str) -> Result<ast::Spanned<ast::Diagram>, String> {
+    let (tokens, lex_errs) = lexer::lexer().parse(source).into_output_errors();
+
+    if !lex_errs.is_empty() {
+        return Err(lex_errs.iter().map(|e| format!("{}", e.reason())).collect::<Vec<_>>().join("; "));
+    }
+
+    let Some(tokens) = tokens else {
+        return Err("lex error".to_string());
+    };
+
+    let eoi = SimpleSpan::from(source.len()..source.len());
+    let (ast, parse_errs) = parser::diagram_parser()
+        .then_ignore(chumsky::prelude::end())
+        .parse(tokens.as_slice().split_token_span(eoi))
+        .into_output_errors();
+
+    if !parse_errs.is_empty() {
+        return Err(parse_errs.iter().map(|e| format!("{}", e.reason())).collect::<Vec<_>>().join("; "));
+    }
+
+    ast.ok_or_else(|| "parse error".to_string())
+}
+
 /// Parse a single `Complex` expression (the part that follows `@` in source files).
 ///
 /// Returns the parsed [`Complex`] AST node, or an error message.  Used by the

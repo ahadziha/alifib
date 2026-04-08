@@ -439,13 +439,17 @@ impl RewriteEngine {
     /// engine's own `type_complex` so future lookups see the new definition.
     /// Returns the updated `Arc<Complex>` so the caller can sync its own reference.
     ///
-    /// Also verifies that the source n-boundary of the proof equals `source_diagram` —
-    /// a defensive check that the engine's composition logic is consistent.
+    /// Typechecks the proof in two ways before storing:
+    /// 1. Source boundary: verifies the proof's source n-boundary equals the declared source.
+    /// 2. Round-trip: sourcefies the proof, re-interprets it through the interpreter, and
+    ///    confirms the result is isomorphic to the constructed proof.  This catches any bug
+    ///    in the rewrite engine's composition logic and verifies the saved .ali expression
+    ///    is valid.
     pub fn register_proof(&mut self, name: &str) -> Result<Arc<Complex>, String> {
         let diagram = self.running_diagram.clone()
             .ok_or_else(|| "no proof steps taken yet".to_owned())?;
 
-        // Verify source boundary.
+        // Check 1: source boundary.
         let n = self.source_diagram.top_dim();
         let src_boundary = Diagram::boundary(Sign::Source, n, &diagram)
             .map_err(|e| format!("source boundary check failed: {}", e))?;
@@ -454,6 +458,38 @@ impl RewriteEngine {
                 "proof source boundary does not match declared source '{}' — \
                  this is a bug in the rewrite engine",
                 self.source_diagram_name,
+            ));
+        }
+
+        // Check 2: round-trip through the interpreter.
+        // Sourcify → parse → interpret, then compare to the live diagram.
+        let source_expr = crate::output::diagram_to_source(&diagram, &self.type_complex);
+        let ast = crate::language::parse_diagram(&source_expr)
+            .map_err(|e| format!("sourcefier produced unparseable expression '{}': {}", source_expr, e))?;
+        let ctx = crate::interpreter::Context::new_with_resolutions(
+            self.source_file.clone(),
+            std::sync::Arc::new(crate::aux::loader::ModuleResolutions::empty()),
+            Arc::clone(&self.store),
+        );
+        let (interp_opt, interp_result) =
+            crate::interpreter::interpret_diagram(&ctx, &self.type_complex, &ast);
+        if interp_result.has_errors() {
+            let msgs: Vec<String> = interp_result.errors.iter()
+                .map(|e| format!("{}", e))
+                .collect();
+            return Err(format!(
+                "interpreter rejected proof expression '{}': {}",
+                source_expr, msgs.join("; "),
+            ));
+        }
+        let interp = interp_opt.ok_or_else(|| format!(
+            "interpreter produced no diagram for expression '{}'", source_expr,
+        ))?;
+        if !Diagram::isomorphic(&interp, &diagram) {
+            return Err(format!(
+                "round-trip check failed: expression '{}' does not reconstruct the proof — \
+                 this is a bug in the sourcefier",
+                source_expr,
             ));
         }
 

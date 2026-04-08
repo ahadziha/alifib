@@ -15,6 +15,7 @@ mod partial_map;
 mod resolve;
 mod types;
 
+pub use diagram::interpret_diagram;
 pub use eval::{Context, InterpResult, interpret_program};
 pub use global_store::GlobalStore;
 pub use inference::{HoleEntry, HoleId, SolvedHole};
