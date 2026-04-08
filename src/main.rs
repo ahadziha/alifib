@@ -5,6 +5,7 @@ use std::time::Instant;
 use alifib::aux::error::report_load_file_error;
 use alifib::aux::loader::Loader;
 use alifib::interactive::cli::{RewriteCommand, ReplArgs, parse_rewrite_args, parse_repl_args, run_rewrite, run_repl_cmd};
+use alifib::interactive::daemon::run_daemon;
 use alifib::interpreter::InterpretedFile;
 use alifib::language;
 use alifib::output;
@@ -22,6 +23,7 @@ enum RunMode {
     Bench(usize),
     Rewrite(RewriteCommand),
     Repl(ReplArgs),
+    Serve,
 }
 
 struct Args {
@@ -45,6 +47,9 @@ fn parse_args() -> Result<Args, String> {
         Some("repl") => {
             let args = parse_repl_args(&cli_args[1..])?;
             return Ok(Args { input: String::new(), output: None, mode: RunMode::Repl(args) });
+        }
+        Some("serve") => {
+            return Ok(Args { input: String::new(), output: None, mode: RunMode::Serve });
         }
         _ => {}
     }
@@ -146,6 +151,7 @@ fn main() {
         RunMode::Bench(n)     => run_bench(&loader, &args.input, n),
         RunMode::Rewrite(cmd) => run_rewrite(cmd),
         RunMode::Repl(args)   => run_repl_cmd(args),
+        RunMode::Serve        => run_daemon(),
     };
     if result.is_err() {
         process::exit(1);

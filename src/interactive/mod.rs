@@ -14,8 +14,10 @@
 //! ```
 
 pub mod cli;
+pub mod daemon;
 pub mod engine;
 pub mod output;
+pub mod protocol;
 pub mod render;
 pub mod repl;
 pub mod session;
