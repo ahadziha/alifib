@@ -5,19 +5,27 @@
 
 use std::io::IsTerminal;
 
-// ── The only ANSI codes in the codebase ──────────────────────────────────────
+// ── Colour palette ────────────────────────────────────────────────────────────
+// Change these to retheme the whole REPL output at once.
 
-const GREEN: &str = "\x1b[32m";
-const YELLOW: &str = "\x1b[33m";
+/// Colour for REPL meta lines (`>> ...`): responses, status, info.
+const COLOR_META: &str  = "\x1b[32m";  // green
+
+/// Colour for cell/type inspection output (`>> ...` from print commands).
+const COLOR_CELL: &str  = "\x1b[33m";  // yellow
+
+/// Colour for source file display (`<< ...`).
+const COLOR_FILE: &str  = "\x1b[33m";  // yellow
+
 const RESET: &str = "\x1b[0m";
 
 // ── Display ───────────────────────────────────────────────────────────────────
 
 /// Controls all terminal output for the REPL.
 ///
-/// When stdout is a terminal, meta-level lines are coloured green and
-/// prefixed with `>> `.  When stdout is redirected (pipes, files), colour
-/// codes are suppressed so the output is clean plain text.
+/// When stdout is a terminal, meta-level lines are coloured and prefixed.
+/// When stdout is redirected (pipes, files), colour codes are suppressed so
+/// the output is clean plain text.
 pub struct Display {
     color: bool,
 }
@@ -30,26 +38,43 @@ impl Display {
 
     /// Print a meta-level line: `>> text` in green.
     ///
-    /// If `text` contains newlines, each non-empty line is prefixed with `>> `.
+    /// If `text` contains newlines, each line is prefixed with `>> `.
     pub fn meta(&self, text: &str) {
         for line in text.split('\n') {
             if self.color {
-                println!("{GREEN}>>{RESET} {GREEN}{line}{RESET}");
+                println!("{COLOR_META}>>{RESET} {COLOR_META}{line}{RESET}");
             } else {
                 println!(">> {line}");
             }
         }
     }
 
-    /// Print a cell (diagram) line — plain text, no prefix.
+    /// Print a cell/type inspection line: `>> text` in yellow.
+    ///
+    /// Used by `print cell` and `print type` output.
+    pub fn inspect(&self, text: &str) {
+        for line in text.split('\n') {
+            if self.color {
+                println!("{COLOR_CELL}>>{RESET} {COLOR_CELL}{line}{RESET}");
+            } else {
+                println!(">> {line}");
+            }
+        }
+    }
+
+    /// Print a cell (diagram) line — yellow, no prefix.
     pub fn cell(&self, text: &str) {
-        println!("{text}");
+        if self.color {
+            println!("{COLOR_CELL}{text}{RESET}");
+        } else {
+            println!("{text}");
+        }
     }
 
     /// Print an error: `>> error: text` in green.
     pub fn error(&self, text: &str) {
         if self.color {
-            println!("{GREEN}>>{RESET} {GREEN}error: {text}{RESET}");
+            println!("{COLOR_META}>>{RESET} {COLOR_META}error: {text}{RESET}");
         } else {
             println!(">> error: {text}");
         }
@@ -59,7 +84,7 @@ impl Display {
     pub fn file(&self, text: &str) {
         for line in text.split('\n') {
             if self.color {
-                println!("{YELLOW}<<{RESET} {YELLOW}{line}{RESET}");
+                println!("{COLOR_FILE}<<{RESET} {COLOR_FILE}{line}{RESET}");
             } else {
                 println!("<< {line}");
             }

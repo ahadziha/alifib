@@ -100,13 +100,13 @@ pub fn print_state(
         if Diagram::equal(current, t) {
             display.meta("Rewrite complete.");
             if let Some((src_label, tgt_label, proof_label)) = proof {
-                display.meta("");
-                display.meta("proof:");
-                display.meta(&format!("  {proof_label} : {src_label} -> {tgt_label}"));
+                display.blank();
+                display.inspect("proof:");
+                display.inspect(&format!("  {proof_label} : {src_label} -> {tgt_label}"));
             }
             return;
         }
-        display.meta(&format!("target: {}", render_diagram(t, scope)));
+        display.inspect(&format!("target: {}", render_diagram(t, scope)));
     }
 
     if rewrites.is_empty() {
@@ -120,9 +120,9 @@ pub fn print_state(
         let tgt = render_diagram(&c.target_boundary, scope);
         let rule_src = render_diagram(&c.source_boundary, scope);
         let rule_tgt = render_diagram(&c.target_boundary, scope);
-        display.meta("");
-        display.meta(&format!("  {i}  {highlight}  ->  {tgt}"));
-        display.meta(&format!("    by {} : {} -> {}", c.rule_name, rule_src, rule_tgt));
+        display.blank();
+        display.inspect(&format!("  {i}  {highlight}  ->  {tgt}"));
+        display.inspect(&format!("    by {} : {} -> {}", c.rule_name, rule_src, rule_tgt));
     }
 }
 
@@ -133,8 +133,8 @@ pub fn print_history(
     history_entries: &[(usize, &str)],
     scope: &Complex,
 ) {
-    display.meta(&format!("step 0 (source): {}", render_diagram(source, scope)));
+    display.inspect(&format!("step 0 (source): {}", render_diagram(source, scope)));
     for (i, (choice, rule)) in history_entries.iter().enumerate() {
-        display.meta(&format!("step {} — {} (choice {})", i + 1, rule, choice));
+        display.inspect(&format!("step {} — {} (choice {})", i + 1, rule, choice));
     }
 }

@@ -241,6 +241,10 @@ pub fn run_repl(
                         }
                     }
 
+                    // ── Always dispatch errors regardless of engine state ──
+                    Cmd::Unknown(s) => display.error(&format!("unrecognised command '{}' — type 'help' for a list", s)),
+                    Cmd::UsageError(usage) => display.error(&format!("usage: {}", usage)),
+
                     // ── Rewriting-phase commands (require engine) ─────
                     cmd => match engine.as_mut() {
                         None => display.error("set type, source, and target first"),
@@ -449,9 +453,9 @@ fn dispatch_status(
             let src_name     = e.source_diagram_name();
             let src_expanded = render_diagram(e.source_diagram(), scope);
             if src_expanded == src_name {
-                display.meta(&format!("source: {}", src_expanded));
+                display.inspect(&format!("source: {}", src_expanded));
             } else {
-                display.meta(&format!("source ({}): {}", src_name, src_expanded));
+                display.inspect(&format!("source ({}): {}", src_name, src_expanded));
             }
 
             // Target — same pattern.
@@ -459,9 +463,9 @@ fn dispatch_status(
                 (Some(tgt), Some(tgt_name)) => {
                     let tgt_expanded = render_diagram(tgt, scope);
                     if tgt_expanded == tgt_name {
-                        display.meta(&format!("target: {}", tgt_expanded));
+                        display.inspect(&format!("target: {}", tgt_expanded));
                     } else {
-                        display.meta(&format!("target ({}): {}", tgt_name, tgt_expanded));
+                        display.inspect(&format!("target ({}): {}", tgt_name, tgt_expanded));
                     }
                 }
                 _ => display.meta("target: (none)"),
@@ -473,7 +477,7 @@ fn dispatch_status(
             match e.proof_label() {
                 None => display.meta("proof:  (no steps taken)"),
                 Some(label) => {
-                    display.meta(&format!("proof:  {}", label));
+                    display.inspect(&format!("proof:  {}", label));
                     display.meta(&format!("steps:  {}", e.step_count()));
                 }
             }
@@ -501,14 +505,14 @@ fn dispatch_rules(complex: &Complex, store: &GlobalStore, filter_dim: Option<usi
         match store.cell_data_for_tag(complex, tag) {
             Some(CellData::Boundary { boundary_in, boundary_out }) => {
                 if filter_dim.is_some() {
-                    display.meta(&format!(
+                    display.inspect(&format!(
                         "  {} : {}  ->  {}",
                         name,
                         render_diagram(&boundary_in, complex),
                         render_diagram(&boundary_out, complex),
                     ));
                 } else {
-                    display.meta(&format!(
+                    display.inspect(&format!(
                         "  {} (dim {}): {}  ->  {}",
                         name, dim,
                         render_diagram(&boundary_in, complex),
@@ -516,8 +520,8 @@ fn dispatch_rules(complex: &Complex, store: &GlobalStore, filter_dim: Option<usi
                     ));
                 }
             }
-            Some(CellData::Zero) => display.meta(&format!("  {} (dim 0): 0-cell", name)),
-            _ => display.meta(&format!("  {} (no boundaries)", name)),
+            Some(CellData::Zero) => display.inspect(&format!("  {} (dim 0): 0-cell", name)),
+            _ => display.inspect(&format!("  {} (no boundaries)", name)),
         }
     }
     if !any {
@@ -535,14 +539,14 @@ fn dispatch_info(complex: &Complex, store: &GlobalStore, name: &str, display: &D
         Some((tag, dim)) => {
             match store.cell_data_for_tag(complex, tag) {
                 Some(CellData::Boundary { boundary_in, boundary_out }) => {
-                    display.meta(&format!(
+                    display.inspect(&format!(
                         "{} (dim {}): {}  ->  {}",
                         name, dim,
                         render_diagram(&boundary_in, complex),
                         render_diagram(&boundary_out, complex),
                     ));
                 }
-                Some(CellData::Zero) => display.meta(&format!("{} (dim 0): 0-cell", name)),
+                Some(CellData::Zero) => display.inspect(&format!("{} (dim 0): 0-cell", name)),
                 None => display.error(&format!("no cell data for '{}'", name)),
             }
         }
@@ -573,7 +577,7 @@ fn dispatch_print_type(store: &GlobalStore, canonical_path: &str, name: &str, di
 fn dispatch_print_cell(complex: &Complex, name: &str, display: &Display) {
     // Generators are in the generators table and have cell data.
     if let Some((_, dim)) = complex.find_generator(name) {
-        display.meta(&format!("{} (generator, dim {})", name, dim));
+        display.inspect(&format!("{} (generator, dim {})", name, dim));
         if dim > 0 {
             if let Some(diag) = complex.find_diagram(name) {
                 print_diagram_with_boundary(diag, complex, display);
@@ -585,11 +589,11 @@ fn dispatch_print_cell(complex: &Complex, name: &str, display: &Display) {
     // Let bindings are in the diagrams table but not the generators table.
     if let Some(diag) = complex.find_diagram(name) {
         let dim = diag.top_dim();
-        display.meta(&format!("{} (let, dim {})", name, dim));
+        display.inspect(&format!("{} (let, dim {})", name, dim));
         if dim > 0 {
             print_diagram_with_boundary(diag, complex, display);
         }
-        display.meta(&format!("  = {}", render_diagram(diag, complex)));
+        display.inspect(&format!("  = {}", render_diagram(diag, complex)));
         return;
     }
 
@@ -603,12 +607,12 @@ fn print_diagram_with_boundary(diag: &crate::core::diagram::Diagram, complex: &C
         crate::core::diagram::Diagram::boundary(Sign::Source, k, diag),
         crate::core::diagram::Diagram::boundary(Sign::Target, k, diag),
     ) {
-        (Ok(src), Ok(tgt)) => display.meta(&format!(
+        (Ok(src), Ok(tgt)) => display.inspect(&format!(
             "  {}  ->  {}",
             render_diagram(&src, complex),
             render_diagram(&tgt, complex),
         )),
-        _ => display.meta("  (boundary extraction failed)"),
+        _ => display.inspect("  (boundary extraction failed)"),
     }
 }
 
@@ -667,7 +671,7 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
                         crate::core::diagram::Diagram::boundary(Sign::Source, n, d),
                         crate::core::diagram::Diagram::boundary(Sign::Target, n, d),
                     ) {
-                        (Ok(src), Ok(tgt)) => display.meta(&format!(
+                        (Ok(src), Ok(tgt)) => display.inspect(&format!(
                             "{} : {} -> {}",
                             render_diagram(d, engine.type_complex()),
                             render_diagram(&src, engine.type_complex()),
@@ -702,7 +706,8 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
         // These are all handled before dispatch_engine_cmd is reached
         Cmd::Clear | Cmd::Source(_) | Cmd::Target(_) | Cmd::AtExpr(_) | Cmd::Types
         | Cmd::PrintFile | Cmd::PrintType(_) | Cmd::PrintCell(_) | Cmd::Status => unreachable!(),
-        Cmd::Unknown(s) => display.error(&format!("unknown command '{}' — type 'help' for a list", s)),
+        Cmd::Unknown(s) => display.error(&format!("unrecognised command '{}' — type 'help' for a list", s)),
+        Cmd::UsageError(usage) => display.error(&format!("usage: {}", usage)),
     }
 }
 
@@ -760,7 +765,8 @@ enum Cmd {
     Load(String),
     Help,
     Quit,
-    Unknown(String),
+    Unknown(String),    // unrecognised command word
+    UsageError(String), // recognised command, wrong arguments
 }
 
 fn parse_command(line: &str) -> Cmd {
@@ -784,30 +790,30 @@ fn parse_command(line: &str) -> Cmd {
                 match sub.next().unwrap_or("") {
                     "type" => {
                         let name = sub.next().map(str::trim).unwrap_or("").to_owned();
-                        if name.is_empty() { Cmd::Unknown("print type <name>".to_owned()) }
+                        if name.is_empty() { Cmd::UsageError("print type <name>".to_owned()) }
                         else { Cmd::PrintType(name) }
                     }
                     "cell" => {
                         let name = sub.next().map(str::trim).unwrap_or("").to_owned();
-                        if name.is_empty() { Cmd::Unknown("print cell <name>".to_owned()) }
+                        if name.is_empty() { Cmd::UsageError("print cell <name>".to_owned()) }
                         else { Cmd::PrintCell(name) }
                     }
-                    _ => Cmd::Unknown(format!("print {rest} (use 'print', 'print type <n>', 'print cell <n>')")),
+                    _ => Cmd::UsageError("print  |  print type <name>  |  print cell <name>".to_owned()),
                 }
             }
         }
         "source" => {
-            if rest.is_empty() { Cmd::Unknown("source <name>".to_owned()) }
+            if rest.is_empty() { Cmd::UsageError("source <name>".to_owned()) }
             else { Cmd::Source(rest.to_owned()) }
         }
         "target" => {
-            if rest.is_empty() { Cmd::Unknown("target <name>".to_owned()) }
+            if rest.is_empty() { Cmd::UsageError("target <name>".to_owned()) }
             else { Cmd::Target(rest.to_owned()) }
         }
         "apply" | "a" => {
             match rest.parse::<usize>() {
                 Ok(n) => Cmd::Apply(n),
-                Err(_) => Cmd::Unknown(format!("apply {}", rest)),
+                Err(_) => Cmd::UsageError("apply <n>".to_owned()),
             }
         }
         "undo" | "u" => {
@@ -818,7 +824,7 @@ fn parse_command(line: &str) -> Cmd {
             } else {
                 match rest.parse::<usize>() {
                     Ok(n) => Cmd::Undo(Some(n)),
-                    Err(_) => Cmd::Unknown(format!("undo {}", rest)),
+                    Err(_) => Cmd::UsageError("undo  |  undo <n>  |  undo all".to_owned()),
                 }
             }
         }
@@ -827,17 +833,17 @@ fn parse_command(line: &str) -> Cmd {
         "show"    => Cmd::Show,
         "rules" | "r" => Cmd::Rules,
         "info" | "i" => {
-            if rest.is_empty() { Cmd::Unknown("info <name>".to_owned()) }
+            if rest.is_empty() { Cmd::UsageError("info <name>".to_owned()) }
             else { Cmd::Info(rest.to_owned()) }
         }
         "history" | "h" => Cmd::History,
         "proof" | "p"   => Cmd::Proof,
         "save" => {
-            if rest.is_empty() { Cmd::Unknown("save <path>".to_owned()) }
+            if rest.is_empty() { Cmd::UsageError("save <path>".to_owned()) }
             else { Cmd::Save(rest.to_owned()) }
         }
         "load" | "l" => {
-            if rest.is_empty() { Cmd::Unknown("load <path>".to_owned()) }
+            if rest.is_empty() { Cmd::UsageError("load <path>".to_owned()) }
             else { Cmd::Load(rest.to_owned()) }
         }
         "help" | "?" => Cmd::Help,
