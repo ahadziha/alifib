@@ -423,12 +423,13 @@ impl RewriteEngine {
                 .unwrap_or(false)
     }
 
-    /// Render the running proof diagram as a label string, for the completion message.
+    /// Render the running proof diagram as a `.ali` source expression, for the completion
+    /// message and the `store`/`save` commands.
     ///
     /// Returns `None` if no steps have been taken yet.
     pub fn proof_label(&self) -> Option<String> {
         self.running_diagram.as_ref().map(|d| {
-            crate::output::render_diagram(d, &self.type_complex)
+            crate::output::diagram_to_source(d, &self.type_complex)
         })
     }
 

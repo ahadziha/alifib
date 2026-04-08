@@ -36,7 +36,7 @@ impl Sign {
 /// - `Node { dim, left, right }` — the result of pasting `left` and `right`
 ///   at dimension `dim`.
 #[derive(Debug, Clone)]
-pub(super) enum PasteTree {
+pub(crate) enum PasteTree {
     Leaf(Tag),
     Node {
         dim: usize,
@@ -49,11 +49,11 @@ pub(super) enum PasteTree {
 /// diagram at one particular dimension.  One `BoundaryHistory` is stored per
 /// dimension in `Diagram::paste_history`.
 #[derive(Debug, Clone)]
-pub(super) struct BoundaryHistory {
+pub(crate) struct BoundaryHistory {
     /// Paste-tree for the source (input) boundary at this dimension.
-    pub(super) source: PasteTree,
+    pub(crate) source: PasteTree,
     /// Paste-tree for the target (output) boundary at this dimension.
-    pub(super) target: PasteTree,
+    pub(crate) target: PasteTree,
 }
 
 impl BoundaryHistory {
@@ -64,7 +64,7 @@ impl BoundaryHistory {
         }
     }
 
-    pub(super) fn from_pair(source: PasteTree, target: PasteTree) -> Self {
+    pub(crate) fn from_pair(source: PasteTree, target: PasteTree) -> Self {
         Self { source, target }
     }
 }
@@ -107,8 +107,8 @@ struct BoundaryMatch {
 #[derive(Debug, Clone)]
 pub struct Diagram {
     pub(super) shape: Arc<Ogposet>,
-    pub(super) labels: Vec<Vec<Tag>>,               // labels[dim][pos]
-    pub(super) paste_history: Vec<BoundaryHistory>, // paste_history[dim]
+    pub(crate) labels: Vec<Vec<Tag>>,               // labels[dim][pos]
+    pub(crate) paste_history: Vec<BoundaryHistory>, // paste_history[dim]
 }
 
 // ---- Public interface ----
@@ -215,7 +215,7 @@ impl Diagram {
         self.shape.is_normal()
     }
 
-    pub(super) fn tree(&self, sign: Sign, dim: usize) -> Option<&PasteTree> {
+    pub(crate) fn tree(&self, sign: Sign, dim: usize) -> Option<&PasteTree> {
         self.paste_history.get(dim).map(|h| h.get(sign))
     }
 
@@ -502,7 +502,8 @@ impl Diagram {
             "whisker rewrite: all cells should be labelled",
         );
 
-        // Paste history: inherit from current for dims 0..n; add leaf at dim n+1.
+        // Paste history: inherit from current for dims 0..n-1; fix dim n target tree;
+        // add a properly whiskered tree at dim n+1.
         let n = current.top_dim();
         let mut history = current.paste_history.clone();
         if history.len() <= n {
@@ -511,10 +512,60 @@ impl Diagram {
                 missing_tree(), missing_tree(),
             ));
         }
-        history.push(BoundaryHistory::from_pair(
-            PasteTree::Leaf(rule_tag.clone()),
-            PasteTree::Leaf(rule_tag.clone()),
-        ));
+
+        // The matched top-dim positions in `current`.  Sort a local copy — the embedding map
+        // order is determined by the matching algorithm and is not guaranteed to be ascending.
+        let mut matched_buf: Vec<usize> = match_emb.map.get(n).cloned().unwrap_or_default();
+        matched_buf.sort_unstable();
+        let matched: &[usize] = &matched_buf;
+
+        // Build the whiskered trees:
+        //   - dim n+1 source tree: idle cells + rule_tag + idle cells (= the whiskered rule)
+        //   - dim n+1 target tree: idle cells + target labels + idle cells
+        //   - dim n target tree:   same as dim n+1 target (= the rewritten n-boundary)
+        //
+        // Paste dimension for folding the pieces: n-1 (or 0 if n == 0, but for n=0 there
+        // is at most one piece so the fold dimension is never actually used in a Node).
+        let paste_dim = n.saturating_sub(1);
+        let num_top = current.labels.get(n).map(Vec::len).unwrap_or(0);
+        let tgt_top = target.labels.get(target.top_dim()).map(Vec::as_slice).unwrap_or(&[]);
+
+        let mut src_pieces: Vec<PasteTree> = Vec::new();
+        let mut tgt_pieces: Vec<PasteTree> = Vec::new();
+        let mut i = 0;
+        let mut tgt_i = 0;
+        while i < num_top {
+            if matched.binary_search(&i).is_ok() {
+                // This is the start of the matched segment; the rule_tag covers it all.
+                src_pieces.push(PasteTree::Leaf(rule_tag.clone()));
+                // The target boundary's labels expand in place of the matched segment.
+                while tgt_i < tgt_top.len() {
+                    tgt_pieces.push(PasteTree::Leaf(tgt_top[tgt_i].clone()));
+                    tgt_i += 1;
+                }
+                // Skip all matched positions.
+                while i < num_top && matched.binary_search(&i).is_ok() {
+                    i += 1;
+                }
+            } else {
+                let idle = PasteTree::Leaf(current.labels[n][i].clone());
+                src_pieces.push(idle.clone());
+                tgt_pieces.push(idle);
+                i += 1;
+            }
+        }
+
+        let src_tree = fold_trees(src_pieces, paste_dim);
+        let tgt_tree = fold_trees(tgt_pieces, paste_dim);
+
+        // Fix the dim-n history: source n-boundary is unchanged (= current); target
+        // n-boundary is the rewritten diagram, described by tgt_tree.
+        history[n] = BoundaryHistory::from_pair(
+            history[n].source.clone(),
+            tgt_tree.clone(),
+        );
+        // Dim n+1: both source and target describe the whiskered (n+1)-cell.
+        history.push(BoundaryHistory::from_pair(src_tree, tgt_tree));
 
         Ok(Diagram::make(tip, result_labels, history))
     }
@@ -525,6 +576,19 @@ impl Diagram {
 /// Sentinel paste tree used when history data is absent.
 fn missing_tree() -> PasteTree {
     PasteTree::Leaf(Tag::Local("?".into()))
+}
+
+/// Fold a list of paste trees into one by left-associative `Node{dim, ...}` nesting.
+/// Returns the single element unchanged if `pieces` has length 1, and `missing_tree()`
+/// if `pieces` is empty.
+fn fold_trees(pieces: Vec<PasteTree>, dim: usize) -> PasteTree {
+    let mut iter = pieces.into_iter();
+    let Some(first) = iter.next() else { return missing_tree(); };
+    iter.fold(first, |acc, p| PasteTree::Node {
+        dim,
+        left: Arc::new(acc),
+        right: Arc::new(p),
+    })
 }
 
 /// Get a paste tree from a history slice at position `k`, falling back to `fallback()`.

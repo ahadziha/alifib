@@ -121,7 +121,7 @@ fn write_updated_file(
         .map_err(|e| format!("cannot read '{}': {}", source_file, e))?;
     let mut out = original.trim_end().to_owned();
     for (type_name, def_name, label) in stored_defs {
-        write!(out, "\n\n@ {} {{\n  let {} = {}\n}}", type_name, def_name, label)
+        write!(out, "\n\n@ {}\nlet {} = {}", type_name, def_name, label)
             .map_err(|e| e.to_string())?;
     }
     out.push('\n');
@@ -292,14 +292,14 @@ pub fn run_repl(
                             match cmd {
                                 // Store/Save handled here: need access to outer type_complex and stored_defs.
                                 Cmd::Store(name) => {
-                                    let label = e.running_diagram()
-                                        .map(|d| crate::output::render_diagram(d, e.type_complex()));
+                                    let source_expr = e.running_diagram()
+                                        .map(|d| crate::output::diagram_to_source(d, e.type_complex()));
                                     match e.register_proof(&name) {
                                         Ok(new_arc) => {
                                             display.meta(&format!("Stored '{}' as local definition.", name));
                                             dispatch_print_cell(e.type_complex(), &name, &display);
-                                            if let (Some(tn), Some(lbl)) = (type_name_str.as_deref(), label) {
-                                                stored_defs.push((tn.to_owned(), name, lbl));
+                                            if let (Some(tn), Some(expr)) = (type_name_str.as_deref(), source_expr) {
+                                                stored_defs.push((tn.to_owned(), name, expr));
                                             }
                                             type_complex = Some(new_arc);
                                         }
@@ -681,7 +681,7 @@ fn dispatch_print_cell(complex: &Complex, name: &str, display: &Display) {
         if dim > 0 {
             print_diagram_with_boundary(diag, complex, display);
         }
-        display.inspect(&format!("  = {}", render_diagram(diag, complex)));
+        display.inspect(&format!("  = {}", crate::output::diagram_to_source(diag, complex)));
         return;
     }
 
@@ -761,7 +761,7 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
                     ) {
                         (Ok(src), Ok(tgt)) => display.inspect(&format!(
                             "{} : {} -> {}",
-                            render_diagram(d, engine.type_complex()),
+                            crate::output::diagram_to_source(d, engine.type_complex()),
                             render_diagram(&src, engine.type_complex()),
                             render_diagram(&tgt, engine.type_complex()),
                         )),

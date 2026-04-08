@@ -395,4 +395,75 @@ mod tests {
         let final_cands = find_candidate_rewrites(cell_data_fn(&store), &complex, &after2);
         assert_eq!(final_cands.len(), 0);
     }
+
+    // ── Sourcefier tests ─────────────────────────────────────────────────────
+
+    /// Verify that applying idem at positions [0,1] in `id id id` produces a step whose
+    /// paste tree sourcefies to "idem #0 id" (rule whiskered with one idle cell on the right).
+    #[test]
+    fn whisker_rewrite_step_sourcefies_correctly() {
+        use crate::output::diagram_to_source;
+
+        let (store, complex) = load_type(&fixture("Idem.ali"), "Idem");
+        let lhs = load_diagram(&store, &complex, "lhs");
+
+        // candidates[0] matches at positions [0, 1] — idem whiskered with id on the right.
+        let candidates = find_candidate_rewrites(cell_data_fn(&store), &complex, &lhs);
+        assert_eq!(candidates[0].image_positions, vec![0, 1]);
+
+        let step = apply_rewrite(&lhs, &candidates[0]).unwrap();
+        let source_expr = diagram_to_source(&step, &complex);
+        assert_eq!(source_expr, "idem #0 id");
+    }
+
+    /// Verify that composing two partial rewrites (lhs → id id → id) produces a proof whose
+    /// paste tree sourcefies to "idem #0 id #1 idem" — valid .ali syntax for the Idem proof.
+    #[test]
+    fn composed_proof_sourcefies_correctly() {
+        use crate::output::diagram_to_source;
+
+        let (store, complex) = load_type(&fixture("Idem.ali"), "Idem");
+        let lhs = load_diagram(&store, &complex, "lhs");
+        let n = lhs.top_dim();
+
+        let candidates1 = find_candidate_rewrites(cell_data_fn(&store), &complex, &lhs);
+        let step1 = apply_rewrite(&lhs, &candidates1[0]).unwrap();
+        let after1 = Diagram::boundary(Sign::Target, n, &step1).unwrap();
+
+        let candidates2 = find_candidate_rewrites(cell_data_fn(&store), &complex, &after1);
+        let step2 = apply_rewrite(&after1, &candidates2[0]).unwrap();
+
+        let proof = Diagram::paste(n, &step1, &step2).expect("steps should paste");
+        let source_expr = diagram_to_source(&proof, &complex);
+
+        // Left-associative: (idem #0 id) #1 idem
+        assert_eq!(source_expr, "idem #0 id #1 idem");
+    }
+
+    /// Verify that the 3-dim Assoc proof (lhs2 → alpha alpha → alpha) sourcefies correctly.
+    /// beta is a 3-cell: beta : alpha alpha -> alpha.  Applying beta at [0,1] in lhs2 = alpha alpha alpha
+    /// gives a step whose source tree is "beta #1 alpha".
+    #[test]
+    fn assoc_proof_sourcefies_correctly() {
+        use crate::output::diagram_to_source;
+
+        let (store, complex) = load_type(&fixture("Assoc.ali"), "Assoc");
+        let lhs2 = load_diagram(&store, &complex, "lhs2");
+        let n = lhs2.top_dim();
+
+        // candidates[0]: beta at [0,1] — whiskered with alpha on the right
+        let candidates1 = find_candidate_rewrites(cell_data_fn(&store), &complex, &lhs2);
+        assert_eq!(candidates1[0].image_positions, vec![0, 1]);
+        let step1 = apply_rewrite(&lhs2, &candidates1[0]).unwrap();
+        let step1_expr = diagram_to_source(&step1, &complex);
+        assert_eq!(step1_expr, "beta #1 alpha");
+
+        let after1 = Diagram::boundary(Sign::Target, n, &step1).unwrap();
+        let candidates2 = find_candidate_rewrites(cell_data_fn(&store), &complex, &after1);
+        let step2 = apply_rewrite(&after1, &candidates2[0]).unwrap();
+
+        let proof = Diagram::paste(n, &step1, &step2).expect("steps should paste");
+        let proof_expr = diagram_to_source(&proof, &complex);
+        assert_eq!(proof_expr, "beta #1 alpha #2 beta");
+    }
 }
