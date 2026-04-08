@@ -556,6 +556,11 @@ fn dispatch_rules(complex: &Complex, store: &GlobalStore, filter_dim: Option<usi
     }
 }
 
+/// Returns `"generator"` or `"local definition"` for a named cell.
+fn cell_kind(complex: &Complex, name: &str) -> &'static str {
+    if complex.find_generator(name).is_some() { "generator" } else { "local definition" }
+}
+
 /// Display the source → target of a named generator.
 fn dispatch_info(complex: &Complex, store: &GlobalStore, name: &str, display: &Display) {
     match complex.find_generator(name) {
@@ -563,17 +568,19 @@ fn dispatch_info(complex: &Complex, store: &GlobalStore, name: &str, display: &D
             match store.cell_data_for_tag(complex, tag) {
                 Some(CellData::Boundary { boundary_in, boundary_out }) => {
                     display.inspect(&format!(
-                        "{} (dim {}): {}  ->  {}",
-                        name, dim,
+                        "{} : {}  ->  {} [dim {}, {}]",
+                        name,
                         render_diagram(&boundary_in, complex),
                         render_diagram(&boundary_out, complex),
+                        dim,
+                        cell_kind(complex, name),
                     ));
                 }
-                Some(CellData::Zero) => display.inspect(&format!("{} (dim 0): 0-cell", name)),
+                Some(CellData::Zero) => display.inspect(&format!("{} [dim 0, generator]", name)),
                 None => display.error(&format!("no cell data for '{}'", name)),
             }
         }
-        None => display.error(&format!("generator '{}' not found", name)),
+        None => display.error(&format!("'{}' not found", name)),
     }
 }
 
@@ -600,7 +607,7 @@ fn dispatch_print_type(store: &GlobalStore, canonical_path: &str, name: &str, di
 fn dispatch_print_cell(complex: &Complex, name: &str, display: &Display) {
     // Generators are in the generators table and have cell data.
     if let Some((_, dim)) = complex.find_generator(name) {
-        display.inspect(&format!("{} (generator, dim {})", name, dim));
+        display.inspect(&format!("{} (dim {}, {})", name, dim, cell_kind(complex, name)));
         if dim > 0 {
             if let Some(diag) = complex.find_diagram(name) {
                 print_diagram_with_boundary(diag, complex, display);
@@ -612,7 +619,7 @@ fn dispatch_print_cell(complex: &Complex, name: &str, display: &Display) {
     // Let bindings are in the diagrams table but not the generators table.
     if let Some(diag) = complex.find_diagram(name) {
         let dim = diag.top_dim();
-        display.inspect(&format!("{} (local definition, dim {})", name, dim));
+        display.inspect(&format!("{} (dim {}, {})", name, dim, cell_kind(complex, name)));
         if dim > 0 {
             print_diagram_with_boundary(diag, complex, display);
         }
