@@ -93,7 +93,7 @@ pub fn print_state(
     proof: Option<(&str, &str, &str)>,
 ) {
     display.blank();
-    display.cell(&render_diagram(current, scope));
+    display.inspect(&render_diagram(current, scope));
     display.blank();
 
     // `proof` is Some only when target_reached() is true (steps taken + diagrams match).
