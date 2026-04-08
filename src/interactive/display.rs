@@ -80,13 +80,13 @@ impl Display {
         }
     }
 
-    /// Print file source: each line prefixed with `<< ` in yellow.
+    /// Print file source: yellow, no prefix.
     pub fn file(&self, text: &str) {
         for line in text.split('\n') {
             if self.color {
-                println!("{COLOR_FILE}<<{RESET} {COLOR_FILE}{line}{RESET}");
+                println!("{COLOR_FILE}{line}{RESET}");
             } else {
-                println!("<< {line}");
+                println!("{line}");
             }
         }
     }
