@@ -96,16 +96,16 @@ pub fn print_state(
     display.cell(&render_diagram(current, scope));
     display.blank();
 
+    // `proof` is Some only when target_reached() is true (steps taken + diagrams match).
+    if let Some((src_label, tgt_label, proof_label)) = proof {
+        display.meta("Rewrite complete.");
+        display.blank();
+        display.inspect("proof:");
+        display.inspect(&format!("  {proof_label} : {src_label} -> {tgt_label}"));
+        return;
+    }
+
     if let Some(t) = target {
-        if Diagram::equal(current, t) {
-            display.meta("Rewrite complete.");
-            if let Some((src_label, tgt_label, proof_label)) = proof {
-                display.blank();
-                display.inspect("proof:");
-                display.inspect(&format!("  {proof_label} : {src_label} -> {tgt_label}"));
-            }
-            return;
-        }
         display.inspect(&format!("target: {}", render_diagram(t, scope)));
     }
 

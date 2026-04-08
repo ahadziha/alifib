@@ -429,9 +429,13 @@ fn show_state(engine: &RewriteEngine, display: &Display) {
         .map(|t| render_diagram(t, engine.type_complex()));
     let proof_label = engine.proof_label();
 
-    let proof = match (&tgt_label, &proof_label) {
-        (Some(tl), Some(pl)) => Some((src_label.as_str(), tl.as_str(), pl.as_str())),
-        _ => None,
+    let proof = if engine.target_reached() {
+        match (&tgt_label, &proof_label) {
+            (Some(tl), Some(pl)) => Some((src_label.as_str(), tl.as_str(), pl.as_str())),
+            _ => None,
+        }
+    } else {
+        None
     };
 
     print_state(
