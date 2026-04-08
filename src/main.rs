@@ -4,18 +4,21 @@ use std::time::Instant;
 
 use alifib::aux::error::report_load_file_error;
 use alifib::aux::loader::Loader;
+use alifib::interactive::cli::{RewriteCommand, parse_rewrite_args, run_rewrite};
 use alifib::interpreter::InterpretedFile;
 use alifib::language;
 use alifib::output;
 
-const USAGE: &str = "Usage: alifib <input-file> [-o|--output <output-file>] [--ast] [--print] [--bench N]";
+const USAGE: &str = "\
+Usage: alifib <input-file> [-o|--output <output-file>] [--ast] [--print] [--bench N]
+       alifib rewrite <subcommand> [options]  (run 'alifib rewrite --help' for details)";
 
-#[derive(Clone, Copy)]
 enum RunMode {
     Interpret,
     Ast,
     Print,
     Bench(usize),
+    Rewrite(RewriteCommand),
 }
 
 struct Args {
@@ -29,6 +32,13 @@ fn parse_args() -> Result<Args, String> {
     let mut input = None;
     let mut output = None;
     let mut mode = RunMode::Interpret;
+
+    // Check for the `rewrite` subcommand first (consumes all remaining args).
+    if cli_args.first().map(|s| s.as_str()) == Some("rewrite") {
+        let cmd = parse_rewrite_args(&cli_args[1..])?;
+        // Use a dummy input path since rewrite doesn't need one.
+        return Ok(Args { input: String::new(), output: None, mode: RunMode::Rewrite(cmd) });
+    }
 
     let mut arg_iter = cli_args.iter();
     while let Some(arg) = arg_iter.next() {
@@ -121,10 +131,11 @@ fn main() {
     };
     let loader = Loader::default(vec![]);
     let result = match args.mode {
-        RunMode::Ast   => run_ast(&loader, &args.input, args.output.as_deref()),
-        RunMode::Print => run_print(&loader, &args.input, args.output.as_deref()),
+        RunMode::Ast       => run_ast(&loader, &args.input, args.output.as_deref()),
+        RunMode::Print     => run_print(&loader, &args.input, args.output.as_deref()),
         RunMode::Interpret => run_interpreter(&loader, &args.input, args.output.as_deref()),
         RunMode::Bench(n)  => run_bench(&loader, &args.input, n),
+        RunMode::Rewrite(cmd) => run_rewrite(cmd),
     };
     if result.is_err() {
         process::exit(1);

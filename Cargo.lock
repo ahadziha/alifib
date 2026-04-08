@@ -19,6 +19,8 @@ dependencies = [
  "chumsky",
  "indexmap",
  "insta",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

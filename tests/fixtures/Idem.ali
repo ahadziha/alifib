@@ -1,0 +1,6 @@
+@Type
+Idem <<= {
+  ob,
+  id : ob -> ob,
+  idem : id id -> id
+}
