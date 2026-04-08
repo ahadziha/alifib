@@ -162,7 +162,7 @@ pub enum RewriteCommand {
 /// Arguments for the `alifib repl` subcommand.
 pub struct ReplArgs {
     pub file: String,
-    pub type_name: String,
+    pub type_name: Option<String>,
     pub source: Option<String>,
     pub target: Option<String>,
     pub emacs: bool,
@@ -204,7 +204,7 @@ pub fn parse_rewrite_args(args: &[String]) -> Result<RewriteCommand, String> {
 }
 
 const REPL_USAGE: &str = "\
-Usage: alifib repl <file> --type <t> [--source <s>] [--target <t>] [--emacs]
+Usage: alifib repl <file> [--type <t>] [--source <s>] [--target <t>] [--emacs]
 ";
 
 /// Parse the arguments following `alifib repl`.
@@ -237,7 +237,7 @@ pub fn parse_repl_args(args: &[String]) -> Result<ReplArgs, String> {
 
     Ok(ReplArgs {
         file:      file.ok_or("repl: <file> argument is required")?,
-        type_name: type_name.ok_or("repl: --type is required")?,
+        type_name,
         source,
         target,
         emacs,
@@ -465,7 +465,7 @@ pub fn run_serve_cmd(args: ServeArgs) -> Result<(), ()> {
 
 /// Run the REPL with the given arguments.
 pub fn run_repl_cmd(args: ReplArgs) -> Result<(), ()> {
-    run_repl(&args.file, &args.type_name, args.source.as_deref(), args.target.as_deref(), args.emacs)
+    run_repl(&args.file, args.type_name.as_deref(), args.source.as_deref(), args.target.as_deref(), args.emacs)
 }
 
 const SESSION_USAGE: &str = "\

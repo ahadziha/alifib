@@ -2,8 +2,8 @@
 //!
 //! The REPL has two phases:
 //!
-//! - **Setup phase** — file and type are loaded; the user must set both `source`
-//!   and `target` with the `source` / `target` commands.  When both are set, the
+//! - **Setup phase** — file is loaded.  The user must select a type (`@ Idem`),
+//!   then set `source` and `target` diagram names.  When all three are set, the
 //!   engine is created, `>> Ready.` is printed, and the REPL enters the rewriting
 //!   phase.
 //! - **Rewriting phase** — engine active; `apply`, `undo`, `undo all`, `restart`,
@@ -15,16 +15,18 @@
 //! # Commands
 //!
 //! ```text
-//! source <name>    Set the source diagram (setup phase)
-//! target <name>    Set the target diagram (setup phase)
+//! @ <type>         Select a type from the loaded file (reuses language parser)
+//! types            List all types declared in the file
+//! source <name>    Set the source diagram
+//! target <name>    Set the target diagram
 //! apply <n>        Apply rewrite at index <n>            (alias: a)
 //! undo             Undo the last step                    (alias: u)
 //! undo <n>         Undo back to step <n>
 //! undo all         Reset to source (= restart)
 //! restart          Reset to source diagram
-//! clear            Destroy engine, return to setup phase
+//! clear            Destroy engine and type, return to setup phase
 //! show             Redisplay current state
-//! rules            List all rewrite rules in the type    (alias: r)
+//! rules            List generators in the selected type  (alias: r)
 //! info <name>      Show source → target of a generator  (alias: i)
 //! history          Show the move history                 (alias: h)
 //! proof            Show the running proof diagram        (alias: p)
@@ -34,16 +36,20 @@
 //! quit / exit / q  Exit the REPL
 //! ```
 
+use std::sync::Arc;
+
 use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
 use rustyline::EditMode;
 
-use crate::core::diagram::{CellData, Sign};
 use crate::core::complex::Complex;
+use crate::core::diagram::{CellData, Sign};
 use crate::interpreter::GlobalStore;
+use crate::language;
+use crate::language::ast::Complex as AstComplex;
 use crate::output::render_diagram;
 use super::display::Display;
-use super::engine::{RewriteEngine, load_type_context};
+use super::engine::{RewriteEngine, load_file_context, resolve_type};
 use super::render::{print_history, print_state};
 use super::session::SessionFile;
 
@@ -101,45 +107,54 @@ pub fn run_goal_loop(
     }
 }
 
-/// Run the interactive REPL starting from a loaded file and type.
+/// Run the interactive REPL starting from a loaded file.
 ///
-/// `source_diagram` and `target_diagram` may be given as CLI arguments; if
-/// omitted the user sets them interactively via `source` / `target` commands.
+/// `type_name`, `source_diagram`, and `target_diagram` may be given as CLI
+/// arguments; any that are omitted must be set interactively.
 /// `emacs_mode` selects Emacs keybindings; the default is vi mode.
 pub fn run_repl(
     source_file: &str,
-    type_name: &str,
+    type_name: Option<&str>,
     source_diagram: Option<&str>,
     target_diagram: Option<&str>,
     emacs_mode: bool,
 ) -> Result<(), ()> {
     let display = Display::new();
 
-    let (store, type_complex, _canonical) =
-        match load_type_context(source_file, type_name) {
-            Ok(r) => r,
-            Err(e) => { display.error(&e); return Err(()); }
-        };
+    let (store, canonical_path) = match load_file_context(source_file) {
+        Ok(r) => r,
+        Err(e) => { display.error(&e); return Err(()); }
+    };
 
     display.meta(&format!("Loaded {}", source_file));
-    display.meta(&format!("Type: {}", type_name));
 
     let mut rl = make_editor(emacs_mode);
 
+    // Mutable setup-phase state
+    let mut type_complex: Option<Arc<Complex>> = None;
+    let mut type_name_str: Option<String> = None;
     let mut pending_source: Option<String> = source_diagram.map(str::to_owned);
     let mut pending_target: Option<String> = target_diagram.map(str::to_owned);
     let mut engine: Option<RewriteEngine> = None;
 
-    // If both were supplied on the CLI, create the engine immediately.
-    if let (Some(src), Some(tgt)) = (&pending_source, &pending_target) {
-        match try_create_engine(&store, &type_complex, src, tgt, source_file, type_name, &display) {
-            Some(e) => {
-                engine = Some(e);
-                display.meta("Ready.");
-                show_state(engine.as_ref().unwrap(), &display);
+    // Pre-select type from CLI arg.
+    if let Some(tn) = type_name {
+        match resolve_type(&store, &canonical_path, tn) {
+            Ok(tc) => {
+                type_complex = Some(tc);
+                type_name_str = Some(tn.to_owned());
+                display.meta(&format!("Type: {}", tn));
             }
-            None => { return Err(()); }
+            Err(e) => { display.error(&e); return Err(()); }
         }
+    }
+
+    // If all three were given on the CLI, start immediately.
+    if type_complex.is_some() {
+        maybe_start_engine(
+            &type_complex, &type_name_str, &pending_source, &pending_target,
+            &store, source_file, &display, &mut engine,
+        );
     }
 
     loop {
@@ -153,39 +168,60 @@ pub fn run_repl(
 
                 match parse_command(&line) {
                     // ── Always-available commands ─────────────────────
+                    Cmd::AtExpr(expr) => {
+                        handle_at_command(
+                            &expr, &store, &canonical_path, source_file,
+                            &display,
+                            &mut type_complex, &mut type_name_str,
+                            &mut pending_source, &mut pending_target,
+                            &mut engine,
+                        );
+                    }
+                    Cmd::Types => dispatch_types(&store, &canonical_path, &display),
+                    Cmd::Clear => {
+                        engine = None;
+                        type_complex = None;
+                        type_name_str = None;
+                        pending_source = None;
+                        pending_target = None;
+                        display.meta("Cleared.");
+                    }
+                    Cmd::Help => print_help(&display),
+                    Cmd::Quit => break,
+
+                    // ── Commands that need type to be set ─────────────
                     Cmd::Source(name) => {
                         pending_source = Some(name);
                         maybe_start_engine(
-                            &pending_source, &pending_target,
-                            &store, &type_complex, source_file, type_name,
-                            &display, &mut engine,
+                            &type_complex, &type_name_str, &pending_source, &pending_target,
+                            &store, source_file, &display, &mut engine,
                         );
                     }
                     Cmd::Target(name) => {
                         pending_target = Some(name);
                         maybe_start_engine(
-                            &pending_source, &pending_target,
-                            &store, &type_complex, source_file, type_name,
-                            &display, &mut engine,
+                            &type_complex, &type_name_str, &pending_source, &pending_target,
+                            &store, source_file, &display, &mut engine,
                         );
                     }
-                    Cmd::Clear => {
-                        engine = None;
-                        pending_source = None;
-                        pending_target = None;
-                        display.meta("Cleared.");
-                    }
                     Cmd::Rules => {
-                        let n = engine.as_ref().map(|e| e.current_diagram().top_dim()).unwrap_or(0);
-                        dispatch_rules(&type_complex, &store, n, &display);
+                        match (&engine, &type_complex) {
+                            (Some(e), _) => dispatch_rules(e.type_complex(), e.store(), Some(e.current_diagram().top_dim() + 1), &display),
+                            (None, Some(tc)) => dispatch_rules(tc, &store, None, &display),
+                            (None, None) => display.error("set type first (@ <TypeName>)"),
+                        }
                     }
-                    Cmd::Info(name) => dispatch_info(&type_complex, &store, &name, &display),
-                    Cmd::Help => print_help(&display),
-                    Cmd::Quit => break,
+                    Cmd::Info(name) => {
+                        match (&engine, &type_complex) {
+                            (Some(e), _) => dispatch_info(e.type_complex(), e.store(), &name, &display),
+                            (None, Some(tc)) => dispatch_info(tc, &store, &name, &display),
+                            (None, None) => display.error("set type first (@ <TypeName>)"),
+                        }
+                    }
 
                     // ── Rewriting-phase commands (require engine) ─────
                     cmd => match engine.as_mut() {
-                        None => display.error("set source and target first"),
+                        None => display.error("set type, source, and target first"),
                         Some(e) => dispatch_engine_cmd(e, cmd, &display),
                     },
                 }
@@ -208,7 +244,7 @@ pub fn dispatch_rewrite_command(
 ) -> DispatchResult {
     match parse_command(line) {
         Cmd::Quit => return DispatchResult::Quit,
-        Cmd::Clear | Cmd::Source(_) | Cmd::Target(_) => {
+        Cmd::Clear | Cmd::Source(_) | Cmd::Target(_) | Cmd::AtExpr(_) | Cmd::Types => {
             display.error("command not available here");
         }
         cmd => dispatch_engine_cmd(engine, cmd, display),
@@ -218,60 +254,111 @@ pub fn dispatch_rewrite_command(
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
-/// Create a rustyline editor in vi or emacs mode.
 fn make_editor(emacs_mode: bool) -> rustyline::DefaultEditor {
     let mut rl = rustyline::DefaultEditor::new().expect("readline init failed");
     rl.set_edit_mode(if emacs_mode { EditMode::Emacs } else { EditMode::Vi });
     rl
 }
 
-/// Attempt to create a `RewriteEngine`.  Prints an error and returns `None` on
-/// failure.
-fn try_create_engine(
-    store: &std::sync::Arc<GlobalStore>,
-    type_complex: &std::sync::Arc<Complex>,
-    src: &str,
-    tgt: &str,
-    source_file: &str,
-    type_name: &str,
-    display: &Display,
-) -> Option<RewriteEngine> {
-    match RewriteEngine::from_store(
-        std::sync::Arc::clone(store),
-        std::sync::Arc::clone(type_complex),
-        src,
-        Some(tgt),
-        source_file.to_owned(),
-        type_name.to_owned(),
-    ) {
-        Ok(e) => Some(e),
-        Err(e) => { display.error(&e); None }
-    }
-}
-
-/// Create the engine when both source and target are set, updating `engine` in place.
+/// Process a `@ <expr>` command: parse the complex expression, resolve to a
+/// type, update state, and attempt to start the engine.
 #[allow(clippy::too_many_arguments)]
-fn maybe_start_engine(
-    pending_source: &Option<String>,
-    pending_target: &Option<String>,
-    store: &std::sync::Arc<GlobalStore>,
-    type_complex: &std::sync::Arc<Complex>,
+fn handle_at_command(
+    expr: &str,
+    store: &Arc<GlobalStore>,
+    canonical_path: &str,
     source_file: &str,
-    type_name: &str,
     display: &Display,
+    type_complex: &mut Option<Arc<Complex>>,
+    type_name_str: &mut Option<String>,
+    pending_source: &mut Option<String>,
+    pending_target: &mut Option<String>,
     engine: &mut Option<RewriteEngine>,
 ) {
-    if let (Some(src), Some(tgt)) = (pending_source, pending_target) {
-        if let Some(e) = try_create_engine(store, type_complex, src, tgt, source_file, type_name, display) {
-            *engine = Some(e);
-            display.meta("Ready.");
-            show_state(engine.as_ref().unwrap(), display);
+    match language::parse_complex(expr) {
+        Err(e) => {
+            display.error(&format!("parse error: {}", e));
+        }
+        Ok(AstComplex::Block { .. }) => {
+            display.error("block syntax not supported at the REPL prompt — use a bare name, e.g. @ Idem");
+        }
+        Ok(AstComplex::Address(addr)) => {
+            let name = addr.iter().map(|s| s.inner.as_str()).collect::<Vec<_>>().join(".");
+            match resolve_type(store, canonical_path, &name) {
+                Err(e) => display.error(&e),
+                Ok(tc) => {
+                    *type_complex = Some(tc);
+                    *type_name_str = Some(name.clone());
+                    // Reset source/target — they may not exist in the new type.
+                    *pending_source = None;
+                    *pending_target = None;
+                    *engine = None;
+                    display.meta(&format!("Type: {}", name));
+                    // Immediately try to start if source/target happen to be set
+                    maybe_start_engine(
+                        type_complex, type_name_str, pending_source, pending_target,
+                        store, source_file, display, engine,
+                    );
+                }
+            }
         }
     }
 }
 
-/// Call `print_state` with fields drawn from `engine`, computing proof strings
-/// as local temporaries so that references remain valid.
+/// List all types declared in the file.
+fn dispatch_types(store: &GlobalStore, canonical_path: &str, display: &Display) {
+    let Some(mc) = store.find_module(canonical_path) else {
+        display.error("module not found");
+        return;
+    };
+    let mut any = false;
+    for (name, tag, _dim) in mc.generators_iter() {
+        if let crate::aux::Tag::Global(gid) = tag {
+            if store.find_type(*gid).is_some() {
+                display.meta(&format!("  {}", name));
+                any = true;
+            }
+        }
+    }
+    if !any {
+        display.meta("  (no types found)");
+    }
+}
+
+/// Create the engine when type, source, and target are all set.
+#[allow(clippy::too_many_arguments)]
+fn maybe_start_engine(
+    type_complex: &Option<Arc<Complex>>,
+    type_name_str: &Option<String>,
+    pending_source: &Option<String>,
+    pending_target: &Option<String>,
+    store: &Arc<GlobalStore>,
+    source_file: &str,
+    display: &Display,
+    engine: &mut Option<RewriteEngine>,
+) {
+    if let (Some(tc), Some(tn), Some(src), Some(tgt)) =
+        (type_complex, type_name_str, pending_source, pending_target)
+    {
+        match RewriteEngine::from_store(
+            Arc::clone(store),
+            Arc::clone(tc),
+            src,
+            Some(tgt),
+            source_file.to_owned(),
+            tn.clone(),
+        ) {
+            Ok(e) => {
+                *engine = Some(e);
+                display.meta("Ready.");
+                show_state(engine.as_ref().unwrap(), display);
+            }
+            Err(e) => display.error(&e),
+        }
+    }
+}
+
+/// Call `print_state` with fields drawn from `engine`.
 fn show_state(engine: &RewriteEngine, display: &Display) {
     let src_label = render_diagram(engine.source_diagram(), engine.type_complex());
     let tgt_label = engine.target_diagram()
@@ -291,6 +378,75 @@ fn show_state(engine: &RewriteEngine, display: &Display) {
         engine.type_complex(),
         proof,
     );
+}
+
+/// Display generators in `complex`, optionally filtered to those at `filter_dim`.
+///
+/// Without a filter (setup phase, no source diagram yet), all generators are
+/// shown with their dimensions.  With a filter (rewriting phase), only the
+/// relevant rewrite rules are shown.
+fn dispatch_rules(complex: &Complex, store: &GlobalStore, filter_dim: Option<usize>, display: &Display) {
+    if let Some(d) = filter_dim {
+        display.meta(&format!("rewrite rules (dim {}):", d));
+    } else {
+        display.meta("generators:");
+    }
+    let mut any = false;
+    for (name, tag, dim) in complex.generators_iter() {
+        if let Some(d) = filter_dim {
+            if dim != d { continue; }
+        }
+        any = true;
+        match store.cell_data_for_tag(complex, tag) {
+            Some(CellData::Boundary { boundary_in, boundary_out }) => {
+                if filter_dim.is_some() {
+                    display.meta(&format!(
+                        "  {} : {}  ->  {}",
+                        name,
+                        render_diagram(&boundary_in, complex),
+                        render_diagram(&boundary_out, complex),
+                    ));
+                } else {
+                    display.meta(&format!(
+                        "  {} (dim {}): {}  ->  {}",
+                        name, dim,
+                        render_diagram(&boundary_in, complex),
+                        render_diagram(&boundary_out, complex),
+                    ));
+                }
+            }
+            Some(CellData::Zero) => display.meta(&format!("  {} (dim 0): 0-cell", name)),
+            _ => display.meta(&format!("  {} (no boundaries)", name)),
+        }
+    }
+    if !any {
+        if let Some(d) = filter_dim {
+            display.meta(&format!("  (no rewrite rules at dim {})", d));
+        } else {
+            display.meta("  (no generators)");
+        }
+    }
+}
+
+/// Display the source → target of a named generator.
+fn dispatch_info(complex: &Complex, store: &GlobalStore, name: &str, display: &Display) {
+    match complex.find_generator(name) {
+        Some((tag, dim)) => {
+            match store.cell_data_for_tag(complex, tag) {
+                Some(CellData::Boundary { boundary_in, boundary_out }) => {
+                    display.meta(&format!(
+                        "{} (dim {}): {}  ->  {}",
+                        name, dim,
+                        render_diagram(&boundary_in, complex),
+                        render_diagram(&boundary_out, complex),
+                    ));
+                }
+                Some(CellData::Zero) => display.meta(&format!("{} (dim 0): 0-cell", name)),
+                None => display.error(&format!("no cell data for '{}'", name)),
+            }
+        }
+        None => display.error(&format!("generator '{}' not found", name)),
+    }
 }
 
 /// Dispatch all commands that require an active engine.
@@ -329,7 +485,7 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
         Cmd::Show => show_state(engine, display),
         Cmd::Rules => {
             let n = engine.current_diagram().top_dim();
-            dispatch_rules(engine.type_complex(), engine.store(), n, display);
+            dispatch_rules(engine.type_complex(), engine.store(), Some(n + 1), display);
         }
         Cmd::Info(name) => dispatch_info(engine.type_complex(), engine.store(), &name, display),
         Cmd::History => {
@@ -372,78 +528,35 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
                     Err(e) => display.error(&format!("loading session: {}", e)),
                     Ok(new_engine) => {
                         *engine = new_engine;
-                        display.meta(&format!("Loaded session from '{}' .", path));
+                        display.meta(&format!("Loaded session from '{}'.", path));
                         show_state(engine, display);
                     }
                 }
             }
         }
         Cmd::Help => print_help(display),
-        Cmd::Quit => {}  // handled by caller
-        // These are handled before dispatch_engine_cmd is reached
-        Cmd::Clear | Cmd::Source(_) | Cmd::Target(_) => unreachable!(),
+        Cmd::Quit => {}   // handled by caller
+        // These are all handled before dispatch_engine_cmd is reached
+        Cmd::Clear | Cmd::Source(_) | Cmd::Target(_) | Cmd::AtExpr(_) | Cmd::Types => unreachable!(),
         Cmd::Unknown(s) => display.error(&format!("unknown command '{}' — type 'help' for a list", s)),
-    }
-}
-
-/// Display the available rewrite rules at dimension `n + 1`.
-fn dispatch_rules(complex: &Complex, store: &GlobalStore, n: usize, display: &Display) {
-    display.meta(&format!("rewrite rules (dim {}):", n + 1));
-    let mut any = false;
-    for (name, tag, dim) in complex.generators_iter() {
-        if dim != n + 1 { continue; }
-        any = true;
-        match store.cell_data_for_tag(complex, tag) {
-            Some(CellData::Boundary { boundary_in, boundary_out }) => {
-                display.meta(&format!(
-                    "  {} : {}  ->  {}",
-                    name,
-                    render_diagram(&boundary_in, complex),
-                    render_diagram(&boundary_out, complex),
-                ));
-            }
-            _ => display.meta(&format!("  {} (no boundaries)", name)),
-        }
-    }
-    if !any {
-        display.meta(&format!("  (no rewrite rules at dim {})", n + 1));
-    }
-}
-
-/// Display the source → target of a named generator.
-fn dispatch_info(complex: &Complex, store: &GlobalStore, name: &str, display: &Display) {
-    match complex.find_generator(name) {
-        Some((tag, dim)) => {
-            match store.cell_data_for_tag(complex, tag) {
-                Some(CellData::Boundary { boundary_in, boundary_out }) => {
-                    display.meta(&format!(
-                        "{} (dim {}): {}  ->  {}",
-                        name, dim,
-                        render_diagram(&boundary_in, complex),
-                        render_diagram(&boundary_out, complex),
-                    ));
-                }
-                Some(CellData::Zero) => display.meta(&format!("{} (dim 0): 0-cell", name)),
-                None => display.error(&format!("no cell data for '{}'", name)),
-            }
-        }
-        None => display.error(&format!("generator '{}' not found", name)),
     }
 }
 
 fn print_help(display: &Display) {
     display.meta(
         "Commands:\n\
-         \x20 source <name>    Set the source diagram (setup phase)\n\
-         \x20 target <name>    Set the target diagram (setup phase)\n\
+         \x20 @ <type>         Select a type from the loaded file\n\
+         \x20 types            List all types in the file\n\
+         \x20 source <name>    Set the source diagram\n\
+         \x20 target <name>    Set the target diagram\n\
          \x20 apply <n>        Apply rewrite at index <n>            (alias: a)\n\
          \x20 undo             Undo the last step                    (alias: u)\n\
          \x20 undo <n>         Undo back to step <n>\n\
          \x20 undo all         Reset to source (= restart)\n\
          \x20 restart          Reset to source diagram\n\
-         \x20 clear            Destroy engine, return to setup phase\n\
+         \x20 clear            Destroy engine and type, return to setup phase\n\
          \x20 show             Redisplay current state\n\
-         \x20 rules            List all rewrite rules in the type    (alias: r)\n\
+         \x20 rules            List generators in the selected type  (alias: r)\n\
          \x20 info <name>      Show source -> target of a generator  (alias: i)\n\
          \x20 history          Show the move history                 (alias: h)\n\
          \x20 proof            Show the running proof diagram        (alias: p)\n\
@@ -457,6 +570,8 @@ fn print_help(display: &Display) {
 // ── Command parsing ───────────────────────────────────────────────────────────
 
 enum Cmd {
+    AtExpr(String),  // everything after the @ (handed to language::parse_complex)
+    Types,
     Source(String),
     Target(String),
     Apply(usize),
@@ -477,11 +592,17 @@ enum Cmd {
 }
 
 fn parse_command(line: &str) -> Cmd {
+    // `@ ...` — type selection using the language parser
+    if let Some(rest) = line.strip_prefix('@') {
+        return Cmd::AtExpr(rest.trim().to_owned());
+    }
+
     let mut parts = line.splitn(2, char::is_whitespace);
     let word = parts.next().unwrap_or("").trim();
     let rest = parts.next().map(str::trim).unwrap_or("");
 
     match word {
+        "types" | "Types" => Cmd::Types,
         "source" => {
             if rest.is_empty() { Cmd::Unknown("source <name>".to_owned()) }
             else { Cmd::Source(rest.to_owned()) }

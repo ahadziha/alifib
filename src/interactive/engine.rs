@@ -48,44 +48,61 @@ pub struct RewriteEngine {
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
-/// Load a file and return the store, type complex, and canonical file path —
-/// without locating any diagrams.
+/// Load a file and return the store and canonical file path, without resolving
+/// any type or diagram.
 ///
-/// Used by the REPL setup phase to support `rules` and `info` before source
-/// and target diagrams are chosen.  The canonical path is needed downstream
-/// to look up the module complex for diagram lookup fallback.
-pub fn load_type_context(
+/// Used by the REPL to load context eagerly at startup so that `types`,
+/// `rules`, and `info` commands can work before the user selects a type.
+pub fn load_file_context(
     source_file: &str,
-    type_name: &str,
-) -> Result<(Arc<GlobalStore>, Arc<Complex>, String), String> {
+) -> Result<(Arc<GlobalStore>, String), String> {
     let loader = Loader::default(vec![]);
     let file = InterpretedFile::load(&loader, source_file)
         .into_result()
         .map_err(|_| format!("failed to interpret '{}'", source_file))?;
-
     let canonical_path = file.path.clone();
     let store = Arc::clone(&file.state);
+    Ok((store, canonical_path))
+}
 
+/// Resolve a type name to its [`Complex`] given an already-loaded store.
+///
+/// Called by the REPL when the user types `@ <TypeName>`.
+pub fn resolve_type(
+    store: &GlobalStore,
+    canonical_path: &str,
+    type_name: &str,
+) -> Result<Arc<Complex>, String> {
     let module_complex = store
-        .find_module(&canonical_path)
+        .find_module(canonical_path)
         .ok_or_else(|| format!("module '{}' not found in store", canonical_path))?;
 
     let (type_tag, _) = module_complex
         .find_generator(type_name)
-        .ok_or_else(|| format!("type '{}' not found in module", type_name))?;
+        .ok_or_else(|| format!("type '{}' not found", type_name))?;
 
     let type_gid = match type_tag {
         Tag::Global(gid) => *gid,
-        Tag::Local(_) => {
-            return Err(format!("'{}' is a local cell, not a type", type_name));
-        }
+        Tag::Local(_) => return Err(format!("'{}' is a local cell, not a type", type_name)),
     };
 
-    let type_complex = store
+    store
         .find_type(type_gid)
         .ok_or_else(|| format!("type entry for '{}' not found", type_name))
-        .map(|e| Arc::clone(&e.complex))?;
+        .map(|e| Arc::clone(&e.complex))
+}
 
+/// Load a file and return the store, type complex, and canonical file path —
+/// without locating any diagrams.
+///
+/// Convenience wrapper over [`load_file_context`] + [`resolve_type`].
+/// Used by session_repl, cli, and daemon which always know the type upfront.
+pub fn load_type_context(
+    source_file: &str,
+    type_name: &str,
+) -> Result<(Arc<GlobalStore>, Arc<Complex>, String), String> {
+    let (store, canonical_path) = load_file_context(source_file)?;
+    let type_complex = resolve_type(&store, &canonical_path, type_name)?;
     Ok((store, type_complex, canonical_path))
 }
 

@@ -11,7 +11,7 @@ use std::collections::HashSet;
 use chumsky::input::Input as _;
 use chumsky::prelude::*;
 
-pub use ast::Program;
+pub use ast::{Complex, Program};
 pub use ast_print::print_program;
 pub use error::Error;
 
@@ -60,6 +60,45 @@ pub fn parse(source: &str) -> Result<Program, Vec<Error>> {
             Err(errors)
         }
     }
+}
+
+/// Parse a single `Complex` expression (the part that follows `@` in source files).
+///
+/// Returns the parsed [`Complex`] AST node, or an error message.  Used by the
+/// interactive REPL to parse `@ <expr>` commands without duplicating lexer/parser
+/// logic.
+pub fn parse_complex(source: &str) -> Result<Complex, String> {
+    let (tokens, lex_errs) = lexer::lexer().parse(source).into_output_errors();
+
+    if !lex_errs.is_empty() {
+        let msg = lex_errs
+            .iter()
+            .map(|e| format!("{}", e.reason()))
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(msg);
+    }
+
+    let Some(tokens) = tokens else {
+        return Err("lex error".to_string());
+    };
+
+    let eoi = SimpleSpan::from(source.len()..source.len());
+    let (ast, parse_errs) = parser::complex_parser()
+        .then_ignore(chumsky::prelude::end())
+        .parse(tokens.as_slice().split_token_span(eoi))
+        .into_output_errors();
+
+    if !parse_errs.is_empty() {
+        let msg = parse_errs
+            .iter()
+            .map(|e| format!("{}", e.reason()))
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(msg);
+    }
+
+    ast.map(|s| s.inner).ok_or_else(|| "parse error".to_string())
 }
 
 pub fn report_errors(errors: &[Error], source: &str, filename: &str) {
