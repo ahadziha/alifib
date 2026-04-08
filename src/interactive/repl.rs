@@ -107,6 +107,27 @@ pub fn run_goal_loop(
     }
 }
 
+/// Write the original file content with stored definitions appended as local blocks.
+///
+/// Each stored definition becomes `@ TypeName {\n  let name = label\n}\n`.
+fn write_updated_file(
+    source_file: &str,
+    _file_output: &str,
+    stored_defs: &[(String, String, String)],
+    path: &str,
+) -> Result<(), String> {
+    use std::fmt::Write as _;
+    let original = std::fs::read_to_string(source_file)
+        .map_err(|e| format!("cannot read '{}': {}", source_file, e))?;
+    let mut out = original.trim_end().to_owned();
+    for (type_name, def_name, label) in stored_defs {
+        write!(out, "\n\n@ {} {{\n  let {} = {}\n}}", type_name, def_name, label)
+            .map_err(|e| e.to_string())?;
+    }
+    out.push('\n');
+    std::fs::write(path, &out).map_err(|e| format!("cannot write '{}': {}", path, e))
+}
+
 /// Run the interactive REPL starting from a loaded file.
 ///
 /// `type_name`, `source_diagram`, and `target_diagram` may be given as CLI
@@ -136,6 +157,8 @@ pub fn run_repl(
     let mut pending_source: Option<String> = source_diagram.map(str::to_owned);
     let mut pending_target: Option<String> = target_diagram.map(str::to_owned);
     let mut engine: Option<RewriteEngine> = None;
+    // Definitions stored this session: (type_name, def_name, rendered_label)
+    let mut stored_defs: Vec<(String, String, String)> = Vec::new();
 
     // Pre-select type from CLI arg.
     if let Some(tn) = type_name {
@@ -266,18 +289,30 @@ pub fn run_repl(
                             display.error(msg);
                         }
                         Some(e) => {
-                            // Save is handled here because it needs to update the outer type_complex.
-                            if let Cmd::Save(name) = cmd {
-                                match e.register_proof(&name) {
-                                    Ok(new_arc) => {
-                                        display.meta(&format!("Registered '{}' as local definition.", name));
-                                        dispatch_print_cell(e.type_complex(), &name, &display);
-                                        type_complex = Some(new_arc);
+                            match cmd {
+                                // Store/Save handled here: need access to outer type_complex and stored_defs.
+                                Cmd::Store(name) => {
+                                    let label = e.running_diagram()
+                                        .map(|d| crate::output::render_diagram(d, e.type_complex()));
+                                    match e.register_proof(&name) {
+                                        Ok(new_arc) => {
+                                            display.meta(&format!("Stored '{}' as local definition.", name));
+                                            dispatch_print_cell(e.type_complex(), &name, &display);
+                                            if let (Some(tn), Some(lbl)) = (type_name_str.as_deref(), label) {
+                                                stored_defs.push((tn.to_owned(), name, lbl));
+                                            }
+                                            type_complex = Some(new_arc);
+                                        }
+                                        Err(err) => display.error(&err),
                                     }
-                                    Err(err) => display.error(&err),
                                 }
-                            } else {
-                                dispatch_engine_cmd(e, cmd, &display);
+                                Cmd::Save(path) => {
+                                    match write_updated_file(source_file, &file_output, &stored_defs, &path) {
+                                        Ok(()) => display.meta(&format!("Saved to '{}'.", path)),
+                                        Err(e) => display.error(&e),
+                                    }
+                                }
+                                cmd => dispatch_engine_cmd(e, cmd, &display),
                             }
                         }
                     },
@@ -753,7 +788,7 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
         // These are all handled before dispatch_engine_cmd is reached
         Cmd::Clear | Cmd::Source(_) | Cmd::Target(_) | Cmd::AtExpr(_) | Cmd::Types
         | Cmd::PrintFile | Cmd::PrintType(_) | Cmd::PrintCell(_) | Cmd::Status
-        | Cmd::Save(_) | Cmd::Unknown(_) | Cmd::UsageError(_) => unreachable!(),
+        | Cmd::Store(_) | Cmd::Save(_) | Cmd::Unknown(_) | Cmd::UsageError(_) => unreachable!(),
     }
 }
 
@@ -779,7 +814,8 @@ fn print_help(display: &Display) {
          \x20 info <name>      Show source -> target of a generator  (alias: i)\n\
          \x20 history          Show the move history                 (alias: h)\n\
          \x20 proof            Show the running proof diagram        (alias: p)\n\
-         \x20 save <name>      Register current proof as a local definition\n\
+         \x20 store <name>     Register current proof as a local definition\n\
+         \x20 save <path>      Save file with stored definitions appended\n\
          \x20 load <path>      Load and replay a session file        (alias: l)\n\
          \x20 help / ?         Show this help\n\
          \x20 quit / exit / q  Exit the REPL"
@@ -807,6 +843,7 @@ enum Cmd {
     Info(String),
     History,
     Proof,
+    Store(String),
     Save(String),
     Load(String),
     Help,
@@ -884,6 +921,10 @@ fn parse_command(line: &str) -> Cmd {
         }
         "history" | "h" => Cmd::History,
         "proof" | "p"   => Cmd::Proof,
+        "store" => {
+            if rest.is_empty() { Cmd::UsageError("store <name>".to_owned()) }
+            else { Cmd::Store(rest.to_owned()) }
+        }
         "save" => {
             if rest.is_empty() { Cmd::UsageError("save <path>".to_owned()) }
             else { Cmd::Save(rest.to_owned()) }
