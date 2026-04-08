@@ -48,23 +48,27 @@ pub struct RewriteEngine {
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
-/// Load a file and locate the type complex and source/target diagrams.
-fn load_context(
+/// Load a file and return the store, type complex, and canonical file path —
+/// without locating any diagrams.
+///
+/// Used by the REPL setup phase to support `rules` and `info` before source
+/// and target diagrams are chosen.  The canonical path is needed downstream
+/// to look up the module complex for diagram lookup fallback.
+pub fn load_type_context(
     source_file: &str,
     type_name: &str,
-    source_diagram_name: &str,
-    target_diagram_name: Option<&str>,
-) -> Result<(Arc<GlobalStore>, Arc<Complex>, Diagram, Option<Diagram>), String> {
+) -> Result<(Arc<GlobalStore>, Arc<Complex>, String), String> {
     let loader = Loader::default(vec![]);
     let file = InterpretedFile::load(&loader, source_file)
         .into_result()
         .map_err(|_| format!("failed to interpret '{}'", source_file))?;
 
+    let canonical_path = file.path.clone();
     let store = Arc::clone(&file.state);
 
     let module_complex = store
-        .find_module(&file.path)
-        .ok_or_else(|| format!("module '{}' not found in store", file.path))?;
+        .find_module(&canonical_path)
+        .ok_or_else(|| format!("module '{}' not found in store", canonical_path))?;
 
     let (type_tag, _) = module_complex
         .find_generator(type_name)
@@ -77,10 +81,26 @@ fn load_context(
         }
     };
 
-    let type_entry = store
+    let type_complex = store
         .find_type(type_gid)
-        .ok_or_else(|| format!("type entry for '{}' not found", type_name))?;
-    let type_complex = Arc::clone(&type_entry.complex);
+        .ok_or_else(|| format!("type entry for '{}' not found", type_name))
+        .map(|e| Arc::clone(&e.complex))?;
+
+    Ok((store, type_complex, canonical_path))
+}
+
+/// Load a file and locate the type complex and source/target diagrams.
+fn load_context(
+    source_file: &str,
+    type_name: &str,
+    source_diagram_name: &str,
+    target_diagram_name: Option<&str>,
+) -> Result<(Arc<GlobalStore>, Arc<Complex>, Diagram, Option<Diagram>), String> {
+    let (store, type_complex, canonical_path) = load_type_context(source_file, type_name)?;
+
+    let module_complex = store
+        .find_module(&canonical_path)
+        .ok_or_else(|| format!("module '{}' not found in store", canonical_path))?;
 
     let find_diagram = |name: &str| -> Option<Diagram> {
         type_complex.find_diagram(name).cloned()
@@ -333,6 +353,11 @@ impl RewriteEngine {
         Ok(())
     }
 
+    /// Undo all steps, resetting to the source diagram.
+    pub fn undo_all(&mut self) -> Result<(), String> {
+        self.undo_to(0)
+    }
+
     /// Undo back to (but not past) the given step index (0 = fully undone,
     /// 1 = after step 1, etc.).
     pub fn undo_to(&mut self, target_step: usize) -> Result<(), String> {
@@ -374,6 +399,15 @@ impl RewriteEngine {
         self.target_diagram.as_ref()
             .map(|t| Diagram::equal(&self.current_diagram, t))
             .unwrap_or(false)
+    }
+
+    /// Render the running proof diagram as a label string, for the completion message.
+    ///
+    /// Returns `None` if no steps have been taken yet.
+    pub fn proof_label(&self) -> Option<String> {
+        self.running_diagram.as_ref().map(|d| {
+            crate::output::render_diagram(d, &self.type_complex)
+        })
     }
 
     /// Export the current session state as a [`SessionFile`] for disk persistence.

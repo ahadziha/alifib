@@ -15,6 +15,7 @@
 
 pub mod cli;
 pub mod daemon;
+pub mod display;
 pub mod engine;
 pub mod protocol;
 pub mod render;

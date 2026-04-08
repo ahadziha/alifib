@@ -1,13 +1,16 @@
-//! Shared rendering helpers for the REPL and daemon.
+//! Shared rendering helpers for the REPL.
 //!
-//! Builds on the low-level `output::render_diagram` function to produce
-//! richer output: bracket-highlighted match positions, per-dimension cell
-//! lists, and proof-trace summaries.
+//! Pure string-building functions (`render_*`) are separated from display
+//! functions (`print_*`) that accept a [`Display`] and produce output.
+//! All output goes through `Display`; no `println!` appears here.
 
 use crate::core::complex::Complex;
 use crate::core::diagram::Diagram;
 use crate::core::rewrite::CandidateRewrite;
 use crate::output::render_diagram;
+use super::display::Display;
+
+// ── Pure string builders ──────────────────────────────────────────────────────
 
 /// Render the top-dim labels of `diagram` with brackets around cells whose
 /// positions appear in `match_positions`.
@@ -64,45 +67,74 @@ pub fn render_match_highlight(
     out
 }
 
-/// Print a compact state display to stdout for the REPL.
+// ── Display functions ─────────────────────────────────────────────────────────
+
+/// Display the current rewrite state.
 ///
-/// Shows the step index, the current diagram label, and the full list of
-/// available rewrites with bracket-highlighted match positions.
+/// Format:
+/// ```text
+/// (blank)
+/// <current diagram>       ← cell line (plain)
+/// (blank)
+/// >> rewrites:
+/// >>
+/// >>   0  <highlight>  ->  <target>
+/// >>     by <rule> : <src> -> <tgt>
+/// >> ...
+/// ```
+/// If the target is reached, prints `>> Rewrite complete.` and the proof cell.
 pub fn print_state(
-    step: usize,
+    display: &Display,
     current: &Diagram,
     target: Option<&Diagram>,
     rewrites: &[CandidateRewrite],
     scope: &Complex,
+    // Running proof for completion display (source label, target label, proof label).
+    proof: Option<(&str, &str, &str)>,
 ) {
-    println!();
-    println!("[{}] {}", step, render_diagram(current, scope));
+    display.blank();
+    display.cell(&render_diagram(current, scope));
+    display.blank();
+
     if let Some(t) = target {
         if Diagram::equal(current, t) {
-            println!("  (target reached: {})", render_diagram(t, scope));
+            display.meta("Rewrite complete.");
+            if let Some((src_label, tgt_label, proof_label)) = proof {
+                display.meta("");
+                display.meta("proof:");
+                display.meta(&format!("  {proof_label} : {src_label} -> {tgt_label}"));
+            }
+            return;
         }
+        display.meta(&format!("target: {}", render_diagram(t, scope)));
     }
-    println!();
+
     if rewrites.is_empty() {
-        println!("  no rewrites available");
-    } else {
-        println!("rewrites:");
-        for (i, c) in rewrites.iter().enumerate() {
-            let highlight = render_match_highlight(current, scope, &c.image_positions);
-            let tgt_label = render_diagram(&c.target_boundary, scope);
-            println!("  [{}] {} : {}  ->  {}", i, c.rule_name, highlight, tgt_label);
-        }
+        display.meta("no rewrites available");
+        return;
+    }
+
+    display.meta("rewrites:");
+    for (i, c) in rewrites.iter().enumerate() {
+        let highlight = render_match_highlight(current, scope, &c.image_positions);
+        let tgt = render_diagram(&c.target_boundary, scope);
+        let rule_src = render_diagram(&c.source_boundary, scope);
+        let rule_tgt = render_diagram(&c.target_boundary, scope);
+        display.meta("");
+        display.meta(&format!("  {i}  {highlight}  ->  {tgt}"));
+        display.meta(&format!("    by {} : {} -> {}", c.rule_name, rule_src, rule_tgt));
     }
 }
 
-/// Print a history summary to stdout for the REPL.
+/// Display the move history.
 pub fn print_history(
+    display: &Display,
     source: &Diagram,
-    history_entries: &[(usize, &str)],  // (choice, rule_name)
+    history_entries: &[(usize, &str)],
     scope: &Complex,
 ) {
-    println!("[0] {} (source)", render_diagram(source, scope));
+    display.meta(&format!("step 0 (source): {}", render_diagram(source, scope)));
     for (i, (choice, rule)) in history_entries.iter().enumerate() {
-        println!("  step {} — {} (choice {})", i + 1, rule, choice);
+        display.meta(&format!("step {} — {} (choice {})", i + 1, rule, choice));
     }
 }

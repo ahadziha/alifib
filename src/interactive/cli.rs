@@ -163,14 +163,16 @@ pub enum RewriteCommand {
 pub struct ReplArgs {
     pub file: String,
     pub type_name: String,
-    pub source: String,
+    pub source: Option<String>,
     pub target: Option<String>,
+    pub emacs: bool,
 }
 
 /// Arguments for the `alifib session` subcommand.
 pub struct SessionArgs {
     pub file: String,
     pub type_name: String,
+    pub emacs: bool,
 }
 
 /// Arguments for the `alifib serve` subcommand.
@@ -202,7 +204,7 @@ pub fn parse_rewrite_args(args: &[String]) -> Result<RewriteCommand, String> {
 }
 
 const REPL_USAGE: &str = "\
-Usage: alifib repl <file> --type <t> --source <s> [--target <t>]
+Usage: alifib repl <file> --type <t> [--source <s>] [--target <t>] [--emacs]
 ";
 
 /// Parse the arguments following `alifib repl`.
@@ -211,6 +213,7 @@ pub fn parse_repl_args(args: &[String]) -> Result<ReplArgs, String> {
     let mut type_name = None;
     let mut source = None;
     let mut target = None;
+    let mut emacs = false;
 
     let mut it = args.iter();
     while let Some(arg) = it.next() {
@@ -218,6 +221,7 @@ pub fn parse_repl_args(args: &[String]) -> Result<ReplArgs, String> {
             "--type"   => { type_name = Some(next_arg(&mut it, "--type")?); }
             "--source" => { source    = Some(next_arg(&mut it, "--source")?); }
             "--target" => { target    = Some(next_arg(&mut it, "--target")?); }
+            "--emacs"  => { emacs = true; }
             "-h" | "--help" => return Err(REPL_USAGE.to_string()),
             s if s.starts_with('-') => {
                 return Err(format!("unknown option '{}' for repl\n{}", s, REPL_USAGE));
@@ -234,8 +238,9 @@ pub fn parse_repl_args(args: &[String]) -> Result<ReplArgs, String> {
     Ok(ReplArgs {
         file:      file.ok_or("repl: <file> argument is required")?,
         type_name: type_name.ok_or("repl: --type is required")?,
-        source:    source.ok_or("repl: --source is required")?,
+        source,
         target,
+        emacs,
     })
 }
 
@@ -460,22 +465,24 @@ pub fn run_serve_cmd(args: ServeArgs) -> Result<(), ()> {
 
 /// Run the REPL with the given arguments.
 pub fn run_repl_cmd(args: ReplArgs) -> Result<(), ()> {
-    run_repl(&args.file, &args.type_name, &args.source, args.target.as_deref())
+    run_repl(&args.file, &args.type_name, args.source.as_deref(), args.target.as_deref(), args.emacs)
 }
 
 const SESSION_USAGE: &str = "\
-Usage: alifib session <file> --type <t>
+Usage: alifib session <file> --type <t> [--emacs]
 ";
 
 /// Parse the arguments following `alifib session`.
 pub fn parse_session_args(args: &[String]) -> Result<SessionArgs, String> {
     let mut file = None;
     let mut type_name = None;
+    let mut emacs = false;
 
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
-            "--type" => { type_name = Some(next_arg(&mut it, "--type")?); }
+            "--type"  => { type_name = Some(next_arg(&mut it, "--type")?); }
+            "--emacs" => { emacs = true; }
             "-h" | "--help" => return Err(SESSION_USAGE.to_string()),
             s if s.starts_with('-') => {
                 return Err(format!("unknown option '{}' for session\n{}", s, SESSION_USAGE));
@@ -492,10 +499,11 @@ pub fn parse_session_args(args: &[String]) -> Result<SessionArgs, String> {
     Ok(SessionArgs {
         file:      file.ok_or("session: <file> argument is required")?,
         type_name: type_name.ok_or("session: --type is required")?,
+        emacs,
     })
 }
 
 /// Run the session REPL with the given arguments.
 pub fn run_session_cmd(args: SessionArgs) -> Result<(), ()> {
-    run_session(&args.file, &args.type_name)
+    run_session(&args.file, &args.type_name, args.emacs)
 }

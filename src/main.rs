@@ -12,8 +12,8 @@ use alifib::output;
 const USAGE: &str = "\
 Usage: alifib <input-file> [-o|--output <output-file>] [--ast] [--print] [--bench N]
        alifib rewrite <subcommand> [options]  (run 'alifib rewrite --help' for details)
-       alifib repl <file> --type <t> --source <s> [--target <t>]
-       alifib session <file> --type <t>
+       alifib repl <file> --type <t> [--source <s>] [--target <t>] [--emacs]
+       alifib session <file> --type <t> [--emacs]
        alifib serve [<file> --type <t> --source <s> [--target <t>]]";
 
 enum RunMode {
