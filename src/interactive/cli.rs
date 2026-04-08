@@ -14,6 +14,7 @@ use crate::output::render_diagram;
 use super::engine::RewriteEngine;
 use super::session::SessionFile;
 use super::repl::run_repl;
+use super::session_repl::run_session;
 
 const REWRITE_USAGE: &str = "\
 Usage: alifib rewrite <subcommand> [options]
@@ -170,6 +171,12 @@ pub struct ReplArgs {
     pub type_name: String,
     pub source: String,
     pub target: Option<String>,
+}
+
+/// Arguments for the `alifib session` subcommand.
+pub struct SessionArgs {
+    pub file: String,
+    pub type_name: String,
 }
 
 /// Arguments for the `alifib serve` subcommand.
@@ -478,4 +485,41 @@ pub fn run_serve_cmd(args: ServeArgs) -> Result<(), ()> {
 /// Run the REPL with the given arguments.
 pub fn run_repl_cmd(args: ReplArgs) -> Result<(), ()> {
     run_repl(&args.file, &args.type_name, &args.source, args.target.as_deref())
+}
+
+const SESSION_USAGE: &str = "\
+Usage: alifib session <file> --type <t>
+";
+
+/// Parse the arguments following `alifib session`.
+pub fn parse_session_args(args: &[String]) -> Result<SessionArgs, String> {
+    let mut file = None;
+    let mut type_name = None;
+
+    let mut it = args.iter();
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--type" => { type_name = Some(next_arg(&mut it, "--type")?); }
+            "-h" | "--help" => return Err(SESSION_USAGE.to_string()),
+            s if s.starts_with('-') => {
+                return Err(format!("unknown option '{}' for session\n{}", s, SESSION_USAGE));
+            }
+            s => {
+                if file.is_some() {
+                    return Err("session: multiple input files specified".to_string());
+                }
+                file = Some(s.to_string());
+            }
+        }
+    }
+
+    Ok(SessionArgs {
+        file:      file.ok_or("session: <file> argument is required")?,
+        type_name: type_name.ok_or("session: --type is required")?,
+    })
+}
+
+/// Run the session REPL with the given arguments.
+pub fn run_session_cmd(args: SessionArgs) -> Result<(), ()> {
+    run_session(&args.file, &args.type_name)
 }

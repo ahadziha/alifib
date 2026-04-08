@@ -20,3 +20,5 @@ pub mod protocol;
 pub mod render;
 pub mod repl;
 pub mod session;
+pub mod session_repl;
+pub mod workspace;

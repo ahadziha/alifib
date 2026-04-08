@@ -35,6 +35,54 @@ use super::engine::RewriteEngine;
 use super::render::{print_history, print_state};
 use super::session::SessionFile;
 
+/// Outcome of a goal sub-loop.
+pub enum GoalOutcome {
+    /// The user accepted the proof (typed `done` or `accept`).
+    Done,
+    /// The user abandoned the goal (typed `quit` or EOF).
+    Abandoned,
+}
+
+/// Run the inner goal loop on an already-initialised engine.
+///
+/// Accepts all standard rewrite commands plus `done`/`accept` to finish the
+/// proof. Returns [`GoalOutcome::Done`] when the user accepts, or
+/// [`GoalOutcome::Abandoned`] on `quit` / EOF.
+pub fn run_goal_loop(engine: &mut RewriteEngine) -> GoalOutcome {
+    print_state(
+        engine.step_count(),
+        engine.current_diagram(),
+        engine.target_diagram(),
+        engine.available_rewrites(),
+        engine.type_complex(),
+    );
+    let stdin = std::io::stdin();
+    loop {
+        print!("goal[{}]> ", engine.step_count());
+        std::io::stdout().flush().ok();
+
+        let mut line = String::new();
+        match stdin.lock().read_line(&mut line) {
+            Ok(0) => return GoalOutcome::Abandoned,
+            Ok(_) => {}
+            Err(e) => { eprintln!("read error: {}", e); return GoalOutcome::Abandoned; }
+        }
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        // Extra commands for goal mode
+        match line {
+            "done" | "accept" | "d" | "a" => return GoalOutcome::Done,
+            "abandon" => return GoalOutcome::Abandoned,
+            _ => {}
+        }
+
+        dispatch_rewrite_command(engine, line);
+    }
+}
+
 /// Run the interactive REPL for a new session.
 pub fn run_repl(
     source_file: &str,
@@ -81,173 +129,187 @@ pub fn run_repl(
             continue;
         }
 
-        match parse_command(line) {
-            Cmd::Step(n) => {
-                match engine.step(n) {
-                    Ok(rule) => {
-                        println!("Applied {} (choice {}).", rule, n);
-                        print_state(
-                            engine.step_count(),
-                            engine.current_diagram(),
-                            engine.target_diagram(),
-                            engine.available_rewrites(),
-                            engine.type_complex(),
-                        );
-                    }
-                    Err(e) => eprintln!("error: {}", e),
-                }
-            }
-            Cmd::Undo(None) => {
-                match engine.undo() {
-                    Ok(()) => {
-                        println!("Undone to step {}.", engine.step_count());
-                        print_state(
-                            engine.step_count(),
-                            engine.current_diagram(),
-                            engine.target_diagram(),
-                            engine.available_rewrites(),
-                            engine.type_complex(),
-                        );
-                    }
-                    Err(e) => eprintln!("error: {}", e),
-                }
-            }
-            Cmd::Undo(Some(target)) => {
-                match engine.undo_to(target) {
-                    Ok(()) => {
-                        println!("Undone to step {}.", engine.step_count());
-                        print_state(
-                            engine.step_count(),
-                            engine.current_diagram(),
-                            engine.target_diagram(),
-                            engine.available_rewrites(),
-                            engine.type_complex(),
-                        );
-                    }
-                    Err(e) => eprintln!("error: {}", e),
-                }
-            }
-            Cmd::Show => {
-                print_state(
-                    engine.step_count(),
-                    engine.current_diagram(),
-                    engine.target_diagram(),
-                    engine.available_rewrites(),
-                    engine.type_complex(),
-                );
-            }
-            Cmd::Rules => {
-                let complex = engine.type_complex();
-                let store = engine.store();
-                let n = engine.current_diagram().top_dim();
-                println!("rewrite rules (dim {}):", n + 1);
-                let mut any = false;
-                for (name, tag, dim) in complex.generators_iter() {
-                    if dim != n + 1 {
-                        continue;
-                    }
-                    any = true;
-                    match store.cell_data_for_tag(complex, tag) {
-                        Some(CellData::Boundary { boundary_in, boundary_out }) => {
-                            println!(
-                                "  {} : {}  ->  {}",
-                                name,
-                                render_diagram(&boundary_in, complex),
-                                render_diagram(&boundary_out, complex),
-                            );
-                        }
-                        _ => println!("  {} (no boundaries)", name),
-                    }
-                }
-                if !any {
-                    println!("  (no rewrite rules at dim {})", n + 1);
-                }
-            }
-            Cmd::Info(name) => {
-                let complex = engine.type_complex();
-                let store = engine.store();
-                match complex.find_generator(&name) {
-                    Some((tag, dim)) => {
-                        match store.cell_data_for_tag(complex, tag) {
-                            Some(CellData::Boundary { boundary_in, boundary_out }) => {
-                                println!(
-                                    "{} (dim {}): {}  ->  {}",
-                                    name, dim,
-                                    render_diagram(&boundary_in, complex),
-                                    render_diagram(&boundary_out, complex),
-                                );
-                            }
-                            Some(CellData::Zero) => {
-                                println!("{} (dim 0): 0-cell", name);
-                            }
-                            None => eprintln!("error: no cell data for '{}'", name),
-                        }
-                    }
-                    None => eprintln!("error: generator '{}' not found", name),
-                }
-            }
-            Cmd::History => {
-                let sf = engine.to_session_file();
-                let entries: Vec<(usize, &str)> = sf.moves.iter()
-                    .map(|m| (m.choice, m.rule_name.as_str()))
-                    .collect();
-                print_history(engine.source_diagram(), &entries, engine.type_complex());
-            }
-            Cmd::Proof => {
-                match engine.running_diagram() {
-                    None => println!("  (no proof built yet)"),
-                    Some(d) => {
-                        let n = engine.source_diagram().top_dim();
-                        println!("proof (dim {}):", d.top_dim());
-                        match (
-                            crate::core::diagram::Diagram::boundary(Sign::Source, n, d),
-                            crate::core::diagram::Diagram::boundary(Sign::Target, n, d),
-                        ) {
-                            (Ok(src), Ok(tgt)) => println!(
-                                "  {} steps: {}  =>  {}",
-                                engine.step_count(),
-                                render_diagram(&src, engine.type_complex()),
-                                render_diagram(&tgt, engine.type_complex()),
-                            ),
-                            _ => println!("  (boundary extraction failed)"),
-                        }
-                    }
-                }
-            }
-            Cmd::Save(path) => {
-                match engine.to_session_file().write(&path) {
-                    Ok(()) => println!("Saved session to '{}'.", path),
-                    Err(e) => eprintln!("error: {}", e),
-                }
-            }
-            Cmd::Load(path) => {
-                match SessionFile::read(&path) {
-                    Err(e) => eprintln!("error: {}", e),
-                    Ok(sf) => match RewriteEngine::from_session(sf) {
-                        Err(e) => eprintln!("error loading session: {}", e),
-                        Ok(new_engine) => {
-                            engine = new_engine;
-                            println!("Loaded session from '{}'.", path);
-                            print_state(
-                                engine.step_count(),
-                                engine.current_diagram(),
-                                engine.target_diagram(),
-                                engine.available_rewrites(),
-                                engine.type_complex(),
-                            );
-                        }
-                    }
-                }
-            }
-            Cmd::Help => print_help(),
-            Cmd::Quit => break,
-            Cmd::Unknown(s) => eprintln!("unknown command '{}' — type 'help' for a list", s),
+        if dispatch_rewrite_command(&mut engine, line) == DispatchResult::Quit {
+            break;
         }
     }
 
     println!();
     Ok(())
 }
+
+/// Dispatch a single rewrite command to the engine.
+///
+/// Returns [`DispatchResult::Quit`] if the command was `quit`/`exit`/`q`,
+/// otherwise [`DispatchResult::Continue`].
+pub fn dispatch_rewrite_command(engine: &mut RewriteEngine, line: &str) -> DispatchResult {
+    match parse_command(line) {
+        Cmd::Step(n) => {
+            match engine.step(n) {
+                Ok(rule) => {
+                    println!("Applied {} (choice {}).", rule, n);
+                    print_state(
+                        engine.step_count(),
+                        engine.current_diagram(),
+                        engine.target_diagram(),
+                        engine.available_rewrites(),
+                        engine.type_complex(),
+                    );
+                }
+                Err(e) => eprintln!("error: {}", e),
+            }
+        }
+        Cmd::Undo(None) => {
+            match engine.undo() {
+                Ok(()) => {
+                    println!("Undone to step {}.", engine.step_count());
+                    print_state(
+                        engine.step_count(),
+                        engine.current_diagram(),
+                        engine.target_diagram(),
+                        engine.available_rewrites(),
+                        engine.type_complex(),
+                    );
+                }
+                Err(e) => eprintln!("error: {}", e),
+            }
+        }
+        Cmd::Undo(Some(target)) => {
+            match engine.undo_to(target) {
+                Ok(()) => {
+                    println!("Undone to step {}.", engine.step_count());
+                    print_state(
+                        engine.step_count(),
+                        engine.current_diagram(),
+                        engine.target_diagram(),
+                        engine.available_rewrites(),
+                        engine.type_complex(),
+                    );
+                }
+                Err(e) => eprintln!("error: {}", e),
+            }
+        }
+        Cmd::Show => {
+            print_state(
+                engine.step_count(),
+                engine.current_diagram(),
+                engine.target_diagram(),
+                engine.available_rewrites(),
+                engine.type_complex(),
+            );
+        }
+        Cmd::Rules => {
+            let complex = engine.type_complex();
+            let store = engine.store();
+            let n = engine.current_diagram().top_dim();
+            println!("rewrite rules (dim {}):", n + 1);
+            let mut any = false;
+            for (name, tag, dim) in complex.generators_iter() {
+                if dim != n + 1 {
+                    continue;
+                }
+                any = true;
+                match store.cell_data_for_tag(complex, tag) {
+                    Some(CellData::Boundary { boundary_in, boundary_out }) => {
+                        println!(
+                            "  {} : {}  ->  {}",
+                            name,
+                            render_diagram(&boundary_in, complex),
+                            render_diagram(&boundary_out, complex),
+                        );
+                    }
+                    _ => println!("  {} (no boundaries)", name),
+                }
+            }
+            if !any {
+                println!("  (no rewrite rules at dim {})", n + 1);
+            }
+        }
+        Cmd::Info(name) => {
+            let complex = engine.type_complex();
+            let store = engine.store();
+            match complex.find_generator(&name) {
+                Some((tag, dim)) => {
+                    match store.cell_data_for_tag(complex, tag) {
+                        Some(CellData::Boundary { boundary_in, boundary_out }) => {
+                            println!(
+                                "{} (dim {}): {}  ->  {}",
+                                name, dim,
+                                render_diagram(&boundary_in, complex),
+                                render_diagram(&boundary_out, complex),
+                            );
+                        }
+                        Some(CellData::Zero) => {
+                            println!("{} (dim 0): 0-cell", name);
+                        }
+                        None => eprintln!("error: no cell data for '{}'", name),
+                    }
+                }
+                None => eprintln!("error: generator '{}' not found", name),
+            }
+        }
+        Cmd::History => {
+            let sf = engine.to_session_file();
+            let entries: Vec<(usize, &str)> = sf.moves.iter()
+                .map(|m| (m.choice, m.rule_name.as_str()))
+                .collect();
+            print_history(engine.source_diagram(), &entries, engine.type_complex());
+        }
+        Cmd::Proof => {
+            match engine.running_diagram() {
+                None => println!("  (no proof built yet)"),
+                Some(d) => {
+                    let n = engine.source_diagram().top_dim();
+                    println!("proof (dim {}):", d.top_dim());
+                    match (
+                        crate::core::diagram::Diagram::boundary(Sign::Source, n, d),
+                        crate::core::diagram::Diagram::boundary(Sign::Target, n, d),
+                    ) {
+                        (Ok(src), Ok(tgt)) => println!(
+                            "  {} steps: {}  =>  {}",
+                            engine.step_count(),
+                            render_diagram(&src, engine.type_complex()),
+                            render_diagram(&tgt, engine.type_complex()),
+                        ),
+                        _ => println!("  (boundary extraction failed)"),
+                    }
+                }
+            }
+        }
+        Cmd::Save(path) => {
+            match engine.to_session_file().write(&path) {
+                Ok(()) => println!("Saved session to '{}'.", path),
+                Err(e) => eprintln!("error: {}", e),
+            }
+        }
+        Cmd::Load(path) => {
+            match SessionFile::read(&path) {
+                Err(e) => eprintln!("error: {}", e),
+                Ok(sf) => match RewriteEngine::from_session(sf) {
+                    Err(e) => eprintln!("error loading session: {}", e),
+                    Ok(new_engine) => {
+                        *engine = new_engine;
+                        println!("Loaded session from '{}'.", path);
+                        print_state(
+                            engine.step_count(),
+                            engine.current_diagram(),
+                            engine.target_diagram(),
+                            engine.available_rewrites(),
+                            engine.type_complex(),
+                        );
+                    }
+                }
+            }
+        }
+        Cmd::Help => print_help(),
+        Cmd::Quit => return DispatchResult::Quit,
+        Cmd::Unknown(s) => eprintln!("unknown command '{}' — type 'help' for a list", s),
+    }
+    DispatchResult::Continue
+}
+
+#[derive(PartialEq, Eq)]
+pub enum DispatchResult { Continue, Quit }
 
 // ── Command parsing ───────────────────────────────────────────────────────────
 

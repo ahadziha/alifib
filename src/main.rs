@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use alifib::aux::error::report_load_file_error;
 use alifib::aux::loader::Loader;
-use alifib::interactive::cli::{RewriteCommand, ReplArgs, ServeArgs, parse_rewrite_args, parse_repl_args, parse_serve_args, run_rewrite, run_repl_cmd, run_serve_cmd};
+use alifib::interactive::cli::{RewriteCommand, ReplArgs, ServeArgs, SessionArgs, parse_rewrite_args, parse_repl_args, parse_serve_args, parse_session_args, run_rewrite, run_repl_cmd, run_serve_cmd, run_session_cmd};
 use alifib::interpreter::InterpretedFile;
 use alifib::language;
 use alifib::output;
@@ -13,6 +13,7 @@ const USAGE: &str = "\
 Usage: alifib <input-file> [-o|--output <output-file>] [--ast] [--print] [--bench N]
        alifib rewrite <subcommand> [options]  (run 'alifib rewrite --help' for details)
        alifib repl <file> --type <t> --source <s> [--target <t>]
+       alifib session <file> --type <t>
        alifib serve [<file> --type <t> --source <s> [--target <t>]]";
 
 enum RunMode {
@@ -22,6 +23,7 @@ enum RunMode {
     Bench(usize),
     Rewrite(RewriteCommand),
     Repl(ReplArgs),
+    Session(SessionArgs),
     Serve(ServeArgs),
 }
 
@@ -46,6 +48,10 @@ fn parse_args() -> Result<Args, String> {
         Some("repl") => {
             let args = parse_repl_args(&cli_args[1..])?;
             return Ok(Args { input: String::new(), output: None, mode: RunMode::Repl(args) });
+        }
+        Some("session") => {
+            let args = parse_session_args(&cli_args[1..])?;
+            return Ok(Args { input: String::new(), output: None, mode: RunMode::Session(args) });
         }
         Some("serve") => {
             let args = parse_serve_args(&cli_args[1..])?;
@@ -149,9 +155,10 @@ fn main() {
         RunMode::Print     => run_print(&loader, &args.input, args.output.as_deref()),
         RunMode::Interpret => run_interpreter(&loader, &args.input, args.output.as_deref()),
         RunMode::Bench(n)     => run_bench(&loader, &args.input, n),
-        RunMode::Rewrite(cmd) => run_rewrite(cmd),
-        RunMode::Repl(args)   => run_repl_cmd(args),
-        RunMode::Serve(args)  => run_serve_cmd(args),
+        RunMode::Rewrite(cmd)  => run_rewrite(cmd),
+        RunMode::Repl(args)    => run_repl_cmd(args),
+        RunMode::Session(args) => run_session_cmd(args),
+        RunMode::Serve(args)   => run_serve_cmd(args),
     };
     if result.is_err() {
         process::exit(1);

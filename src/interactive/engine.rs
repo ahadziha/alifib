@@ -120,6 +120,60 @@ fn compute_rewrites(
 // ── Constructor impls ─────────────────────────────────────────────────────────
 
 impl RewriteEngine {
+    /// Create a fresh session from an already-loaded store and type complex.
+    ///
+    /// Diagrams are looked up by name in `type_complex` (falling back to the
+    /// module complex for `source_file` in `store`).  This constructor is used
+    /// by the workspace session REPL to avoid re-loading from disk.
+    pub fn from_store(
+        store: Arc<GlobalStore>,
+        type_complex: Arc<Complex>,
+        source_diagram_name: &str,
+        target_diagram_name: Option<&str>,
+        source_file: String,
+        type_name: String,
+    ) -> Result<Self, String> {
+        let find_diagram_full = |name: &str| -> Option<Diagram> {
+            type_complex.find_diagram(name).cloned().or_else(|| {
+                store.find_module(&source_file)
+                    .and_then(|m| m.find_diagram(name))
+                    .cloned()
+            })
+        };
+
+        let source_diagram = find_diagram_full(source_diagram_name)
+            .ok_or_else(|| format!(
+                "diagram '{}' not found in type '{}' or module",
+                source_diagram_name, type_name,
+            ))?;
+
+        let target_diagram = target_diagram_name
+            .map(|name| {
+                find_diagram_full(name).ok_or_else(|| format!(
+                    "target diagram '{}' not found in type '{}' or module",
+                    name, type_name,
+                ))
+            })
+            .transpose()?;
+
+        let available_rewrites = compute_rewrites(&store, &type_complex, &source_diagram);
+
+        Ok(Self {
+            current_diagram: source_diagram.clone(),
+            running_diagram: None,
+            history: Vec::new(),
+            available_rewrites,
+            source_file,
+            type_name,
+            source_diagram_name: source_diagram_name.to_owned(),
+            target_diagram_name: target_diagram_name.map(str::to_owned),
+            store,
+            type_complex,
+            source_diagram,
+            target_diagram,
+        })
+    }
+
     /// Load the source file and initialise a fresh session (no moves applied).
     pub fn init(
         source_file: &str,

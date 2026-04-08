@@ -116,6 +116,44 @@ to top).
 
 ---
 
+## Session workspace
+
+```
+alifib session <file> --type <t>
+```
+
+Loads `<file>`, finds type `<t>`, and starts an interactive session for
+building up definitions incrementally within that type. Unlike the REPL,
+this does not require an initial source diagram — you work with the full
+type environment.
+
+### Commands
+
+| Command | Aliases | Description |
+|---------|---------|-------------|
+| `let <name> = <expr>` | | Add a `let` binding (full alifib syntax); validated by re-interpretation |
+| `goal <name> : <src> -> <tgt>` | `g ...` | Prove an (n+1)-cell interactively; registers it as a generator on success |
+| `show` | | List all additions made this session |
+| `export` | `e` | Print the session additions (for pasting into the source file) |
+| `export <path>` | `e <path>` | Write the full modified source (original + additions) to `<path>` |
+| `help` | `?` | Print this list |
+| `quit` | `exit`, `q` | Exit the session |
+
+### Goal sub-loop
+
+Typing `goal f : lhs -> rhs` enters a rewrite sub-loop (identical to the
+REPL) with `lhs` as source and `rhs` as target. The additional commands
+`done` / `accept` (aliases `d`, `a`) close the goal and register the proof
+as a generator; `abandon` discards it and returns to the session prompt.
+
+### Export
+
+`export` (no path) prints only the new lines added this session — suitable
+for pasting into the original `.ali` file's type block. `export <path>`
+writes the entire modified source (original file with additions injected).
+
+---
+
 ## Session files
 
 Both interfaces can save and load session files (JSON). A session file
