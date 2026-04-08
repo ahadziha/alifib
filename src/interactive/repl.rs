@@ -481,6 +481,9 @@ fn maybe_start_engine(
 }
 
 /// Call `print_state` with fields drawn from `engine`.
+///
+/// When the proof is complete (`target_reached`), runs `typecheck_proof` and reports
+/// any failure as an error before displaying the completion message.
 fn show_state(engine: &RewriteEngine, display: &Display) {
     let src_label = render_diagram(engine.source_diagram(), engine.type_complex());
     let tgt_label = engine.target_diagram()
@@ -488,6 +491,9 @@ fn show_state(engine: &RewriteEngine, display: &Display) {
     let proof_label = engine.proof_label();
 
     let proof = if engine.target_reached() {
+        if let Err(e) = engine.typecheck_proof() {
+            display.error(&format!("proof typecheck failed: {}", e));
+        }
         match (&tgt_label, &proof_label) {
             (Some(tl), Some(pl)) => Some((src_label.as_str(), tl.as_str(), pl.as_str())),
             _ => None,

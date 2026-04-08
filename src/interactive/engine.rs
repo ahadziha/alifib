@@ -433,25 +433,22 @@ impl RewriteEngine {
         })
     }
 
-    /// Register the current running proof as a local definition in the type complex.
+    /// Typecheck the current proof diagram.
     ///
-    /// Clones the complex, adds `running_diagram` under `name`, and updates the
-    /// engine's own `type_complex` so future lookups see the new definition.
-    /// Returns the updated `Arc<Complex>` so the caller can sync its own reference.
-    ///
-    /// Typechecks the proof in two ways before storing:
-    /// 1. Source boundary: verifies the proof's source n-boundary equals the declared source.
+    /// Runs two checks:
+    /// 1. Source boundary: the proof's source n-boundary is isomorphic to `source_diagram`.
     /// 2. Round-trip: sourcefies the proof, re-interprets it through the interpreter, and
-    ///    confirms the result is isomorphic to the constructed proof.  This catches any bug
-    ///    in the rewrite engine's composition logic and verifies the saved .ali expression
-    ///    is valid.
-    pub fn register_proof(&mut self, name: &str) -> Result<Arc<Complex>, String> {
-        let diagram = self.running_diagram.clone()
+    ///    confirms the result is isomorphic to the constructed proof.
+    ///
+    /// Returns `Ok(())` if both pass, `Err(message)` on any failure.
+    /// Returns `Err` immediately if no proof steps have been taken.
+    pub fn typecheck_proof(&self) -> Result<(), String> {
+        let diagram = self.running_diagram.as_ref()
             .ok_or_else(|| "no proof steps taken yet".to_owned())?;
 
         // Check 1: source boundary.
         let n = self.source_diagram.top_dim();
-        let src_boundary = Diagram::boundary(Sign::Source, n, &diagram)
+        let src_boundary = Diagram::boundary(Sign::Source, n, diagram)
             .map_err(|e| format!("source boundary check failed: {}", e))?;
         if !Diagram::isomorphic(&src_boundary, &self.source_diagram) {
             return Err(format!(
@@ -462,8 +459,7 @@ impl RewriteEngine {
         }
 
         // Check 2: round-trip through the interpreter.
-        // Sourcify → parse → interpret, then compare to the live diagram.
-        let source_expr = crate::output::diagram_to_source(&diagram, &self.type_complex);
+        let source_expr = crate::output::diagram_to_source(diagram, &self.type_complex);
         let ast = crate::language::parse_diagram(&source_expr)
             .map_err(|e| format!("sourcefier produced unparseable expression '{}': {}", source_expr, e))?;
         let ctx = crate::interpreter::Context::new_with_resolutions(
@@ -485,13 +481,29 @@ impl RewriteEngine {
         let interp = interp_opt.ok_or_else(|| format!(
             "interpreter produced no diagram for expression '{}'", source_expr,
         ))?;
-        if !Diagram::isomorphic(&interp, &diagram) {
+        if !Diagram::isomorphic(&interp, diagram) {
             return Err(format!(
                 "round-trip check failed: expression '{}' does not reconstruct the proof — \
                  this is a bug in the sourcefier",
                 source_expr,
             ));
         }
+
+        Ok(())
+    }
+
+    /// Register the current running proof as a local definition in the type complex.
+    ///
+    /// Clones the complex, adds `running_diagram` under `name`, and updates the
+    /// engine's own `type_complex` so future lookups see the new definition.
+    /// Returns the updated `Arc<Complex>` so the caller can sync its own reference.
+    ///
+    /// Calls [`typecheck_proof`] before storing; returns an error if it fails.
+    pub fn register_proof(&mut self, name: &str) -> Result<Arc<Complex>, String> {
+        let diagram = self.running_diagram.clone()
+            .ok_or_else(|| "no proof steps taken yet".to_owned())?;
+
+        self.typecheck_proof()?;
 
         let mut new_complex = (*self.type_complex).clone();
         new_complex.add_diagram(name.to_owned(), diagram);
