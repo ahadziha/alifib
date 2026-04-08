@@ -1,4 +1,4 @@
-//! CLI argument parsing and command dispatch for `alifib rewrite`.
+//! CLI argument parsing and command dispatch for `alifib rewrite` and `alifib repl`.
 //!
 //! Commands:
 //!   alifib rewrite init   --file <f> --type <t> --source <s> [--target <t>] --session <p> [--format text|json]
@@ -6,11 +6,64 @@
 //!   alifib rewrite undo   --session <p> [--format text|json]
 //!   alifib rewrite show   --session <p> [--format text|json]
 //!   alifib rewrite done   --session <p> [--format text|json]
+//!   alifib repl <file> --type <t> --source <s> [--target <t>]
 
 use crate::output::render_diagram;
 use super::engine::replay_session;
 use super::output::{AvailableRewrite, OutputFormat, RewriteResponse, Status};
 use super::session::{Move, SessionFile};
+use super::repl::run_repl;
+
+/// Arguments for the `alifib repl` subcommand.
+pub struct ReplArgs {
+    pub file: String,
+    pub type_name: String,
+    pub source: String,
+    pub target: Option<String>,
+}
+
+const REPL_USAGE: &str = "\
+Usage: alifib repl <file> --type <t> --source <s> [--target <t>]
+";
+
+/// Parse the arguments following `alifib repl`.
+pub fn parse_repl_args(args: &[String]) -> Result<ReplArgs, String> {
+    let mut file = None;
+    let mut type_name = None;
+    let mut source = None;
+    let mut target = None;
+
+    let mut it = args.iter();
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--type"   => { type_name = Some(next_arg(&mut it, "--type")?); }
+            "--source" => { source    = Some(next_arg(&mut it, "--source")?); }
+            "--target" => { target    = Some(next_arg(&mut it, "--target")?); }
+            "-h" | "--help" => return Err(REPL_USAGE.to_string()),
+            s if s.starts_with('-') => {
+                return Err(format!("unknown option '{}' for repl\n{}", s, REPL_USAGE));
+            }
+            s => {
+                if file.is_some() {
+                    return Err("repl: multiple input files specified".to_string());
+                }
+                file = Some(s.to_string());
+            }
+        }
+    }
+
+    Ok(ReplArgs {
+        file:      file.ok_or("repl: <file> argument is required")?,
+        type_name: type_name.ok_or("repl: --type is required")?,
+        source:    source.ok_or("repl: --source is required")?,
+        target,
+    })
+}
+
+/// Run the REPL with the given arguments.
+pub fn run_repl_cmd(args: ReplArgs) -> Result<(), ()> {
+    run_repl(&args.file, &args.type_name, &args.source, args.target.as_deref())
+}
 
 const REWRITE_USAGE: &str = "\
 Usage: alifib rewrite <subcommand> [options]

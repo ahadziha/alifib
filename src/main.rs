@@ -4,14 +4,16 @@ use std::time::Instant;
 
 use alifib::aux::error::report_load_file_error;
 use alifib::aux::loader::Loader;
-use alifib::interactive::cli::{RewriteCommand, parse_rewrite_args, run_rewrite};
+use alifib::interactive::cli::{RewriteCommand, ReplArgs, parse_rewrite_args, parse_repl_args, run_rewrite, run_repl_cmd};
 use alifib::interpreter::InterpretedFile;
 use alifib::language;
 use alifib::output;
 
 const USAGE: &str = "\
 Usage: alifib <input-file> [-o|--output <output-file>] [--ast] [--print] [--bench N]
-       alifib rewrite <subcommand> [options]  (run 'alifib rewrite --help' for details)";
+       alifib rewrite <subcommand> [options]  (run 'alifib rewrite --help' for details)
+       alifib repl <file> --type <t> --source <s> [--target <t>]
+       alifib serve";
 
 enum RunMode {
     Interpret,
@@ -19,6 +21,7 @@ enum RunMode {
     Print,
     Bench(usize),
     Rewrite(RewriteCommand),
+    Repl(ReplArgs),
 }
 
 struct Args {
@@ -33,11 +36,17 @@ fn parse_args() -> Result<Args, String> {
     let mut output = None;
     let mut mode = RunMode::Interpret;
 
-    // Check for the `rewrite` subcommand first (consumes all remaining args).
-    if cli_args.first().map(|s| s.as_str()) == Some("rewrite") {
-        let cmd = parse_rewrite_args(&cli_args[1..])?;
-        // Use a dummy input path since rewrite doesn't need one.
-        return Ok(Args { input: String::new(), output: None, mode: RunMode::Rewrite(cmd) });
+    // Check for top-level subcommands that consume all remaining args.
+    match cli_args.first().map(|s| s.as_str()) {
+        Some("rewrite") => {
+            let cmd = parse_rewrite_args(&cli_args[1..])?;
+            return Ok(Args { input: String::new(), output: None, mode: RunMode::Rewrite(cmd) });
+        }
+        Some("repl") => {
+            let args = parse_repl_args(&cli_args[1..])?;
+            return Ok(Args { input: String::new(), output: None, mode: RunMode::Repl(args) });
+        }
+        _ => {}
     }
 
     let mut arg_iter = cli_args.iter();
@@ -134,8 +143,9 @@ fn main() {
         RunMode::Ast       => run_ast(&loader, &args.input, args.output.as_deref()),
         RunMode::Print     => run_print(&loader, &args.input, args.output.as_deref()),
         RunMode::Interpret => run_interpreter(&loader, &args.input, args.output.as_deref()),
-        RunMode::Bench(n)  => run_bench(&loader, &args.input, n),
+        RunMode::Bench(n)     => run_bench(&loader, &args.input, n),
         RunMode::Rewrite(cmd) => run_rewrite(cmd),
+        RunMode::Repl(args)   => run_repl_cmd(args),
     };
     if result.is_err() {
         process::exit(1);
