@@ -438,9 +438,25 @@ impl RewriteEngine {
     /// Clones the complex, adds `running_diagram` under `name`, and updates the
     /// engine's own `type_complex` so future lookups see the new definition.
     /// Returns the updated `Arc<Complex>` so the caller can sync its own reference.
+    ///
+    /// Also verifies that the source n-boundary of the proof equals `source_diagram` —
+    /// a defensive check that the engine's composition logic is consistent.
     pub fn register_proof(&mut self, name: &str) -> Result<Arc<Complex>, String> {
         let diagram = self.running_diagram.clone()
             .ok_or_else(|| "no proof steps taken yet".to_owned())?;
+
+        // Verify source boundary.
+        let n = self.source_diagram.top_dim();
+        let src_boundary = Diagram::boundary(Sign::Source, n, &diagram)
+            .map_err(|e| format!("source boundary check failed: {}", e))?;
+        if !Diagram::isomorphic(&src_boundary, &self.source_diagram) {
+            return Err(format!(
+                "proof source boundary does not match declared source '{}' — \
+                 this is a bug in the rewrite engine",
+                self.source_diagram_name,
+            ));
+        }
+
         let mut new_complex = (*self.type_complex).clone();
         new_complex.add_diagram(name.to_owned(), diagram);
         let new_arc = Arc::new(new_complex);
