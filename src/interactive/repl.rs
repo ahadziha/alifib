@@ -379,7 +379,7 @@ fn dispatch_types(store: &GlobalStore, canonical_path: &str, display: &Display) 
         if parts.is_empty() {
             display.inspect(&format!("  {}", ty.name));
         } else {
-            display.inspect(&format!("  {}  —  {}", ty.name, parts.join(", ")));
+            display.inspect(&format!("  {} ({})", ty.name, parts.join(", ")));
         }
     }
 }
