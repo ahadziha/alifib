@@ -172,6 +172,18 @@ pub struct ReplArgs {
     pub target: Option<String>,
 }
 
+/// Arguments for the `alifib serve` subcommand.
+///
+/// All fields are optional: `alifib serve` with no arguments starts blank
+/// and waits for an `Init` request; with arguments it pre-loads the session
+/// and emits an initial state response before entering the request loop.
+pub struct ServeArgs {
+    pub file: Option<String>,
+    pub type_name: Option<String>,
+    pub source: Option<String>,
+    pub target: Option<String>,
+}
+
 // ── Parsers ───────────────────────────────────────────────────────────────────
 
 /// Parse the arguments following `alifib rewrite` into a [`RewriteCommand`].
@@ -413,6 +425,54 @@ pub fn run_rewrite(cmd: RewriteCommand) -> Result<(), ()> {
             Ok(())
         }
     }
+}
+
+/// Parse the arguments following `alifib serve`.
+pub fn parse_serve_args(args: &[String]) -> Result<ServeArgs, String> {
+    let mut file = None;
+    let mut type_name = None;
+    let mut source = None;
+    let mut target = None;
+
+    let mut it = args.iter();
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--type"   => { type_name = Some(next_arg(&mut it, "--type")?); }
+            "--source" => { source    = Some(next_arg(&mut it, "--source")?); }
+            "--target" => { target    = Some(next_arg(&mut it, "--target")?); }
+            "-h" | "--help" => return Err("Usage: alifib serve [<file> --type <t> --source <s> [--target <t>]]\n".to_string()),
+            s if s.starts_with('-') => {
+                return Err(format!("unknown option '{}' for serve", s));
+            }
+            s => {
+                if file.is_some() {
+                    return Err("serve: multiple input files specified".to_string());
+                }
+                file = Some(s.to_string());
+            }
+        }
+    }
+
+    Ok(ServeArgs { file, type_name, source, target })
+}
+
+/// Run the daemon, optionally pre-loading a session from the given arguments.
+pub fn run_serve_cmd(args: ServeArgs) -> Result<(), ()> {
+    use super::daemon::run_daemon;
+    let initial = match (args.file, args.type_name, args.source) {
+        (Some(file), Some(type_name), Some(source)) => {
+            match RewriteEngine::init(&file, &type_name, &source, args.target.as_deref()) {
+                Ok(e) => Some(e),
+                Err(e) => { eprintln!("error: {}", e); return Err(()); }
+            }
+        }
+        (None, None, None) => None,
+        _ => {
+            eprintln!("error: serve: if any of <file>, --type, --source are given, all three are required");
+            return Err(());
+        }
+    };
+    run_daemon(initial)
 }
 
 /// Run the REPL with the given arguments.

@@ -26,11 +26,19 @@ use super::session::SessionFile;
 
 /// Run the daemon loop: read requests from stdin, write responses to stdout.
 ///
-/// Returns when a [`Request::Shutdown`] is received or stdin is closed.
-pub fn run_daemon() -> Result<(), ()> {
+/// If `initial` is `Some`, the engine is pre-loaded and an initial state
+/// response is emitted before entering the request loop. Returns when a
+/// [`Request::Shutdown`] is received or stdin is closed.
+pub fn run_daemon(initial: Option<RewriteEngine>) -> Result<(), ()> {
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
     let mut engine: Option<RewriteEngine> = None;
+
+    if let Some(e) = initial {
+        let data = build_response(&e, false);
+        emit(&stdout, &Response::Ok { data });
+        engine = Some(e);
+    }
 
     for line in stdin.lock().lines() {
         let line = match line {
