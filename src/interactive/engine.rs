@@ -5,7 +5,7 @@ use crate::aux::loader::Loader;
 use crate::core::complex::Complex;
 use crate::core::diagram::{Diagram, Sign};
 use crate::interpreter::{GlobalStore, InterpretedFile};
-use super::rewrite::{CandidateRewrite, apply_rewrite, find_candidate_rewrites};
+use crate::core::rewrite::{CandidateRewrite, apply_rewrite, find_candidate_rewrites};
 use super::session::SessionFile;
 use std::sync::Arc;
 
@@ -93,7 +93,7 @@ pub fn replay_session(session: SessionFile) -> Result<SessionState, String> {
     let mut running: Option<Diagram> = None;
 
     for (step_idx, mov) in session.moves.iter().enumerate() {
-        let candidates = find_candidate_rewrites(&store, &type_complex, &current);
+        let candidates = find_candidate_rewrites(|cx, tag| store.cell_data_for_tag(cx, tag), &type_complex, &current);
 
         let candidate = candidates.get(mov.choice).ok_or_else(|| {
             format!(
@@ -132,7 +132,7 @@ pub fn replay_session(session: SessionFile) -> Result<SessionState, String> {
     }
 
     // 7. Compute available rewrites at the final state.
-    let available_rewrites = find_candidate_rewrites(&store, &type_complex, &current);
+    let available_rewrites = find_candidate_rewrites(|cx, tag| store.cell_data_for_tag(cx, tag), &type_complex, &current);
 
     Ok(SessionState {
         session,

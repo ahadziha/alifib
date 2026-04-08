@@ -16,5 +16,4 @@
 pub mod cli;
 pub mod engine;
 pub mod output;
-pub mod rewrite;
 pub mod session;
