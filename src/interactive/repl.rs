@@ -126,11 +126,6 @@ pub fn run_repl(
         Err(e) => { display.error(&e); return Err(()); }
     };
 
-    // Print the same output alifib would show when interpreting the file directly.
-    let trimmed = file_output.trim_end();
-    if !trimmed.is_empty() {
-        display.cell(trimmed);
-    }
     display.meta(&format!("Loaded {}", source_file));
 
     let mut rl = make_editor(emacs_mode);
@@ -183,6 +178,17 @@ pub fn run_repl(
                         );
                     }
                     Cmd::Types => dispatch_types(&store, &canonical_path, &display),
+                    Cmd::Print(None) => {
+                        let trimmed = file_output.trim_end();
+                        if !trimmed.is_empty() { display.cell(trimmed); }
+                    }
+                    Cmd::Print(Some(name)) => {
+                        match (&engine, &type_complex) {
+                            (Some(e), _) => dispatch_print_cell(e.type_complex(), &name, &display),
+                            (None, Some(tc)) => dispatch_print_cell(tc, &name, &display),
+                            (None, None) => display.error("set type first (@ <TypeName>)"),
+                        }
+                    }
                     Cmd::Clear => {
                         engine = None;
                         type_complex = None;
@@ -249,9 +255,10 @@ pub fn dispatch_rewrite_command(
 ) -> DispatchResult {
     match parse_command(line) {
         Cmd::Quit => return DispatchResult::Quit,
-        Cmd::Clear | Cmd::Source(_) | Cmd::Target(_) | Cmd::AtExpr(_) | Cmd::Types => {
+        Cmd::Clear | Cmd::Source(_) | Cmd::Target(_) | Cmd::AtExpr(_) | Cmd::Types | Cmd::Print(None) => {
             display.error("command not available here");
         }
+        Cmd::Print(Some(name)) => dispatch_print_cell(engine.type_complex(), &name, display),
         cmd => dispatch_engine_cmd(engine, cmd, display),
     }
     DispatchResult::Continue
@@ -454,6 +461,60 @@ fn dispatch_info(complex: &Complex, store: &GlobalStore, name: &str, display: &D
     }
 }
 
+/// Print a named cell from the type complex.
+///
+/// - **Generator** (`name : src -> tgt`): shows dimension and boundary.
+/// - **Let binding** (`let name = expr`): shows dimension, boundary, and the
+///   full definition diagram.
+/// - **Neither**: reports an error.
+fn dispatch_print_cell(complex: &Complex, name: &str, display: &Display) {
+    // Generators are in the generators table and have cell data.
+    if let Some((_, dim)) = complex.find_generator(name) {
+        if dim == 0 {
+            display.meta(&format!("{} (dim 0): 0-cell", name));
+        } else {
+            // Reconstruct boundary from the diagram stored for this name.
+            if let Some(diag) = complex.find_diagram(name) {
+                print_diagram_with_boundary(name, diag, complex, display);
+            } else {
+                display.meta(&format!("{} (dim {}): (no diagram)", name, dim));
+            }
+        }
+        return;
+    }
+
+    // Let bindings are in the diagrams table but not the generators table.
+    if let Some(diag) = complex.find_diagram(name) {
+        print_diagram_with_boundary(name, diag, complex, display);
+        // Also show the definition (the full diagram render).
+        display.meta(&format!("  = {}", render_diagram(diag, complex)));
+        return;
+    }
+
+    display.error(&format!("'{}' not found in type", name));
+}
+
+fn print_diagram_with_boundary(name: &str, diag: &crate::core::diagram::Diagram, complex: &Complex, display: &Display) {
+    let d = diag.top_dim();
+    if d == 0 {
+        display.meta(&format!("{} (dim 0): 0-cell", name));
+        return;
+    }
+    let k = d - 1;
+    match (
+        crate::core::diagram::Diagram::boundary(Sign::Source, k, diag),
+        crate::core::diagram::Diagram::boundary(Sign::Target, k, diag),
+    ) {
+        (Ok(src), Ok(tgt)) => display.meta(&format!(
+            "{} (dim {}): {}  ->  {}",
+            name, d,
+            render_diagram(&src, complex),
+            render_diagram(&tgt, complex),
+        )),
+        _ => display.meta(&format!("{} (dim {}): (boundary extraction failed)", name, d)),
+    }
+}
+
 /// Dispatch all commands that require an active engine.
 fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) {
     match cmd {
@@ -542,7 +603,7 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
         Cmd::Help => print_help(display),
         Cmd::Quit => {}   // handled by caller
         // These are all handled before dispatch_engine_cmd is reached
-        Cmd::Clear | Cmd::Source(_) | Cmd::Target(_) | Cmd::AtExpr(_) | Cmd::Types => unreachable!(),
+        Cmd::Clear | Cmd::Source(_) | Cmd::Target(_) | Cmd::AtExpr(_) | Cmd::Types | Cmd::Print(_) => unreachable!(),
         Cmd::Unknown(s) => display.error(&format!("unknown command '{}' — type 'help' for a list", s)),
     }
 }
@@ -552,6 +613,8 @@ fn print_help(display: &Display) {
         "Commands:\n\
          \x20 @ <type>         Select a type from the loaded file\n\
          \x20 types            List all types in the file\n\
+         \x20 print            Print the whole file (as alifib would)\n\
+         \x20 print <name>     Print a cell: boundary, and definition if let-bound\n\
          \x20 source <name>    Set the source diagram\n\
          \x20 target <name>    Set the target diagram\n\
          \x20 apply <n>        Apply rewrite at index <n>            (alias: a)\n\
@@ -577,6 +640,7 @@ fn print_help(display: &Display) {
 enum Cmd {
     AtExpr(String),  // everything after the @ (handed to language::parse_complex)
     Types,
+    Print(Option<String>),  // None = whole complex, Some(name) = specific cell
     Source(String),
     Target(String),
     Apply(usize),
@@ -608,6 +672,10 @@ fn parse_command(line: &str) -> Cmd {
 
     match word {
         "types" | "Types" => Cmd::Types,
+        "print" => {
+            if rest.is_empty() { Cmd::Print(None) }
+            else { Cmd::Print(Some(rest.to_owned())) }
+        }
         "source" => {
             if rest.is_empty() { Cmd::Unknown("source <name>".to_owned()) }
             else { Cmd::Source(rest.to_owned()) }
