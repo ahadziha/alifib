@@ -121,11 +121,16 @@ pub fn run_repl(
 ) -> Result<(), ()> {
     let display = Display::new();
 
-    let (store, canonical_path) = match load_file_context(source_file) {
+    let (store, canonical_path, file_output) = match load_file_context(source_file) {
         Ok(r) => r,
         Err(e) => { display.error(&e); return Err(()); }
     };
 
+    // Print the same output alifib would show when interpreting the file directly.
+    let trimmed = file_output.trim_end();
+    if !trimmed.is_empty() {
+        display.cell(trimmed);
+    }
     display.meta(&format!("Loaded {}", source_file));
 
     let mut rl = make_editor(emacs_mode);

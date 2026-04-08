@@ -48,21 +48,22 @@ pub struct RewriteEngine {
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
-/// Load a file and return the store and canonical file path, without resolving
-/// any type or diagram.
+/// Load a file and return the store, canonical path, and the interpreter's
+/// display output (the same string `alifib <file>` would print to stdout).
 ///
 /// Used by the REPL to load context eagerly at startup so that `types`,
 /// `rules`, and `info` commands can work before the user selects a type.
 pub fn load_file_context(
     source_file: &str,
-) -> Result<(Arc<GlobalStore>, String), String> {
+) -> Result<(Arc<GlobalStore>, String, String), String> {
     let loader = Loader::default(vec![]);
     let file = InterpretedFile::load(&loader, source_file)
         .into_result()
         .map_err(|_| format!("failed to interpret '{}'", source_file))?;
     let canonical_path = file.path.clone();
+    let output = file.to_string();
     let store = Arc::clone(&file.state);
-    Ok((store, canonical_path))
+    Ok((store, canonical_path, output))
 }
 
 /// Resolve a type name to its [`Complex`] given an already-loaded store.
@@ -101,7 +102,7 @@ pub fn load_type_context(
     source_file: &str,
     type_name: &str,
 ) -> Result<(Arc<GlobalStore>, Arc<Complex>, String), String> {
-    let (store, canonical_path) = load_file_context(source_file)?;
+    let (store, canonical_path, _output) = load_file_context(source_file)?;
     let type_complex = resolve_type(&store, &canonical_path, type_name)?;
     Ok((store, type_complex, canonical_path))
 }
