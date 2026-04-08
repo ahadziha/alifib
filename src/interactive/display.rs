@@ -8,6 +8,7 @@ use std::io::IsTerminal;
 // ── The only ANSI codes in the codebase ──────────────────────────────────────
 
 const GREEN: &str = "\x1b[32m";
+const YELLOW: &str = "\x1b[33m";
 const RESET: &str = "\x1b[0m";
 
 // ── Display ───────────────────────────────────────────────────────────────────
@@ -51,6 +52,17 @@ impl Display {
             println!("{GREEN}>>{RESET} {GREEN}error: {text}{RESET}");
         } else {
             println!(">> error: {text}");
+        }
+    }
+
+    /// Print file source: each line prefixed with `<< ` in yellow.
+    pub fn file(&self, text: &str) {
+        for line in text.split('\n') {
+            if self.color {
+                println!("{YELLOW}<<{RESET} {YELLOW}{line}{RESET}");
+            } else {
+                println!("<< {line}");
+            }
         }
     }
 

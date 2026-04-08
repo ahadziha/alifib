@@ -188,7 +188,7 @@ pub fn run_repl(
                     ),
                     Cmd::Print(None) => {
                         let trimmed = file_output.trim_end();
-                        if !trimmed.is_empty() { display.cell(trimmed); }
+                        if !trimmed.is_empty() { display.file(trimmed); }
                     }
                     Cmd::Print(Some(name)) => {
                         match (&engine, &type_complex) {
