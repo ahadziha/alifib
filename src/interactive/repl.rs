@@ -265,7 +265,21 @@ pub fn run_repl(
                             };
                             display.error(msg);
                         }
-                        Some(e) => dispatch_engine_cmd(e, cmd, &display),
+                        Some(e) => {
+                            // Save is handled here because it needs to update the outer type_complex.
+                            if let Cmd::Save(name) = cmd {
+                                match e.register_proof(&name) {
+                                    Ok(new_arc) => {
+                                        display.meta(&format!("Registered '{}' as local definition.", name));
+                                        dispatch_print_cell(e.type_complex(), &name, &display);
+                                        type_complex = Some(new_arc);
+                                    }
+                                    Err(err) => display.error(&err),
+                                }
+                            } else {
+                                dispatch_engine_cmd(e, cmd, &display);
+                            }
+                        }
                     },
                 }
             }
@@ -721,12 +735,6 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
                 }
             }
         }
-        Cmd::Save(path) => {
-            match engine.to_session_file().write(&path) {
-                Ok(()) => display.meta(&format!("Saved session to '{}'.", path)),
-                Err(e) => display.error(&e),
-            }
-        }
         Cmd::Load(path) => {
             match SessionFile::read(&path) {
                 Err(e) => display.error(&e),
@@ -744,9 +752,8 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
         Cmd::Quit => {}   // handled by caller
         // These are all handled before dispatch_engine_cmd is reached
         Cmd::Clear | Cmd::Source(_) | Cmd::Target(_) | Cmd::AtExpr(_) | Cmd::Types
-        | Cmd::PrintFile | Cmd::PrintType(_) | Cmd::PrintCell(_) | Cmd::Status => unreachable!(),
-        Cmd::Unknown(s) => display.error(&format!("unrecognised command '{}' — type 'help' for a list", s)),
-        Cmd::UsageError(usage) => display.error(&format!("usage: {}", usage)),
+        | Cmd::PrintFile | Cmd::PrintType(_) | Cmd::PrintCell(_) | Cmd::Status
+        | Cmd::Save(_) | Cmd::Unknown(_) | Cmd::UsageError(_) => unreachable!(),
     }
 }
 
@@ -772,7 +779,7 @@ fn print_help(display: &Display) {
          \x20 info <name>      Show source -> target of a generator  (alias: i)\n\
          \x20 history          Show the move history                 (alias: h)\n\
          \x20 proof            Show the running proof diagram        (alias: p)\n\
-         \x20 save <path>      Save session to a JSON file\n\
+         \x20 save <name>      Register current proof as a local definition\n\
          \x20 load <path>      Load and replay a session file        (alias: l)\n\
          \x20 help / ?         Show this help\n\
          \x20 quit / exit / q  Exit the REPL"

@@ -432,6 +432,21 @@ impl RewriteEngine {
         })
     }
 
+    /// Register the current running proof as a local definition in the type complex.
+    ///
+    /// Clones the complex, adds `running_diagram` under `name`, and updates the
+    /// engine's own `type_complex` so future lookups see the new definition.
+    /// Returns the updated `Arc<Complex>` so the caller can sync its own reference.
+    pub fn register_proof(&mut self, name: &str) -> Result<Arc<Complex>, String> {
+        let diagram = self.running_diagram.clone()
+            .ok_or_else(|| "no proof steps taken yet".to_owned())?;
+        let mut new_complex = (*self.type_complex).clone();
+        new_complex.add_diagram(name.to_owned(), diagram);
+        let new_arc = Arc::new(new_complex);
+        self.type_complex = Arc::clone(&new_arc);
+        Ok(new_arc)
+    }
+
     /// Export the current session state as a [`SessionFile`] for disk persistence.
     pub fn to_session_file(&self) -> SessionFile {
         SessionFile {
