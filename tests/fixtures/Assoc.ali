@@ -1,0 +1,9 @@
+@Type
+Assoc <<= {
+  pt,
+  a : pt -> pt,
+  alpha : a -> a,
+  beta : alpha alpha -> alpha,
+  let lhs2 = alpha alpha alpha,
+  let rhs2 = alpha
+}

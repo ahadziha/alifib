@@ -3,7 +3,7 @@
 
 use crate::aux::loader::Loader;
 use crate::core::complex::Complex;
-use crate::core::diagram::Diagram;
+use crate::core::diagram::{Diagram, Sign};
 use crate::interpreter::{GlobalStore, InterpretedFile};
 use super::rewrite::{CandidateRewrite, apply_rewrite, find_candidate_rewrites};
 use super::session::SessionFile;
@@ -16,7 +16,11 @@ pub struct SessionState {
     pub type_complex: Arc<Complex>,
     pub source_diagram: Diagram,
     pub target_diagram: Option<Diagram>,
+    /// The current n-dimensional diagram (target boundary of `running_diagram`).
     pub current_diagram: Diagram,
+    /// The running (n+1)-dimensional proof diagram built by composing rewrite steps.
+    /// `None` if no moves have been applied yet.
+    pub running_diagram: Option<Diagram>,
     pub available_rewrites: Vec<CandidateRewrite>,
 }
 
@@ -63,8 +67,6 @@ pub fn replay_session(session: SessionFile) -> Result<SessionState, String> {
     let type_complex = Arc::clone(&type_entry.complex);
 
     // 5. Look up source and target diagrams.
-    // Check the type complex first (let bindings inside the type body),
-    // then fall back to the module complex (top-level let bindings).
     let find_diagram = |name: &str| -> Option<Diagram> {
         type_complex.find_diagram(name).cloned()
             .or_else(|| module_complex.find_diagram(name).cloned())
@@ -85,8 +87,11 @@ pub fn replay_session(session: SessionFile) -> Result<SessionState, String> {
         })
         .transpose()?;
 
-    // 6. Replay moves.
+    // 6. Replay moves, composing (n+1)-dimensional rewrite steps.
+    let n = source_diagram.top_dim();
     let mut current = source_diagram.clone();
+    let mut running: Option<Diagram> = None;
+
     for (step_idx, mov) in session.moves.iter().enumerate() {
         let candidates = find_candidate_rewrites(&store, &type_complex, &current);
 
@@ -110,8 +115,20 @@ pub fn replay_session(session: SessionFile) -> Result<SessionState, String> {
             ));
         }
 
-        current = apply_rewrite(&store, &type_complex, &current, candidate)
+        // Build the (n+1)-dimensional whiskered rewrite step.
+        let step = apply_rewrite(&current, candidate)
             .map_err(|e| format!("replay failed at step {}: {}", step_idx + 1, e))?;
+
+        // Compose: paste the new step onto the running (n+1)-diagram at dim n.
+        running = Some(match running {
+            None => step,
+            Some(r) => Diagram::paste(n, &r, &step)
+                .map_err(|e| format!("compose failed at step {}: {}", step_idx + 1, e))?,
+        });
+
+        // Advance current to the target boundary of the running diagram.
+        current = Diagram::boundary(Sign::Target, n, running.as_ref().unwrap())
+            .map_err(|e| format!("target boundary at step {}: {}", step_idx + 1, e))?;
     }
 
     // 7. Compute available rewrites at the final state.
@@ -124,6 +141,7 @@ pub fn replay_session(session: SessionFile) -> Result<SessionState, String> {
         source_diagram,
         target_diagram,
         current_diagram: current,
+        running_diagram: running,
         available_rewrites,
     })
 }

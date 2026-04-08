@@ -9,3 +9,5 @@ pub mod partial_map;
 mod ogposet;
 mod pushout;
 
+pub use embeddings::Embedding;
+

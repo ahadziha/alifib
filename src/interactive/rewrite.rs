@@ -1,21 +1,26 @@
 //! Core rewrite logic: finding candidate rewrites and applying them.
 
+use crate::aux::Tag;
 use crate::core::complex::Complex;
 use crate::core::diagram::{CellData, Diagram};
+use crate::core::Embedding;
 use crate::interpreter::GlobalStore;
 
 /// A single candidate rewrite at the current diagram.
 pub struct CandidateRewrite {
     /// Name of the (n+1)-generator being used as a rule.
     pub rule_name: String,
+    /// Tag of the (n+1)-generator.
+    pub rule_tag: Tag,
     /// The source boundary of the rule (the pattern being matched).
     pub source_boundary: Diagram,
     /// The target boundary of the rule (the replacement).
     pub target_boundary: Diagram,
     /// Positions of the pattern's top-dim cells within the current diagram.
-    /// Used as a sort key for deterministic ordering and to locate the
-    /// rewrite site for partial matches.
+    /// Used as a sort key for deterministic ordering.
     pub image_positions: Vec<usize>,
+    /// Full embedding ι: source_boundary.shape → current.shape, from subdiagram matching.
+    pub match_embedding: Embedding,
 }
 
 /// Find all candidate rewrites applicable to `current` using the generators
@@ -50,9 +55,11 @@ pub fn find_candidate_rewrites(
             let image_positions = emb.map.last().cloned().unwrap_or_default();
             candidates.push(CandidateRewrite {
                 rule_name: name.clone(),
+                rule_tag: tag.clone(),
                 source_boundary: (*boundary_in).clone(),
                 target_boundary: (*boundary_out).clone(),
                 image_positions,
+                match_embedding: emb,
             });
         }
     }
@@ -69,83 +76,33 @@ pub fn find_candidate_rewrites(
     candidates
 }
 
-/// Apply a rewrite to the current diagram, returning the new current diagram.
+/// Apply a rewrite to the current diagram, returning the whiskered (n+1)-dimensional step.
 ///
-/// For whole-diagram rewrites (`image_positions` covers all top-dim cells),
-/// the result is simply the target boundary of the rule.
+/// The result S has:
+/// - Source n-boundary = `current`
+/// - Target n-boundary = `current` with the matched subdiagram replaced by the rule's target
+/// - One interior (n+1)-cell: the whiskered rule application
 ///
-/// For partial rewrites on 1-dim diagrams, the current diagram is split into
-/// a prefix, the rule's target boundary, and a suffix, then pasted sequentially.
-///
-/// Returns `Err` for unsupported cases (dim > 1 partial rewrites).
+/// Works uniformly for all dimensions.
 pub fn apply_rewrite(
-    store: &GlobalStore,
-    type_complex: &Complex,
     current: &Diagram,
     candidate: &CandidateRewrite,
 ) -> Result<Diagram, String> {
-    let n = current.top_dim();
-    let labels = current.labels_at(n).unwrap_or(&[]);
-
-    // Fast path: whole-diagram match.
-    if candidate.image_positions.len() == labels.len() {
-        return Ok(candidate.target_boundary.clone());
-    }
-
-    // Partial rewrite: only supported for 1-dim diagrams.
-    if n == 0 {
-        return Err("partial rewrite on a 0-dim diagram is not possible".to_string());
-    }
-    if n > 1 {
-        return Err(format!(
-            "partial rewrites for {}-dim diagrams are not yet supported \
-             (requires flow graph decomposition)",
-            n
-        ));
-    }
-
-    // 1-dim partial rewrite: split current into prefix + T + suffix, paste at dim 0.
-    let start = *candidate.image_positions.iter().min().unwrap();
-    let end = *candidate.image_positions.iter().max().unwrap() + 1;
-
-    // Build single-cell diagrams for each atom outside the match.
-    let mut parts: Vec<Diagram> = Vec::new();
-
-    for tag in labels[..start].iter() {
-        let data = store
-            .cell_data_for_tag(type_complex, tag)
-            .ok_or_else(|| format!("cell data not found for prefix tag {:?}", tag))?;
-        let atom = Diagram::cell(tag.clone(), &data)
-            .map_err(|e| format!("failed to reconstruct prefix atom: {:?}", e))?;
-        parts.push(atom);
-    }
-
-    parts.push(candidate.target_boundary.clone());
-
-    for tag in labels[end..].iter() {
-        let data = store
-            .cell_data_for_tag(type_complex, tag)
-            .ok_or_else(|| format!("cell data not found for suffix tag {:?}", tag))?;
-        let atom = Diagram::cell(tag.clone(), &data)
-            .map_err(|e| format!("failed to reconstruct suffix atom: {:?}", e))?;
-        parts.push(atom);
-    }
-
-    // Sequential paste of all parts at dim 0.
-    let mut result = parts.remove(0);
-    for next in parts {
-        result = Diagram::paste(0, &result, &next)
-            .map_err(|e| format!("paste failed during partial rewrite: {:?}", e))?;
-    }
-
-    Ok(result)
+    Diagram::whisker_rewrite(
+        current,
+        &candidate.match_embedding,
+        &candidate.rule_tag,
+        &candidate.source_boundary,
+        &candidate.target_boundary,
+    )
+    .map_err(|e| format!("whisker rewrite failed: {}", e))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::aux::{loader::Loader, Tag};
-    use crate::core::diagram::CellData;
+    use crate::core::diagram::{CellData, Sign};
     use crate::interpreter::InterpretedFile;
     use std::path::PathBuf;
     use std::sync::Arc;
@@ -161,7 +118,7 @@ mod tests {
     fn load_type(
         path: &str,
         type_name: &str,
-    ) -> (Arc<crate::interpreter::GlobalStore>, Arc<crate::core::complex::Complex>) {
+    ) -> (Arc<GlobalStore>, Arc<crate::core::complex::Complex>) {
         let loader = Loader::default(vec![]);
         let file = InterpretedFile::load(&loader, path).ok().expect("fixture should load");
         let store = Arc::clone(&file.state);
@@ -186,7 +143,7 @@ mod tests {
     }
 
     fn gen_boundaries(
-        store: &crate::interpreter::GlobalStore,
+        store: &GlobalStore,
         complex: &crate::core::complex::Complex,
         name: &str,
     ) -> (Diagram, Diagram) {
@@ -202,7 +159,7 @@ mod tests {
     }
 
     fn load_diagram(
-        store: &crate::interpreter::GlobalStore,
+        _store: &GlobalStore,
         complex: &crate::core::complex::Complex,
         name: &str,
     ) -> Diagram {
@@ -210,6 +167,16 @@ mod tests {
             .find_diagram(name)
             .cloned()
             .unwrap_or_else(|| panic!("diagram '{}' not found", name))
+    }
+
+    // Helper: extract source/target n-boundaries from an (n+1)-step.
+    fn step_boundaries(step: &Diagram) -> (Diagram, Diagram) {
+        let n = step.top_dim() - 1;
+        let src = Diagram::boundary(Sign::Source, n, step)
+            .expect("source boundary extraction failed");
+        let tgt = Diagram::boundary(Sign::Target, n, step)
+            .expect("target boundary extraction failed");
+        (src, tgt)
     }
 
     // ── Phase 1 (whole-diagram) tests ────────────────────────────────────────
@@ -229,25 +196,27 @@ mod tests {
     #[test]
     fn find_rewrites_no_match_when_source_differs() {
         let (store, complex) = load_type(&fixture("Idem.ali"), "Idem");
-
-        // `idem` has source `id id` (2 cells). If current is `id` (1 cell),
-        // no embedding exists — so zero candidates.
         let id_classifier = complex.classifier("id").expect("id classifier").clone();
-
         let candidates = find_candidate_rewrites(&store, &complex, &id_classifier);
         assert_eq!(candidates.len(), 0, "no match when source boundary ≇ current");
     }
 
     #[test]
-    fn apply_rewrite_returns_target_boundary() {
+    fn apply_rewrite_returns_step_with_correct_boundaries() {
         let (store, complex) = load_type(&fixture("Idem.ali"), "Idem");
         let (idem_src, idem_tgt) = gen_boundaries(&store, &complex, "idem");
 
         let candidates = find_candidate_rewrites(&store, &complex, &idem_src);
         assert_eq!(candidates.len(), 1);
 
-        let result = apply_rewrite(&store, &complex, &idem_src, &candidates[0]).unwrap();
-        assert!(Diagram::equal(&result, &idem_tgt));
+        let step = apply_rewrite(&idem_src, &candidates[0]).unwrap();
+
+        // Step is 2-dimensional (one above source).
+        assert_eq!(step.top_dim(), idem_src.top_dim() + 1);
+
+        let (src, tgt) = step_boundaries(&step);
+        assert!(Diagram::isomorphic(&src, &idem_src), "source boundary should equal current");
+        assert!(Diagram::isomorphic(&tgt, &idem_tgt), "target boundary should equal rule target");
     }
 
     #[test]
@@ -256,8 +225,11 @@ mod tests {
         let (idem_src, idem_tgt) = gen_boundaries(&store, &complex, "idem");
 
         let candidates = find_candidate_rewrites(&store, &complex, &idem_src);
-        let after = apply_rewrite(&store, &complex, &idem_src, &candidates[0]).unwrap();
-        assert!(Diagram::equal(&after, &idem_tgt));
+        let step = apply_rewrite(&idem_src, &candidates[0]).unwrap();
+        let n = idem_src.top_dim();
+        let after = Diagram::boundary(Sign::Target, n, &step).unwrap();
+
+        assert!(Diagram::isomorphic(&after, &idem_tgt));
 
         // `id` (1 cell) has no subdiagram matching `id id` (2 cells).
         let next_candidates = find_candidate_rewrites(&store, &complex, &after);
@@ -269,7 +241,6 @@ mod tests {
     #[test]
     fn find_rewrites_partial_match_two_candidates() {
         let (store, complex) = load_type(&fixture("Idem.ali"), "Idem");
-        // lhs = id id id  (3 cells)
         let lhs = load_diagram(&store, &complex, "lhs");
 
         let candidates = find_candidate_rewrites(&store, &complex, &lhs);
@@ -285,19 +256,24 @@ mod tests {
     #[test]
     fn apply_partial_rewrite_prefix() {
         let (store, complex) = load_type(&fixture("Idem.ali"), "Idem");
-        let lhs = load_diagram(&store, &complex, "lhs");
-        let (_, idem_tgt) = gen_boundaries(&store, &complex, "idem");
+        let lhs = load_diagram(&store, &complex, "lhs"); // id id id
 
         let candidates = find_candidate_rewrites(&store, &complex, &lhs);
-        // choice 0: image_positions = [0, 1]  →  result should be `idem_tgt ; id` = id id
-        let result = apply_rewrite(&store, &complex, &lhs, &candidates[0]).unwrap();
+        // choice 0: image_positions = [0, 1]
+        let step = apply_rewrite(&lhs, &candidates[0]).unwrap();
 
-        // Result has 2 top-dim cells.
-        assert_eq!(result.top_dim(), 1);
-        assert_eq!(result.labels_at(1).map(|l| l.len()), Some(2));
+        assert_eq!(step.top_dim(), lhs.top_dim() + 1);
+
+        let (src, tgt) = step_boundaries(&step);
+        assert!(Diagram::isomorphic(&src, &lhs), "source = lhs");
+
+        // Target should have 2 top-dim cells (id id).
+        let n = lhs.top_dim();
+        assert_eq!(tgt.top_dim(), n);
+        assert_eq!(tgt.labels_at(n).map(|l| l.len()), Some(2));
 
         // It is still rewritable (idem matches the resulting id id).
-        let next = find_candidate_rewrites(&store, &complex, &result);
+        let next = find_candidate_rewrites(&store, &complex, &tgt);
         assert_eq!(next.len(), 1);
     }
 
@@ -307,13 +283,16 @@ mod tests {
         let lhs = load_diagram(&store, &complex, "lhs");
 
         let candidates = find_candidate_rewrites(&store, &complex, &lhs);
-        // choice 1: image_positions = [1, 2]  →  result should be `id ; idem_tgt` = id id
-        let result = apply_rewrite(&store, &complex, &lhs, &candidates[1]).unwrap();
+        // choice 1: image_positions = [1, 2]
+        let step = apply_rewrite(&lhs, &candidates[1]).unwrap();
 
-        assert_eq!(result.top_dim(), 1);
-        assert_eq!(result.labels_at(1).map(|l| l.len()), Some(2));
+        let (src, tgt) = step_boundaries(&step);
+        assert!(Diagram::isomorphic(&src, &lhs));
 
-        let next = find_candidate_rewrites(&store, &complex, &result);
+        let n = lhs.top_dim();
+        assert_eq!(tgt.labels_at(n).map(|l| l.len()), Some(2));
+
+        let next = find_candidate_rewrites(&store, &complex, &tgt);
         assert_eq!(next.len(), 1);
     }
 
@@ -323,19 +302,105 @@ mod tests {
         let lhs = load_diagram(&store, &complex, "lhs");
         let rhs = load_diagram(&store, &complex, "rhs");
 
-        // Step 1: apply idem at [0,1] on id id id → id id
-        let candidates1 = find_candidate_rewrites(&store, &complex, &lhs);
-        let after1 = apply_rewrite(&store, &complex, &lhs, &candidates1[0]).unwrap();
+        let n = lhs.top_dim();
 
-        // Step 2: apply idem at [0,1] on id id → id
+        // Step 1: apply idem at [0,1] on id id id → (n+1)-step
+        let candidates1 = find_candidate_rewrites(&store, &complex, &lhs);
+        let step1 = apply_rewrite(&lhs, &candidates1[0]).unwrap();
+        let after1 = Diagram::boundary(Sign::Target, n, &step1).unwrap();
+
+        // Step 2: apply idem at [0,1] on id id → (n+1)-step
         let candidates2 = find_candidate_rewrites(&store, &complex, &after1);
         assert_eq!(candidates2.len(), 1);
-        let after2 = apply_rewrite(&store, &complex, &after1, &candidates2[0]).unwrap();
+        let step2 = apply_rewrite(&after1, &candidates2[0]).unwrap();
+        let after2 = Diagram::boundary(Sign::Target, n, &step2).unwrap();
 
         // Result equals rhs (= id).
-        assert!(Diagram::equal(&after2, &rhs));
+        assert!(Diagram::isomorphic(&after2, &rhs));
+
+        // Compose steps: paste at dim n.
+        let composed = Diagram::paste(n, &step1, &step2)
+            .expect("composed steps should be pasteable at dim n");
+        assert_eq!(composed.top_dim(), n + 1);
 
         // No further rewrites.
+        let final_cands = find_candidate_rewrites(&store, &complex, &after2);
+        assert_eq!(final_cands.len(), 0);
+    }
+
+    // ── Phase 3 (2-dim partial rewrites producing 3-dim cells) ───────────────
+
+    #[test]
+    fn find_2dim_rewrites_two_candidates() {
+        let (store, complex) = load_type(&fixture("Assoc.ali"), "Assoc");
+        let lhs2 = load_diagram(&store, &complex, "lhs2");
+
+        let candidates = find_candidate_rewrites(&store, &complex, &lhs2);
+
+        // beta (source: alpha alpha, 2 cells) matches at positions [0,1] or [1,2].
+        assert_eq!(candidates.len(), 2, "expected two 2-dim candidates");
+        assert_eq!(candidates[0].rule_name, "beta");
+        assert_eq!(candidates[0].image_positions, vec![0, 1]);
+        assert_eq!(candidates[1].rule_name, "beta");
+        assert_eq!(candidates[1].image_positions, vec![1, 2]);
+    }
+
+    #[test]
+    fn apply_2dim_rewrite_returns_3dim_step() {
+        let (store, complex) = load_type(&fixture("Assoc.ali"), "Assoc");
+        let lhs2 = load_diagram(&store, &complex, "lhs2");
+
+        let candidates = find_candidate_rewrites(&store, &complex, &lhs2);
+        assert_eq!(candidates.len(), 2);
+
+        let step = apply_rewrite(&lhs2, &candidates[0]).unwrap();
+
+        // Step is 3-dimensional.
+        assert_eq!(step.top_dim(), lhs2.top_dim() + 1);
+
+        let (src, tgt) = step_boundaries(&step);
+        assert!(Diagram::isomorphic(&src, &lhs2), "source = lhs2");
+
+        // Target should have 2 top-dim cells (alpha alpha).
+        let n = lhs2.top_dim();
+        assert_eq!(tgt.top_dim(), n);
+        assert_eq!(tgt.labels_at(n).map(|l| l.len()), Some(2));
+
+        // Still rewritable: beta matches the resulting alpha alpha.
+        let next = find_candidate_rewrites(&store, &complex, &tgt);
+        assert_eq!(next.len(), 1);
+    }
+
+    #[test]
+    fn apply_2dim_rewrite_chain_to_rhs() {
+        let (store, complex) = load_type(&fixture("Assoc.ali"), "Assoc");
+        let lhs2 = load_diagram(&store, &complex, "lhs2");
+        let rhs2 = load_diagram(&store, &complex, "rhs2");
+
+        let n = lhs2.top_dim();
+
+        // Step 1: apply beta at [0,1] on alpha alpha alpha → 3-dim step
+        let candidates1 = find_candidate_rewrites(&store, &complex, &lhs2);
+        let step1 = apply_rewrite(&lhs2, &candidates1[0]).unwrap();
+        assert_eq!(step1.top_dim(), n + 1);
+        let after1 = Diagram::boundary(Sign::Target, n, &step1).unwrap();
+
+        // Step 2: apply beta on alpha alpha → 3-dim step
+        let candidates2 = find_candidate_rewrites(&store, &complex, &after1);
+        assert_eq!(candidates2.len(), 1);
+        let step2 = apply_rewrite(&after1, &candidates2[0]).unwrap();
+        assert_eq!(step2.top_dim(), n + 1);
+        let after2 = Diagram::boundary(Sign::Target, n, &step2).unwrap();
+
+        // Result equals rhs2 (= alpha).
+        assert!(Diagram::isomorphic(&after2, &rhs2));
+
+        // Compose steps: paste at dim n into a (n+1)-dim proof.
+        let composed = Diagram::paste(n, &step1, &step2)
+            .expect("3-dim steps should be pasteable at dim n");
+        assert_eq!(composed.top_dim(), n + 1);
+
+        // No further rewrites from rhs2.
         let final_cands = find_candidate_rewrites(&store, &complex, &after2);
         assert_eq!(final_cands.len(), 0);
     }

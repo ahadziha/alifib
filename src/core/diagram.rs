@@ -405,6 +405,19 @@ impl Diagram {
 
     /// Construct an n-dimensional cell with the given tag and parallel boundary diagrams.
     fn cell_n(tag: Tag, source: &Diagram, target: &Diagram) -> Result<Diagram, Error> {
+        let (diagram, _) = Diagram::cell_with_source_embedding(tag, source, target)?;
+        Ok(diagram)
+    }
+
+    /// Like `cell_n` but also returns the embedding of the source boundary into the new cell.
+    ///
+    /// The embedding maps `source.shape` into the cell's shape, identifying source cells
+    /// with their positions in the merged boundary ogposet (dims 0..=n) of the cell.
+    pub(super) fn cell_with_source_embedding(
+        tag: Tag,
+        source: &Diagram,
+        target: &Diagram,
+    ) -> Result<(Diagram, Embedding), Error> {
         let m = Diagram::parallelism(source, target)?;
 
         let d = source.top_dim();
@@ -429,7 +442,81 @@ impl Diagram {
         let history_uv =
             build_cell_paste_history(d, &tag, &source.paste_history, &target.paste_history);
 
-        Ok(Diagram::make(shape_uv, labels_uv, history_uv))
+        let diagram = Diagram::make(Arc::clone(&shape_uv), labels_uv, history_uv);
+
+        // The source embedding: source.shape → shape_uv.
+        // `inl` maps source.shape → bd_uv. In shape_uv, dims 0..=d are exactly bd_uv's
+        // cells (same indices). Extend inl's inverse to cover dim d+1 (the new top cell,
+        // which has no preimage in the source).
+        let source_map = inl.map.clone();
+        let mut source_inv = inl.inv.clone();
+        source_inv.push(vec![NO_PREIMAGE]); // dim d+1: one cell, no preimage from source
+        let source_emb = Embedding::make(
+            Arc::clone(&source.shape),
+            Arc::clone(&shape_uv),
+            source_map,
+            source_inv,
+        );
+
+        Ok((diagram, source_emb))
+    }
+
+    /// Construct the (n+1)-dimensional whiskered rewrite step S = U ∪_V R.
+    ///
+    /// Given:
+    /// - `current` (U): the n-dimensional current diagram
+    /// - `match_emb` (ι): embedding V.shape → U.shape from subdiagram matching
+    /// - `rule_tag`: the tag of the (n+1)-generator being applied
+    /// - `source` (V): the rule's source boundary (the matched pattern)
+    /// - `target` (T): the rule's target boundary (the replacement)
+    ///
+    /// Returns an (n+1)-dimensional diagram S with:
+    /// - Source n-boundary = U
+    /// - Target n-boundary = U[V → T]
+    /// - One interior (n+1)-cell (the whiskered rule application)
+    ///
+    /// Works uniformly for all n ≥ 0.
+    pub fn whisker_rewrite(
+        current: &Diagram,
+        match_emb: &Embedding,
+        rule_tag: &Tag,
+        source: &Diagram,
+        target: &Diagram,
+    ) -> Result<Diagram, Error> {
+        // Build rule cell R and get the source-boundary embedding σ: V → R.
+        let (rule_cell, source_into_rule) =
+            Diagram::cell_with_source_embedding(rule_tag.clone(), source, target)?;
+
+        // Pushout: S = U ∪_V R.
+        // match_emb: V → U   and   source_into_rule: V → R share dom = V.shape.
+        let Pushout { tip, inl, inr } =
+            super::pushout::pushout(match_emb, &source_into_rule);
+
+        // Merge labels from U (dims 0..n) and R (dims 0..n+1).
+        let result_labels = merge_pushout_labels(
+            &tip.sizes(),
+            &inl.map,
+            &inr.map,
+            &current.labels,
+            &rule_cell.labels,
+            "whisker rewrite: all cells should be labelled",
+        );
+
+        // Paste history: inherit from current for dims 0..n; add leaf at dim n+1.
+        let n = current.top_dim();
+        let mut history = current.paste_history.clone();
+        if history.len() <= n {
+            // Pad in case paste_history is shorter than expected (e.g., for 0-dim diagrams).
+            history.resize_with(n + 1, || BoundaryHistory::from_pair(
+                missing_tree(), missing_tree(),
+            ));
+        }
+        history.push(BoundaryHistory::from_pair(
+            PasteTree::Leaf(rule_tag.clone()),
+            PasteTree::Leaf(rule_tag.clone()),
+        ));
+
+        Ok(Diagram::make(tip, result_labels, history))
     }
 }
 
