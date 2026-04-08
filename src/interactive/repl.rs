@@ -606,7 +606,7 @@ fn dispatch_print_cell(complex: &Complex, name: &str, display: &Display) {
     // Let bindings are in the diagrams table but not the generators table.
     if let Some(diag) = complex.find_diagram(name) {
         let dim = diag.top_dim();
-        display.inspect(&format!("{} (let, dim {})", name, dim));
+        display.inspect(&format!("{} (local definition, dim {})", name, dim));
         if dim > 0 {
             print_diagram_with_boundary(diag, complex, display);
         }
