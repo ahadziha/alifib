@@ -213,6 +213,9 @@ pub fn run_repl(
 
                     // ── Commands that need type to be set ─────────────
                     Cmd::Source(name) => {
+                        if let Some(tc) = type_complex.as_deref() {
+                            dispatch_print_cell(tc, &name, &display);
+                        }
                         pending_source = Some(name);
                         maybe_start_engine(
                             &type_complex, &type_name_str, &pending_source, &pending_target,
@@ -220,6 +223,9 @@ pub fn run_repl(
                         );
                     }
                     Cmd::Target(name) => {
+                        if let Some(tc) = type_complex.as_deref() {
+                            dispatch_print_cell(tc, &name, &display);
+                        }
                         pending_target = Some(name);
                         maybe_start_engine(
                             &type_complex, &type_name_str, &pending_source, &pending_target,
