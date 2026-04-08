@@ -117,12 +117,11 @@ pub fn print_state(
     display.meta("rewrites:");
     for (i, c) in rewrites.iter().enumerate() {
         let highlight = render_match_highlight(current, scope, &c.image_positions);
-        let tgt = render_diagram(&c.target_boundary, scope);
         let rule_src = render_diagram(&c.source_boundary, scope);
         let rule_tgt = render_diagram(&c.target_boundary, scope);
         display.blank();
-        display.inspect(&format!("  {i}  {highlight}  ->  {tgt}"));
-        display.inspect(&format!("    by {} : {} -> {}", c.rule_name, rule_src, rule_tgt));
+        display.inspect(&format!("  ({i}) {highlight}"));
+        display.inspect(&format!("      by {} : {} -> {}", c.rule_name, rule_src, rule_tgt));
     }
 }
 
