@@ -8,11 +8,161 @@
 //!   alifib rewrite done   --session <p> [--format text|json]
 //!   alifib repl <file> --type <t> --source <s> [--target <t>]
 
+use serde::Serialize;
+
 use crate::output::render_diagram;
-use super::engine::replay_session;
-use super::output::{AvailableRewrite, OutputFormat, RewriteResponse, Status};
-use super::session::{Move, SessionFile};
+use super::engine::RewriteEngine;
+use super::session::SessionFile;
 use super::repl::run_repl;
+
+const REWRITE_USAGE: &str = "\
+Usage: alifib rewrite <subcommand> [options]
+
+Subcommands:
+  init   --file <f> --type <t> --source <s> [--target <t>] --session <p> [--format text|json]
+  step   --session <p> --choice <n> [--format text|json]
+  undo   --session <p> [--format text|json]
+  show   --session <p> [--format text|json]
+  done   --session <p> [--format text|json]
+";
+
+// ── Output types ──────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputFormat { Text, Json }
+
+impl OutputFormat {
+    pub fn parse(s: &str) -> Result<Self, String> {
+        match s {
+            "text" => Ok(Self::Text),
+            "json" => Ok(Self::Json),
+            other  => Err(format!("unknown format '{}': expected 'text' or 'json'", other)),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum Status { Ok, Error }
+
+#[derive(Debug, Serialize)]
+struct AvailableRewrite {
+    index: usize,
+    rule_name: String,
+    rule_source: String,
+    rule_target: String,
+}
+
+#[derive(Debug, Serialize)]
+struct RewriteResponse {
+    status: Status,
+    step_count: usize,
+    current_diagram: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    target_diagram: Option<String>,
+    target_reached: bool,
+    available_rewrites: Vec<AvailableRewrite>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+impl RewriteResponse {
+    fn from_engine(engine: &RewriteEngine) -> Self {
+        let scope = engine.type_complex();
+        Self {
+            status: Status::Ok,
+            step_count: engine.step_count(),
+            current_diagram: render_diagram(engine.current_diagram(), scope),
+            target_diagram: engine.target_diagram().map(|t| render_diagram(t, scope)),
+            target_reached: engine.target_reached(),
+            available_rewrites: engine
+                .available_rewrites()
+                .iter()
+                .enumerate()
+                .map(|(i, c)| AvailableRewrite {
+                    index: i,
+                    rule_name: c.rule_name.clone(),
+                    rule_source: render_diagram(&c.source_boundary, scope),
+                    rule_target: render_diagram(&c.target_boundary, scope),
+                })
+                .collect(),
+            error: None,
+        }
+    }
+
+    fn error(msg: impl Into<String>) -> Self {
+        Self {
+            status: Status::Error,
+            step_count: 0,
+            current_diagram: String::new(),
+            target_diagram: None,
+            target_reached: false,
+            available_rewrites: vec![],
+            error: Some(msg.into()),
+        }
+    }
+
+    fn print(&self, format: OutputFormat) {
+        match format {
+            OutputFormat::Json => println!("{}", serde_json::to_string_pretty(self).unwrap()),
+            OutputFormat::Text => self.print_text(),
+        }
+    }
+
+    fn print_text(&self) {
+        if let Status::Error = self.status {
+            eprintln!("error: {}", self.error.as_deref().unwrap_or("unknown"));
+            return;
+        }
+        println!("step: {}", self.step_count);
+        println!("current: {}", self.current_diagram);
+        if let Some(t) = &self.target_diagram {
+            println!("target:  {}", t);
+        }
+        if self.target_reached {
+            println!("target reached.");
+        }
+        if self.available_rewrites.is_empty() {
+            println!("no rewrites available.");
+        } else {
+            println!("\navailable rewrites:");
+            for r in &self.available_rewrites {
+                println!("  [{}] {}  :  {}  ->  {}", r.index, r.rule_name, r.rule_source, r.rule_target);
+            }
+        }
+    }
+}
+
+// ── Rewrite subcommand types ──────────────────────────────────────────────────
+
+/// A parsed `alifib rewrite` subcommand and its arguments.
+pub enum RewriteCommand {
+    Init {
+        file: String,
+        type_name: String,
+        source: String,
+        target: Option<String>,
+        session: String,
+        format: OutputFormat,
+    },
+    Step {
+        session: String,
+        choice: usize,
+        format: OutputFormat,
+    },
+    Undo {
+        session: String,
+        format: OutputFormat,
+    },
+    Show {
+        session: String,
+        format: OutputFormat,
+    },
+    Done {
+        session: String,
+        format: OutputFormat,
+    },
+}
 
 /// Arguments for the `alifib repl` subcommand.
 pub struct ReplArgs {
@@ -20,6 +170,23 @@ pub struct ReplArgs {
     pub type_name: String,
     pub source: String,
     pub target: Option<String>,
+}
+
+// ── Parsers ───────────────────────────────────────────────────────────────────
+
+/// Parse the arguments following `alifib rewrite` into a [`RewriteCommand`].
+pub fn parse_rewrite_args(args: &[String]) -> Result<RewriteCommand, String> {
+    let sub = args.first().ok_or_else(|| REWRITE_USAGE.to_string())?;
+    let rest = &args[1..];
+    match sub.as_str() {
+        "init" => parse_init(rest),
+        "step" => parse_step(rest),
+        "undo" => parse_undo(rest),
+        "show" => parse_show(rest),
+        "done" => parse_done(rest),
+        "-h" | "--help" => Err(REWRITE_USAGE.to_string()),
+        other => Err(format!("unknown rewrite subcommand '{}'\n{}", other, REWRITE_USAGE)),
+    }
 }
 
 const REPL_USAGE: &str = "\
@@ -58,67 +225,6 @@ pub fn parse_repl_args(args: &[String]) -> Result<ReplArgs, String> {
         source:    source.ok_or("repl: --source is required")?,
         target,
     })
-}
-
-/// Run the REPL with the given arguments.
-pub fn run_repl_cmd(args: ReplArgs) -> Result<(), ()> {
-    run_repl(&args.file, &args.type_name, &args.source, args.target.as_deref())
-}
-
-const REWRITE_USAGE: &str = "\
-Usage: alifib rewrite <subcommand> [options]
-
-Subcommands:
-  init   --file <f> --type <t> --source <s> [--target <t>] --session <p> [--format text|json]
-  step   --session <p> --choice <n> [--format text|json]
-  undo   --session <p> [--format text|json]
-  show   --session <p> [--format text|json]
-  done   --session <p> [--format text|json]
-";
-
-/// A parsed `alifib rewrite` subcommand and its arguments.
-pub enum RewriteCommand {
-    Init {
-        file: String,
-        type_name: String,
-        source: String,
-        target: Option<String>,
-        session: String,
-        format: OutputFormat,
-    },
-    Step {
-        session: String,
-        choice: usize,
-        format: OutputFormat,
-    },
-    Undo {
-        session: String,
-        format: OutputFormat,
-    },
-    Show {
-        session: String,
-        format: OutputFormat,
-    },
-    Done {
-        session: String,
-        format: OutputFormat,
-    },
-}
-
-/// Parse the arguments following `alifib rewrite` into a [`RewriteCommand`].
-pub fn parse_rewrite_args(args: &[String]) -> Result<RewriteCommand, String> {
-    let sub = args.first().ok_or_else(|| REWRITE_USAGE.to_string())?;
-    let rest = &args[1..];
-
-    match sub.as_str() {
-        "init" => parse_init(rest),
-        "step" => parse_step(rest),
-        "undo" => parse_undo(rest),
-        "show" => parse_show(rest),
-        "done" => parse_done(rest),
-        "-h" | "--help" => Err(REWRITE_USAGE.to_string()),
-        other => Err(format!("unknown rewrite subcommand '{}'\n{}", other, REWRITE_USAGE)),
-    }
 }
 
 fn parse_init(args: &[String]) -> Result<RewriteCommand, String> {
@@ -224,127 +330,92 @@ fn next_arg<'a>(it: &mut impl Iterator<Item = &'a String>, flag: &str) -> Result
         .map(|s| s.clone())
 }
 
-/// Execute a parsed [`RewriteCommand`], printing output and returning
-/// `Ok(())` on success or `Err(())` on failure (error already printed).
+// ── Dispatchers ───────────────────────────────────────────────────────────────
+
+/// Execute a parsed [`RewriteCommand`].
 pub fn run_rewrite(cmd: RewriteCommand) -> Result<(), ()> {
     match cmd {
         RewriteCommand::Init { file, type_name, source, target, session: session_path, format } => {
-            let session = SessionFile {
-                source_file: file,
-                type_name,
-                source_diagram: source,
-                target_diagram: target,
-                moves: vec![],
+            let engine = match RewriteEngine::init(&file, &type_name, &source, target.as_deref()) {
+                Ok(e) => e,
+                Err(e) => { RewriteResponse::error(e).print(format); return Err(()); }
             };
-            run_and_print(session, &session_path, true, format)
-        }
-        RewriteCommand::Step { session: session_path, choice, format } => {
-            let session = match SessionFile::read(&session_path) {
-                Ok(s) => s,
-                Err(e) => { print_error(&e, format); return Err(()); }
-            };
-            // Replay to get current state so we can record the rule name for this choice.
-            let state = match replay_session(session.clone()) {
-                Ok(s) => s,
-                Err(e) => { print_error(&e, format); return Err(()); }
-            };
-            let candidate = match state.available_rewrites.get(choice) {
-                Some(c) => c,
-                None => {
-                    let msg = format!(
-                        "choice {} out of range ({} rewrite(s) available)",
-                        choice,
-                        state.available_rewrites.len()
-                    );
-                    print_error(&msg, format);
-                    return Err(());
-                }
-            };
-            let mov = Move { choice, rule_name: candidate.rule_name.clone() };
-            let mut updated = session;
-            updated.moves.push(mov);
-            run_and_print(updated, &session_path, true, format)
-        }
-        RewriteCommand::Undo { session: session_path, format } => {
-            let mut session = match SessionFile::read(&session_path) {
-                Ok(s) => s,
-                Err(e) => { print_error(&e, format); return Err(()); }
-            };
-            if session.moves.is_empty() {
-                print_error("nothing to undo", format);
+            let sf = engine.to_session_file();
+            if let Err(e) = sf.write(&session_path) {
+                RewriteResponse::error(e).print(format);
                 return Err(());
             }
-            session.moves.pop();
-            run_and_print(session, &session_path, true, format)
+            RewriteResponse::from_engine(&engine).print(format);
+            Ok(())
+        }
+        RewriteCommand::Step { session: session_path, choice, format } => {
+            let sf = match SessionFile::read(&session_path) {
+                Ok(s) => s,
+                Err(e) => { RewriteResponse::error(e).print(format); return Err(()); }
+            };
+            let mut engine = match RewriteEngine::from_session(sf) {
+                Ok(e) => e,
+                Err(e) => { RewriteResponse::error(e).print(format); return Err(()); }
+            };
+            if let Err(e) = engine.step(choice) {
+                RewriteResponse::error(e).print(format);
+                return Err(());
+            }
+            if let Err(e) = engine.to_session_file().write(&session_path) {
+                RewriteResponse::error(e).print(format);
+                return Err(());
+            }
+            RewriteResponse::from_engine(&engine).print(format);
+            Ok(())
+        }
+        RewriteCommand::Undo { session: session_path, format } => {
+            let sf = match SessionFile::read(&session_path) {
+                Ok(s) => s,
+                Err(e) => { RewriteResponse::error(e).print(format); return Err(()); }
+            };
+            let mut engine = match RewriteEngine::from_session(sf) {
+                Ok(e) => e,
+                Err(e) => { RewriteResponse::error(e).print(format); return Err(()); }
+            };
+            if let Err(e) = engine.undo() {
+                RewriteResponse::error(e).print(format);
+                return Err(());
+            }
+            if let Err(e) = engine.to_session_file().write(&session_path) {
+                RewriteResponse::error(e).print(format);
+                return Err(());
+            }
+            RewriteResponse::from_engine(&engine).print(format);
+            Ok(())
         }
         RewriteCommand::Show { session: session_path, format } => {
-            let session = match SessionFile::read(&session_path) {
+            let sf = match SessionFile::read(&session_path) {
                 Ok(s) => s,
-                Err(e) => { print_error(&e, format); return Err(()); }
+                Err(e) => { RewriteResponse::error(e).print(format); return Err(()); }
             };
-            run_and_print(session, &session_path, false, format)
+            let engine = match RewriteEngine::from_session(sf) {
+                Ok(e) => e,
+                Err(e) => { RewriteResponse::error(e).print(format); return Err(()); }
+            };
+            RewriteResponse::from_engine(&engine).print(format);
+            Ok(())
         }
         RewriteCommand::Done { session: session_path, format } => {
-            let session = match SessionFile::read(&session_path) {
+            let sf = match SessionFile::read(&session_path) {
                 Ok(s) => s,
-                Err(e) => { print_error(&e, format); return Err(()); }
+                Err(e) => { RewriteResponse::error(e).print(format); return Err(()); }
             };
-            run_and_print(session, &session_path, false, format)
+            let engine = match RewriteEngine::from_session(sf) {
+                Ok(e) => e,
+                Err(e) => { RewriteResponse::error(e).print(format); return Err(()); }
+            };
+            RewriteResponse::from_engine(&engine).print(format);
+            Ok(())
         }
     }
 }
 
-/// Replay `session`, write it back to disk if `write_back` is true, then
-/// print the [`RewriteResponse`]. Returns `Err(())` if anything fails.
-fn run_and_print(
-    session: SessionFile,
-    session_path: &str,
-    write_back: bool,
-    format: OutputFormat,
-) -> Result<(), ()> {
-    let step_count = session.moves.len();
-    let state = match replay_session(session) {
-        Ok(s) => s,
-        Err(e) => { print_error(&e, format); return Err(()); }
-    };
-
-    if write_back {
-        if let Err(e) = state.session.write(session_path) {
-            print_error(&e, format);
-            return Err(());
-        }
-    }
-
-    let current_str = render_diagram(&state.current_diagram, &state.type_complex);
-    let target_str = state.target_diagram.as_ref()
-        .map(|t| render_diagram(t, &state.type_complex));
-    let target_reached = state.target_reached();
-
-    let available: Vec<AvailableRewrite> = state.available_rewrites
-        .iter()
-        .enumerate()
-        .map(|(i, c)| AvailableRewrite {
-            index: i,
-            rule_name: c.rule_name.clone(),
-            rule_source: render_diagram(&c.source_boundary, &state.type_complex),
-            rule_target: render_diagram(&c.target_boundary, &state.type_complex),
-        })
-        .collect();
-
-    let response = RewriteResponse {
-        status: Status::Ok,
-        step_count,
-        current_diagram: current_str,
-        target_diagram: target_str,
-        target_reached,
-        available_rewrites: available,
-        error: None,
-    };
-
-    response.print(format);
-    Ok(())
-}
-
-fn print_error(msg: &str, format: OutputFormat) {
-    RewriteResponse::error(msg).print(format);
+/// Run the REPL with the given arguments.
+pub fn run_repl_cmd(args: ReplArgs) -> Result<(), ()> {
+    run_repl(&args.file, &args.type_name, &args.source, args.target.as_deref())
 }
