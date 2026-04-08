@@ -186,11 +186,14 @@ pub fn run_repl(
                         pending_target.as_deref(),
                         &display,
                     ),
-                    Cmd::Print(None) => {
+                    Cmd::PrintFile => {
                         let trimmed = file_output.trim_end();
                         if !trimmed.is_empty() { display.file(trimmed); }
                     }
-                    Cmd::Print(Some(name)) => {
+                    Cmd::PrintType(name) => {
+                        dispatch_print_type(&store, &canonical_path, &name, &display);
+                    }
+                    Cmd::PrintCell(name) => {
                         match (&engine, &type_complex) {
                             (Some(e), _) => dispatch_print_cell(e.type_complex(), &name, &display),
                             (None, Some(tc)) => dispatch_print_cell(tc, &name, &display),
@@ -263,10 +266,11 @@ pub fn dispatch_rewrite_command(
 ) -> DispatchResult {
     match parse_command(line) {
         Cmd::Quit => return DispatchResult::Quit,
-        Cmd::Clear | Cmd::Source(_) | Cmd::Target(_) | Cmd::AtExpr(_) | Cmd::Types | Cmd::Print(None) => {
+        Cmd::Clear | Cmd::Source(_) | Cmd::Target(_) | Cmd::AtExpr(_) | Cmd::Types | Cmd::PrintFile => {
             display.error("command not available here");
         }
-        Cmd::Print(Some(name)) => dispatch_print_cell(engine.type_complex(), &name, display),
+        Cmd::PrintType(_) => display.error("command not available here"),
+        Cmd::PrintCell(name) => dispatch_print_cell(engine.type_complex(), &name, display),
         Cmd::Status => dispatch_status(
             Some(engine),
             engine.source_file(),
@@ -546,23 +550,33 @@ fn dispatch_info(complex: &Complex, store: &GlobalStore, name: &str, display: &D
     }
 }
 
+/// Print a named type from the module by looking it up in the normalized store.
+fn dispatch_print_type(store: &GlobalStore, canonical_path: &str, name: &str, display: &Display) {
+    let normalized = store.normalize();
+    let module = normalized.modules.iter().find(|m| m.path == canonical_path);
+    let Some(module) = module else {
+        display.error(&format!("module '{}' not found", canonical_path));
+        return;
+    };
+    let Some(ty) = module.types.iter().find(|t| t.name == name) else {
+        display.error(&format!("type '{}' not found in file", name));
+        return;
+    };
+    display.file(&ty.to_string().trim_end().to_owned());
+}
+
 /// Print a named cell from the type complex.
 ///
-/// - **Generator** (`name : src -> tgt`): shows dimension and boundary.
-/// - **Let binding** (`let name = expr`): shows dimension, boundary, and the
-///   full definition diagram.
+/// - **Generator** (`name : src -> tgt`): labelled `generator`, shows boundary.
+/// - **Let binding** (`let name = expr`): labelled `let`, shows boundary and `= definition`.
 /// - **Neither**: reports an error.
 fn dispatch_print_cell(complex: &Complex, name: &str, display: &Display) {
     // Generators are in the generators table and have cell data.
     if let Some((_, dim)) = complex.find_generator(name) {
-        if dim == 0 {
-            display.meta(&format!("{} (dim 0): 0-cell", name));
-        } else {
-            // Reconstruct boundary from the diagram stored for this name.
+        display.meta(&format!("{} (generator, dim {})", name, dim));
+        if dim > 0 {
             if let Some(diag) = complex.find_diagram(name) {
-                print_diagram_with_boundary(name, diag, complex, display);
-            } else {
-                display.meta(&format!("{} (dim {}): (no diagram)", name, dim));
+                print_diagram_with_boundary(diag, complex, display);
             }
         }
         return;
@@ -570,8 +584,11 @@ fn dispatch_print_cell(complex: &Complex, name: &str, display: &Display) {
 
     // Let bindings are in the diagrams table but not the generators table.
     if let Some(diag) = complex.find_diagram(name) {
-        print_diagram_with_boundary(name, diag, complex, display);
-        // Also show the definition (the full diagram render).
+        let dim = diag.top_dim();
+        display.meta(&format!("{} (let, dim {})", name, dim));
+        if dim > 0 {
+            print_diagram_with_boundary(diag, complex, display);
+        }
         display.meta(&format!("  = {}", render_diagram(diag, complex)));
         return;
     }
@@ -579,24 +596,19 @@ fn dispatch_print_cell(complex: &Complex, name: &str, display: &Display) {
     display.error(&format!("'{}' not found in type", name));
 }
 
-fn print_diagram_with_boundary(name: &str, diag: &crate::core::diagram::Diagram, complex: &Complex, display: &Display) {
+fn print_diagram_with_boundary(diag: &crate::core::diagram::Diagram, complex: &Complex, display: &Display) {
     let d = diag.top_dim();
-    if d == 0 {
-        display.meta(&format!("{} (dim 0): 0-cell", name));
-        return;
-    }
     let k = d - 1;
     match (
         crate::core::diagram::Diagram::boundary(Sign::Source, k, diag),
         crate::core::diagram::Diagram::boundary(Sign::Target, k, diag),
     ) {
         (Ok(src), Ok(tgt)) => display.meta(&format!(
-            "{} (dim {}): {}  ->  {}",
-            name, d,
+            "  {}  ->  {}",
             render_diagram(&src, complex),
             render_diagram(&tgt, complex),
         )),
-        _ => display.meta(&format!("{} (dim {}): (boundary extraction failed)", name, d)),
+        _ => display.meta("  (boundary extraction failed)"),
     }
 }
 
@@ -688,7 +700,8 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
         Cmd::Help => print_help(display),
         Cmd::Quit => {}   // handled by caller
         // These are all handled before dispatch_engine_cmd is reached
-        Cmd::Clear | Cmd::Source(_) | Cmd::Target(_) | Cmd::AtExpr(_) | Cmd::Types | Cmd::Print(_) | Cmd::Status => unreachable!(),
+        Cmd::Clear | Cmd::Source(_) | Cmd::Target(_) | Cmd::AtExpr(_) | Cmd::Types
+        | Cmd::PrintFile | Cmd::PrintType(_) | Cmd::PrintCell(_) | Cmd::Status => unreachable!(),
         Cmd::Unknown(s) => display.error(&format!("unknown command '{}' — type 'help' for a list", s)),
     }
 }
@@ -699,8 +712,9 @@ fn print_help(display: &Display) {
          \x20 @ <type>         Select a type from the loaded file\n\
          \x20 types            List all types in the file\n\
          \x20 status           Show current proof state (or module/type if idle)\n\
-         \x20 print            Print the whole file (as alifib would)\n\
-         \x20 print <name>     Print a cell: boundary, and definition if let-bound\n\
+         \x20 print             Print the whole file\n\
+         \x20 print type <n>   Print a type and its generators\n\
+         \x20 print cell <n>   Print a cell: generator or let-binding with boundary\n\
          \x20 source <name>    Set the source diagram\n\
          \x20 target <name>    Set the target diagram\n\
          \x20 apply <n>        Apply rewrite at index <n>            (alias: a)\n\
@@ -727,7 +741,9 @@ enum Cmd {
     AtExpr(String),  // everything after the @ (handed to language::parse_complex)
     Types,
     Status,
-    Print(Option<String>),  // None = whole complex, Some(name) = specific cell
+    PrintFile,
+    PrintType(String),
+    PrintCell(String),
     Source(String),
     Target(String),
     Apply(usize),
@@ -761,8 +777,24 @@ fn parse_command(line: &str) -> Cmd {
         "types" | "Types" => Cmd::Types,
         "status" => Cmd::Status,
         "print" => {
-            if rest.is_empty() { Cmd::Print(None) }
-            else { Cmd::Print(Some(rest.to_owned())) }
+            if rest.is_empty() {
+                Cmd::PrintFile
+            } else {
+                let mut sub = rest.splitn(2, char::is_whitespace);
+                match sub.next().unwrap_or("") {
+                    "type" => {
+                        let name = sub.next().map(str::trim).unwrap_or("").to_owned();
+                        if name.is_empty() { Cmd::Unknown("print type <name>".to_owned()) }
+                        else { Cmd::PrintType(name) }
+                    }
+                    "cell" => {
+                        let name = sub.next().map(str::trim).unwrap_or("").to_owned();
+                        if name.is_empty() { Cmd::Unknown("print cell <name>".to_owned()) }
+                        else { Cmd::PrintCell(name) }
+                    }
+                    _ => Cmd::Unknown(format!("print {rest} (use 'print', 'print type <n>', 'print cell <n>')")),
+                }
+            }
         }
         "source" => {
             if rest.is_empty() { Cmd::Unknown("source <name>".to_owned()) }
