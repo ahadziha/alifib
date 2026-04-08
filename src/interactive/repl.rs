@@ -178,6 +178,14 @@ pub fn run_repl(
                         );
                     }
                     Cmd::Types => dispatch_types(&store, &canonical_path, &display),
+                    Cmd::Status => dispatch_status(
+                        engine.as_ref(),
+                        source_file,
+                        type_name_str.as_deref(),
+                        pending_source.as_deref(),
+                        pending_target.as_deref(),
+                        &display,
+                    ),
                     Cmd::Print(None) => {
                         let trimmed = file_output.trim_end();
                         if !trimmed.is_empty() { display.cell(trimmed); }
@@ -259,6 +267,14 @@ pub fn dispatch_rewrite_command(
             display.error("command not available here");
         }
         Cmd::Print(Some(name)) => dispatch_print_cell(engine.type_complex(), &name, display),
+        Cmd::Status => dispatch_status(
+            Some(engine),
+            engine.source_file(),
+            Some(engine.type_name()),
+            Some(engine.source_diagram_name()),
+            engine.target_diagram_name(),
+            display,
+        ),
         cmd => dispatch_engine_cmd(engine, cmd, display),
     }
     DispatchResult::Continue
@@ -390,6 +406,75 @@ fn show_state(engine: &RewriteEngine, display: &Display) {
         engine.type_complex(),
         proof,
     );
+}
+
+/// Show the current proof status.
+///
+/// With an active engine: shows module, type, fully-expanded source and target,
+/// and the cell built so far.  Without an engine: shows module, type (if set),
+/// and any pending source/target names.
+fn dispatch_status(
+    engine: Option<&RewriteEngine>,
+    source_file: &str,
+    type_name_str: Option<&str>,
+    pending_source: Option<&str>,
+    pending_target: Option<&str>,
+    display: &Display,
+) {
+    match engine {
+        None => {
+            display.meta(&format!("module: {}", source_file));
+            match type_name_str {
+                Some(tn) => display.meta(&format!("type:   {}", tn)),
+                None     => display.meta("type:   (not set)"),
+            }
+            if let Some(src) = pending_source {
+                display.meta(&format!("source: {}", src));
+            }
+            if let Some(tgt) = pending_target {
+                display.meta(&format!("target: {}", tgt));
+            }
+        }
+        Some(e) => {
+            let scope = e.type_complex();
+            display.meta(&format!("module: {}", e.source_file()));
+            display.meta(&format!("type:   {}", e.type_name()));
+            display.blank();
+
+            // Source — show expanded form; parenthesise the stored name if it differs.
+            let src_name     = e.source_diagram_name();
+            let src_expanded = render_diagram(e.source_diagram(), scope);
+            if src_expanded == src_name {
+                display.meta(&format!("source: {}", src_expanded));
+            } else {
+                display.meta(&format!("source ({}): {}", src_name, src_expanded));
+            }
+
+            // Target — same pattern.
+            match (e.target_diagram(), e.target_diagram_name()) {
+                (Some(tgt), Some(tgt_name)) => {
+                    let tgt_expanded = render_diagram(tgt, scope);
+                    if tgt_expanded == tgt_name {
+                        display.meta(&format!("target: {}", tgt_expanded));
+                    } else {
+                        display.meta(&format!("target ({}): {}", tgt_name, tgt_expanded));
+                    }
+                }
+                _ => display.meta("target: (none)"),
+            }
+
+            display.blank();
+
+            // Running proof cell.
+            match e.proof_label() {
+                None => display.meta("proof:  (no steps taken)"),
+                Some(label) => {
+                    display.meta(&format!("proof:  {}", label));
+                    display.meta(&format!("steps:  {}", e.step_count()));
+                }
+            }
+        }
+    }
 }
 
 /// Display generators in `complex`, optionally filtered to those at `filter_dim`.
@@ -603,7 +688,7 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
         Cmd::Help => print_help(display),
         Cmd::Quit => {}   // handled by caller
         // These are all handled before dispatch_engine_cmd is reached
-        Cmd::Clear | Cmd::Source(_) | Cmd::Target(_) | Cmd::AtExpr(_) | Cmd::Types | Cmd::Print(_) => unreachable!(),
+        Cmd::Clear | Cmd::Source(_) | Cmd::Target(_) | Cmd::AtExpr(_) | Cmd::Types | Cmd::Print(_) | Cmd::Status => unreachable!(),
         Cmd::Unknown(s) => display.error(&format!("unknown command '{}' — type 'help' for a list", s)),
     }
 }
@@ -613,6 +698,7 @@ fn print_help(display: &Display) {
         "Commands:\n\
          \x20 @ <type>         Select a type from the loaded file\n\
          \x20 types            List all types in the file\n\
+         \x20 status           Show current proof state (or module/type if idle)\n\
          \x20 print            Print the whole file (as alifib would)\n\
          \x20 print <name>     Print a cell: boundary, and definition if let-bound\n\
          \x20 source <name>    Set the source diagram\n\
@@ -640,6 +726,7 @@ fn print_help(display: &Display) {
 enum Cmd {
     AtExpr(String),  // everything after the @ (handed to language::parse_complex)
     Types,
+    Status,
     Print(Option<String>),  // None = whole complex, Some(name) = specific cell
     Source(String),
     Target(String),
@@ -672,6 +759,7 @@ fn parse_command(line: &str) -> Cmd {
 
     match word {
         "types" | "Types" => Cmd::Types,
+        "status" => Cmd::Status,
         "print" => {
             if rest.is_empty() { Cmd::Print(None) }
             else { Cmd::Print(Some(rest.to_owned())) }
