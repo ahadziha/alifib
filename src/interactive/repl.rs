@@ -625,7 +625,7 @@ fn print_diagram_with_boundary(diag: &crate::core::diagram::Diagram, complex: &C
         crate::core::diagram::Diagram::boundary(Sign::Target, k, diag),
     ) {
         (Ok(src), Ok(tgt)) => display.inspect(&format!(
-            "  {}  ->  {}",
+            "  : {}  ->  {}",
             render_diagram(&src, complex),
             render_diagram(&tgt, complex),
         )),
