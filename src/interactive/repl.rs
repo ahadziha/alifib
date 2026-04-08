@@ -182,6 +182,8 @@ pub fn run_repl(
                         engine.as_ref(),
                         source_file,
                         type_name_str.as_deref(),
+                        engine.as_ref().map(|e| e.type_complex())
+                            .or_else(|| type_complex.as_deref()),
                         pending_source.as_deref(),
                         pending_target.as_deref(),
                         &display,
@@ -285,6 +287,7 @@ pub fn dispatch_rewrite_command(
             Some(engine),
             engine.source_file(),
             Some(engine.type_name()),
+            Some(engine.type_complex()),
             Some(engine.source_diagram_name()),
             engine.target_diagram_name(),
             display,
@@ -450,6 +453,7 @@ fn dispatch_status(
     engine: Option<&RewriteEngine>,
     source_file: &str,
     type_name_str: Option<&str>,
+    type_complex: Option<&Complex>,
     pending_source: Option<&str>,
     pending_target: Option<&str>,
     display: &Display,
@@ -461,11 +465,15 @@ fn dispatch_status(
                 Some(tn) => display.meta(&format!("type:   {}", tn)),
                 None     => display.meta("type:   (not set)"),
             }
-            if let Some(src) = pending_source {
-                display.meta(&format!("source: {}", src));
-            }
-            if let Some(tgt) = pending_target {
-                display.meta(&format!("target: {}", tgt));
+            if let Some(tc) = type_complex {
+                if let Some(src) = pending_source {
+                    display.meta("source:");
+                    dispatch_print_cell(tc, src, display);
+                }
+                if let Some(tgt) = pending_target {
+                    display.meta("target:");
+                    dispatch_print_cell(tc, tgt, display);
+                }
             }
         }
         Some(e) => {
@@ -474,26 +482,12 @@ fn dispatch_status(
             display.meta(&format!("type:   {}", e.type_name()));
             display.blank();
 
-            // Source — show expanded form; parenthesise the stored name if it differs.
-            let src_name     = e.source_diagram_name();
-            let src_expanded = render_diagram(e.source_diagram(), scope);
-            if src_expanded == src_name {
-                display.inspect(&format!("source: {}", src_expanded));
-            } else {
-                display.inspect(&format!("source ({}): {}", src_name, src_expanded));
-            }
+            display.meta("source:");
+            dispatch_print_cell(scope, e.source_diagram_name(), display);
 
-            // Target — same pattern.
-            match (e.target_diagram(), e.target_diagram_name()) {
-                (Some(tgt), Some(tgt_name)) => {
-                    let tgt_expanded = render_diagram(tgt, scope);
-                    if tgt_expanded == tgt_name {
-                        display.inspect(&format!("target: {}", tgt_expanded));
-                    } else {
-                        display.inspect(&format!("target ({}): {}", tgt_name, tgt_expanded));
-                    }
-                }
-                _ => display.meta("target: (none)"),
+            if let Some(tgt_name) = e.target_diagram_name() {
+                display.meta("target:");
+                dispatch_print_cell(scope, tgt_name, display);
             }
 
             display.blank();
