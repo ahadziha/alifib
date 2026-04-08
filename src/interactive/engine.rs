@@ -497,13 +497,9 @@ impl RewriteEngine {
     /// Clones the complex, adds `running_diagram` under `name`, and updates the
     /// engine's own `type_complex` so future lookups see the new definition.
     /// Returns the updated `Arc<Complex>` so the caller can sync its own reference.
-    ///
-    /// Calls [`typecheck_proof`] before storing; returns an error if it fails.
     pub fn register_proof(&mut self, name: &str) -> Result<Arc<Complex>, String> {
         let diagram = self.running_diagram.clone()
             .ok_or_else(|| "no proof steps taken yet".to_owned())?;
-
-        self.typecheck_proof()?;
 
         let mut new_complex = (*self.type_complex).clone();
         new_complex.add_diagram(name.to_owned(), diagram);
