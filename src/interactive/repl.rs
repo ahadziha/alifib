@@ -227,7 +227,17 @@ pub fn run_repl(
                         if !trimmed.is_empty() { display.file(trimmed); }
                     }
                     Cmd::Type(name) => {
-                        dispatch_print_type(&store, &canonical_path, &name, &display);
+                        // Pass the live complex if it's for the active type, so that
+                        // proofs stored this session are visible in the output.
+                        let live_tc: Option<&Complex> =
+                            if engine.as_ref().map(|e| e.type_name()) == Some(name.as_str()) {
+                                engine.as_ref().map(|e| e.type_complex())
+                            } else if type_name_str.as_deref() == Some(name.as_str()) {
+                                type_complex.as_deref()
+                            } else {
+                                None
+                            };
+                        dispatch_print_type(&store, &canonical_path, &name, live_tc, &display);
                     }
                     Cmd::Cell(name) => {
                         match (&engine, &type_complex) {
@@ -607,9 +617,16 @@ fn cell_kind(complex: &Complex, name: &str) -> &'static str {
 
 /// Print a named type from the module by looking it up in the normalized store.
 ///
-/// Generators and maps use the standard normalized layout. Diagrams (let-bindings)
-/// additionally show `= <expr>` so the definition is visible.
-fn dispatch_print_type(store: &GlobalStore, canonical_path: &str, name: &str, display: &Display) {
+/// Generators and maps use the standard normalized layout. Diagrams (let-bindings
+/// and locally stored proofs) are read from `live_complex` so that definitions
+/// added via `store` during this session are visible.
+fn dispatch_print_type(
+    store: &GlobalStore,
+    canonical_path: &str,
+    name: &str,
+    live_complex: Option<&Complex>,
+    display: &Display,
+) {
     use crate::aux::Tag;
     use std::fmt::Write as _;
 
@@ -624,18 +641,17 @@ fn dispatch_print_type(store: &GlobalStore, canonical_path: &str, name: &str, di
         return;
     };
 
-    // Look up the live type complex for diagram_to_source.
-    let type_complex = (|| -> Option<&crate::core::complex::Complex> {
+    // Resolve the type complex: prefer the live one (includes session additions),
+    // fall back to the global store's snapshot.
+    let store_complex = (|| -> Option<&Complex> {
         let mc = store.find_module(canonical_path)?;
         let (tag, _) = mc.find_generator(name)?;
         let gid = match tag { Tag::Global(gid) => *gid, _ => return None };
         store.find_type(gid).map(|e| e.complex.as_ref())
     })();
-
-    // If the complex isn't reachable, fall back to plain display.
-    let Some(tc) = type_complex else {
-        display.file(&ty.to_string().trim_end().to_owned());
-        return;
+    let tc: &Complex = match live_complex.or(store_complex) {
+        Some(c) => c,
+        None => { display.file(&ty.to_string().trim_end().to_owned()); return; }
     };
 
     // Build output manually so we can append `= expr` for each diagram.
@@ -652,15 +668,21 @@ fn dispatch_print_type(store: &GlobalStore, canonical_path: &str, name: &str, di
             }
         }
     }
-    if !ty.diagrams.is_empty() {
+    // Iterate the live complex's diagrams so session-stored proofs appear too.
+    let mut diag_list: Vec<(&str, &crate::core::diagram::Diagram)> =
+        tc.diagrams_iter().map(|(n, d)| (n.as_str(), d)).collect();
+    diag_list.sort_by_key(|(n, _)| *n);
+    if !diag_list.is_empty() {
         writeln!(out, "  Diagrams").ok();
-        for diagram_cell in &ty.diagrams {
-            write!(out, "    {}", diagram_cell).ok();
-            if let Some(d) = tc.find_diagram(&diagram_cell.name) {
-                let expr = crate::output::diagram_to_source(d, tc);
-                write!(out, "  = {}", expr).ok();
-            }
-            writeln!(out).ok();
+        for (diag_name, diag) in &diag_list {
+            let k = diag.top_dim().checked_sub(1);
+            let boundary = k.and_then(|k| {
+                let src = crate::core::diagram::Diagram::boundary(Sign::Source, k, diag).ok()?;
+                let tgt = crate::core::diagram::Diagram::boundary(Sign::Target, k, diag).ok()?;
+                Some(format!("{} : {}  ->  {}", diag_name, render_diagram(&src, tc), render_diagram(&tgt, tc)))
+            }).unwrap_or_else(|| diag_name.to_string());
+            let expr = crate::output::diagram_to_source(diag, tc);
+            writeln!(out, "    {}  = {}", boundary, expr).ok();
         }
     }
     if !ty.maps.is_empty() {
