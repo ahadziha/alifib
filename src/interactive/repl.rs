@@ -201,24 +201,27 @@ pub fn run_repl(
                         );
                     }
                     Cmd::Types => dispatch_types(&store, &canonical_path, &display),
-                    Cmd::Status => dispatch_status(
-                        engine.as_ref(),
-                        source_file,
-                        type_name_str.as_deref(),
-                        engine.as_ref().map(|e| e.type_complex())
-                            .or_else(|| type_complex.as_deref()),
-                        pending_source.as_deref(),
-                        pending_target.as_deref(),
-                        &display,
-                    ),
+                    Cmd::Status => {
+                        match engine.as_ref() {
+                            Some(e) => show_state(e, &display),
+                            None => dispatch_status(
+                                source_file,
+                                type_name_str.as_deref(),
+                                type_complex.as_deref(),
+                                pending_source.as_deref(),
+                                pending_target.as_deref(),
+                                &display,
+                            ),
+                        }
+                    }
                     Cmd::PrintFile => {
                         let trimmed = file_output.trim_end();
                         if !trimmed.is_empty() { display.file(trimmed); }
                     }
-                    Cmd::PrintType(name) => {
+                    Cmd::Type(name) => {
                         dispatch_print_type(&store, &canonical_path, &name, &display);
                     }
-                    Cmd::PrintCell(name) => {
+                    Cmd::Cell(name) => {
                         match (&engine, &type_complex) {
                             (Some(e), _) => dispatch_print_cell(e.type_complex(), &name, &display),
                             (None, Some(tc)) => dispatch_print_cell(tc, &name, &display),
@@ -276,14 +279,6 @@ pub fn run_repl(
                             (None, None) => display.error("set type first (@ <TypeName>)"),
                         }
                     }
-                    Cmd::Info(name) => {
-                        match (&engine, &type_complex) {
-                            (Some(e), _) => dispatch_info(e.type_complex(), e.store(), &name, &display),
-                            (None, Some(tc)) => dispatch_info(tc, &store, &name, &display),
-                            (None, None) => display.error("set type first (@ <TypeName>)"),
-                        }
-                    }
-
                     // ── Always dispatch errors regardless of engine state ──
                     Cmd::Unknown(s) => display.error(&format!("unrecognised command '{}' — type 'help' for a list", s)),
                     Cmd::UsageError(usage) => display.error(&format!("usage: {}", usage)),
@@ -351,17 +346,9 @@ pub fn dispatch_rewrite_command(
         Cmd::Clear | Cmd::Source(_) | Cmd::Target(_) | Cmd::AtExpr(_) | Cmd::Types | Cmd::PrintFile => {
             display.error("command not available here");
         }
-        Cmd::PrintType(_) => display.error("command not available here"),
-        Cmd::PrintCell(name) => dispatch_print_cell(engine.type_complex(), &name, display),
-        Cmd::Status => dispatch_status(
-            Some(engine),
-            engine.source_file(),
-            Some(engine.type_name()),
-            Some(engine.type_complex()),
-            Some(engine.source_diagram_name()),
-            engine.target_diagram_name(),
-            display,
-        ),
+        Cmd::Type(_) => display.error("command not available here"),
+        Cmd::Cell(name) => dispatch_print_cell(engine.type_complex(), &name, display),
+        Cmd::Status => show_state(engine, display),
         cmd => dispatch_engine_cmd(engine, cmd, display),
     }
     DispatchResult::Continue
@@ -528,9 +515,10 @@ fn show_state(engine: &RewriteEngine, display: &Display) {
 ///
 /// With an active engine: shows module, type, fully-expanded source and target,
 /// and the cell built so far.  Without an engine: shows module, type (if set),
-/// and any pending source/target names.
+/// Show setup-phase state: module path, type name (if set), and any pending
+/// source/target diagrams. Only called when no engine is active — in rewriting
+/// mode `status` calls `show_state` directly.
 fn dispatch_status(
-    engine: Option<&RewriteEngine>,
     source_file: &str,
     type_name_str: Option<&str>,
     type_complex: Option<&Complex>,
@@ -538,48 +526,19 @@ fn dispatch_status(
     pending_target: Option<&str>,
     display: &Display,
 ) {
-    match engine {
-        None => {
-            display.meta(&format!("module: {}", source_file));
-            match type_name_str {
-                Some(tn) => display.meta(&format!("type:   {}", tn)),
-                None     => display.meta("type:   (not set)"),
-            }
-            if let Some(tc) = type_complex {
-                if let Some(src) = pending_source {
-                    display.meta("source:");
-                    dispatch_print_cell(tc, src, display);
-                }
-                if let Some(tgt) = pending_target {
-                    display.meta("target:");
-                    dispatch_print_cell(tc, tgt, display);
-                }
-            }
-        }
-        Some(e) => {
-            let scope = e.type_complex();
-            display.meta(&format!("module: {}", e.source_file()));
-            display.meta(&format!("type:   {}", e.type_name()));
-            display.blank();
-
+    display.meta(&format!("module: {}", source_file));
+    match type_name_str {
+        Some(tn) => display.meta(&format!("type:   {}", tn)),
+        None     => display.meta("type:   (not set)"),
+    }
+    if let Some(tc) = type_complex {
+        if let Some(src) = pending_source {
             display.meta("source:");
-            dispatch_print_cell(scope, e.source_diagram_name(), display);
-
-            if let Some(tgt_name) = e.target_diagram_name() {
-                display.meta("target:");
-                dispatch_print_cell(scope, tgt_name, display);
-            }
-
-            display.blank();
-
-            // Running proof cell.
-            match e.proof_label() {
-                None => display.meta("proof:  (no steps taken)"),
-                Some(label) => {
-                    display.inspect(&format!("proof:  {}", label));
-                    display.meta(&format!("steps:  {}", e.step_count()));
-                }
-            }
+            dispatch_print_cell(tc, src, display);
+        }
+        if let Some(tgt) = pending_target {
+            display.meta("target:");
+            dispatch_print_cell(tc, tgt, display);
         }
     }
 }
@@ -635,29 +594,6 @@ fn dispatch_rules(complex: &Complex, store: &GlobalStore, filter_dim: Option<usi
 /// Returns `"generator"` or `"local definition"` for a named cell.
 fn cell_kind(complex: &Complex, name: &str) -> &'static str {
     if complex.find_generator(name).is_some() { "generator" } else { "local definition" }
-}
-
-/// Display the source → target of a named generator.
-fn dispatch_info(complex: &Complex, store: &GlobalStore, name: &str, display: &Display) {
-    match complex.find_generator(name) {
-        Some((tag, dim)) => {
-            match store.cell_data_for_tag(complex, tag) {
-                Some(CellData::Boundary { boundary_in, boundary_out }) => {
-                    display.inspect(&format!(
-                        "{} : {}  ->  {} [dim {}, {}]",
-                        name,
-                        render_diagram(&boundary_in, complex),
-                        render_diagram(&boundary_out, complex),
-                        dim,
-                        cell_kind(complex, name),
-                    ));
-                }
-                Some(CellData::Zero) => display.inspect(&format!("{} [dim 0, generator]", name)),
-                None => display.error(&format!("no cell data for '{}'", name)),
-            }
-        }
-        None => display.error(&format!("'{}' not found", name)),
-    }
 }
 
 /// Print a named type from the module by looking it up in the normalized store.
@@ -808,12 +744,10 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
                 Err(e) => display.error(&e),
             }
         }
-        Cmd::Show => show_state(engine, display),
         Cmd::Rules => {
             let n = engine.current_diagram().top_dim();
             dispatch_rules(engine.type_complex(), engine.store(), Some(n + 1), display);
         }
-        Cmd::Info(name) => dispatch_info(engine.type_complex(), engine.store(), &name, display),
         Cmd::History => {
             let sf = engine.to_session_file();
             let entries: Vec<(usize, &str)> = sf.moves.iter()
@@ -858,7 +792,7 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
         Cmd::Quit => {}   // handled by caller
         // These are all handled before dispatch_engine_cmd is reached
         Cmd::Clear | Cmd::Source(_) | Cmd::Target(_) | Cmd::AtExpr(_) | Cmd::Types
-        | Cmd::PrintFile | Cmd::PrintType(_) | Cmd::PrintCell(_) | Cmd::Status
+        | Cmd::PrintFile | Cmd::Type(_) | Cmd::Cell(_) | Cmd::Status
         | Cmd::Store(_) | Cmd::Save(_) | Cmd::Unknown(_) | Cmd::UsageError(_) => unreachable!(),
     }
 }
@@ -868,10 +802,10 @@ fn print_help(display: &Display) {
         "Commands:\n\
          \x20 @ <type>         Select a type from the loaded file\n\
          \x20 types            List all types in the file\n\
-         \x20 status           Show current proof state (or module/type if idle)\n\
-         \x20 print             Print the whole file\n\
-         \x20 print type <n>   Print a type and its generators\n\
-         \x20 print cell <n>   Print a cell: generator or let-binding with boundary\n\
+         \x20 status / show    Rewrite state (or module/type if idle)\n\
+         \x20 print            Print the whole file\n\
+         \x20 type <name>      Inspect a type and its generators\n\
+         \x20 cell <name>      Inspect a cell or let-binding with boundary\n\
          \x20 source <name>    Set the source diagram\n\
          \x20 target <name>    Set the target diagram\n\
          \x20 apply <n>        Apply rewrite at index <n>            (alias: a)\n\
@@ -880,9 +814,7 @@ fn print_help(display: &Display) {
          \x20 undo all         Reset to source (= restart)\n\
          \x20 restart          Reset to source diagram\n\
          \x20 clear            Destroy engine and type, return to setup phase\n\
-         \x20 show             Redisplay current state\n\
-         \x20 rules            List generators in the selected type  (alias: r)\n\
-         \x20 info <name>      Show source -> target of a generator  (alias: i)\n\
+         \x20 rules            List rewrite rules in the selected type  (alias: r)\n\
          \x20 history          Show the move history                 (alias: h)\n\
          \x20 proof            Show the running proof diagram        (alias: p)\n\
          \x20 store <name>     Register current proof as a local definition\n\
@@ -901,14 +833,14 @@ enum Cmd {
     AtExpr(String),
     /// `types` — list all types in the file.
     Types,
-    /// `status` — show module/type/proof state.
+    /// `status` / `show` — show rewrite state when engine active, setup state otherwise.
     Status,
     /// `print` — print the full source file.
     PrintFile,
-    /// `print type <name>` — print a type and its generators.
-    PrintType(String),
-    /// `print cell <name>` — print a generator or let-binding with its boundary.
-    PrintCell(String),
+    /// `type <name>` — inspect a type and its generators.
+    Type(String),
+    /// `cell <name>` — inspect a generator or let-binding with its boundary.
+    Cell(String),
     /// `source <name>` — set the source diagram.
     Source(String),
     /// `target <name>` — set the target (goal) diagram.
@@ -923,12 +855,8 @@ enum Cmd {
     Restart,
     /// `clear` — destroy engine and type selection, return to setup phase.
     Clear,
-    /// `show` — redisplay the current state.
-    Show,
     /// `rules` — list generators (or rewrite rules when engine active).
     Rules,
-    /// `info <name>` — show source → target of a named generator.
-    Info(String),
     /// `history` — display the move log.
     History,
     /// `proof` — display the running proof cell.
@@ -959,26 +887,21 @@ fn parse_command(line: &str) -> Cmd {
 
     match word {
         "types" | "Types" => Cmd::Types,
-        "status" => Cmd::Status,
+        "status" | "show" => Cmd::Status,
         "print" => {
             if rest.is_empty() {
                 Cmd::PrintFile
             } else {
-                let mut sub = rest.splitn(2, char::is_whitespace);
-                match sub.next().unwrap_or("") {
-                    "type" => {
-                        let name = sub.next().map(str::trim).unwrap_or("").to_owned();
-                        if name.is_empty() { Cmd::UsageError("print type <name>".to_owned()) }
-                        else { Cmd::PrintType(name) }
-                    }
-                    "cell" => {
-                        let name = sub.next().map(str::trim).unwrap_or("").to_owned();
-                        if name.is_empty() { Cmd::UsageError("print cell <name>".to_owned()) }
-                        else { Cmd::PrintCell(name) }
-                    }
-                    _ => Cmd::UsageError("print  |  print type <name>  |  print cell <name>".to_owned()),
-                }
+                Cmd::UsageError("print  |  type <name>  |  cell <name>".to_owned())
             }
+        }
+        "type" => {
+            if rest.is_empty() { Cmd::UsageError("type <name>".to_owned()) }
+            else { Cmd::Type(rest.to_owned()) }
+        }
+        "cell" => {
+            if rest.is_empty() { Cmd::UsageError("cell <name>".to_owned()) }
+            else { Cmd::Cell(rest.to_owned()) }
         }
         "source" => {
             if rest.is_empty() { Cmd::UsageError("source <name>".to_owned()) }
@@ -1008,12 +931,7 @@ fn parse_command(line: &str) -> Cmd {
         }
         "restart" => Cmd::Restart,
         "clear"   => Cmd::Clear,
-        "show"    => Cmd::Show,
         "rules" | "r" => Cmd::Rules,
-        "info" | "i" => {
-            if rest.is_empty() { Cmd::UsageError("info <name>".to_owned()) }
-            else { Cmd::Info(rest.to_owned()) }
-        }
         "history" | "h" => Cmd::History,
         "proof" | "p"   => Cmd::Proof,
         "store" => {
