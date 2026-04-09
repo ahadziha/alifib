@@ -51,7 +51,7 @@ use rustyline::error::ReadlineError;
 use rustyline::EditMode;
 
 use crate::core::complex::Complex;
-use crate::core::diagram::{CellData, Sign};
+use crate::core::diagram::{CellData, Diagram, Sign};
 use crate::interpreter::GlobalStore;
 use crate::language;
 use crate::language::ast::Complex as AstComplex;
@@ -504,8 +504,10 @@ fn maybe_start_engine(
                 *engine = Some(e);
                 display.meta("Ready.");
                 let e = engine.as_ref().unwrap();
-                dispatch_print_cell(e.type_complex(), src, display);
-                dispatch_print_cell(e.type_complex(), tgt, display);
+                show_diagram_or_name(src, e.source_diagram(), e.type_complex(), display);
+                if let Some(tgt_diag) = e.target_diagram() {
+                    show_diagram_or_name(tgt, tgt_diag, e.type_complex(), display);
+                }
             }
             Err(e) => display.error(&e),
         }
@@ -736,6 +738,23 @@ fn dispatch_print_cell(complex: &Complex, name: &str, display: &Display) {
     }
 
     display.error(&format!("'{}' not found in type", name));
+}
+
+/// Display a source or target diagram after the engine starts.
+///
+/// If `label` is a known name in `complex`, delegates to [`dispatch_print_cell`]
+/// for the rich name/dim/boundary output. Otherwise renders the diagram and
+/// shows its boundary directly — handles expression inputs like `"f g"`.
+fn show_diagram_or_name(label: &str, diag: &Diagram, complex: &Complex, display: &Display) {
+    if complex.find_generator(label).is_some() || complex.find_diagram(label).is_some() {
+        dispatch_print_cell(complex, label, display);
+    } else {
+        let rendered = render_diagram(diag, complex);
+        display.inspect(&format!("{}  =  {}", label, rendered));
+        if diag.top_dim() > 0 {
+            print_diagram_with_boundary(diag, complex, display);
+        }
+    }
 }
 
 fn print_diagram_with_boundary(diag: &crate::core::diagram::Diagram, complex: &Complex, display: &Display) {

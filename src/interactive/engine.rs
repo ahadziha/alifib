@@ -109,7 +109,47 @@ pub fn load_type_context(
 
 type LoadedRewriteContext = (Arc<GlobalStore>, Arc<Complex>, Diagram, Option<Diagram>);
 
+/// Resolve a source or target diagram from either a name or a diagram expression.
+///
+/// First tries a fast named lookup in `type_complex` and the module complex at
+/// `module_key` in `store`. If neither succeeds, parses `expr` as a diagram
+/// expression and evaluates it against `type_complex` using the interpreter.
+///
+/// This means `source <name>` and `source f g` both work at the REPL.
+pub fn eval_diagram_expr(
+    store: &Arc<GlobalStore>,
+    type_complex: &Complex,
+    module_key: &str,
+    expr: &str,
+) -> Result<Diagram, String> {
+    // Fast path: named lookup.
+    if let Some(d) = type_complex.find_diagram(expr) {
+        return Ok(d.clone());
+    }
+    if let Some(d) = store.find_module(module_key).and_then(|m| m.find_diagram(expr)) {
+        return Ok(d.clone());
+    }
+    // Slow path: parse and interpret as a diagram expression.
+    let ast = crate::language::parse_diagram(expr)
+        .map_err(|e| format!("'{}' is not a diagram name or valid expression: {}", expr, e))?;
+    let ctx = crate::interpreter::Context::new_with_resolutions(
+        module_key.to_owned(),
+        std::sync::Arc::new(crate::aux::loader::ModuleResolutions::empty()),
+        Arc::clone(store),
+    );
+    let (diagram_opt, interp_result) = crate::interpreter::interpret_diagram(&ctx, type_complex, &ast);
+    if interp_result.has_errors() {
+        let msgs: Vec<String> = interp_result.errors.iter()
+            .map(|e| format!("{}", e))
+            .collect();
+        return Err(format!("'{}': {}", expr, msgs.join("; ")));
+    }
+    diagram_opt.ok_or_else(|| format!("'{}' did not produce a diagram", expr))
+}
+
 /// Load a file and locate the type complex and source/target diagrams.
+///
+/// Source and target may be diagram names or diagram expressions.
 fn load_context(
     source_file: &str,
     type_name: &str,
@@ -118,28 +158,10 @@ fn load_context(
 ) -> Result<LoadedRewriteContext, String> {
     let (store, type_complex, canonical_path) = load_type_context(source_file, type_name)?;
 
-    let module_complex = store
-        .find_module(&canonical_path)
-        .ok_or_else(|| format!("module '{}' not found in store", canonical_path))?;
-
-    let find_diagram = |name: &str| -> Option<Diagram> {
-        type_complex.find_diagram(name).cloned()
-            .or_else(|| module_complex.find_diagram(name).cloned())
-    };
-
-    let source_diagram = find_diagram(source_diagram_name)
-        .ok_or_else(|| format!(
-            "diagram '{}' not found in type '{}' or module",
-            source_diagram_name, type_name,
-        ))?;
-
+    let source_diagram =
+        eval_diagram_expr(&store, &type_complex, &canonical_path, source_diagram_name)?;
     let target_diagram = target_diagram_name
-        .map(|name| {
-            find_diagram(name).ok_or_else(|| format!(
-                "target diagram '{}' not found in type '{}' or module",
-                name, type_name,
-            ))
-        })
+        .map(|expr| eval_diagram_expr(&store, &type_complex, &canonical_path, expr))
         .transpose()?;
 
     Ok((store, type_complex, source_diagram, target_diagram))
@@ -162,9 +184,10 @@ fn compute_rewrites(
 impl RewriteEngine {
     /// Create a fresh session from an already-loaded store and type complex.
     ///
-    /// Diagrams are looked up by name in `type_complex` (falling back to the
-    /// module complex for `source_file` in `store`).  This constructor is used
-    /// by the workspace session REPL to avoid re-loading from disk.
+    /// `source_diagram_name` and `target_diagram_name` may be either plain diagram
+    /// names (resolved against `type_complex` and the module at `source_file`) or
+    /// full diagram expressions in the alifib language (e.g. `"f g"` or `"(f #0 g)"`).
+    /// This constructor is used by the workspace session REPL and the interactive REPL.
     pub fn from_store(
         store: Arc<GlobalStore>,
         type_complex: Arc<Complex>,
@@ -173,27 +196,10 @@ impl RewriteEngine {
         source_file: String,
         type_name: String,
     ) -> Result<Self, String> {
-        let find_diagram_full = |name: &str| -> Option<Diagram> {
-            type_complex.find_diagram(name).cloned().or_else(|| {
-                store.find_module(&source_file)
-                    .and_then(|m| m.find_diagram(name))
-                    .cloned()
-            })
-        };
-
-        let source_diagram = find_diagram_full(source_diagram_name)
-            .ok_or_else(|| format!(
-                "diagram '{}' not found in type '{}' or module",
-                source_diagram_name, type_name,
-            ))?;
-
+        let source_diagram =
+            eval_diagram_expr(&store, &type_complex, &source_file, source_diagram_name)?;
         let target_diagram = target_diagram_name
-            .map(|name| {
-                find_diagram_full(name).ok_or_else(|| format!(
-                    "target diagram '{}' not found in type '{}' or module",
-                    name, type_name,
-                ))
-            })
+            .map(|expr| eval_diagram_expr(&store, &type_complex, &source_file, expr))
             .transpose()?;
 
         let available_rewrites = compute_rewrites(&store, &type_complex, &source_diagram)?;
