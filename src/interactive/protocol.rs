@@ -73,6 +73,7 @@ pub enum Request {
 /// The top-level response envelope.
 #[derive(Debug, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
+#[allow(clippy::large_enum_variant)]
 pub enum Response {
     Ok { data: ResponseData },
     Error { message: String },

@@ -151,6 +151,7 @@ pub fn insert_module_map_binding(
 /// store's type complex.
 ///
 /// Fails if the name is already in use or if `has_local_labels` is `true`.
+#[allow(clippy::too_many_arguments)]
 fn insert_type_binding(
     owner_type_id: GlobalId,
     scope: &Complex,
@@ -256,4 +257,3 @@ pub fn create_generator_diagram(
     Diagram::cell(tag, boundaries)
         .map_err(|error| make_error_from_core(span, error))
 }
-

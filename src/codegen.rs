@@ -206,7 +206,7 @@ fn instr_to_ast(instr: InstrRepr) -> ast::Spanned<ast::ComplexInstr> {
             }))
         }
         InstrRepr::Attach { name, type_path, map } => {
-            let address: ast::Address = type_path.into_iter().map(|s| syn(s)).collect();
+            let address: ast::Address = type_path.into_iter().map(syn).collect();
             let clauses = map
                 .into_iter()
                 .map(|(gen_name, val)| {

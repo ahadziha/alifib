@@ -100,10 +100,10 @@ pub(super) fn flow_graph(g: &Arc<Ogposet>, k: usize) -> (DiGraph, Vec<(usize, us
     }).collect();
 
     // Add edges: x → y iff Δ⁺_k(x) ∩ Δ⁻_k(y) ≠ ∅.
-    for xi in 0..n {
-        for yi in 0..n {
+    for (xi, out) in out_k.iter().enumerate().take(n) {
+        for (yi, incoming) in in_k.iter().enumerate().take(n) {
             if xi == yi { continue; }
-            if !intset::is_disjoint(&out_k[xi], &in_k[yi]) {
+            if !intset::is_disjoint(out, incoming) {
                 graph.add_edge(xi, yi);
             }
         }
@@ -145,10 +145,10 @@ pub(super) fn maximal_flow_graph(g: &Arc<Ogposet>, k: usize) -> (DiGraph, Vec<(u
         ogposet::signed_k_boundary_of_cell(g, Sign::Input, k, dim, pos)
     }).collect();
 
-    for xi in 0..n {
-        for yi in 0..n {
+    for (xi, out) in out_k.iter().enumerate().take(n) {
+        for (yi, incoming) in in_k.iter().enumerate().take(n) {
             if xi == yi { continue; }
-            if !intset::is_disjoint(&out_k[xi], &in_k[yi]) {
+            if !intset::is_disjoint(out, incoming) {
                 graph.add_edge(xi, yi);
             }
         }

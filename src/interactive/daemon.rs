@@ -29,6 +29,7 @@ use super::session::SessionFile;
 /// If `initial` is `Some`, the engine is pre-loaded and an initial state
 /// response is emitted before entering the request loop. Returns when a
 /// [`Request::Shutdown`] is received or stdin is closed.
+#[allow(clippy::result_unit_err)]
 pub fn run_daemon(initial: Option<RewriteEngine>) -> Result<(), ()> {
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
@@ -72,6 +73,7 @@ pub fn run_daemon(initial: Option<RewriteEngine>) -> Result<(), ()> {
     Ok(())
 }
 
+#[allow(clippy::large_enum_variant)]
 enum DispatchResult {
     Respond(Response),
     Shutdown,

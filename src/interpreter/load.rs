@@ -64,6 +64,7 @@ impl LoadResult {
     }
 
     /// Print diagnostics and convert to `Result`, returning `Err(())` on failure.
+    #[allow(clippy::result_unit_err)]
     pub fn into_result(self) -> Result<InterpretedFile, ()> {
         match self {
             LoadResult::Loaded(f) => Ok(f),

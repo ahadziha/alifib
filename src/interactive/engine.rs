@@ -107,13 +107,15 @@ pub fn load_type_context(
     Ok((store, type_complex, canonical_path))
 }
 
+type LoadedRewriteContext = (Arc<GlobalStore>, Arc<Complex>, Diagram, Option<Diagram>);
+
 /// Load a file and locate the type complex and source/target diagrams.
 fn load_context(
     source_file: &str,
     type_name: &str,
     source_diagram_name: &str,
     target_diagram_name: Option<&str>,
-) -> Result<(Arc<GlobalStore>, Arc<Complex>, Diagram, Option<Diagram>), String> {
+) -> Result<LoadedRewriteContext, String> {
     let (store, type_complex, canonical_path) = load_type_context(source_file, type_name)?;
 
     let module_complex = store

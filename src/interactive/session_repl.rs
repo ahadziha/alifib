@@ -35,6 +35,7 @@ use super::workspace::Workspace;
 /// Run the session REPL for `source_file` / `type_name`.
 ///
 /// `emacs_mode` selects Emacs keybindings; the default is vi mode.
+#[allow(clippy::result_unit_err)]
 pub fn run_session(source_file: &str, type_name: &str, emacs_mode: bool) -> Result<(), ()> {
     let display = Display::new();
 

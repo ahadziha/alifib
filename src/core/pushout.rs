@@ -67,12 +67,16 @@ fn attach(f: &Embedding, g: &Embedding) -> Pushout {
 
     let mut extra_counts: Vec<usize> = vec![0; levels];
     let c_dim = if c.dim < 0 { 0 } else { c.dim as usize };
-    for i in 0..=c_dim.min(c.faces_in.len().saturating_sub(1)) {
+    for (i, count) in extra_counts
+        .iter_mut()
+        .enumerate()
+        .take(c_dim.min(c.faces_in.len().saturating_sub(1)) + 1)
+    {
         let len = c_sizes.get(i).copied().unwrap_or(0);
         let g_inv_i = g_inv.get(i).map(|v| v.as_slice()).unwrap_or(&[]);
         for p in 0..len {
             if g_inv_i.get(p).copied().unwrap_or(NO_PREIMAGE) == NO_PREIMAGE {
-                extra_counts[i] += 1;
+                *count += 1;
             }
         }
     }
@@ -139,7 +143,9 @@ fn attach(f: &Embedding, g: &Embedding) -> Pushout {
         let size_tip = tip_sizes.get(d).copied().unwrap_or(0);
         let mut arr = vec![NO_PREIMAGE; size_tip];
         let size_b = b_sizes.get(d).copied().unwrap_or(0);
-        for i in 0..size_b.min(size_tip) { arr[i] = i; }
+        for (i, entry) in arr.iter_mut().enumerate().take(size_b.min(size_tip)) {
+            *entry = i;
+        }
         arr
     }).collect();
 

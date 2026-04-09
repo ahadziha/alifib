@@ -84,7 +84,7 @@ fn subdiagram_matches(
             let Some(pat_row) = pattern.labels.get(dim) else { return true; };
             let Some(tgt_row) = target.labels.get(dim) else { return false; };
             row.iter().enumerate().all(|(i, &j)| {
-                pat_row.get(i).zip(tgt_row.get(j)).map_or(false, |(a, b)| a == b)
+                pat_row.get(i).zip(tgt_row.get(j)).is_some_and(|(a, b)| a == b)
             })
         });
         if !labels_ok { continue; }
@@ -160,8 +160,8 @@ pub(super) fn molecule_inclusions(
     // Trivial 0-dimensional case: V and U are single points.
     // The unique 0-cell of V maps to each 0-cell of U.
     if n == 0 {
-        let v_size = v.faces_in.get(0).map_or(0, |r| r.len());
-        let u_size = u.faces_in.get(0).map_or(0, |r| r.len());
+        let v_size = v.faces_in.first().map_or(0, |r| r.len());
+        let u_size = u.faces_in.first().map_or(0, |r| r.len());
         if v_size != 1 { return Ok(vec![]); }
         return Ok((0..u_size).map(|pos| {
             let map = vec![vec![pos]];
@@ -308,8 +308,8 @@ fn flow_traversal_order(flow: &DiGraph, n_top: usize) -> Vec<usize> {
     }
 
     // Safety net for disconnected components (should not occur for round V).
-    for v in 0..n_top {
-        if !visited[v] { order.push(v); }
+    for (v, was_visited) in visited.iter().enumerate().take(n_top) {
+        if !*was_visited { order.push(v); }
     }
     order
 }
@@ -336,8 +336,9 @@ fn atom_iso_consistent(
         for (atom_pos, &iso_img) in iso_row.iter().enumerate() {
             let Some(&v_pos) = ev_row.get(atom_pos) else { continue; };
             let Some(&u_pos) = eu_row.get(iso_img) else { continue; };
-            if let Some(existing) = partial.get(dim).and_then(|r| r.get(v_pos)).copied().flatten() {
-                if existing != u_pos { return false; }
+            if let Some(existing) = partial.get(dim).and_then(|r| r.get(v_pos)).copied().flatten()
+                && existing != u_pos {
+                return false;
             }
         }
     }
@@ -357,7 +358,7 @@ fn apply_iso_to_partial(
     iso: &Embedding,
     atom_emb_v: &Embedding,
     atom_emb_u: &Embedding,
-    partial: &mut Vec<Vec<Option<usize>>>,
+    partial: &mut [Vec<Option<usize>>],
 ) -> Vec<(usize, usize)> {
     let mut newly_assigned: Vec<(usize, usize)> = Vec::new();
     for (dim, iso_row) in iso.map.iter().enumerate() {
@@ -366,11 +367,10 @@ fn apply_iso_to_partial(
         for (atom_pos, &iso_img) in iso_row.iter().enumerate() {
             let Some(&v_pos) = ev_row.get(atom_pos) else { continue; };
             let Some(&u_pos) = eu_row.get(iso_img) else { continue; };
-            if let Some(row) = partial.get_mut(dim) {
-                if row[v_pos].is_none() {
-                    row[v_pos] = Some(u_pos);
-                    newly_assigned.push((dim, v_pos));
-                }
+            if let Some(row) = partial.get_mut(dim)
+                && row[v_pos].is_none() {
+                row[v_pos] = Some(u_pos);
+                newly_assigned.push((dim, v_pos));
             }
         }
     }
@@ -385,7 +385,7 @@ fn apply_iso_to_partial(
 /// left untouched.
 fn undo_iso_from_partial(
     newly_assigned: &[(usize, usize)],
-    partial: &mut Vec<Vec<Option<usize>>>,
+    partial: &mut [Vec<Option<usize>>],
 ) {
     for &(dim, v_pos) in newly_assigned {
         if let Some(row) = partial.get_mut(dim) {
@@ -539,6 +539,7 @@ fn image_nodes_in_flow(
 ///
 /// Returns `Ok(true)` if the condition holds, `Ok(false)` if it fails,
 /// and `Err` if the recursive sub-check for k > 2 is required.
+#[allow(clippy::too_many_arguments)]
 fn check_sort_condition(
     u: &Arc<Ogposet>,
     v: &Arc<Ogposet>,
@@ -735,9 +736,8 @@ mod tests {
         let d2 = globular_atom(2);
         let inclusions = molecule_inclusions(&d2.shape, &d2.shape).unwrap();
         assert_eq!(inclusions.len(), 1);
-        assert_eq!(
+        assert!(
             is_rewritable_submolecule(&inclusions[0]).unwrap(),
-            true,
             "dim ≤ 2 → always Ok(true)"
         );
     }
@@ -749,9 +749,8 @@ mod tests {
         let d3 = globular_atom(3);
         let inclusions = molecule_inclusions(&d3.shape, &d3.shape).unwrap();
         assert_eq!(inclusions.len(), 1, "3-dim atom matches itself exactly once");
-        assert_eq!(
+        assert!(
             is_rewritable_submolecule(&inclusions[0]).unwrap(),
-            true,
             "self-inclusion of a 3-dim atom is rewritable"
         );
     }

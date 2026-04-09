@@ -374,12 +374,13 @@ fn parse_session_and_format(args: &[String], sub: &str) -> Result<(String, Outpu
 fn next_arg<'a>(it: &mut impl Iterator<Item = &'a String>, flag: &str) -> Result<String, String> {
     it.next()
         .ok_or_else(|| format!("{} requires an argument", flag))
-        .map(|s| s.clone())
+        .cloned()
 }
 
 // ── Dispatchers ───────────────────────────────────────────────────────────────
 
 /// Execute a parsed [`RewriteCommand`].
+#[allow(clippy::result_unit_err)]
 pub fn run_rewrite(cmd: RewriteCommand) -> Result<(), ()> {
     match cmd {
         RewriteCommand::Init { file, type_name, source, target, session: session_path, format } => {
@@ -480,6 +481,7 @@ pub fn parse_serve_args(args: &[String]) -> Result<ServeArgs, String> {
 }
 
 /// Run the daemon, optionally pre-loading a session from the given arguments.
+#[allow(clippy::result_unit_err)]
 pub fn run_serve_cmd(args: ServeArgs) -> Result<(), ()> {
     use super::daemon::run_daemon;
     let initial = match (args.file, args.type_name, args.source) {
@@ -499,6 +501,7 @@ pub fn run_serve_cmd(args: ServeArgs) -> Result<(), ()> {
 }
 
 /// Run the REPL with the given arguments.
+#[allow(clippy::result_unit_err)]
 pub fn run_repl_cmd(args: ReplArgs) -> Result<(), ()> {
     run_repl(&args.file, args.type_name.as_deref(), args.source.as_deref(), args.target.as_deref(), args.emacs)
 }
@@ -539,6 +542,7 @@ pub fn parse_session_args(args: &[String]) -> Result<SessionArgs, String> {
 }
 
 /// Run the session REPL with the given arguments.
+#[allow(clippy::result_unit_err)]
 pub fn run_session_cmd(args: SessionArgs) -> Result<(), ()> {
     run_session(&args.file, &args.type_name, args.emacs)
 }

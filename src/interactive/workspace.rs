@@ -221,13 +221,13 @@ impl Workspace {
 
     fn reinterpret(&self) -> Result<Arc<GlobalStore>, String> {
         let temp = self.write_temp_file()?;
-        let result = (|| {
+        let result = {
             let loader = Loader::default(vec![]);
             InterpretedFile::load(&loader, &temp)
                 .into_result()
                 .map(|f| Arc::clone(&f.state))
-                .map_err(|_| format!("interpretation error — check your definition"))
-        })();
+                .map_err(|_| "interpretation error — check your definition".to_string())
+        };
         let _ = std::fs::remove_file(&temp);
         result
     }

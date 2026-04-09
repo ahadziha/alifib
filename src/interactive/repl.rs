@@ -138,6 +138,7 @@ fn write_updated_file(
 /// `type_name`, `source_diagram`, and `target_diagram` may be given as CLI
 /// arguments; any that are omitted must be set interactively.
 /// `emacs_mode` selects Emacs keybindings; the default is vi mode.
+#[allow(clippy::result_unit_err)]
 pub fn run_repl(
     source_file: &str,
     type_name: Option<&str>,
@@ -263,10 +264,9 @@ pub fn run_repl(
                         let engine_will_start = type_complex.is_some()
                             && type_name_str.is_some()
                             && pending_target.is_some();
-                        if !engine_will_start {
-                            if let Some(tc) = type_complex.as_deref() {
-                                dispatch_print_cell(tc, &name, &display);
-                            }
+                        if !engine_will_start
+                            && let Some(tc) = type_complex.as_deref() {
+                            dispatch_print_cell(tc, &name, &display);
                         }
                         pending_source = Some(name);
                         maybe_start_engine(
@@ -279,10 +279,9 @@ pub fn run_repl(
                         let engine_will_start = type_complex.is_some()
                             && type_name_str.is_some()
                             && pending_source.is_some();
-                        if !engine_will_start {
-                            if let Some(tc) = type_complex.as_deref() {
-                                dispatch_print_cell(tc, &name, &display);
-                            }
+                        if !engine_will_start
+                            && let Some(tc) = type_complex.as_deref() {
+                            dispatch_print_cell(tc, &name, &display);
                         }
                         pending_target = Some(name);
                         maybe_start_engine(
@@ -575,9 +574,8 @@ fn dispatch_rules(complex: &Complex, store: &GlobalStore, filter_dim: Option<usi
     }
     let mut any = false;
     for (name, tag, dim) in complex.generators_iter() {
-        if let Some(d) = filter_dim {
-            if dim != d { continue; }
-        }
+        if let Some(d) = filter_dim
+            && dim != d { continue; }
         any = true;
         match store.cell_data_for_tag(complex, tag) {
             Some(CellData::Boundary { boundary_in, boundary_out }) => {
@@ -651,7 +649,7 @@ fn dispatch_print_type(
     })();
     let tc: &Complex = match live_complex.or(store_complex) {
         Some(c) => c,
-        None => { display.file(&ty.to_string().trim_end().to_owned()); return; }
+        None => { display.file(ty.to_string().trim_end()); return; }
     };
 
     // Build output manually so we can append `= expr` for each diagram.
@@ -704,10 +702,9 @@ fn dispatch_print_cell(complex: &Complex, name: &str, display: &Display) {
     // Generators are in the generators table and have cell data.
     if let Some((_, dim)) = complex.find_generator(name) {
         display.inspect(&format!("{} (dim {}, {})", name, dim, cell_kind(complex, name)));
-        if dim > 0 {
-            if let Some(diag) = complex.find_diagram(name) {
-                print_diagram_with_boundary(diag, complex, display);
-            }
+        if dim > 0
+            && let Some(diag) = complex.find_diagram(name) {
+            print_diagram_with_boundary(diag, complex, display);
         }
         return;
     }

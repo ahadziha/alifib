@@ -96,3 +96,9 @@ impl Display {
         println!();
     }
 }
+
+impl Default for Display {
+    fn default() -> Self {
+        Self::new()
+    }
+}
