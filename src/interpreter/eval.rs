@@ -1,4 +1,5 @@
 use crate::aux::{GlobalId, LocalId, Tag};
+use super::global_store::insert_global_cell;
 use crate::core::{
     complex::{Complex, MapDomain},
     diagram::{CellData, Diagram},
@@ -323,35 +324,33 @@ fn interpret_complex_generator(
     let (prep_opt, mut result) = prepare_generator(&context, &scope, generator_name);
     let Some((name, _name_span, boundaries)) = prep_opt else { return (scope, result); };
 
-    let dim = cell_dim(&boundaries);
-
-    let (tag, new_id_opt) = match mode {
-        Mode::Global => {
-            let id = GlobalId::fresh();
-            (Tag::Global(id), Some(id))
-        }
-        Mode::Local => (Tag::Local(name.clone()), None),
-    };
-
     let bounds_span = generator_name.boundary.as_ref().map(|b| b.span).unwrap_or(outer_span);
 
-    let classifier = match create_generator_diagram(bounds_span, tag.clone(), &boundaries) {
-        Ok(classifier) => classifier,
-        Err(error) => {
-            result.add_error(error);
-            return (scope, result);
+    match mode {
+        Mode::Global => {
+            let (id, dim) = match insert_global_cell(&mut scope, name.clone(), &boundaries, None) {
+                Ok(r) => r,
+                Err(error) => {
+                    result.add_error(make_error_from_core(bounds_span, error));
+                    return (scope, result);
+                }
+            };
+            Arc::make_mut(&mut result.context.state).set_cell(id, dim, boundaries);
         }
-    };
-
-    scope.add_generator(name.clone(), tag.clone(), classifier.clone());
-    scope.add_diagram(name.clone(), classifier.clone());
-
-    if mode == Mode::Local {
-        scope.add_local_cell(name.clone(), dim, boundaries.clone());
-    }
-
-    if let Some(id) = new_id_opt {
-        Arc::make_mut(&mut result.context.state).set_cell(id, dim, boundaries);
+        Mode::Local => {
+            let dim = cell_dim(&boundaries);
+            let tag = Tag::Local(name.clone());
+            let classifier = match create_generator_diagram(bounds_span, tag.clone(), &boundaries) {
+                Ok(c) => c,
+                Err(error) => {
+                    result.add_error(error);
+                    return (scope, result);
+                }
+            };
+            scope.add_generator(name.clone(), tag, classifier.clone());
+            scope.add_diagram(name.clone(), classifier);
+            scope.add_local_cell(name.clone(), dim, boundaries.clone());
+        }
     }
 
     (scope, result)

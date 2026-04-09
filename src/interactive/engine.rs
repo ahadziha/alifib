@@ -526,20 +526,36 @@ impl RewriteEngine {
         Ok(())
     }
 
-    /// Register the current running proof as a local definition in the type complex.
+    /// Register the current running proof as a first-class generator.
     ///
-    /// Clones the complex, adds `running_diagram` under `name`, and updates the
-    /// engine's own `type_complex` so future lookups see the new definition.
-    /// Returns the updated `Arc<Complex>` so the caller can sync its own reference.
-    pub fn register_proof(&mut self, name: &str) -> Result<Arc<Complex>, String> {
+    /// Computes the proof's source/target boundaries, delegates registration
+    /// to [`GlobalStore::register_generator`], then resyncs the engine's own
+    /// `type_complex` from the updated store.
+    ///
+    /// Returns `(updated_store, updated_type_complex)` so the caller can resync
+    /// its own `Arc` references.
+    pub fn register_proof(&mut self, name: &str) -> Result<(Arc<GlobalStore>, Arc<Complex>), String> {
         let diagram = self.running_diagram.clone()
             .ok_or_else(|| "no proof steps taken yet".to_owned())?;
 
-        let mut new_complex = (*self.type_complex).clone();
-        new_complex.add_diagram(name.to_owned(), diagram);
-        let new_arc = Arc::new(new_complex);
-        self.type_complex = Arc::clone(&new_arc);
-        Ok(new_arc)
+        let type_gid = self.store
+            .find_type_gid(&self.type_name)
+            .ok_or_else(|| format!("type '{}' not found in store", self.type_name))?;
+
+        let dim = self.source_diagram.top_dim() + 1;
+        Arc::make_mut(&mut self.store)
+            .register_proof_diagram(type_gid, name.to_owned(), diagram, dim)?;
+
+        self.type_complex = self.store
+            .find_type(type_gid)
+            .map(|e| Arc::clone(&e.complex))
+            .ok_or_else(|| format!("type '{}' missing after registration", self.type_name))?;
+
+        self.available_rewrites = compute_rewrites(
+            &self.store, &self.type_complex, &self.current_diagram,
+        )?;
+
+        Ok((Arc::clone(&self.store), Arc::clone(&self.type_complex)))
     }
 
     /// Export the current session state as a [`SessionFile`] for disk persistence.

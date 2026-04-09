@@ -148,7 +148,7 @@ pub fn run_repl(
 ) -> Result<(), ()> {
     let display = Display::new();
 
-    let (store, canonical_path, file_output) = match load_file_context(source_file) {
+    let (mut store, canonical_path, file_output) = match load_file_context(source_file) {
         Ok(r) => r,
         Err(e) => { display.error(&e); return Err(()); }
     };
@@ -319,13 +319,14 @@ pub fn run_repl(
                                     let source_expr = e.running_diagram()
                                         .map(|d| crate::output::diagram_to_source(d, e.type_complex()));
                                     match e.register_proof(&name) {
-                                        Ok(new_arc) => {
-                                            display.meta(&format!("Stored '{}' as local definition.", name));
+                                        Ok((new_store, new_complex)) => {
+                                            store = new_store;
+                                            type_complex = Some(new_complex);
+                                            display.meta(&format!("Stored '{}'.", name));
                                             dispatch_print_cell(e.type_complex(), &name, &display);
                                             if let (Some(tn), Some(expr)) = (type_name_str.as_deref(), source_expr) {
                                                 stored_defs.push((tn.to_owned(), name, expr));
                                             }
-                                            type_complex = Some(new_arc);
                                         }
                                         Err(err) => display.error(&err),
                                     }
