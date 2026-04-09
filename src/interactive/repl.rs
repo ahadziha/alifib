@@ -14,26 +14,34 @@
 //!
 //! # Commands
 //!
+//! Setup (always available):
 //! ```text
-//! @ <type>         Select a type from the loaded file (reuses language parser)
-//! types            List all types declared in the file
-//! source <name>    Set the source diagram
-//! target <name>    Set the target diagram
+//! @ <type>         Select a type from the loaded file
+//! types            List all types in the file
+//! type <name>      Inspect a type: generators, diagrams, maps
+//! cell <name>      Inspect a generator or let-binding with boundary
+//! source <name>    Set the source diagram  (requires type to be selected)
+//! target <name>    Set the target diagram  (requires type to be selected)
+//! status / show    Session state, or setup state when idle
+//! print            Print the whole source file
+//! rules            List generators in the selected type  (alias: r)
+//! clear            Destroy engine and type selection, return to setup
+//! help / ?         Show command list
+//! quit / exit / q  Exit
+//! ```
+//!
+//! Rewriting (require active session):
+//! ```text
 //! apply <n>        Apply rewrite at index <n>            (alias: a)
 //! undo             Undo the last step                    (alias: u)
 //! undo <n>         Undo back to step <n>
-//! undo all         Reset to source (= restart)
-//! restart          Reset to source diagram
-//! clear            Destroy engine and type, return to setup phase
-//! show             Redisplay current state
-//! rules            List generators in the selected type  (alias: r)
-//! info <name>      Show source → target of a generator  (alias: i)
+//! undo all         Reset to source diagram               (= restart)
+//! rules            List rewrite rules at current dimension  (alias: r)
 //! history          Show the move history                 (alias: h)
 //! proof            Show the running proof diagram        (alias: p)
-//! save <path>      Save session to a JSON file
+//! store <name>     Register current proof as a first-class generator
+//! save <path>      Write source file with stored definitions appended
 //! load <path>      Load and replay a session file        (alias: l)
-//! help / ?         Show command list
-//! quit / exit / q  Exit the REPL
 //! ```
 
 use std::sync::Arc;
@@ -260,34 +268,40 @@ pub fn run_repl(
 
                     // ── Commands that need type to be set ─────────────
                     Cmd::Source(name) => {
-                        // Only pre-print if the engine won't start (which prints both).
-                        let engine_will_start = type_complex.is_some()
-                            && type_name_str.is_some()
-                            && pending_target.is_some();
-                        if !engine_will_start
-                            && let Some(tc) = type_complex.as_deref() {
-                            dispatch_print_cell(tc, &name, &display);
+                        if type_complex.is_none() {
+                            display.error("no type selected — use '@ <TypeName>' first");
+                        } else {
+                            // Only pre-print if the engine won't start (which prints both).
+                            let engine_will_start = type_name_str.is_some()
+                                && pending_target.is_some();
+                            if !engine_will_start
+                                && let Some(tc) = type_complex.as_deref() {
+                                dispatch_print_cell(tc, &name, &display);
+                            }
+                            pending_source = Some(name);
+                            maybe_start_engine(
+                                &type_complex, &type_name_str, &pending_source, &pending_target,
+                                &store, source_file, &display, &mut engine,
+                            );
                         }
-                        pending_source = Some(name);
-                        maybe_start_engine(
-                            &type_complex, &type_name_str, &pending_source, &pending_target,
-                            &store, source_file, &display, &mut engine,
-                        );
                     }
                     Cmd::Target(name) => {
-                        // Only pre-print if the engine won't start (which prints both).
-                        let engine_will_start = type_complex.is_some()
-                            && type_name_str.is_some()
-                            && pending_source.is_some();
-                        if !engine_will_start
-                            && let Some(tc) = type_complex.as_deref() {
-                            dispatch_print_cell(tc, &name, &display);
+                        if type_complex.is_none() {
+                            display.error("no type selected — use '@ <TypeName>' first");
+                        } else {
+                            // Only pre-print if the engine won't start (which prints both).
+                            let engine_will_start = type_name_str.is_some()
+                                && pending_source.is_some();
+                            if !engine_will_start
+                                && let Some(tc) = type_complex.as_deref() {
+                                dispatch_print_cell(tc, &name, &display);
+                            }
+                            pending_target = Some(name);
+                            maybe_start_engine(
+                                &type_complex, &type_name_str, &pending_source, &pending_target,
+                                &store, source_file, &display, &mut engine,
+                            );
                         }
-                        pending_target = Some(name);
-                        maybe_start_engine(
-                            &type_complex, &type_name_str, &pending_source, &pending_target,
-                            &store, source_file, &display, &mut engine,
-                        );
                     }
                     Cmd::Rules => {
                         match (&engine, &type_complex) {
@@ -828,29 +842,31 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
 
 fn print_help(display: &Display) {
     display.meta(
-        "Commands:\n\
+        "Setup commands (always available):\n\
          \x20 @ <type>         Select a type from the loaded file\n\
          \x20 types            List all types in the file\n\
-         \x20 status / show    Rewrite state (or module/type if idle)\n\
-         \x20 print            Print the whole file\n\
-         \x20 type <name>      Inspect a type and its generators\n\
-         \x20 cell <name>      Inspect a cell or let-binding with boundary\n\
-         \x20 source <name>    Set the source diagram\n\
-         \x20 target <name>    Set the target diagram\n\
+         \x20 type <name>      Inspect a type: generators, diagrams, maps\n\
+         \x20 cell <name>      Inspect a generator or let-binding with boundary\n\
+         \x20 source <name>    Set the source diagram  (requires type to be selected)\n\
+         \x20 target <name>    Set the target diagram  (requires type to be selected)\n\
+         \x20 status / show    Session state, or setup state when idle\n\
+         \x20 print            Print the whole source file\n\
+         \x20 rules            List generators in the selected type  (alias: r)\n\
+         \x20 clear            Destroy engine and type selection, return to setup\n\
+         \x20 help / ?         Show this help\n\
+         \x20 quit / exit / q  Exit\n\
+         \n\
+         Rewriting commands (require active session):\n\
          \x20 apply <n>        Apply rewrite at index <n>            (alias: a)\n\
          \x20 undo             Undo the last step                    (alias: u)\n\
          \x20 undo <n>         Undo back to step <n>\n\
-         \x20 undo all         Reset to source (= restart)\n\
-         \x20 restart          Reset to source diagram\n\
-         \x20 clear            Destroy engine and type, return to setup phase\n\
-         \x20 rules            List rewrite rules in the selected type  (alias: r)\n\
+         \x20 undo all         Reset to source diagram               (= restart)\n\
+         \x20 rules            List rewrite rules at current dimension  (alias: r)\n\
          \x20 history          Show the move history                 (alias: h)\n\
          \x20 proof            Show the running proof diagram        (alias: p)\n\
-         \x20 store <name>     Register current proof as a local definition\n\
-         \x20 save <path>      Save file with stored definitions appended\n\
-         \x20 load <path>      Load and replay a session file        (alias: l)\n\
-         \x20 help / ?         Show this help\n\
-         \x20 quit / exit / q  Exit the REPL"
+         \x20 store <name>     Register current proof as a first-class generator\n\
+         \x20 save <path>      Write source file with stored definitions appended\n\
+         \x20 load <path>      Load and replay a session file        (alias: l)"
     );
 }
 

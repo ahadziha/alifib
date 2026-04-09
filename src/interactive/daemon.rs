@@ -6,6 +6,25 @@
 //! This protocol is suitable for editor integration: spawn `alifib serve`
 //! as a subprocess and communicate via its stdin/stdout.
 //!
+//! # Commands
+//!
+//! | Command | Description |
+//! |---------|-------------|
+//! | `init`  | Start a new session |
+//! | `resume` | Resume a saved session file |
+//! | `step` | Apply rewrite at choice index |
+//! | `undo` | Undo the last step |
+//! | `undo_to` | Undo back to a step count (0 = reset to source) |
+//! | `show` | Return current state |
+//! | `save` | Save session to a file |
+//! | `list_rules` | List all rewrite rules at the current dimension |
+//! | `history` | Return the full move history |
+//! | `store` | Register the current proof as a first-class generator |
+//! | `types` | List all types in the loaded source file |
+//! | `type` | Inspect a named type (generators, diagrams, maps) |
+//! | `cell` | Inspect a named generator or let-binding |
+//! | `shutdown` | Exit the daemon |
+//!
 //! # Example session
 //!
 //! ```text
@@ -13,15 +32,23 @@
 //! ← {"status":"ok","data":{"step_count":0,"current":{"label":"id id id",...},...}}
 //! → {"command":"step","choice":0}
 //! ← {"status":"ok","data":{"step_count":1,...}}
-//! → {"command":"undo"}
-//! ← {"status":"ok","data":{"step_count":0,...}}
+//! → {"command":"store","name":"myproof"}
+//! ← {"status":"ok","data":{"step_count":1,...}}
+//! → {"command":"types"}
+//! ← {"status":"ok","data":{"types":[{"name":"Idem",...}],...}}
+//! → {"command":"type","name":"Idem"}
+//! ← {"status":"ok","data":{"type_detail":{...},...}}
 //! → {"command":"shutdown"}
 //! ```
 
 use std::io::{BufRead, Write};
 
 use super::engine::RewriteEngine;
-use super::protocol::{Request, Response, build_response, build_list_rules_response};
+use super::protocol::{
+    Request, Response,
+    build_response, build_list_rules_response,
+    build_types_response, build_type_info_response, build_cell_response,
+};
 use super::session::SessionFile;
 
 /// Run the daemon loop: read requests from stdin, write responses to stdout.
@@ -142,6 +169,21 @@ fn dispatch(engine: &mut Option<RewriteEngine>, req: Request) -> DispatchResult 
         }
         History => {
             with_engine(engine, |e| Ok(build_response(e, true)))
+        }
+        Store { name } => {
+            with_engine(engine, |e| {
+                let _ = e.register_proof(&name)?;
+                Ok(build_response(e, false))
+            })
+        }
+        Types => {
+            with_engine(engine, |e| Ok(build_types_response(e)))
+        }
+        TypeInfo { name } => {
+            with_engine(engine, |e| build_type_info_response(e, &name))
+        }
+        Cell { name } => {
+            with_engine(engine, |e| build_cell_response(e, &name))
         }
         Shutdown => return DispatchResult::Shutdown,
     };

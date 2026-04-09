@@ -9,41 +9,57 @@ editor and tooling integration.
 ## REPL
 
 ```
-alifib repl <file> --type <t> --source <s> [--target <t>]
+alifib repl <file> [--type <t>] [--source <s>] [--target <t>] [--emacs]
 ```
 
-Loads `<file>`, finds type `<t>`, and starts a rewrite session from diagram
-`<s>`. The optional `--target` names the goal diagram; the REPL will report
-when it is reached.
+Loads `<file>`. If `--type`, `--source`, and `--target` are all supplied, the
+session starts immediately. Otherwise the REPL enters a setup phase where you
+set them interactively before rewriting begins.
 
-### Commands
+`--emacs` selects Emacs keybindings; the default is vi mode.
+
+### Setup commands (always available)
+
+| Command | Description |
+|---------|-------------|
+| `@ <type>` | Select a type from the loaded file |
+| `types` | List all types defined in the file |
+| `type <name>` | Inspect a type: generators, diagrams, maps |
+| `cell <name>` | Inspect a named generator or let-binding with its boundary |
+| `source <name>` | Set the source diagram (starts session when all three are set) |
+| `target <name>` | Set the target diagram (starts session when all three are set) |
+| `status` / `show` | Show setup state (module, type, pending source/target) |
+| `print` | Print the full source file |
+| `rules` | List generators in the selected type |
+| `clear` | Destroy engine and type selection, return to setup |
+| `help` / `?` | Show command list |
+| `quit` / `exit` / `q` | Exit |
+
+### Rewriting commands (require active session)
 
 | Command | Aliases | Description |
 |---------|---------|-------------|
-| `<n>` | | Apply rewrite at index `n` |
-| `step <n>` | `s <n>` | Apply rewrite at index `n` |
+| `apply <n>` | `a <n>` | Apply rewrite at index `n` |
 | `undo` | `u` | Undo the last step |
-| `undo <n>` | `u <n>` | Undo back to step `n` (0 = fully reset to source) |
-| `show` | | Redisplay current diagram and available rewrites |
-| `rules` | `r` | List all rewrite rules (n+1 generators) with their boundaries |
-| `info <name>` | `i <name>` | Show source → target of a named generator |
+| `undo <n>` | `u <n>` | Undo back to step `n` (0 = reset to source) |
+| `undo all` / `restart` | | Reset to source diagram |
+| `show` / `status` | | Redisplay current diagram and available rewrites |
+| `rules` | `r` | List rewrite rules at current dimension |
 | `history` | `h` | Show the sequence of moves applied so far |
 | `proof` | `p` | Show the running (n+1)-dim proof diagram and its source/target |
-| `save <path>` | | Save the session to a JSON file |
+| `store <name>` | | Register the current proof as a first-class generator in the type |
+| `save <path>` | | Write the original source file with stored definitions appended |
 | `load <path>` | `l <path>` | Load and replay a session file, replacing current state |
-| `help` | `?` | Print this list |
-| `quit` | `exit`, `q` | Exit the REPL |
 
 ### Display
 
-The prompt shows the current step count. After each `step` or `undo`, the
-current diagram and available rewrites are printed automatically. Rewrites
-show bracket notation to indicate where in the current diagram each rule
-matches:
+After each `apply` or `undo`, the current diagram and available rewrites are
+printed automatically. Bracket notation shows where in the current diagram each
+rule matches:
 
 ```
-rewrite[0]> 0
-Applied idem (choice 0).
+> apply 0
+Applied idem.
 
 [1] id id
 
@@ -51,8 +67,17 @@ rewrites:
   [0] idem : [id id]  ->  id
 ```
 
-The brackets `[id id]` indicate which top-dimensional cells are covered by
-the match.
+The brackets `[id id]` indicate which top-dimensional cells are covered by the
+match.
+
+### Storing proofs
+
+`store <name>` registers the current running proof as a first-class generator
+in the active type. The new generator is immediately available as a rewrite
+rule for the rest of the session.
+
+`save <path>` writes the original `.ali` source file with all stored definitions
+appended as `@ TypeName { let name = <expr> }` blocks, making them permanent.
 
 ---
 
@@ -63,12 +88,12 @@ alifib serve [<file> --type <t> --source <s> [--target <t>]]
 ```
 
 Runs a JSON-lines server on stdin/stdout. One JSON object per line in each
-direction. Suitable for editor integration: spawn as a subprocess and
-communicate via its stdio.
+direction. Suitable for editor integration or AI tooling: spawn as a subprocess
+and communicate via its stdio.
 
-If `<file>`, `--type`, and `--source` are provided, the session is
-pre-loaded and an initial state response is emitted before the request loop
-starts. Otherwise the daemon starts blank and waits for an `Init` request.
+If `<file>`, `--type`, and `--source` are provided, the session is pre-loaded
+and an initial state response is emitted before the request loop starts.
+Otherwise the daemon starts blank and waits for an `init` request.
 
 ### Requests
 
@@ -82,11 +107,15 @@ starts. Otherwise the daemon starts blank and waits for an `Init` request.
 {"command":"save","path":"..."}
 {"command":"list_rules"}
 {"command":"history"}
+{"command":"store","name":"myproof"}
+{"command":"types"}
+{"command":"type","name":"Idem"}
+{"command":"cell","name":"idem"}
 {"command":"shutdown"}
 ```
 
-`target_diagram` in `init` is optional. All commands except `init` and
-`resume` require a session to be active.
+`target_diagram` in `init` is optional. All commands except `init` and `resume`
+require a session to be active.
 
 ### Responses
 
@@ -102,17 +131,40 @@ The `data` object includes:
 | Field | Description |
 |-------|-------------|
 | `step_count` | Number of steps applied |
-| `current` | Current diagram (label, dim, cell_count, cells_by_dim) |
-| `source` | Source diagram |
+| `current` | Current diagram (`DiagramInfo`) |
+| `source` | Source diagram (`DiagramInfo`) |
 | `target` | Target diagram (omitted if not set) |
 | `target_reached` | Whether current equals target |
-| `rewrites` | Available rewrites, each with `rule_name`, `match_positions`, `match_display`, source/target `DiagramInfo` |
-| `proof` | Running proof diagram summary: dim, step_count, source/target labels (omitted if no steps taken) |
-| `history` | Move list (only included in response to `history` or `resume`) |
+| `rewrites` | Available rewrites — each has `rule_name`, `match_positions`, `match_display`, source/target `DiagramInfo` |
+| `proof` | Running proof summary: dim, step_count, source/target labels (omitted if no steps taken) |
+| `history` | Move list (only in response to `history` or `resume`) |
+| `rules` | All rewrite rules (only in response to `list_rules`) |
+| `types` | Type summaries (only in response to `types`) |
+| `type_detail` | Full type info (only in response to `type_info`) |
+| `cell_detail` | Cell info (only in response to `cell`) |
 
-`DiagramInfo` has the fields `label` (space-separated top-level names),
-`dim`, `cell_count`, and `cells_by_dim` (labels at every dimension from 0
-to top).
+`DiagramInfo` has: `label` (space-separated top-level names), `dim`,
+`cell_count`, `cells_by_dim` (labels at every dimension from 0 to top).
+
+### Command details
+
+**`store`** — registers the current running proof as a first-class generator in
+the active type. After success, `type_info` will show the new generator and it
+is immediately available as a rewrite rule.
+
+**`types`** — lists all named types in the loaded source file. The `types` array
+in the response contains `{name, max_dim, generator_count, diagram_count}` for
+each type.
+
+**`type`** — returns full detail for a named type: `generators` (with
+optional source/target boundaries), `diagrams` (let-bindings and stored proofs
+with their expressions), and `maps`. Uses the live type complex for the current
+session type, so generators added via `store` are immediately visible.
+
+**`cell`** — returns detail for a single named generator or let-binding in the
+active type complex. `kind` is `"generator"` or `"diagram"`; generators include
+source/target boundaries; diagrams also include `expr` (the source-language
+expression).
 
 ---
 

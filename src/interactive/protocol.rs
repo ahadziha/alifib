@@ -10,6 +10,10 @@
 //! {"command":"step","choice":0}
 //! {"command":"undo"}
 //! {"command":"show"}
+//! {"command":"store","name":"myproof"}
+//! {"command":"types"}
+//! {"command":"type","name":"Idem"}
+//! {"command":"cell","name":"idem"}
 //! ```
 //!
 //! # Response format
@@ -20,9 +24,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::core::complex::Complex;
-use crate::core::diagram::{CellData, Diagram};
+use crate::core::diagram::{CellData, Diagram, Sign};
 use crate::core::rewrite::CandidateRewrite;
-use crate::output::render_diagram;
+use crate::output::{diagram_to_source, render_diagram};
 use super::engine::RewriteEngine;
 use super::render::render_match_highlight;
 
@@ -50,13 +54,13 @@ pub enum Request {
     },
     /// Undo the last step.
     Undo,
-    /// Undo back to a specific step count.
+    /// Undo back to a specific step count (0 = reset to source).
     UndoTo {
         step: usize,
     },
     /// Return the current state (no mutation).
     Show,
-    /// Save the current session to a file.
+    /// Save the current session to a file (for `resume`).
     Save {
         path: String,
     },
@@ -64,6 +68,21 @@ pub enum Request {
     ListRules,
     /// Return the full move history.
     History,
+    /// Register the current running proof as a first-class generator in the type.
+    Store {
+        name: String,
+    },
+    /// List all types defined in the loaded source file.
+    Types,
+    /// Inspect a named type: generators by dimension, diagrams, maps.
+    #[serde(rename = "type")]
+    TypeInfo {
+        name: String,
+    },
+    /// Inspect a named generator or let-binding in the active type complex.
+    Cell {
+        name: String,
+    },
     /// Shut down the daemon.
     Shutdown,
 }
@@ -102,6 +121,83 @@ pub struct ResponseData {
     /// All rewrite rules at the current dimension; only populated by `list_rules`.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub rules: Vec<RuleInfo>,
+    /// Type summaries; only populated by `types`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub types: Vec<TypeSummaryInfo>,
+    /// Full type detail; only populated by `type_info`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub type_detail: Option<TypeDetailInfo>,
+    /// Cell detail; only populated by `cell`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cell_detail: Option<CellDetailInfo>,
+}
+
+/// Summary of a single type, for the `types` response.
+#[derive(Debug, Serialize)]
+pub struct TypeSummaryInfo {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_dim: Option<usize>,
+    pub generator_count: usize,
+    pub diagram_count: usize,
+}
+
+/// A single generator with optional boundary, for `type_info` and `cell`.
+#[derive(Debug, Serialize)]
+pub struct GeneratorInfo {
+    pub name: String,
+    pub dim: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<DiagramInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<DiagramInfo>,
+}
+
+/// A let-binding or session-stored diagram entry.
+#[derive(Debug, Serialize)]
+pub struct DiagramEntryInfo {
+    pub name: String,
+    pub dim: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<DiagramInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<DiagramInfo>,
+    /// The diagram expression as a source-language string.
+    pub expr: String,
+}
+
+/// A named partial map in a type.
+#[derive(Debug, Serialize)]
+pub struct MapEntry {
+    pub name: String,
+    pub domain: String,
+}
+
+/// Full detail of a type, for the `type_info` response.
+#[derive(Debug, Serialize)]
+pub struct TypeDetailInfo {
+    pub name: String,
+    pub generators: Vec<GeneratorInfo>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub diagrams: Vec<DiagramEntryInfo>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub maps: Vec<MapEntry>,
+}
+
+/// Detail of a single cell or let-binding, for the `cell` response.
+#[derive(Debug, Serialize)]
+pub struct CellDetailInfo {
+    pub name: String,
+    pub dim: usize,
+    /// `"generator"` or `"diagram"`.
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<DiagramInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<DiagramInfo>,
+    /// Source-language expression; only present for let-bindings / stored proofs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expr: Option<String>,
 }
 
 /// Rich information about a diagram for client display.
@@ -249,7 +345,196 @@ pub fn build_response(engine: &RewriteEngine, include_history: bool) -> Response
         proof,
         history,
         rules: vec![],
+        types: vec![],
+        type_detail: None,
+        cell_detail: None,
     }
+}
+
+/// Build a [`ResponseData`] listing all types in the loaded source file.
+pub fn build_types_response(engine: &RewriteEngine) -> ResponseData {
+    let normalized = engine.store().normalize();
+    let source_file = engine.source_file();
+
+    let types: Vec<TypeSummaryInfo> = normalized
+        .modules
+        .iter()
+        .find(|m| m.path == source_file)
+        .map(|module| {
+            module
+                .types
+                .iter()
+                .filter(|t| !t.name.is_empty())
+                .map(|t| {
+                    let max_dim = t.dims.iter().map(|d| d.dim).max();
+                    let generator_count: usize = t.dims.iter().map(|d| d.cells.len()).sum();
+                    TypeSummaryInfo {
+                        name: t.name.clone(),
+                        max_dim,
+                        generator_count,
+                        diagram_count: t.diagrams.len(),
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut data = build_response(engine, false);
+    data.types = types;
+    data
+}
+
+/// Build a [`ResponseData`] with full detail for the named type.
+pub fn build_type_info_response(
+    engine: &RewriteEngine,
+    name: &str,
+) -> Result<ResponseData, String> {
+    let type_detail: Result<TypeDetailInfo, String> = {
+        let store = engine.store();
+
+        // Prefer the live complex for the active session type (includes stored proofs).
+        let live_tc: &Complex = if engine.type_name() == name {
+            engine.type_complex()
+        } else {
+            let gid = store
+                .find_type_gid(name)
+                .ok_or_else(|| format!("type '{}' not found", name))?;
+            let entry = store
+                .find_type(gid)
+                .ok_or_else(|| format!("type '{}' not found in store", name))?;
+            &*entry.complex
+        };
+
+        // All named generators, grouped by dimension, with boundaries.
+        let generators: Vec<GeneratorInfo> = live_tc
+            .generators_iter()
+            .filter(|(n, _, _)| !n.is_empty())
+            .map(|(gen_name, tag, dim)| {
+                let (source, target) = if dim > 0 {
+                    match store.cell_data_for_tag(live_tc, tag) {
+                        Some(CellData::Boundary { boundary_in, boundary_out }) => (
+                            Some(diagram_info(&boundary_in, live_tc)),
+                            Some(diagram_info(&boundary_out, live_tc)),
+                        ),
+                        _ => (None, None),
+                    }
+                } else {
+                    (None, None)
+                };
+                GeneratorInfo { name: gen_name.clone(), dim, source, target }
+            })
+            .collect();
+
+        // Let-binding diagrams: in the diagrams table but NOT in the generators table.
+        let diagrams: Vec<DiagramEntryInfo> = live_tc
+            .diagrams_iter()
+            .filter(|(n, _)| !n.is_empty() && live_tc.find_generator(n).is_none())
+            .map(|(diag_name, diag)| {
+                let dim = diag.top_dim();
+                let (source, target) = if dim > 0 {
+                    let k = dim - 1;
+                    let src = Diagram::boundary(Sign::Source, k, diag)
+                        .ok()
+                        .map(|d| diagram_info(&d, live_tc));
+                    let tgt = Diagram::boundary(Sign::Target, k, diag)
+                        .ok()
+                        .map(|d| diagram_info(&d, live_tc));
+                    (src, tgt)
+                } else {
+                    (None, None)
+                };
+                DiagramEntryInfo {
+                    name: diag_name.clone(),
+                    dim,
+                    source,
+                    target,
+                    expr: diagram_to_source(diag, live_tc),
+                }
+            })
+            .collect();
+
+        // Maps from the normalized store (static; don't change at runtime).
+        let normalized = store.normalize();
+        let source_file = engine.source_file();
+        let maps: Vec<MapEntry> = normalized
+            .modules
+            .iter()
+            .find(|m| m.path == source_file)
+            .and_then(|module| module.types.iter().find(|t| t.name == name))
+            .map(|ty| {
+                ty.maps
+                    .iter()
+                    .map(|m| MapEntry { name: m.name.clone(), domain: m.domain.clone() })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        Ok(TypeDetailInfo { name: name.to_owned(), generators, diagrams, maps })
+    };
+
+    let type_detail = type_detail?;
+    let mut data = build_response(engine, false);
+    data.type_detail = Some(type_detail);
+    Ok(data)
+}
+
+/// Build a [`ResponseData`] with detail for a single named cell or let-binding.
+pub fn build_cell_response(engine: &RewriteEngine, name: &str) -> Result<ResponseData, String> {
+    let cell_detail: Result<CellDetailInfo, String> = {
+        let scope = engine.type_complex();
+        let store = engine.store();
+
+        if let Some((tag, dim)) = scope.find_generator(name) {
+            let (source, target) = if dim > 0 {
+                match store.cell_data_for_tag(scope, tag) {
+                    Some(CellData::Boundary { boundary_in, boundary_out }) => (
+                        Some(diagram_info(&boundary_in, scope)),
+                        Some(diagram_info(&boundary_out, scope)),
+                    ),
+                    _ => (None, None),
+                }
+            } else {
+                (None, None)
+            };
+            Ok(CellDetailInfo {
+                name: name.to_owned(),
+                dim,
+                kind: "generator".to_owned(),
+                source,
+                target,
+                expr: None,
+            })
+        } else if let Some(diag) = scope.find_diagram(name) {
+            let dim = diag.top_dim();
+            let (source, target) = if dim > 0 {
+                let k = dim - 1;
+                let src = Diagram::boundary(Sign::Source, k, diag)
+                    .ok()
+                    .map(|d| diagram_info(&d, scope));
+                let tgt = Diagram::boundary(Sign::Target, k, diag)
+                    .ok()
+                    .map(|d| diagram_info(&d, scope));
+                (src, tgt)
+            } else {
+                (None, None)
+            };
+            Ok(CellDetailInfo {
+                name: name.to_owned(),
+                dim,
+                kind: "diagram".to_owned(),
+                source,
+                target,
+                expr: Some(diagram_to_source(diag, scope)),
+            })
+        } else {
+            Err(format!("'{}' not found in type", name))
+        }
+    };
+
+    let cell_detail = cell_detail?;
+    let mut data = build_response(engine, false);
+    data.cell_detail = Some(cell_detail);
+    Ok(data)
 }
 
 /// Build a [`ResponseData`] that lists all (n+1)-generators in the type.

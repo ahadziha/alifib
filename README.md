@@ -57,6 +57,8 @@ cargo build --release
 
 ## Usage
 
+### Interpreter
+
 ```
 alifib <input.ali> [-o <output.ali>] [--ast] [--bench N]
 ```
@@ -65,12 +67,91 @@ alifib <input.ali> [-o <output.ali>] [--ast] [--bench N]
 - `--ast` — print the parsed AST instead of interpreting
 - `--bench N` — run N times and print average wall time in milliseconds
 
-## Examples
-
 ```
 cargo run --release -- examples/Frobenius.ali
 cargo run --release -- examples/YangBaxter.ali
 ```
+
+### REPL
+
+An interactive terminal session for building proof diagrams step by step.
+
+```
+alifib repl <file> [--type <t>] [--source <s>] [--target <t>] [--emacs]
+```
+
+Example:
+
+```
+alifib repl examples/Idem.ali --type Idem --source lhs --target rhs
+```
+
+The REPL has two phases:
+
+- **Setup** — select a type (`@ Idem`), then set `source` and `target` diagram
+  names. When all three are set the session starts automatically.
+- **Rewriting** — apply rewrites with `apply <n>`, undo with `undo`, inspect
+  the running proof with `proof`, name and store it with `store <name>`.
+
+Key commands:
+
+| Command | Description |
+|---------|-------------|
+| `@ <type>` | Select a type |
+| `source <name>` / `target <name>` | Set source and target |
+| `apply <n>` | Apply rewrite at index `n` (alias `a`) |
+| `undo` | Undo last step (alias `u`) |
+| `rules` | List available rewrite rules (alias `r`) |
+| `proof` | Show the running proof diagram (alias `p`) |
+| `store <name>` | Register proof as a first-class generator |
+| `save <path>` | Write source file with stored definitions appended |
+| `help` | Full command list |
+
+See `INTERACTIVE.md` for the complete reference.
+
+### Daemon
+
+A JSON-lines subprocess server for editor and AI integration.
+
+```
+alifib serve [<file> --type <t> --source <s> [--target <t>]]
+```
+
+One JSON object per line in each direction on stdin/stdout. Example:
+
+```sh
+echo '{"command":"init","source_file":"examples/Idem.ali","type_name":"Idem","source_diagram":"lhs"}' \
+  | alifib serve
+```
+
+Key requests:
+
+```json
+{"command":"init","source_file":"...","type_name":"...","source_diagram":"..."}
+{"command":"step","choice":0}
+{"command":"undo"}
+{"command":"store","name":"myproof"}
+{"command":"types"}
+{"command":"type","name":"Idem"}
+{"command":"cell","name":"idem"}
+{"command":"shutdown"}
+```
+
+Every response is `{"status":"ok","data":{...}}` or `{"status":"error","message":"..."}`.
+The `data` object always includes the current session state (step count, current diagram,
+available rewrites). Informational commands add extra fields: `types`, `type_detail`, `cell_detail`.
+
+See `INTERACTIVE.md` for the full protocol reference.
+
+### Session workspace
+
+```
+alifib session <file> --type <t>
+```
+
+An interactive session for building up definitions incrementally within a type.
+Unlike the REPL, no initial source diagram is required. Use `goal <name> : <src> -> <tgt>`
+to enter a guided proof sub-loop, then `export` or `export <path>` to save results.
 
 ## Repository layout
 
@@ -79,4 +160,5 @@ src/           Interpreter source (language/, core/, interpreter/, output/)
 examples/      Example .ali files
 docs/          Grammar, interpreter description, formal semantics (LaTeX)
 trs/           Plugin: convert term rewriting systems to alifib (see trs/README.md)
+INTERACTIVE.md Full reference for the REPL, daemon, and session workspace
 ```
