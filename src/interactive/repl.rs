@@ -94,13 +94,18 @@ pub fn run_goal_loop(
                 if line.is_empty() { continue; }
                 rl.add_history_entry(&line).ok();
 
-                match line.as_str() {
-                    "done" | "accept" | "d" | "a" => return GoalOutcome::Done,
-                    "abandon" => return GoalOutcome::Abandoned,
-                    _ => {}
-                }
-                if dispatch_rewrite_command(engine, &line, display) == DispatchResult::Quit {
-                    return GoalOutcome::Abandoned;
+                for part in line.split(';') {
+                    let part = part.trim();
+                    if part.is_empty() { continue; }
+                    match part {
+                        "done" | "accept" | "d" | "a" => return GoalOutcome::Done,
+                        "abandon" => return GoalOutcome::Abandoned,
+                        _ => {
+                            if dispatch_rewrite_command(engine, part, display) == DispatchResult::Quit {
+                                return GoalOutcome::Abandoned;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -180,7 +185,7 @@ pub fn run_repl(
         );
     }
 
-    loop {
+    'repl: loop {
         match rl.readline("> ") {
             Err(ReadlineError::Eof) | Err(ReadlineError::Interrupted) => break,
             Err(e) => { display.error(&format!("read error: {e}")); break; }
@@ -189,7 +194,10 @@ pub fn run_repl(
                 if line.is_empty() { continue; }
                 rl.add_history_entry(&line).ok();
 
-                match parse_command(&line) {
+                for part in line.split(';') {
+                let part = part.trim();
+                if part.is_empty() { continue; }
+                match parse_command(part) {
                     // ── Always-available commands ─────────────────────
                     Cmd::AtExpr(expr) => {
                         handle_at_command(
@@ -237,7 +245,7 @@ pub fn run_repl(
                         display.meta("Cleared.");
                     }
                     Cmd::Help => print_help(&display),
-                    Cmd::Quit => break,
+                    Cmd::Quit => break 'repl,
 
                     // ── Commands that need type to be set ─────────────
                     Cmd::Source(name) => {
@@ -324,6 +332,7 @@ pub fn run_repl(
                         }
                     },
                 }
+                } // end for part in line.split(';')
             }
         }
     }

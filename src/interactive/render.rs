@@ -93,7 +93,6 @@ pub fn print_state(
     // Running proof for completion display (source label, target label, proof label).
     proof: Option<(&str, &str, &str)>,
 ) {
-    display.blank();
     display.meta(&format!("{:<18}  {}", "[REMAINING SOURCE]", render_diagram(current, scope)));
     if let Some(t) = target {
         display.meta(&format!("{:<18}  {}", "[TARGET]", render_diagram(t, scope)));
