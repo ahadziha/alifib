@@ -94,9 +94,9 @@ pub fn print_state(
     proof: Option<(&str, &str, &str)>,
 ) {
     display.blank();
-    display.meta(&format!("[REMAINING SOURCE]\t{}", render_diagram(current, scope)));
+    display.meta(&format!("{:<18}  {}", "[REMAINING SOURCE]", render_diagram(current, scope)));
     if let Some(t) = target {
-        display.meta(&format!("[TARGET]\t{}", render_diagram(t, scope)));
+        display.meta(&format!("{:<18}  {}", "[TARGET]", render_diagram(t, scope)));
     }
     display.blank();
 
