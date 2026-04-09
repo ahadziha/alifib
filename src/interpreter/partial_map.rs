@@ -589,6 +589,12 @@ pub fn interpret_def_pmap(
     };
 
     check_map_totality(&mut combined, &domain, &eval_map.map, &dp.name.inner, dp.name.span, dp.total);
+    if combined.has_errors() {
+        // Named maps should not be published into scope once we know they are invalid.
+        // In particular, total maps that are missing generators must not become visible
+        // to later statements in the same interpretation run.
+        return (None, combined);
+    }
 
     let name = dp.name.inner.clone();
     (Some((name, eval_map.map, MapDomain::Type(id))), combined)

@@ -336,10 +336,23 @@ pub fn interpret_assert(
         (Some(Term::Diag(d1)), Some(Term::Diag(d2))) => {
             (Some(TermPair::Diagrams { fst: d1, snd: d2 }), combined)
         }
-        (Some(Term::Map(mc1)), Some(Term::Map(mc2))) => (
-            Some(TermPair::Maps { fst: mc1.map, snd: mc2.map, domain: mc1.domain }),
-            combined,
-        ),
+        (Some(Term::Map(mc1)), Some(Term::Map(mc2))) => {
+            // Map equality is only meaningful when both sides range over the same
+            // declared domain. Otherwise we can silently ignore generators that appear
+            // on only one side and accept an invalid assertion.
+            if !Arc::ptr_eq(&mc1.domain, &mc2.domain) {
+                combined.add_error(make_error(
+                    assert_stmt.lhs.span,
+                    "The two sides of the equation are incomparable",
+                ));
+                (None, combined)
+            } else {
+                (
+                    Some(TermPair::Maps { fst: mc1.map, snd: mc2.map, domain: mc1.domain }),
+                    combined,
+                )
+            }
+        }
         (Some(_), Some(_)) => {
             combined.add_error(make_error(assert_stmt.lhs.span, "The two sides of the equation are incomparable"));
             (None, combined)
