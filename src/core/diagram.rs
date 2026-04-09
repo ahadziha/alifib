@@ -151,9 +151,17 @@ impl Diagram {
 
     /// Return the (sign, k)-boundary as a new diagram.
     pub fn boundary(sign: Sign, k: usize, d: &Diagram) -> Result<Diagram, Error> {
-        let (_, emb) = ogposet::boundary(sign.as_ogposet_sign(), k, &d.shape);
+        let effective_k = if d.shape.dim < 0 {
+            0
+        } else {
+            k.min(d.shape.dim as usize)
+        };
+        let (_, emb) = ogposet::boundary(sign.as_ogposet_sign(), effective_k, &d.shape);
         let pulled_labels = pullback_labels(d, &emb);
-        let new_history = boundary_history(&d.paste_history, sign, k);
+        // Clamp history to the same effective boundary dimension as the shape.
+        // If we keep the caller's larger `k`, we manufacture extra history levels and
+        // break the core invariant that shape/labels/history all have matching lengths.
+        let new_history = boundary_history(&d.paste_history, sign, effective_k);
         Ok(Diagram::make(
             Arc::clone(&emb.dom),
             pulled_labels,
@@ -171,7 +179,9 @@ impl Diagram {
         };
         let (shape_norm, emb) = ogposet::boundary_traverse(og_sign, effective_k, &d.shape);
         let pulled_labels = pullback_labels(d, &emb);
-        let new_history = boundary_history(&d.paste_history, sign, k);
+        // `boundary_traverse` clamps to `effective_k`; history must do the same or the
+        // returned diagram is malformed in release builds when callers pass k > top_dim.
+        let new_history = boundary_history(&d.paste_history, sign, effective_k);
         Ok(Diagram::make(shape_norm, pulled_labels, new_history))
     }
 
@@ -827,4 +837,20 @@ fn build_cell_paste_history(
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CellData, Diagram, Sign};
+    use crate::aux::Tag;
+
+    #[test]
+    fn boundary_normal_clamps_history_to_top_dim() {
+        let point = Diagram::cell(Tag::Local("pt".into()), &CellData::Zero).unwrap();
+
+        let boundary = Diagram::boundary_normal(Sign::Source, 5, &point).unwrap();
+
+        assert_eq!(boundary.labels.len(), 1);
+        assert_eq!(boundary.paste_history.len(), 1);
+    }
 }

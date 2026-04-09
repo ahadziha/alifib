@@ -685,7 +685,6 @@ mod tests {
     #[test]
     fn inclusions_dim1_arrow_in_two_arrow_paste() {
         // A single arrow appears at exactly 2 positions in a 2-arrow paste.
-        let p = pt();
         let f = globular_atom(1);
         let ff = Diagram::paste(0, &f, &f).unwrap();
         let inclusions = molecule_inclusions(&f.shape, &ff.shape).unwrap();

@@ -147,7 +147,7 @@ fn compute_rewrites(
     store: &GlobalStore,
     type_complex: &Complex,
     current: &Diagram,
-) -> Vec<CandidateRewrite> {
+) -> Result<Vec<CandidateRewrite>, String> {
     find_candidate_rewrites(
         |cx, tag| store.cell_data_for_tag(cx, tag),
         type_complex,
@@ -194,7 +194,7 @@ impl RewriteEngine {
             })
             .transpose()?;
 
-        let available_rewrites = compute_rewrites(&store, &type_complex, &source_diagram);
+        let available_rewrites = compute_rewrites(&store, &type_complex, &source_diagram)?;
 
         Ok(Self {
             current_diagram: source_diagram.clone(),
@@ -222,7 +222,7 @@ impl RewriteEngine {
         let (store, type_complex, source_diagram, target_diagram) =
             load_context(source_file, type_name, source_diagram_name, target_diagram_name)?;
 
-        let available_rewrites = compute_rewrites(&store, &type_complex, &source_diagram);
+        let available_rewrites = compute_rewrites(&store, &type_complex, &source_diagram)?;
 
         Ok(Self {
             current_diagram: source_diagram.clone(),
@@ -257,7 +257,8 @@ impl RewriteEngine {
         let mut history: Vec<HistoryEntry> = Vec::with_capacity(session.moves.len());
 
         for (step_idx, mov) in session.moves.iter().enumerate() {
-            let candidates = compute_rewrites(&store, &type_complex, &current);
+            let candidates = compute_rewrites(&store, &type_complex, &current)
+                .map_err(|e| format!("replay failed at step {}: {}", step_idx + 1, e))?;
 
             let candidate = candidates.get(mov.choice).ok_or_else(|| {
                 format!(
@@ -294,7 +295,7 @@ impl RewriteEngine {
                 .map_err(|e| format!("target boundary at step {}: {}", step_idx + 1, e))?;
         }
 
-        let available_rewrites = compute_rewrites(&store, &type_complex, &current);
+        let available_rewrites = compute_rewrites(&store, &type_complex, &current)?;
 
         Ok(Self {
             current_diagram: current,
@@ -353,8 +354,11 @@ impl RewriteEngine {
             prev_running,
         });
 
-        self.available_rewrites =
-            compute_rewrites(&self.store, &self.type_complex, &self.current_diagram);
+        self.available_rewrites = compute_rewrites(
+            &self.store,
+            &self.type_complex,
+            &self.current_diagram,
+        )?;
 
         Ok(&self.history.last().unwrap().mov.rule_name)
     }
@@ -366,8 +370,11 @@ impl RewriteEngine {
         let entry = self.history.pop().ok_or("nothing to undo")?;
         self.current_diagram = entry.prev_diagram;
         self.running_diagram = entry.prev_running;
-        self.available_rewrites =
-            compute_rewrites(&self.store, &self.type_complex, &self.current_diagram);
+        self.available_rewrites = compute_rewrites(
+            &self.store,
+            &self.type_complex,
+            &self.current_diagram,
+        )?;
         Ok(())
     }
 
@@ -544,4 +551,3 @@ impl RewriteEngine {
         }
     }
 }
-

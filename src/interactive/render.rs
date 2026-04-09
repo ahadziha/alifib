@@ -74,12 +74,13 @@ pub fn render_match_highlight(
 /// Format:
 /// ```text
 /// (blank)
-/// <current diagram>       ← cell line (plain)
+/// >> [REMAINING SOURCE]  <current diagram>
+/// >> [TARGET]            <target diagram>
 /// (blank)
 /// >> rewrites:
 /// >>
-/// >>   0  <highlight>  ->  <target>
-/// >>     by <rule> : <src> -> <tgt>
+/// >>   (0) [id id] id
+/// >>       by idem : id id -> id
 /// >> ...
 /// ```
 /// If the target is reached, prints `>> Rewrite complete.` and the proof cell.
@@ -93,7 +94,10 @@ pub fn print_state(
     proof: Option<(&str, &str, &str)>,
 ) {
     display.blank();
-    display.inspect(&render_diagram(current, scope));
+    display.meta(&format!("[REMAINING SOURCE]\t{}", render_diagram(current, scope)));
+    if let Some(t) = target {
+        display.meta(&format!("[TARGET]\t{}", render_diagram(t, scope)));
+    }
     display.blank();
 
     // `proof` is Some only when target_reached() is true (steps taken + diagrams match).
@@ -103,10 +107,6 @@ pub fn print_state(
         display.inspect("proof:");
         display.inspect(&format!("  {proof_label} : {src_label} -> {tgt_label}"));
         return;
-    }
-
-    if let Some(t) = target {
-        display.inspect(&format!("target: {}", render_diagram(t, scope)));
     }
 
     if rewrites.is_empty() {
