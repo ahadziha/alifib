@@ -238,8 +238,14 @@ pub fn run_repl(
 
                     // ── Commands that need type to be set ─────────────
                     Cmd::Source(name) => {
-                        if let Some(tc) = type_complex.as_deref() {
-                            dispatch_print_cell(tc, &name, &display);
+                        // Only pre-print if the engine won't start (which prints both).
+                        let engine_will_start = type_complex.is_some()
+                            && type_name_str.is_some()
+                            && pending_target.is_some();
+                        if !engine_will_start {
+                            if let Some(tc) = type_complex.as_deref() {
+                                dispatch_print_cell(tc, &name, &display);
+                            }
                         }
                         pending_source = Some(name);
                         maybe_start_engine(
@@ -248,8 +254,14 @@ pub fn run_repl(
                         );
                     }
                     Cmd::Target(name) => {
-                        if let Some(tc) = type_complex.as_deref() {
-                            dispatch_print_cell(tc, &name, &display);
+                        // Only pre-print if the engine won't start (which prints both).
+                        let engine_will_start = type_complex.is_some()
+                            && type_name_str.is_some()
+                            && pending_source.is_some();
+                        if !engine_will_start {
+                            if let Some(tc) = type_complex.as_deref() {
+                                dispatch_print_cell(tc, &name, &display);
+                            }
                         }
                         pending_target = Some(name);
                         maybe_start_engine(
@@ -649,7 +661,13 @@ fn dispatch_info(complex: &Complex, store: &GlobalStore, name: &str, display: &D
 }
 
 /// Print a named type from the module by looking it up in the normalized store.
+///
+/// Generators and maps use the standard normalized layout. Diagrams (let-bindings)
+/// additionally show `= <expr>` so the definition is visible.
 fn dispatch_print_type(store: &GlobalStore, canonical_path: &str, name: &str, display: &Display) {
+    use crate::aux::Tag;
+    use std::fmt::Write as _;
+
     let normalized = store.normalize();
     let module = normalized.modules.iter().find(|m| m.path == canonical_path);
     let Some(module) = module else {
@@ -660,7 +678,54 @@ fn dispatch_print_type(store: &GlobalStore, canonical_path: &str, name: &str, di
         display.error(&format!("type '{}' not found in file", name));
         return;
     };
-    display.file(&ty.to_string().trim_end().to_owned());
+
+    // Look up the live type complex for diagram_to_source.
+    let type_complex = (|| -> Option<&crate::core::complex::Complex> {
+        let mc = store.find_module(canonical_path)?;
+        let (tag, _) = mc.find_generator(name)?;
+        let gid = match tag { Tag::Global(gid) => *gid, _ => return None };
+        store.find_type(gid).map(|e| e.complex.as_ref())
+    })();
+
+    // If the complex isn't reachable, fall back to plain display.
+    let Some(tc) = type_complex else {
+        display.file(&ty.to_string().trim_end().to_owned());
+        return;
+    };
+
+    // Build output manually so we can append `= expr` for each diagram.
+    let mut out = String::new();
+    let label = if ty.name.is_empty() { "<empty>" } else { &ty.name };
+    writeln!(out, "Type {}", label).ok();
+    if ty.dims.is_empty() {
+        writeln!(out, "  (no cells)").ok();
+    } else {
+        for dg in &ty.dims {
+            writeln!(out, "  [{}]", dg.dim).ok();
+            for cell in &dg.cells {
+                writeln!(out, "    {}", cell).ok();
+            }
+        }
+    }
+    if !ty.diagrams.is_empty() {
+        writeln!(out, "  Diagrams").ok();
+        for diagram_cell in &ty.diagrams {
+            write!(out, "    {}", diagram_cell).ok();
+            if let Some(d) = tc.find_diagram(&diagram_cell.name) {
+                let expr = crate::output::diagram_to_source(d, tc);
+                write!(out, "  = {}", expr).ok();
+            }
+            writeln!(out).ok();
+        }
+    }
+    if !ty.maps.is_empty() {
+        writeln!(out, "  Maps").ok();
+        for map in &ty.maps {
+            writeln!(out, "    {}", map).ok();
+        }
+    }
+
+    display.file(out.trim_end());
 }
 
 /// Print a named cell from the type complex.
