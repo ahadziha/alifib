@@ -45,15 +45,6 @@ impl Context {
 #[derive(Debug, Clone)]
 pub struct HoleInfo {
     pub span: Span,
-    pub boundary: Option<HoleBoundaryInfo>,
-    /// Source cell tag, for deferred boundary computation in pmap context.
-    pub source_tag: Option<Tag>,
-}
-
-#[derive(Debug, Clone)]
-pub struct HoleBoundaryInfo {
-    pub boundary_in: String,
-    pub boundary_out: String,
 }
 
 // ---- Interpretation result ----

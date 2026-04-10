@@ -7,7 +7,7 @@ use crate::core::{
 };
 use crate::language::ast::{self, Span, Spanned, PMapBasic, PMapDef, PMapExt, PMapClause, DefPMap, Address};
 use super::types::*;
-use super::diagram::{interpret_diagram_as_term, render_diagram, render_boundary_partial};
+use super::diagram::interpret_diagram_as_term;
 
 // ---- Address resolution ----
 
@@ -269,13 +269,12 @@ fn interpret_pmap_ext(
 
     // Apply each clause
     let mut current_map = initial_mc.map;
-    let effective_source = &*initial_mc.source;
     let mut acc_result = prefix_result;
 
     for clause in &ext.clauses {
         let ctx = acc_result.context.clone();
         let (m_opt, clause_result) = interpret_pm_clause(
-            &ctx, location, effective_source, current_map, clause, span
+            &ctx, location, &*initial_mc.source, current_map, clause, span
         );
         acc_result = InterpResult::combine(acc_result, clause_result);
         match m_opt {
@@ -284,41 +283,6 @@ fn interpret_pmap_ext(
         }
         if acc_result.has_errors() {
             return (Some(MapComponent { map: current_map, source: initial_mc.source }), acc_result);
-        }
-    }
-
-    // Deferred hole boundary computation: use the map as-is after all clauses.
-    let ctx = &acc_result.context;
-    for hole in &mut acc_result.holes {
-        if let Some(tag) = &hole.source_tag {
-            if let Some(cell_data) = get_cell_data(ctx, effective_source, tag) {
-                if let CellData::Boundary { boundary_in, boundary_out } = &cell_data {
-                    let rendered_in = match PMap::apply(&current_map, boundary_in) {
-                        Ok(mi) => render_diagram(&mi, location),
-                        Err(_) => render_boundary_partial(boundary_in, &current_map, location),
-                    };
-                    let rendered_out = match PMap::apply(&current_map, boundary_out) {
-                        Ok(mo) => render_diagram(&mo, location),
-                        Err(_) => render_boundary_partial(boundary_out, &current_map, location),
-                    };
-                    match &mut hole.boundary {
-                        Some(existing) => {
-                            if existing.boundary_in == "?" {
-                                existing.boundary_in = rendered_in;
-                            }
-                            if existing.boundary_out == "?" {
-                                existing.boundary_out = rendered_out;
-                            }
-                        }
-                        None => {
-                            hole.boundary = Some(HoleBoundaryInfo {
-                                boundary_in: rendered_in,
-                                boundary_out: rendered_out,
-                            });
-                        }
-                    }
-                }
-            }
         }
     }
 
@@ -338,26 +302,10 @@ fn interpret_pm_clause(
         None => return (None, left_result),
         Some(left_term) => {
             let (right_opt, right_result) = interpret_diagram_as_term(&left_result.context, location, &clause.inner.rhs);
-            let mut combined = InterpResult::combine(left_result, right_result);
+            let combined = InterpResult::combine(left_result, right_result);
             match right_opt {
                 None => {
-                    if combined.holes.is_empty() {
-                        (None, combined)
-                    } else {
-                        // RHS was a hole — record source tag for deferred boundary computation
-                        if let Term::DTerm(source_diag) = &left_term {
-                            if source_diag.is_cell() {
-                                let d = source_diag.dim().max(0) as usize;
-                                if let Some(tag) = source_diag.labels.get(d).and_then(|r| r.first()) {
-                                    if let Some(last_hole) = combined.holes.last_mut() {
-                                        last_hole.source_tag = Some(tag.clone());
-                                    }
-                                }
-                            }
-                        }
-                        // Return map unchanged so processing continues
-                        (Some(map), combined)
-                    }
+                    if combined.holes.is_empty() { (None, combined) } else { (Some(map), combined) }
                 }
                 Some(right_term) => {
                     match interpret_assign(

@@ -37,7 +37,7 @@ pub fn lexer<'src>(
             "map" => Token::Map,
             "as" => Token::As,
             _ => {
-                if s.chars().next().unwrap().is_ascii_digit() {
+                if s.chars().all(|c| c.is_ascii_digit()) {
                     Token::Nat(s)
                 } else {
                     Token::Ident(s)

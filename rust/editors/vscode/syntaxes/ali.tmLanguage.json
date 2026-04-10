@@ -7,8 +7,8 @@
     { "include": "#block-header" },
     { "include": "#keywords" },
     { "include": "#type-definition" },
+    { "include": "#paste-dimension" },
     { "include": "#operators" },
-    { "include": "#number" },
     { "include": "#hole" },
     { "include": "#punctuation" }
   ],
@@ -31,7 +31,7 @@
           }
         },
         {
-          "match": "(@)([a-zA-Z_][a-zA-Z0-9_]*(?:\\.[a-zA-Z_][a-zA-Z0-9_]*)*)",
+          "match": "(@)([a-zA-Z0-9_]+(?:\\.[a-zA-Z0-9_]+)*)",
           "captures": {
             "1": { "name": "punctuation.definition.annotation.ali" },
             "2": { "name": "entity.name.type.ali" }
@@ -56,10 +56,17 @@
       ]
     },
     "type-definition": {
-      "match": "([a-zA-Z_][a-zA-Z0-9_]*)\\s*(<<=)",
+      "match": "([a-zA-Z0-9_]+)\\s*(<<=)",
       "captures": {
         "1": { "name": "entity.name.type.ali" },
         "2": { "name": "keyword.operator.definition.ali" }
+      }
+    },
+    "paste-dimension": {
+      "match": "(#)\\s*([0-9]+)\\b",
+      "captures": {
+        "1": { "name": "keyword.operator.paste.ali" },
+        "2": { "name": "constant.numeric.ali" }
       }
     },
     "operators": {
@@ -89,10 +96,6 @@
           "match": "="
         }
       ]
-    },
-    "number": {
-      "name": "constant.numeric.ali",
-      "match": "\\b[0-9]+\\b"
     },
     "hole": {
       "name": "constant.language.hole.ali",

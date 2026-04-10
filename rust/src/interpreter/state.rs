@@ -3,8 +3,7 @@ use std::fmt;
 use std::sync::Arc;
 use crate::aux::{GlobalId, ModuleId, Tag};
 use crate::core::complex::{Complex, MapDomain};
-use crate::core::diagram::{CellData, Diagram, Sign};
-use super::diagram::render_diagram;
+use crate::core::diagram::CellData;
 
 #[derive(Debug, Clone)]
 pub struct TypeEntry {
@@ -84,52 +83,6 @@ fn name_or_empty(s: &str) -> &str {
     if s.is_empty() { "<empty>" } else { s }
 }
 
-/// Render a cell's boundary as `name : src -> tgt`, or just `name` for 0-cells.
-fn render_cell(name: &str, data: &CellData, complex: &Complex) -> String {
-    let label = name_or_empty(name);
-    match data {
-        CellData::Zero => label.to_owned(),
-        CellData::Boundary { boundary_in, boundary_out } => {
-            let src = render_diagram(boundary_in, complex);
-            let tgt = render_diagram(boundary_out, complex);
-            format!("{} : {} -> {}", label, src, tgt)
-        }
-    }
-}
-
-/// Look up cell data for a tag, checking global cells, types, then local cells.
-fn cell_data_for_tag(state: &State, complex: &Complex, tag: &Tag) -> Option<CellData> {
-    match tag {
-        Tag::Global(gid) => state
-            .find_cell(*gid)
-            .map(|e| e.data.clone())
-            .or_else(|| state.find_type(*gid).map(|e| e.data.clone())),
-        Tag::Local(name) => complex.find_local_cell(name).map(|e| e.data.clone()),
-    }
-}
-
-/// Render a named diagram with its boundary, e.g. `alpha : f g -> h k`.
-fn render_named_diagram(name: &str, diag: &Diagram, complex: &Complex) -> String {
-    let label = name_or_empty(name);
-    let d = diag.dim();
-    if d <= 0 {
-        return label.to_owned();
-    }
-    let k = (d - 1) as usize;
-    let (Ok(src), Ok(tgt)) = (
-        Diagram::boundary(Sign::Input, k, diag),
-        Diagram::boundary(Sign::Output, k, diag),
-    ) else {
-        return label.to_owned();
-    };
-    format!(
-        "{} : {} -> {}",
-        label,
-        render_diagram(&src, complex),
-        render_diagram(&tgt, complex),
-    )
-}
-
 fn render_domain(domain: &MapDomain, module_complex: &Complex) -> String {
     match domain {
         MapDomain::Type(gid) => {
@@ -186,7 +139,7 @@ impl fmt::Display for State {
                 writeln!(f, "Type {}", type_label)?;
                 let tc = &type_entry.complex;
 
-                // Cells grouped by dimension, with boundaries
+                // Cells grouped by dimension, names only
                 let mut dims: Vec<usize> = tc
                     .generator_names()
                     .iter()
@@ -204,11 +157,7 @@ impl fmt::Display for State {
 
                         let rendered: Vec<String> = gens
                             .iter()
-                            .filter_map(|name| {
-                                let entry = tc.find_generator(name)?;
-                                let data = cell_data_for_tag(self, tc, &entry.tag)?;
-                                Some(render_cell(name, &data, tc))
-                            })
+                            .map(|name| name_or_empty(name).to_owned())
                             .collect();
 
                         if !rendered.is_empty() {
@@ -222,10 +171,7 @@ impl fmt::Display for State {
                 if !diagram_names.is_empty() {
                     let diags: Vec<String> = diagram_names
                         .iter()
-                        .filter_map(|n| {
-                            let diag = tc.find_diagram(n)?;
-                            Some(render_named_diagram(n, diag, tc))
-                        })
+                        .map(|n| name_or_empty(n).to_owned())
                         .collect();
                     writeln!(f, "  Diagrams: {}", diags.join(", "))?;
                 }

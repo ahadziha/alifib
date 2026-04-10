@@ -45,6 +45,7 @@ fn name<'tokens, 'src: 'tokens>(
 ) -> impl Parser<'tokens, TokenInput<'tokens, 'src>, Spanned<String>, E<'tokens, 'src>> + Clone {
     select_ref! {
         Token::Ident(s) => s.to_string(),
+        Token::Nat(s) => s.to_string(),
     }
     .map_with(|v, e| sp(v, cspan(e.span())))
 }
@@ -323,7 +324,10 @@ fn build_diagram<'tokens, 'src: 'tokens>() -> RDiagram<'tokens, 'src> {
             t(Token::In).map(|_| DComponent::In),
             t(Token::Out).map(|_| DComponent::Out),
             t(Token::Question).map(|_| DComponent::Hole),
-            select_ref! { Token::Ident(s) => DComponent::PMap(PMapBasic::Name(s.to_string())) },
+            select_ref! {
+                Token::Ident(s) => DComponent::PMap(PMapBasic::Name(s.to_string())),
+                Token::Nat(s) => DComponent::PMap(PMapBasic::Name(s.to_string())),
+            },
         ))
         .map_with(|v, e| sp(v, cspan(e.span())));
 
