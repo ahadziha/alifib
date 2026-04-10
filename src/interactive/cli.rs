@@ -15,7 +15,9 @@ use serde::Serialize;
 use crate::output::render_diagram;
 use super::engine::RewriteEngine;
 use super::session::SessionFile;
+#[cfg(feature = "cli")]
 use super::repl::run_repl;
+#[cfg(feature = "cli")]
 use super::session_repl::run_session;
 
 const REWRITE_USAGE: &str = "\
@@ -501,6 +503,7 @@ pub fn run_serve_cmd(args: ServeArgs) -> Result<(), ()> {
 }
 
 /// Run the REPL with the given arguments.
+#[cfg(feature = "cli")]
 #[allow(clippy::result_unit_err)]
 pub fn run_repl_cmd(args: ReplArgs) -> Result<(), ()> {
     run_repl(&args.file, args.type_name.as_deref(), args.source.as_deref(), args.target.as_deref(), args.emacs)
@@ -542,6 +545,7 @@ pub fn parse_session_args(args: &[String]) -> Result<SessionArgs, String> {
 }
 
 /// Run the session REPL with the given arguments.
+#[cfg(feature = "cli")]
 #[allow(clippy::result_unit_err)]
 pub fn run_session_cmd(args: SessionArgs) -> Result<(), ()> {
     run_session(&args.file, &args.type_name, args.emacs)

@@ -26,6 +26,9 @@ pub enum LoadError {
 pub struct Loader {
     search_paths: Vec<String>,
     read_file: ReadFileFn,
+    /// When `true`, [`read_file_at`] serves files directly from the in-memory
+    /// reader without any filesystem canonicalization.
+    is_virtual: bool,
 }
 
 pub struct LoadedFile {
@@ -91,6 +94,22 @@ impl Loader {
         Self {
             search_paths: path::normalize_search_paths(combined),
             read_file: Arc::new(Self::default_read),
+            is_virtual: false,
+        }
+    }
+
+    /// Create a [`Loader`] that serves files from an in-memory map, bypassing
+    /// the real filesystem.  The key is the path passed to [`load`](Self::load);
+    /// the value is the source text.  Search paths are empty, so `#use` directives
+    /// in virtual files will fail with `ModuleNotFound`.
+    pub fn with_virtual_files(files: HashMap<String, String>) -> Self {
+        let files = Arc::new(files);
+        Self {
+            search_paths: vec![],
+            read_file: Arc::new(move |path: &str| {
+                files.get(path).cloned().ok_or(LoadError::NotFound)
+            }),
+            is_virtual: true,
         }
     }
 
@@ -102,6 +121,7 @@ impl Loader {
     /// the closest directory wins.  Duplicate paths are removed by
     /// `normalize_search_paths` so re-entering the same directory is a no-op.
     fn with_parent_dir(&self, file_path: &str) -> Loader {
+        if self.is_virtual { return self.clone(); }
         let parent = std::path::Path::new(file_path)
             .parent()
             .and_then(|p| p.to_str())
@@ -113,12 +133,19 @@ impl Loader {
         if normalized == self.search_paths {
             self.clone()
         } else {
-            Loader { search_paths: normalized, read_file: self.read_file.clone() }
+            Loader { search_paths: normalized, read_file: self.read_file.clone(), is_virtual: false }
         }
     }
 
     /// Canonicalize `path` and read its contents, mapping errors to `LoadFileError`.
+    /// For virtual loaders ([`with_virtual_files`](Self::with_virtual_files)) the
+    /// canonicalization step is skipped and the path is used as-is.
     fn read_file_at(&self, path: &str) -> Result<(String, String), LoadFileError> {
+        if self.is_virtual {
+            let source = (self.read_file)(path)
+                .map_err(|cause| LoadFileError::Load { path: path.to_owned(), cause })?;
+            return Ok((path.to_owned(), source));
+        }
         let canonical_path = path::canonicalize_existing(path)
             .map_err(|e| LoadFileError::Load {
                 path: path.to_owned(),

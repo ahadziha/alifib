@@ -55,7 +55,9 @@ pub mod display;
 pub mod engine;
 pub mod protocol;
 pub mod render;
+#[cfg(feature = "cli")]
 pub mod repl;
 pub mod session;
+#[cfg(feature = "cli")]
 pub mod session_repl;
 pub mod workspace;

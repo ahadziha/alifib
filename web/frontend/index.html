@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>alifib</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <span class="logo">alifib</span>
+    <span class="tagline">regular directed complex explorer</span>
+  </header>
+
+  <main class="workspace">
+
+    <!-- ── File pane ── -->
+    <section class="pane" id="pane-file">
+      <div class="pane-header">
+        <span class="pane-title">File</span>
+        <button id="btn-evaluate" class="btn-primary">Evaluate</button>
+      </div>
+      <div class="pane-body">
+        <textarea id="editor" spellcheck="false" autocomplete="off"
+          placeholder="Enter .ali source here…"></textarea>
+        <div id="file-output" class="output-area" hidden></div>
+      </div>
+    </section>
+
+    <!-- ── Visualisation pane ── -->
+    <section class="pane" id="pane-vis">
+      <div class="pane-header">
+        <span class="pane-title">Visualisation</span>
+      </div>
+      <div class="pane-body vis-placeholder">
+        <div class="placeholder-inner">
+          <div class="placeholder-icon">◈</div>
+          <div class="placeholder-text">Coming soon</div>
+          <div class="placeholder-sub">Diagram rendering will appear here</div>
+          <div id="vis-info" class="vis-info" hidden></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── REPL pane ── -->
+    <section class="pane" id="pane-repl">
+      <div class="pane-header">
+        <span class="pane-title">REPL</span>
+        <button id="btn-clear-repl" class="btn-secondary" title="Clear output">Clear</button>
+      </div>
+      <div class="pane-body repl-body">
+
+        <!-- Session setup (shown before a session is active) -->
+        <div id="session-setup" class="session-setup" hidden>
+          <div class="setup-row">
+            <label for="sel-type">Type</label>
+            <select id="sel-type"><option value="">— select —</option></select>
+          </div>
+          <div class="setup-row">
+            <label for="inp-source">Source</label>
+            <input id="inp-source" type="text" placeholder="diagram name or expression">
+          </div>
+          <div class="setup-row">
+            <label for="inp-target">Target</label>
+            <input id="inp-target" type="text" placeholder="(optional)">
+          </div>
+          <button id="btn-start" class="btn-primary">Start session</button>
+        </div>
+
+        <!-- REPL output history -->
+        <div id="repl-output" class="repl-output"></div>
+
+        <!-- Input row -->
+        <div class="repl-input-row">
+          <span class="repl-prompt">&gt;</span>
+          <input id="repl-input" type="text" class="repl-input"
+            placeholder="step N · undo · show · rules · help"
+            autocomplete="off" spellcheck="false" disabled>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
