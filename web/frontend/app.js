@@ -1,4 +1,4 @@
-import init, { WasmRepl } from '../pkg/alifib_wasm.js';
+import init, { WasmRepl } from './pkg/alifib_wasm.js';
 
 // ── State ─────────────────────────────────────────────────────────────────────
 

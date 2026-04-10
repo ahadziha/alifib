@@ -35,14 +35,14 @@ jobs:
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
       - name: Build WASM
-        # --out-dir is relative to the crate directory, so ../pkg lands in web/pkg/
-        run: wasm-pack build --target web --release web/wasm --out-dir ../pkg
+        # --out-dir is relative to the crate dir, so ../frontend/pkg lands in web/frontend/pkg/
+        run: wasm-pack build --target web --release web/wasm --out-dir ../frontend/pkg
 
       - name: Assemble dist/
+        # pkg/ is already inside frontend/ so a single copy is sufficient
         run: |
           mkdir -p dist
           cp -r web/frontend/. dist/
-          cp -r web/pkg dist/pkg
 
       - name: Upload Pages artefact
         uses: actions/upload-pages-artifact@v3
