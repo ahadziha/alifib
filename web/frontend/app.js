@@ -220,7 +220,7 @@ function renderState(data) {
     out.push(sec('available rewrites:'));
     data.rewrites.forEach(r => {
       out.push(`  [${hi(r.index)}] ${hi(r.rule_name)}  ${dim(r.source.label)} → ${dim(r.target.label)}`);
-      if (r.match_display) out.push(`      match: ${r.match_display}`);
+      if (r.match_display) out.push(`      match: ${esc(r.match_display)}`);
     });
   } else if (data.step_count > 0) {
     out.push(dim('no rewrites available'));
@@ -260,9 +260,9 @@ function renderTypeDetail(d) {
 function renderCellDetail(d) {
   if (!d) return dim('(not found)');
   let out = [`${hi(d.name)} ${dim(`[${d.kind}, dim ${d.dim}]`)}`];
-  if (d.source) out.push(`  src: ${d.source.label}`);
-  if (d.target) out.push(`  tgt: ${d.target.label}`);
-  if (d.expr)   out.push(`  = ${d.expr}`);
+  if (d.source) out.push(`  src: ${esc(d.source.label)}`);
+  if (d.target) out.push(`  tgt: ${esc(d.target.label)}`);
+  if (d.expr)   out.push(`  = ${esc(d.expr)}`);
   return out.join('\n');
 }
 
@@ -292,14 +292,21 @@ function updateVisInfo(data) {
 
 // ── Formatting helpers ────────────────────────────────────────────────────────
 
-function hi(s)  { return `\x1b[1m${s}\x1b[0m`; }   // we don't use ANSI – handled below
-function dim(s) { return s; }
-function sec(s) { return s; }
-function ok(s)  { return s; }
+// Escape raw strings before embedding in HTML.
+function esc(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
 
-// Instead of ANSI, just return plain text; CSS classes handle colour.
-// The DOM-based approach below wraps entries in divs.
+// These return HTML strings; render functions compose them and set innerHTML.
+function hi(s)  { return `<span class="repl-hi">${esc(s)}</span>`; }
+function dim(s) { return `<span class="repl-dim">${esc(s)}</span>`; }
+function sec(s) { return `<span class="repl-section-title">${esc(s)}</span>`; }
+function ok(s)  { return `<span class="repl-ok">${esc(s)}</span>`; }
 
+// Plain-text messages (errors, status) — no HTML, use textContent.
 function formatOk(msg)    { return { cls: 'repl-result ok',  text: msg }; }
 function formatError(msg) { return { cls: 'repl-result err', text: msg }; }
 
@@ -323,9 +330,11 @@ function appendReplEntry(cmdText, result) {
   if (result) {
     const resEl = document.createElement('div');
     if (typeof result === 'string') {
-      resEl.className = 'repl-result ok';
-      resEl.textContent = result;
+      // result is an HTML string from the render functions (hi/dim/sec/ok spans)
+      resEl.className = 'repl-result';
+      resEl.innerHTML = result;
     } else {
+      // plain-text object from formatOk/formatError
       resEl.className = result.cls;
       resEl.textContent = result.text;
     }
