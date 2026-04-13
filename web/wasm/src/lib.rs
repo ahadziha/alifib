@@ -54,11 +54,8 @@ impl WasmRepl {
         WasmRepl { store: None, engine: None }
     }
 
-    /// Interpret `.ali` source text and return a JSON response:
-    /// ```json
-    /// { "status": "ok", "output": "...", "types": [{"name": "Foo"}, ...] }
-    /// { "status": "error", "message": "..." }
-    /// ```
+    /// Interpret `.ali` source text and return a JSON response with structured
+    /// type data (generators with boundaries, diagrams, maps).
     pub fn load_source(&mut self, source: &str) -> String {
         let mut files = HashMap::new();
         files.insert(SOURCE_PATH.to_string(), source.to_string());
@@ -66,25 +63,62 @@ impl WasmRepl {
 
         match InterpretedFile::load(&loader, SOURCE_PATH) {
             LoadResult::Loaded(file) => {
-                let output = file.to_string();
                 self.store = Some(Arc::clone(&file.state));
                 self.engine = None;
 
-                let types: Vec<serde_json::Value> = self
-                    .store
-                    .as_ref()
-                    .and_then(|s| s.find_module(SOURCE_PATH))
-                    .map(|m| {
-                        m.generators_iter()
-                            .filter(|(n, _, _)| !n.is_empty())
-                            .map(|(n, _, _)| serde_json::json!({ "name": n }))
-                            .collect()
+                let norm = file.state.normalize();
+                let types: Vec<serde_json::Value> = norm
+                    .modules
+                    .iter()
+                    .flat_map(|m| &m.types)
+                    .filter(|t| !t.name.is_empty())
+                    .map(|t| {
+                        let generators: Vec<serde_json::Value> = t
+                            .dims
+                            .iter()
+                            .flat_map(|d| {
+                                d.cells.iter().map(move |c| {
+                                    serde_json::json!({
+                                        "name": c.name,
+                                        "dim": d.dim,
+                                        "src": c.src,
+                                        "tgt": c.tgt,
+                                    })
+                                })
+                            })
+                            .collect();
+                        let diagrams: Vec<serde_json::Value> = t
+                            .diagrams
+                            .iter()
+                            .map(|c| {
+                                serde_json::json!({
+                                    "name": c.name,
+                                    "src": c.src,
+                                    "tgt": c.tgt,
+                                })
+                            })
+                            .collect();
+                        let maps: Vec<serde_json::Value> = t
+                            .maps
+                            .iter()
+                            .map(|m| {
+                                serde_json::json!({
+                                    "name": m.name,
+                                    "domain": m.domain,
+                                })
+                            })
+                            .collect();
+                        serde_json::json!({
+                            "name": t.name,
+                            "generators": generators,
+                            "diagrams": diagrams,
+                            "maps": maps,
+                        })
                     })
-                    .unwrap_or_default();
+                    .collect();
 
                 serde_json::json!({
                     "status": "ok",
-                    "output": output,
                     "types": types
                 })
                 .to_string()

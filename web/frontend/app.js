@@ -53,22 +53,25 @@ function evaluateSource() {
 
   const result = JSON.parse(repl.load_source(src));
 
-  // Show interpreter output in file pane footer
-  if (result.output) {
-    fileOutput.textContent = result.output;
-    fileOutput.hidden = false;
-  }
-
   if (result.status === 'error') {
+    fileOutput.innerHTML = '';
+    fileOutput.hidden = true;
     appendReplEntry('(evaluate)', formatError(result.message));
     sessionSetup.hidden = true;
     resetSession();
     return;
   }
 
+  const types = result.types || [];
+
+  // Build accordion in file output area
+  fileOutput.innerHTML = '';
+  fileOutput.hidden = types.length === 0;
+  types.forEach(t => fileOutput.appendChild(buildTypeAccordion(t)));
+
   // Populate type selector
   selType.innerHTML = '<option value="">— select type —</option>';
-  (result.types || []).forEach(t => {
+  types.forEach(t => {
     const opt = document.createElement('option');
     opt.value = opt.textContent = t.name;
     selType.appendChild(opt);
@@ -77,10 +80,99 @@ function evaluateSource() {
   sessionSetup.hidden = false;
   resetSession();
   appendReplEntry('(evaluate)', formatOk(
-    result.types.length
-      ? `Loaded. Types: ${result.types.map(t => t.name).join(', ')}`
+    types.length
+      ? `Loaded ${types.length} type${types.length !== 1 ? 's' : ''}.`
       : 'Loaded (no named types found).'
   ));
+}
+
+// ── Accordion builders ───────────────────────────────────────────────────────
+
+function buildTypeAccordion(t) {
+  const details = document.createElement('details');
+  details.className = 'acc-type';
+  const summary = document.createElement('summary');
+  summary.textContent = t.name;
+  details.appendChild(summary);
+
+  const body = document.createElement('div');
+  body.className = 'acc-type-body';
+
+  if (t.generators.length) body.appendChild(buildSection('Generators', t.generators, buildGeneratorItem));
+  if (t.diagrams.length)   body.appendChild(buildSection('Diagrams', t.diagrams, buildDiagramItem));
+  if (t.maps.length)       body.appendChild(buildSection('Maps', t.maps, buildMapItem));
+
+  details.appendChild(body);
+  return details;
+}
+
+function buildSection(title, items, buildItem) {
+  const details = document.createElement('details');
+  details.className = 'acc-section';
+  const summary = document.createElement('summary');
+  summary.innerHTML = esc(title) + ` <span class="acc-count">${items.length}</span>`;
+  details.appendChild(summary);
+
+  const list = document.createElement('div');
+  list.className = 'acc-section-body';
+  items.forEach(item => list.appendChild(buildItem(item)));
+  details.appendChild(list);
+  return details;
+}
+
+function buildGeneratorItem(g) {
+  if (!g.src && !g.tgt) {
+    // 0-cell: no boundary to expand
+    const div = document.createElement('div');
+    div.className = 'acc-leaf';
+    div.innerHTML = `${hi(g.name)} <span class="acc-dim">dim ${g.dim}</span>`;
+    return div;
+  }
+  const details = document.createElement('details');
+  details.className = 'acc-item';
+  const summary = document.createElement('summary');
+  summary.innerHTML = `${hi(g.name)} <span class="acc-dim">dim ${g.dim}</span>`;
+  details.appendChild(summary);
+
+  const body = document.createElement('div');
+  body.className = 'acc-item-body';
+  body.innerHTML = `${esc(g.src)} → ${esc(g.tgt)}`;
+  details.appendChild(body);
+  return details;
+}
+
+function buildDiagramItem(d) {
+  if (!d.src && !d.tgt) {
+    const div = document.createElement('div');
+    div.className = 'acc-leaf';
+    div.innerHTML = hi(d.name);
+    return div;
+  }
+  const details = document.createElement('details');
+  details.className = 'acc-item';
+  const summary = document.createElement('summary');
+  summary.innerHTML = hi(d.name);
+  details.appendChild(summary);
+
+  const body = document.createElement('div');
+  body.className = 'acc-item-body';
+  body.innerHTML = `${esc(d.src)} → ${esc(d.tgt)}`;
+  details.appendChild(body);
+  return details;
+}
+
+function buildMapItem(m) {
+  const details = document.createElement('details');
+  details.className = 'acc-item';
+  const summary = document.createElement('summary');
+  summary.innerHTML = hi(m.name);
+  details.appendChild(summary);
+
+  const body = document.createElement('div');
+  body.className = 'acc-item-body';
+  body.innerHTML = `:: ${esc(m.domain)}`;
+  details.appendChild(body);
+  return details;
 }
 
 // ── Session setup ─────────────────────────────────────────────────────────────

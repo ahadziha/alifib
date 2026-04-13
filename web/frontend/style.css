@@ -124,22 +124,105 @@ header {
   tab-size: 2;
 }
 .output-area {
-  background: var(--surface);
-  border-top: 1px solid var(--border);
-  padding: 8px 12px;
+  padding: 4px 0;
   font-family: var(--font-mono);
   font-size: 12px;
-  white-space: pre-wrap;
-  max-height: 30%;
   overflow-y: auto;
   color: var(--text-dim);
+  flex-shrink: 1;
+  min-height: 0;
 }
 
-/* ── Vis pane ── */
+/* ── Accordion ── */
+.acc-type {
+  border-bottom: 1px solid var(--border);
+}
+.acc-type > summary {
+  padding: 6px 12px;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--accent2);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.acc-type > summary::before {
+  content: "▸ ";
+  color: var(--text-dim);
+}
+.acc-type[open] > summary::before {
+  content: "▾ ";
+}
+.acc-type-body {
+  padding-left: 8px;
+}
+
+.acc-section > summary {
+  padding: 3px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.acc-section > summary::before {
+  content: "▸ ";
+}
+.acc-section[open] > summary::before {
+  content: "▾ ";
+}
+.acc-count {
+  font-weight: 400;
+  opacity: 0.6;
+}
+.acc-section-body {
+  padding-left: 8px;
+}
+
+.acc-item > summary {
+  padding: 2px 12px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.acc-item > summary::before {
+  content: "▸ ";
+  color: var(--text-dim);
+}
+.acc-item[open] > summary::before {
+  content: "▾ ";
+}
+.acc-item-body {
+  padding: 1px 12px 4px 24px;
+  color: var(--text-dim);
+}
+.acc-leaf {
+  padding: 2px 12px;
+}
+.acc-dim {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-left: 4px;
+}
+
+/* Hover highlights for all accordion rows */
+.acc-type > summary:hover,
+.acc-section > summary:hover,
+.acc-item > summary:hover,
+.acc-leaf:hover {
+  background: rgba(124, 106, 242, 0.08);
+}
+
+/* ── Analysis pane ── */
 .vis-placeholder {
   justify-content: center;
   align-items: center;
   flex-direction: column;
+  flex: 1;
+  display: flex;
 }
 .placeholder-inner {
   display: flex;
@@ -147,19 +230,6 @@ header {
   align-items: center;
   gap: 6px;
   opacity: 0.4;
-}
-.placeholder-icon {
-  font-size: 36px;
-  color: var(--accent2);
-}
-.placeholder-text {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-em);
-}
-.placeholder-sub {
-  font-size: 12px;
-  color: var(--text-dim);
 }
 .vis-info {
   margin-top: 12px;
