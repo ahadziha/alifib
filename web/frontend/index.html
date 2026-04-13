@@ -68,12 +68,22 @@
     <section class="pane" id="pane-analysis">
       <div class="pane-header">
         <span class="pane-title">Analysis</span>
+        <div class="vis-controls" id="vis-controls" hidden>
+          <select id="sel-orientation" title="Diagram orientation">
+            <option value="bt">bottom → top</option>
+            <option value="tb">top → bottom</option>
+            <option value="lr">left → right</option>
+            <option value="rl">right → left</option>
+          </select>
+        </div>
       </div>
       <div class="pane-body">
         <div id="file-output" class="output-area" hidden></div>
-        <div class="vis-placeholder">
-          <div class="placeholder-inner">
-            <div id="vis-info" class="vis-info" hidden></div>
+        <div id="infobox" class="infobox" hidden>
+          <div id="infobox-text" class="infobox-text"></div>
+          <div id="vis-container" class="vis-container" hidden>
+            <canvas id="vis-canvas"></canvas>
+            <div id="vis-resize" class="vis-resize-handle"></div>
           </div>
         </div>
       </div>

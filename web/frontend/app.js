@@ -6,6 +6,9 @@ let repl = null;
 let sessionActive = false;
 const history = [];
 let histIdx = -1;
+let currentLayout = null;
+let selectedEl = null;
+let dragState = null;
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
@@ -20,7 +23,14 @@ const sessionSetup = document.getElementById('session-setup');
 const replOutput  = document.getElementById('repl-output');
 const replInput   = document.getElementById('repl-input');
 const btnClear    = document.getElementById('btn-clear-repl');
-const visInfo     = document.getElementById('vis-info');
+const visContainer = document.getElementById('vis-container');
+const infobox     = document.getElementById('infobox');
+const infoboxText = document.getElementById('infobox-text');
+const visCanvas   = document.getElementById('vis-canvas');
+const visControls = document.getElementById('vis-controls');
+const selOrientation = document.getElementById('sel-orientation');
+const visResize   = document.getElementById('vis-resize');
+const canvasCtx   = visCanvas.getContext('2d');
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
@@ -98,9 +108,15 @@ function buildTypeAccordion(t) {
   const body = document.createElement('div');
   body.className = 'acc-type-body';
 
-  if (t.generators.length) body.appendChild(buildSection('Generators', t.generators, buildGeneratorItem));
-  if (t.diagrams.length)   body.appendChild(buildSection('Diagrams', t.diagrams, buildDiagramItem));
-  if (t.maps.length)       body.appendChild(buildSection('Maps', t.maps, buildMapItem));
+  if (t.generators.length) body.appendChild(buildSection('Generators', t.generators,
+    g => buildClickableRow(`${hi(g.name)} <span class="acc-dim">dim ${g.dim}</span>`,
+      () => selectItem(t.name, { kind: 'generator', name: g.name, dim: g.dim, src: g.src, tgt: g.tgt }))));
+  if (t.diagrams.length) body.appendChild(buildSection('Diagrams', t.diagrams,
+    d => buildClickableRow(hi(d.name),
+      () => selectItem(t.name, { kind: 'diagram', name: d.name, src: d.src, tgt: d.tgt }))));
+  if (t.maps.length) body.appendChild(buildSection('Maps', t.maps,
+    m => buildClickableRow(hi(m.name),
+      () => selectItem(t.name, { kind: 'map', name: m.name, domain: m.domain }))));
 
   details.appendChild(body);
   return details;
@@ -120,59 +136,17 @@ function buildSection(title, items, buildItem) {
   return details;
 }
 
-function buildGeneratorItem(g) {
-  if (!g.src && !g.tgt) {
-    // 0-cell: no boundary to expand
-    const div = document.createElement('div');
-    div.className = 'acc-leaf';
-    div.innerHTML = `${hi(g.name)} <span class="acc-dim">dim ${g.dim}</span>`;
-    return div;
-  }
-  const details = document.createElement('details');
-  details.className = 'acc-item';
-  const summary = document.createElement('summary');
-  summary.innerHTML = `${hi(g.name)} <span class="acc-dim">dim ${g.dim}</span>`;
-  details.appendChild(summary);
-
-  const body = document.createElement('div');
-  body.className = 'acc-item-body';
-  body.innerHTML = `${esc(g.src)} → ${esc(g.tgt)}`;
-  details.appendChild(body);
-  return details;
-}
-
-function buildDiagramItem(d) {
-  if (!d.src && !d.tgt) {
-    const div = document.createElement('div');
-    div.className = 'acc-leaf';
-    div.innerHTML = hi(d.name);
-    return div;
-  }
-  const details = document.createElement('details');
-  details.className = 'acc-item';
-  const summary = document.createElement('summary');
-  summary.innerHTML = hi(d.name);
-  details.appendChild(summary);
-
-  const body = document.createElement('div');
-  body.className = 'acc-item-body';
-  body.innerHTML = `${esc(d.src)} → ${esc(d.tgt)}`;
-  details.appendChild(body);
-  return details;
-}
-
-function buildMapItem(m) {
-  const details = document.createElement('details');
-  details.className = 'acc-item';
-  const summary = document.createElement('summary');
-  summary.innerHTML = hi(m.name);
-  details.appendChild(summary);
-
-  const body = document.createElement('div');
-  body.className = 'acc-item-body';
-  body.innerHTML = `:: ${esc(m.domain)}`;
-  details.appendChild(body);
-  return details;
+function buildClickableRow(innerHTML, onClick) {
+  const div = document.createElement('div');
+  div.className = 'acc-leaf';
+  div.innerHTML = innerHTML;
+  div.addEventListener('click', () => {
+    if (selectedEl) selectedEl.classList.remove('acc-leaf--selected');
+    selectedEl = div;
+    div.classList.add('acc-leaf--selected');
+    onClick();
+  });
+  return div;
 }
 
 // ── Session setup ─────────────────────────────────────────────────────────────
@@ -373,13 +347,7 @@ function renderHistory(hist) {
 }
 
 function updateVisInfo(data) {
-  if (!data || !data.current) { visInfo.hidden = true; return; }
-  const cur = data.current;
-  let lines = [`dim: ${cur.dim}`, `cells: ${cur.cell_count}`];
-  if (data.step_count) lines.push(`steps: ${data.step_count}`);
-  if (data.target_reached) lines.push('target reached ✓');
-  visInfo.textContent = lines.join('\n');
-  visInfo.hidden = false;
+  // no-op: vis info now shown in infobox
 }
 
 // ── Formatting helpers ────────────────────────────────────────────────────────
@@ -477,6 +445,394 @@ Cat <<= {
   assoc_r : f (g h) -> (f g) h
 }
 `;
+
+// ── String diagram visualisation ─────────────────────────────────────────────
+
+function selectItem(typeName, item) {
+  infobox.hidden = false;
+
+  // Build infobox text
+  const qual = item.kind === 'generator' ? 'Generator of'
+             : item.kind === 'diagram'   ? 'Diagram at'
+             : 'Map at';
+  let html = `<span class="infobox-qual">${esc(qual)} ${hi(typeName)}</span>`;
+  html += `<div class="infobox-name">${hi(item.name)}`;
+  if (item.kind === 'generator') html += ` <span class="acc-dim">dim ${item.dim}</span>`;
+  html += `</div>`;
+  if (item.kind === 'generator' || item.kind === 'diagram') {
+    if (item.src || item.tgt) html += `<div class="infobox-boundary">${esc(item.src)} → ${esc(item.tgt)}</div>`;
+  } else if (item.kind === 'map') {
+    html += `<div class="infobox-boundary">:: ${esc(item.domain)}</div>`;
+  }
+  infoboxText.innerHTML = html;
+
+  // Show string diagram for generators and diagrams (not maps)
+  if (item.kind === 'map') {
+    visContainer.hidden = true;
+    visControls.hidden = true;
+    currentLayout = null;
+    return;
+  }
+
+  if (!repl) return;
+  const result = JSON.parse(repl.get_strdiag(typeName, item.name));
+  if (result.status === 'error') {
+    visContainer.hidden = true;
+    visControls.hidden = true;
+    currentLayout = null;
+    return;
+  }
+  currentLayout = layoutStrDiag(result.data, selOrientation.value);
+  visContainer.hidden = false;
+  visControls.hidden = false;
+  resizeAndRender();
+}
+
+selOrientation.addEventListener('change', () => {
+  if (currentLayout) {
+    currentLayout = layoutStrDiag(currentLayout._raw, selOrientation.value);
+    resizeAndRender();
+  }
+});
+
+// ── Layout ───────────────────────────────────────────────────────────────────
+
+const NODE_R = 8;
+const WIRE_R = 3;
+const PAD = 40;
+
+function layoutStrDiag(data, orientation = 'bt') {
+  const n = data.vertices.length;
+  if (n === 0) return { _raw: data, verts: [], pos: [], orientation, hAdj: [], wAdj: [], dAdj: [], hPred: [], wPred: [] };
+
+  const hAdj = buildAdj(n, data.height.edges);
+  const hPred = buildPred(n, data.height.edges);
+  const wAdj = buildAdj(n, data.width.edges);
+  const wPred = buildPred(n, data.width.edges);
+  const dAdj = buildAdj(n, data.depth.edges);
+
+  const hDist = longestPathDistances(n, hAdj, hPred);
+  const wDist = longestPathDistances(n, wAdj, wPred);
+
+  // Store positions in abstract (w, h) space. Each vertex is centered within
+  // its band: pos = (backward + 1) / (backward + forward + 2).
+  const pos = data.vertices.map((v, i) => ({
+    w: (wDist.bw[i] + 1) / (wDist.bw[i] + wDist.fw[i] + 2),
+    h: (hDist.bw[i] + 1) / (hDist.bw[i] + hDist.fw[i] + 2),
+  }));
+
+  return { _raw: data, verts: data.vertices, pos, orientation, hAdj, hPred, wAdj, wPred, dAdj,
+           numWires: data.num_wires, numNodes: data.num_nodes, depthEdges: data.depth.edges };
+}
+
+// Convert abstract (w, h) to screen normalised (x, y) in [0,1]^2.
+function toScreen(p, o) {
+  switch (o) {
+    case 'bt': return { x: p.w, y: 1 - p.h };
+    case 'tb': return { x: p.w, y: p.h };
+    case 'lr': return { x: p.h, y: 1 - p.w };
+    case 'rl': return { x: 1 - p.h, y: 1 - p.w };
+    default:   return { x: p.w, y: 1 - p.h };
+  }
+}
+
+// Convert screen normalised (x, y) back to abstract (w, h).
+function fromScreen(sx, sy, o) {
+  switch (o) {
+    case 'bt': return { w: sx, h: 1 - sy };
+    case 'tb': return { w: sx, h: sy };
+    case 'lr': return { w: 1 - sy, h: sx };
+    case 'rl': return { w: 1 - sy, h: 1 - sx };
+    default:   return { w: sx, h: 1 - sy };
+  }
+}
+
+function buildAdj(n, edges) {
+  const a = Array.from({length: n}, () => []);
+  for (const [u, v] of edges) a[u].push(v);
+  return a;
+}
+function buildPred(n, edges) {
+  const a = Array.from({length: n}, () => []);
+  for (const [u, v] of edges) a[v].push(u);
+  return a;
+}
+
+/// Compute both forward (from sources) and backward (from sinks) longest-path
+/// distances for a DAG. Returns { bw, fw } where bw[i] is the longest path from
+/// any source to i, and fw[i] is the longest path from i to any sink.
+function longestPathDistances(n, succ, pred) {
+  // Forward: longest path from any source to each vertex.
+  const bw = new Array(n).fill(0);
+  const indeg = new Array(n).fill(0);
+  for (let u = 0; u < n; u++) for (const v of succ[u]) indeg[v]++;
+  const q = [];
+  for (let i = 0; i < n; i++) if (indeg[i] === 0) q.push(i);
+  const fwdOrder = [];
+  while (q.length) {
+    const u = q.shift();
+    fwdOrder.push(u);
+    for (const v of succ[u]) { if (--indeg[v] === 0) q.push(v); }
+  }
+  for (const u of fwdOrder) {
+    for (const v of succ[u]) {
+      bw[v] = Math.max(bw[v], bw[u] + 1);
+    }
+  }
+
+  // Backward: longest path from each vertex to any sink (reverse topo order).
+  const fw = new Array(n).fill(0);
+  for (let k = fwdOrder.length - 1; k >= 0; k--) {
+    const u = fwdOrder[k];
+    for (const v of succ[u]) {
+      fw[u] = Math.max(fw[u], fw[v] + 1);
+    }
+  }
+
+  return { bw, fw };
+}
+
+// ── Rendering ────────────────────────────────────────────────────────────────
+
+function resizeAndRender() {
+  if (!currentLayout) return;
+  const rect = visContainer.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const w = rect.width, h = rect.height;
+  if (w < 1 || h < 1) return;
+  visCanvas.width = w * dpr;
+  visCanvas.height = h * dpr;
+  visCanvas.style.width = w + 'px';
+  visCanvas.style.height = h + 'px';
+  canvasCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  renderStrDiag(canvasCtx, currentLayout, w, h);
+}
+
+const resizeObs = new ResizeObserver(() => resizeAndRender());
+resizeObs.observe(document.getElementById('vis-container'));
+
+function renderStrDiag(ctx, L, cw, ch) {
+  ctx.clearRect(0, 0, cw, ch);
+  if (!L || !L.verts.length) return;
+
+  const o = L.orientation;
+  const isVert = (o === 'bt' || o === 'tb');
+
+  // Map abstract positions to canvas pixels via screen normalised coords.
+  const px = L.pos.map(p => {
+    const s = toScreen(p, o);
+    return { x: PAD + s.x * (cw - 2 * PAD), y: PAD + s.y * (ch - 2 * PAD) };
+  });
+
+  // Depth ordering for wires (earlier in topo sort = drawn first = behind).
+  const wireOrder = topoSort(L.numWires, L.dAdj);
+  const depthSet = new Set();
+  for (const [u, v] of L.depthEdges) depthSet.add(u + ',' + v);
+
+  const bgColor = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#1a1a1e';
+  const wireColor = '#5fa8d3';
+  const BORDER_W = 6;
+  const WIRE_W = 2;
+
+  for (const wi of wireOrder) {
+    const wp = px[wi];
+    const preds = L.hPred[wi]; // nodes whose output face is this wire
+    const succs = L.hAdj[wi];  // nodes whose input face is this wire
+    const isBehind = wireOrder.some(wj => depthSet.has(wi + ',' + wj));
+
+    // Determine source (input) and target (output) points for this wire.
+    const sources = preds.length > 0
+      ? preds.map(pi => ({ p: px[pi], boundary: false }))
+      : [{ p: entryPoint(wp, o, 'input', cw, ch), boundary: true }];
+    const targets = succs.length > 0
+      ? succs.map(si => ({ p: px[si], boundary: false }))
+      : [{ p: entryPoint(wp, o, 'output', cw, ch), boundary: true }];
+
+    // Draw each source→midpoint→target wire as two joined quadratic Bezier halves.
+    // Control points ensure: tangent is along the main (flow) axis at the midpoint,
+    // and along the cross axis at each node (flattest at the node).
+    for (const src of sources) {
+      for (const tgt of targets) {
+        // Control point for source→midpoint half:
+        //   same cross-axis as midpoint, same main-axis as source
+        const q0 = isVert ? { x: wp.x, y: src.p.y } : { x: src.p.x, y: wp.y };
+        // Control point for midpoint→target half:
+        //   same cross-axis as midpoint, same main-axis as target
+        const q1 = isVert ? { x: wp.x, y: tgt.p.y } : { x: tgt.p.x, y: wp.y };
+
+        if (isBehind) {
+          ctx.beginPath();
+          ctx.moveTo(src.p.x, src.p.y);
+          ctx.quadraticCurveTo(q0.x, q0.y, wp.x, wp.y);
+          ctx.quadraticCurveTo(q1.x, q1.y, tgt.p.x, tgt.p.y);
+          ctx.strokeStyle = bgColor;
+          ctx.lineWidth = WIRE_W + BORDER_W;
+          ctx.lineCap = 'round';
+          ctx.stroke();
+        }
+        ctx.beginPath();
+        ctx.moveTo(src.p.x, src.p.y);
+        ctx.quadraticCurveTo(q0.x, q0.y, wp.x, wp.y);
+        ctx.quadraticCurveTo(q1.x, q1.y, tgt.p.x, tgt.p.y);
+        ctx.strokeStyle = wireColor;
+        ctx.lineWidth = WIRE_W;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+      }
+    }
+
+    // Wire vertex dot
+    ctx.beginPath();
+    ctx.arc(wp.x, wp.y, WIRE_R, 0, Math.PI * 2);
+    ctx.fillStyle = wireColor;
+    ctx.fill();
+  }
+
+  // Draw nodes
+  for (let i = L.numWires; i < L.verts.length; i++) {
+    const np = px[i];
+    ctx.beginPath();
+    ctx.arc(np.x, np.y, NODE_R, 0, Math.PI * 2);
+    ctx.fillStyle = '#7c6af2';
+    ctx.fill();
+    ctx.strokeStyle = '#d4d4d8';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
+  // Draw labels
+  ctx.font = '11px system-ui, sans-serif';
+  const labelsAbove = !isVert; // lr/rl: labels above; bt/tb: labels to the right
+  for (let i = 0; i < L.verts.length; i++) {
+    const p = px[i];
+    const label = L.verts[i].label;
+    if (!label) continue;
+    const isNode = L.verts[i].kind === 'node';
+    ctx.fillStyle = isNode ? '#f4f4f5' : '#a1a1aa';
+    const r = isNode ? NODE_R : WIRE_R;
+    if (labelsAbove) {
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(label, p.x, p.y - r - 3);
+    } else {
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, p.x + r + 4, p.y);
+    }
+  }
+}
+
+function entryPoint(wp, orientation, side, cw, ch) {
+  const isInput = side === 'input';
+  switch (orientation) {
+    case 'bt': return { x: wp.x, y: isInput ? ch : 0 };
+    case 'tb': return { x: wp.x, y: isInput ? 0 : ch };
+    case 'lr': return { x: isInput ? 0 : cw, y: wp.y };
+    case 'rl': return { x: isInput ? cw : 0, y: wp.y };
+    default:   return { x: wp.x, y: isInput ? ch : 0 };
+  }
+}
+
+function topoSort(numWires, dAdj) {
+  const indeg = new Array(numWires).fill(0);
+  for (let u = 0; u < numWires; u++) {
+    for (const v of (dAdj[u] || [])) {
+      if (v < numWires) indeg[v]++;
+    }
+  }
+  const q = [];
+  for (let i = 0; i < numWires; i++) if (indeg[i] === 0) q.push(i);
+  const order = [];
+  const visited = new Set();
+  while (q.length) {
+    const u = q.shift();
+    order.push(u);
+    visited.add(u);
+    for (const v of (dAdj[u] || [])) {
+      if (v < numWires && --indeg[v] === 0) q.push(v);
+    }
+  }
+  for (let i = 0; i < numWires; i++) if (!visited.has(i)) order.push(i);
+  return order;
+}
+
+// ── Drag interaction ─────────────────────────────────────────────────────────
+
+visCanvas.addEventListener('mousedown', (e) => {
+  if (!currentLayout) return;
+  const rect = visCanvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const cw = rect.width, ch = rect.height;
+  const L = currentLayout;
+  const pxArr = L.pos.map(p => {
+    const s = toScreen(p, L.orientation);
+    return { x: PAD + s.x * (cw - 2 * PAD), y: PAD + s.y * (ch - 2 * PAD) };
+  });
+  let best = -1, bestD = 25;
+  for (let i = 0; i < L.verts.length; i++) {
+    const d = Math.hypot(mx - pxArr[i].x, my - pxArr[i].y);
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  if (best >= 0) {
+    dragState = { idx: best };
+    e.preventDefault();
+  }
+});
+
+visCanvas.addEventListener('mousemove', (e) => {
+  if (!dragState || !currentLayout) return;
+  const rect = visCanvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const cw = rect.width, ch = rect.height;
+
+  // Convert mouse to screen normalised [0,1], then to abstract (w, h).
+  const sx = Math.max(0, Math.min(1, (mx - PAD) / (cw - 2 * PAD)));
+  const sy = Math.max(0, Math.min(1, (my - PAD) / (ch - 2 * PAD)));
+  let abs = fromScreen(sx, sy, currentLayout.orientation);
+
+  const L = currentLayout;
+  const i = dragState.idx;
+  const RESIST = 0.12;
+  const MIN_GAP = 0.04;
+
+  // In abstract space: height successors have HIGHER h, predecessors have LOWER h.
+  // Width successors have HIGHER w, predecessors have LOWER w.
+  // So: my h must be < successor's h, and > predecessor's h. Same for w.
+
+  function resist(val, limit, mustBeLess) {
+    const boundary = mustBeLess ? limit - MIN_GAP : limit + MIN_GAP;
+    if (mustBeLess ? val > boundary : val < boundary) {
+      return boundary + (val - boundary) * RESIST;
+    }
+    return val;
+  }
+
+  for (const s of L.hAdj[i])  abs.h = resist(abs.h, L.pos[s].h, true);
+  for (const p of L.hPred[i]) abs.h = resist(abs.h, L.pos[p].h, false);
+  for (const s of (L.wAdj[i] || []))  abs.w = resist(abs.w, L.pos[s].w, true);
+  for (const p of (L.wPred[i] || [])) abs.w = resist(abs.w, L.pos[p].w, false);
+
+  L.pos[i] = abs;
+  resizeAndRender();
+});
+
+visCanvas.addEventListener('mouseup', () => { dragState = null; });
+visCanvas.addEventListener('mouseleave', () => { dragState = null; });
+
+// ── Canvas resize handle ─────────────────────────────────────────────────────
+
+let resizeDrag = null;
+visResize.addEventListener('mousedown', (e) => {
+  resizeDrag = { startY: e.clientY, startH: visContainer.offsetHeight };
+  e.preventDefault();
+});
+document.addEventListener('mousemove', (e) => {
+  if (!resizeDrag) return;
+  const newH = Math.max(80, resizeDrag.startH + (e.clientY - resizeDrag.startY));
+  visContainer.style.height = newH + 'px';
+  resizeAndRender();
+});
+document.addEventListener('mouseup', () => { resizeDrag = null; });
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 

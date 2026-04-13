@@ -26,6 +26,7 @@ use serde::{Deserialize, Serialize};
 use crate::core::complex::Complex;
 use crate::core::diagram::{CellData, Diagram, Sign};
 use crate::core::rewrite::CandidateRewrite;
+use crate::core::strdiag::{StrDiag, VertexKind};
 use crate::output::{diagram_to_source, render_diagram};
 use super::engine::RewriteEngine;
 use super::render::render_match_highlight;
@@ -565,6 +566,53 @@ pub fn build_list_rules_response(engine: &RewriteEngine) -> ResponseData {
     let mut data = build_response(engine, false);
     data.rules = rules;
     data
+}
+
+/// Serialize a [`StrDiag`] to a JSON value.
+pub fn strdiag_to_json(sd: &StrDiag) -> serde_json::Value {
+    fn edges_json(graph: &crate::core::graph::DiGraph) -> Vec<[usize; 2]> {
+        let mut edges = Vec::new();
+        for (u, succs) in graph.successors.iter().enumerate() {
+            for &v in succs {
+                edges.push([u, v]);
+            }
+        }
+        edges
+    }
+
+    let vertices: Vec<serde_json::Value> = (0..sd.num_vertices())
+        .map(|i| {
+            serde_json::json!({
+                "index": i,
+                "kind": match sd.kinds[i] { VertexKind::Wire => "wire", VertexKind::Node => "node" },
+                "label": sd.labels[i],
+            })
+        })
+        .collect();
+
+    serde_json::json!({
+        "num_wires": sd.num_wires,
+        "num_nodes": sd.num_nodes,
+        "vertices": vertices,
+        "height": { "edges": edges_json(&sd.height) },
+        "width": { "edges": edges_json(&sd.width) },
+        "depth": { "edges": edges_json(&sd.depth) },
+    })
+}
+
+/// Build a StrDiag JSON for a named item within a type complex.
+///
+/// Tries named diagrams first, then generator classifiers.
+pub fn build_strdiag_response(
+    store: &crate::interpreter::GlobalStore,
+    source_path: &str,
+    type_name: &str,
+    item_name: &str,
+) -> Result<serde_json::Value, String> {
+    let type_complex = super::engine::resolve_type(store, source_path, type_name)?;
+    let sd = StrDiag::from_named(item_name, &type_complex)
+        .ok_or_else(|| format!("'{}' not found in type '{}'", item_name, type_name))?;
+    Ok(strdiag_to_json(&sd))
 }
 
 fn build_rewrite_info(

@@ -25,17 +25,17 @@ use super::ogposet::{self, Ogposet, Sign};
 /// stored explicitly so that callers can traverse edges in either direction
 /// in O(degree) time.
 #[derive(Debug, Clone)]
-pub(super) struct DiGraph {
+pub(crate) struct DiGraph {
     n: usize,
     /// `successors[u]` — sorted list of nodes that `u` points to.
-    pub(super) successors: Vec<IntSet>,
+    pub(crate) successors: Vec<IntSet>,
     /// `predecessors[v]` — sorted list of nodes that point to `v`.
-    pub(super) predecessors: Vec<IntSet>,
+    pub(crate) predecessors: Vec<IntSet>,
 }
 
 impl DiGraph {
     /// Create an empty graph with `n` nodes and no edges.
-    pub(super) fn new(n: usize) -> Self {
+    pub(crate) fn new(n: usize) -> Self {
         Self {
             n,
             successors: vec![vec![]; n],
@@ -44,10 +44,10 @@ impl DiGraph {
     }
 
     /// Number of nodes.
-    pub(super) fn node_count(&self) -> usize { self.n }
+    pub(crate) fn node_count(&self) -> usize { self.n }
 
     /// Add a directed edge from `u` to `v`.  Idempotent (adding a duplicate edge is a no-op).
-    pub(super) fn add_edge(&mut self, u: usize, v: usize) {
+    pub(crate) fn add_edge(&mut self, u: usize, v: usize) {
         intset::insert(&mut self.successors[u], v);
         intset::insert(&mut self.predecessors[v], u);
     }
@@ -59,7 +59,7 @@ impl DiGraph {
     }
 
     /// In-degree of node `v`: the number of nodes with an edge to `v`.
-    pub(super) fn indegree(&self, v: usize) -> usize {
+    pub(crate) fn indegree(&self, v: usize) -> usize {
         self.predecessors[v].len()
     }
 }

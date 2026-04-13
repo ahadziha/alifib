@@ -243,6 +243,23 @@ impl WasmRepl {
         }
     }
 
+    /// Return string diagram data for a named item within a type.
+    ///
+    /// Tries named diagrams first, then generator classifiers.
+    /// Returns `{"status":"ok","data":{...}}` or `{"status":"error","message":"..."}`.
+    pub fn get_strdiag(&self, type_name: &str, item_name: &str) -> String {
+        let store = match self.store.as_ref() {
+            Some(s) => s,
+            None => return err_json("no source loaded; call load_source first"),
+        };
+        match alifib::interactive::protocol::build_strdiag_response(
+            store, SOURCE_PATH, type_name, item_name,
+        ) {
+            Ok(data) => ok_json(data),
+            Err(msg) => err_json(&msg),
+        }
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────
 
     fn need_engine<F: FnOnce(&RewriteEngine) -> String>(&self, f: F) -> String {

@@ -2,13 +2,14 @@ pub(crate) mod bitset;
 pub mod complex;
 pub mod diagram;
 mod embeddings;
-mod graph;
+pub(crate) mod graph;
 mod intset;
 pub mod matching;
 pub mod partial_map;
 mod ogposet;
 mod pushout;
 pub mod rewrite;
+pub mod strdiag;
 
 pub use embeddings::Embedding;
 
