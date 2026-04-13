@@ -9,7 +9,7 @@
 use crate::aux::{self, Tag};
 use crate::core::{
     complex::{Complex, MapDomain},
-    diagram::{CellData, Diagram, Sign},
+    diagram::{CellData, Diagram, PasteTree, Sign},
     partial_map::PartialMap,
 };
 use crate::interpreter::{GlobalStore, InterpretedFile};
@@ -126,6 +126,25 @@ fn name_or_empty(s: &str) -> &str {
     if s.is_empty() { "<empty>" } else { s }
 }
 
+/// Render a [`PasteTree`] as a structured term expression.
+///
+/// - `Leaf(tag)` → generator name resolved against `scope`
+/// - `Node { dim, left, right }` → `(left #dim right)`
+fn render_paste_tree(tree: &PasteTree, scope: &Complex) -> String {
+    match tree {
+        PasteTree::Leaf(tag) => scope
+            .find_generator_by_tag(tag)
+            .filter(|n| !n.is_empty())
+            .cloned()
+            .unwrap_or_else(|| format!("{}", tag)),
+        PasteTree::Node { dim, left, right } => {
+            let l = render_paste_tree(left, scope);
+            let r = render_paste_tree(right, scope);
+            format!("({} #{} {})", l, dim, r)
+        }
+    }
+}
+
 /// Resolve the top-level labels of `diagram` to generator names in `scope`.
 fn diagram_labels(diagram: &Diagram, scope: &Complex) -> Vec<String> {
     match diagram.labels_at(diagram.top_dim()) {
@@ -143,10 +162,21 @@ fn diagram_labels(diagram: &Diagram, scope: &Complex) -> Vec<String> {
     }
 }
 
-/// Render the top-level labels of `diagram` as a space-separated string of
-/// generator names, resolved against `scope`.
+/// Render a diagram as a structured term expression from its paste tree.
+///
+/// Uses the source paste tree at the top dimension. Falls back to flat
+/// label rendering if no paste history is available.
+fn render_diagram_tree(diagram: &Diagram, scope: &Complex) -> String {
+    let n = diagram.top_dim();
+    match diagram.tree(Sign::Source, n) {
+        Some(tree) => render_paste_tree(tree, scope),
+        None => diagram_labels(diagram, scope).join(" "),
+    }
+}
+
+/// Render a diagram as a structured term expression, resolved against `scope`.
 pub fn render_diagram(diagram: &Diagram, scope: &Complex) -> String {
-    diagram_labels(diagram, scope).join(" ")
+    render_diagram_tree(diagram, scope)
 }
 
 /// Render a partial boundary: each top-level label of `boundary` is mapped
@@ -170,11 +200,11 @@ pub fn render_boundary_partial(boundary: &Diagram, map: &PartialMap, scope: &Com
 /// labels against `complex`.
 fn cell_from_data(name: &str, data: &CellData, complex: &Complex) -> Cell {
     match data {
-        CellData::Zero => Cell { name: name.to_owned(), src: vec![], tgt: vec![] },
+        CellData::Zero => Cell { name: name.to_owned(), src: String::new(), tgt: String::new() },
         CellData::Boundary { boundary_in, boundary_out } => Cell {
             name: name.to_owned(),
-            src: diagram_labels(boundary_in, complex),
-            tgt: diagram_labels(boundary_out, complex),
+            src: render_diagram_tree(boundary_in, complex),
+            tgt: render_diagram_tree(boundary_out, complex),
         },
     }
 }
@@ -184,18 +214,18 @@ fn cell_from_data(name: &str, data: &CellData, complex: &Complex) -> Cell {
 /// 0-dimensional cell if the boundary cannot be computed.
 fn cell_from_diagram(name: &str, diag: &Diagram, complex: &Complex) -> Cell {
     let Some(k) = diag.top_dim().checked_sub(1) else {
-        return Cell { name: name.to_owned(), src: vec![], tgt: vec![] };
+        return Cell { name: name.to_owned(), src: String::new(), tgt: String::new() };
     };
     let (Ok(src_diag), Ok(tgt_diag)) = (
         Diagram::boundary(Sign::Source, k, diag),
         Diagram::boundary(Sign::Target, k, diag),
     ) else {
-        return Cell { name: name.to_owned(), src: vec![], tgt: vec![] };
+        return Cell { name: name.to_owned(), src: String::new(), tgt: String::new() };
     };
     Cell {
         name: name.to_owned(),
-        src: diagram_labels(&src_diag, complex),
-        tgt: diagram_labels(&tgt_diag, complex),
+        src: render_diagram_tree(&src_diag, complex),
+        tgt: render_diagram_tree(&tgt_diag, complex),
     }
 }
 

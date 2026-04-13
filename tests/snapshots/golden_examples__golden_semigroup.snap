@@ -23,8 +23,8 @@ Store {
                             cells: [
                                 Cell {
                                     name: "pt",
-                                    src: [],
-                                    tgt: [],
+                                    src: "",
+                                    tgt: "",
                                 },
                             ],
                         },
@@ -33,21 +33,13 @@ Store {
                             cells: [
                                 Cell {
                                     name: "cod",
-                                    src: [
-                                        "pt",
-                                    ],
-                                    tgt: [
-                                        "pt",
-                                    ],
+                                    src: "pt",
+                                    tgt: "pt",
                                 },
                                 Cell {
                                     name: "dom",
-                                    src: [
-                                        "pt",
-                                    ],
-                                    tgt: [
-                                        "pt",
-                                    ],
+                                    src: "pt",
+                                    tgt: "pt",
                                 },
                             ],
                         },
@@ -56,21 +48,13 @@ Store {
                             cells: [
                                 Cell {
                                     name: "lhs",
-                                    src: [
-                                        "dom",
-                                    ],
-                                    tgt: [
-                                        "cod",
-                                    ],
+                                    src: "dom",
+                                    tgt: "cod",
                                 },
                                 Cell {
                                     name: "rhs",
-                                    src: [
-                                        "dom",
-                                    ],
-                                    tgt: [
-                                        "cod",
-                                    ],
+                                    src: "dom",
+                                    tgt: "cod",
                                 },
                             ],
                         },
@@ -79,21 +63,13 @@ Store {
                             cells: [
                                 Cell {
                                     name: "dir",
-                                    src: [
-                                        "lhs",
-                                    ],
-                                    tgt: [
-                                        "rhs",
-                                    ],
+                                    src: "lhs",
+                                    tgt: "rhs",
                                 },
                                 Cell {
                                     name: "inv",
-                                    src: [
-                                        "rhs",
-                                    ],
-                                    tgt: [
-                                        "lhs",
-                                    ],
+                                    src: "rhs",
+                                    tgt: "lhs",
                                 },
                             ],
                         },
@@ -101,62 +77,38 @@ Store {
                     diagrams: [
                         Cell {
                             name: "cod",
-                            src: [
-                                "pt",
-                            ],
-                            tgt: [
-                                "pt",
-                            ],
+                            src: "pt",
+                            tgt: "pt",
                         },
                         Cell {
                             name: "dir",
-                            src: [
-                                "lhs",
-                            ],
-                            tgt: [
-                                "rhs",
-                            ],
+                            src: "lhs",
+                            tgt: "rhs",
                         },
                         Cell {
                             name: "dom",
-                            src: [
-                                "pt",
-                            ],
-                            tgt: [
-                                "pt",
-                            ],
+                            src: "pt",
+                            tgt: "pt",
                         },
                         Cell {
                             name: "inv",
-                            src: [
-                                "rhs",
-                            ],
-                            tgt: [
-                                "lhs",
-                            ],
+                            src: "rhs",
+                            tgt: "lhs",
                         },
                         Cell {
                             name: "lhs",
-                            src: [
-                                "dom",
-                            ],
-                            tgt: [
-                                "cod",
-                            ],
+                            src: "dom",
+                            tgt: "cod",
                         },
                         Cell {
                             name: "pt",
-                            src: [],
-                            tgt: [],
+                            src: "",
+                            tgt: "",
                         },
                         Cell {
                             name: "rhs",
-                            src: [
-                                "dom",
-                            ],
-                            tgt: [
-                                "cod",
-                            ],
+                            src: "dom",
+                            tgt: "cod",
                         },
                     ],
                     maps: [
@@ -174,8 +126,8 @@ Store {
                             cells: [
                                 Cell {
                                     name: "pt",
-                                    src: [],
-                                    tgt: [],
+                                    src: "",
+                                    tgt: "",
                                 },
                             ],
                         },
@@ -184,21 +136,13 @@ Store {
                             cells: [
                                 Cell {
                                     name: "Cod.set",
-                                    src: [
-                                        "pt",
-                                    ],
-                                    tgt: [
-                                        "pt",
-                                    ],
+                                    src: "pt",
+                                    tgt: "pt",
                                 },
                                 Cell {
                                     name: "Dom.set",
-                                    src: [
-                                        "pt",
-                                    ],
-                                    tgt: [
-                                        "pt",
-                                    ],
+                                    src: "pt",
+                                    tgt: "pt",
                                 },
                             ],
                         },
@@ -207,30 +151,18 @@ Store {
                             cells: [
                                 Cell {
                                     name: "Cod.id",
-                                    src: [
-                                        "Cod.set",
-                                    ],
-                                    tgt: [
-                                        "Cod.set",
-                                    ],
+                                    src: "Cod.set",
+                                    tgt: "Cod.set",
                                 },
                                 Cell {
                                     name: "Dom.id",
-                                    src: [
-                                        "Dom.set",
-                                    ],
-                                    tgt: [
-                                        "Dom.set",
-                                    ],
+                                    src: "Dom.set",
+                                    tgt: "Dom.set",
                                 },
                                 Cell {
                                     name: "fun",
-                                    src: [
-                                        "Dom.set",
-                                    ],
-                                    tgt: [
-                                        "Cod.set",
-                                    ],
+                                    src: "Dom.set",
+                                    tgt: "Cod.set",
                                 },
                             ],
                         },
@@ -239,83 +171,43 @@ Store {
                             cells: [
                                 Cell {
                                     name: "Cod.Id_id.dir",
-                                    src: [
-                                        "Cod.id",
-                                        "Cod.id",
-                                    ],
-                                    tgt: [
-                                        "Cod.id",
-                                    ],
+                                    src: "(Cod.id #1 Cod.id)",
+                                    tgt: "Cod.id",
                                 },
                                 Cell {
                                     name: "Cod.Id_id.inv",
-                                    src: [
-                                        "Cod.id",
-                                    ],
-                                    tgt: [
-                                        "Cod.id",
-                                        "Cod.id",
-                                    ],
+                                    src: "Cod.id",
+                                    tgt: "(Cod.id #1 Cod.id)",
                                 },
                                 Cell {
                                     name: "Dom.Id_id.dir",
-                                    src: [
-                                        "Dom.id",
-                                        "Dom.id",
-                                    ],
-                                    tgt: [
-                                        "Dom.id",
-                                    ],
+                                    src: "(Dom.id #1 Dom.id)",
+                                    tgt: "Dom.id",
                                 },
                                 Cell {
                                     name: "Dom.Id_id.inv",
-                                    src: [
-                                        "Dom.id",
-                                    ],
-                                    tgt: [
-                                        "Dom.id",
-                                        "Dom.id",
-                                    ],
+                                    src: "Dom.id",
+                                    tgt: "(Dom.id #1 Dom.id)",
                                 },
                                 Cell {
                                     name: "Fun_id.dir",
-                                    src: [
-                                        "fun",
-                                        "Cod.id",
-                                    ],
-                                    tgt: [
-                                        "fun",
-                                    ],
+                                    src: "(fun #1 Cod.id)",
+                                    tgt: "fun",
                                 },
                                 Cell {
                                     name: "Fun_id.inv",
-                                    src: [
-                                        "fun",
-                                    ],
-                                    tgt: [
-                                        "fun",
-                                        "Cod.id",
-                                    ],
+                                    src: "fun",
+                                    tgt: "(fun #1 Cod.id)",
                                 },
                                 Cell {
                                     name: "Id_fun.dir",
-                                    src: [
-                                        "Dom.id",
-                                        "fun",
-                                    ],
-                                    tgt: [
-                                        "fun",
-                                    ],
+                                    src: "(Dom.id #1 fun)",
+                                    tgt: "fun",
                                 },
                                 Cell {
                                     name: "Id_fun.inv",
-                                    src: [
-                                        "fun",
-                                    ],
-                                    tgt: [
-                                        "Dom.id",
-                                        "fun",
-                                    ],
+                                    src: "fun",
+                                    tgt: "(Dom.id #1 fun)",
                                 },
                             ],
                         },
@@ -323,35 +215,23 @@ Store {
                     diagrams: [
                         Cell {
                             name: "cod",
-                            src: [
-                                "pt",
-                            ],
-                            tgt: [
-                                "pt",
-                            ],
+                            src: "pt",
+                            tgt: "pt",
                         },
                         Cell {
                             name: "dom",
-                            src: [
-                                "pt",
-                            ],
-                            tgt: [
-                                "pt",
-                            ],
+                            src: "pt",
+                            tgt: "pt",
                         },
                         Cell {
                             name: "fun",
-                            src: [
-                                "Dom.set",
-                            ],
-                            tgt: [
-                                "Cod.set",
-                            ],
+                            src: "Dom.set",
+                            tgt: "Cod.set",
                         },
                         Cell {
                             name: "pt",
-                            src: [],
-                            tgt: [],
+                            src: "",
+                            tgt: "",
                         },
                     ],
                     maps: [
@@ -385,8 +265,8 @@ Store {
                             cells: [
                                 Cell {
                                     name: "pt",
-                                    src: [],
-                                    tgt: [],
+                                    src: "",
+                                    tgt: "",
                                 },
                             ],
                         },
@@ -395,12 +275,8 @@ Store {
                             cells: [
                                 Cell {
                                     name: "set",
-                                    src: [
-                                        "pt",
-                                    ],
-                                    tgt: [
-                                        "pt",
-                                    ],
+                                    src: "pt",
+                                    tgt: "pt",
                                 },
                             ],
                         },
@@ -409,12 +285,8 @@ Store {
                             cells: [
                                 Cell {
                                     name: "id",
-                                    src: [
-                                        "set",
-                                    ],
-                                    tgt: [
-                                        "set",
-                                    ],
+                                    src: "set",
+                                    tgt: "set",
                                 },
                             ],
                         },
@@ -423,23 +295,13 @@ Store {
                             cells: [
                                 Cell {
                                     name: "Id_id.dir",
-                                    src: [
-                                        "id",
-                                        "id",
-                                    ],
-                                    tgt: [
-                                        "id",
-                                    ],
+                                    src: "(id #1 id)",
+                                    tgt: "id",
                                 },
                                 Cell {
                                     name: "Id_id.inv",
-                                    src: [
-                                        "id",
-                                    ],
-                                    tgt: [
-                                        "id",
-                                        "id",
-                                    ],
+                                    src: "id",
+                                    tgt: "(id #1 id)",
                                 },
                             ],
                         },
@@ -447,26 +309,18 @@ Store {
                     diagrams: [
                         Cell {
                             name: "id",
-                            src: [
-                                "set",
-                            ],
-                            tgt: [
-                                "set",
-                            ],
+                            src: "set",
+                            tgt: "set",
                         },
                         Cell {
                             name: "pt",
-                            src: [],
-                            tgt: [],
+                            src: "",
+                            tgt: "",
                         },
                         Cell {
                             name: "set",
-                            src: [
-                                "pt",
-                            ],
-                            tgt: [
-                                "pt",
-                            ],
+                            src: "pt",
+                            tgt: "pt",
                         },
                     ],
                     maps: [
@@ -503,8 +357,8 @@ Store {
                             cells: [
                                 Cell {
                                     name: "pt",
-                                    src: [],
-                                    tgt: [],
+                                    src: "",
+                                    tgt: "",
                                 },
                             ],
                         },
@@ -513,30 +367,18 @@ Store {
                             cells: [
                                 Cell {
                                     name: "L.Set.set",
-                                    src: [
-                                        "pt",
-                                    ],
-                                    tgt: [
-                                        "pt",
-                                    ],
+                                    src: "pt",
+                                    tgt: "pt",
                                 },
                                 Cell {
                                     name: "R.Set.set",
-                                    src: [
-                                        "pt",
-                                    ],
-                                    tgt: [
-                                        "pt",
-                                    ],
+                                    src: "pt",
+                                    tgt: "pt",
                                 },
                                 Cell {
                                     name: "Set.set",
-                                    src: [
-                                        "pt",
-                                    ],
-                                    tgt: [
-                                        "pt",
-                                    ],
+                                    src: "pt",
+                                    tgt: "pt",
                                 },
                             ],
                         },
@@ -545,70 +387,38 @@ Store {
                             cells: [
                                 Cell {
                                     name: "L.Set.id",
-                                    src: [
-                                        "L.Set.set",
-                                    ],
-                                    tgt: [
-                                        "L.Set.set",
-                                    ],
+                                    src: "L.Set.set",
+                                    tgt: "L.Set.set",
                                 },
                                 Cell {
                                     name: "L.split",
-                                    src: [
-                                        "L.Set.set",
-                                    ],
-                                    tgt: [
-                                        "L.Set.set",
-                                        "L.Set.set",
-                                    ],
+                                    src: "L.Set.set",
+                                    tgt: "(L.Set.set #0 L.Set.set)",
                                 },
                                 Cell {
                                     name: "LC.coaction",
-                                    src: [
-                                        "Set.set",
-                                    ],
-                                    tgt: [
-                                        "L.Set.set",
-                                        "Set.set",
-                                    ],
+                                    src: "Set.set",
+                                    tgt: "(L.Set.set #0 Set.set)",
                                 },
                                 Cell {
                                     name: "R.Set.id",
-                                    src: [
-                                        "R.Set.set",
-                                    ],
-                                    tgt: [
-                                        "R.Set.set",
-                                    ],
+                                    src: "R.Set.set",
+                                    tgt: "R.Set.set",
                                 },
                                 Cell {
                                     name: "R.split",
-                                    src: [
-                                        "R.Set.set",
-                                    ],
-                                    tgt: [
-                                        "R.Set.set",
-                                        "R.Set.set",
-                                    ],
+                                    src: "R.Set.set",
+                                    tgt: "(R.Set.set #0 R.Set.set)",
                                 },
                                 Cell {
                                     name: "RC.coaction",
-                                    src: [
-                                        "Set.set",
-                                    ],
-                                    tgt: [
-                                        "Set.set",
-                                        "R.Set.set",
-                                    ],
+                                    src: "Set.set",
+                                    tgt: "(Set.set #0 R.Set.set)",
                                 },
                                 Cell {
                                     name: "Set.id",
-                                    src: [
-                                        "Set.set",
-                                    ],
-                                    tgt: [
-                                        "Set.set",
-                                    ],
+                                    src: "Set.set",
+                                    tgt: "Set.set",
                                 },
                             ],
                         },
@@ -617,293 +427,143 @@ Store {
                             cells: [
                                 Cell {
                                     name: "L.Assoc.dir",
-                                    src: [
-                                        "L.split",
-                                        "L.split",
-                                    ],
-                                    tgt: [
-                                        "L.split",
-                                        "L.split",
-                                    ],
+                                    src: "(L.split #1 (L.split #0 L.Set.set))",
+                                    tgt: "(L.split #1 (L.Set.set #0 L.split))",
                                 },
                                 Cell {
                                     name: "L.Assoc.inv",
-                                    src: [
-                                        "L.split",
-                                        "L.split",
-                                    ],
-                                    tgt: [
-                                        "L.split",
-                                        "L.split",
-                                    ],
+                                    src: "(L.split #1 (L.Set.set #0 L.split))",
+                                    tgt: "(L.split #1 (L.split #0 L.Set.set))",
                                 },
                                 Cell {
                                     name: "L.Id_split.dir",
-                                    src: [
-                                        "L.split",
-                                        "L.Set.id",
-                                    ],
-                                    tgt: [
-                                        "L.split",
-                                    ],
+                                    src: "(L.Set.id #1 L.split)",
+                                    tgt: "L.split",
                                 },
                                 Cell {
                                     name: "L.Id_split.inv",
-                                    src: [
-                                        "L.split",
-                                    ],
-                                    tgt: [
-                                        "L.split",
-                                        "L.Set.id",
-                                    ],
+                                    src: "L.split",
+                                    tgt: "(L.Set.id #1 L.split)",
                                 },
                                 Cell {
                                     name: "L.Set.Id_id.dir",
-                                    src: [
-                                        "L.Set.id",
-                                        "L.Set.id",
-                                    ],
-                                    tgt: [
-                                        "L.Set.id",
-                                    ],
+                                    src: "(L.Set.id #1 L.Set.id)",
+                                    tgt: "L.Set.id",
                                 },
                                 Cell {
                                     name: "L.Set.Id_id.inv",
-                                    src: [
-                                        "L.Set.id",
-                                    ],
-                                    tgt: [
-                                        "L.Set.id",
-                                        "L.Set.id",
-                                    ],
+                                    src: "L.Set.id",
+                                    tgt: "(L.Set.id #1 L.Set.id)",
                                 },
                                 Cell {
                                     name: "L.Split_left_id.dir",
-                                    src: [
-                                        "L.split",
-                                        "L.Set.id",
-                                    ],
-                                    tgt: [
-                                        "L.split",
-                                    ],
+                                    src: "(L.split #1 (L.Set.id #0 L.Set.set))",
+                                    tgt: "L.split",
                                 },
                                 Cell {
                                     name: "L.Split_left_id.inv",
-                                    src: [
-                                        "L.split",
-                                    ],
-                                    tgt: [
-                                        "L.split",
-                                        "L.Set.id",
-                                    ],
+                                    src: "L.split",
+                                    tgt: "(L.split #1 (L.Set.id #0 L.Set.set))",
                                 },
                                 Cell {
                                     name: "L.Split_right_id.dir",
-                                    src: [
-                                        "L.split",
-                                        "L.Set.id",
-                                    ],
-                                    tgt: [
-                                        "L.split",
-                                    ],
+                                    src: "(L.split #1 (L.Set.set #0 L.Set.id))",
+                                    tgt: "L.split",
                                 },
                                 Cell {
                                     name: "L.Split_right_id.inv",
-                                    src: [
-                                        "L.split",
-                                    ],
-                                    tgt: [
-                                        "L.split",
-                                        "L.Set.id",
-                                    ],
+                                    src: "L.split",
+                                    tgt: "(L.split #1 (L.Set.set #0 L.Set.id))",
                                 },
                                 Cell {
                                     name: "LC.Left_coact_split.dir",
-                                    src: [
-                                        "L.split",
-                                        "LC.coaction",
-                                    ],
-                                    tgt: [
-                                        "LC.coaction",
-                                        "LC.coaction",
-                                    ],
+                                    src: "(LC.coaction #1 (L.split #0 Set.set))",
+                                    tgt: "(LC.coaction #1 (L.Set.set #0 LC.coaction))",
                                 },
                                 Cell {
                                     name: "LC.Left_coact_split.inv",
-                                    src: [
-                                        "LC.coaction",
-                                        "LC.coaction",
-                                    ],
-                                    tgt: [
-                                        "L.split",
-                                        "LC.coaction",
-                                    ],
+                                    src: "(LC.coaction #1 (L.Set.set #0 LC.coaction))",
+                                    tgt: "(LC.coaction #1 (L.split #0 Set.set))",
                                 },
                                 Cell {
                                     name: "R.Assoc.dir",
-                                    src: [
-                                        "R.split",
-                                        "R.split",
-                                    ],
-                                    tgt: [
-                                        "R.split",
-                                        "R.split",
-                                    ],
+                                    src: "(R.split #1 (R.split #0 R.Set.set))",
+                                    tgt: "(R.split #1 (R.Set.set #0 R.split))",
                                 },
                                 Cell {
                                     name: "R.Assoc.inv",
-                                    src: [
-                                        "R.split",
-                                        "R.split",
-                                    ],
-                                    tgt: [
-                                        "R.split",
-                                        "R.split",
-                                    ],
+                                    src: "(R.split #1 (R.Set.set #0 R.split))",
+                                    tgt: "(R.split #1 (R.split #0 R.Set.set))",
                                 },
                                 Cell {
                                     name: "R.Id_split.dir",
-                                    src: [
-                                        "R.split",
-                                        "R.Set.id",
-                                    ],
-                                    tgt: [
-                                        "R.split",
-                                    ],
+                                    src: "(R.Set.id #1 R.split)",
+                                    tgt: "R.split",
                                 },
                                 Cell {
                                     name: "R.Id_split.inv",
-                                    src: [
-                                        "R.split",
-                                    ],
-                                    tgt: [
-                                        "R.split",
-                                        "R.Set.id",
-                                    ],
+                                    src: "R.split",
+                                    tgt: "(R.Set.id #1 R.split)",
                                 },
                                 Cell {
                                     name: "R.Set.Id_id.dir",
-                                    src: [
-                                        "R.Set.id",
-                                        "R.Set.id",
-                                    ],
-                                    tgt: [
-                                        "R.Set.id",
-                                    ],
+                                    src: "(R.Set.id #1 R.Set.id)",
+                                    tgt: "R.Set.id",
                                 },
                                 Cell {
                                     name: "R.Set.Id_id.inv",
-                                    src: [
-                                        "R.Set.id",
-                                    ],
-                                    tgt: [
-                                        "R.Set.id",
-                                        "R.Set.id",
-                                    ],
+                                    src: "R.Set.id",
+                                    tgt: "(R.Set.id #1 R.Set.id)",
                                 },
                                 Cell {
                                     name: "R.Split_left_id.dir",
-                                    src: [
-                                        "R.split",
-                                        "R.Set.id",
-                                    ],
-                                    tgt: [
-                                        "R.split",
-                                    ],
+                                    src: "(R.split #1 (R.Set.id #0 R.Set.set))",
+                                    tgt: "R.split",
                                 },
                                 Cell {
                                     name: "R.Split_left_id.inv",
-                                    src: [
-                                        "R.split",
-                                    ],
-                                    tgt: [
-                                        "R.split",
-                                        "R.Set.id",
-                                    ],
+                                    src: "R.split",
+                                    tgt: "(R.split #1 (R.Set.id #0 R.Set.set))",
                                 },
                                 Cell {
                                     name: "R.Split_right_id.dir",
-                                    src: [
-                                        "R.split",
-                                        "R.Set.id",
-                                    ],
-                                    tgt: [
-                                        "R.split",
-                                    ],
+                                    src: "(R.split #1 (R.Set.set #0 R.Set.id))",
+                                    tgt: "R.split",
                                 },
                                 Cell {
                                     name: "R.Split_right_id.inv",
-                                    src: [
-                                        "R.split",
-                                    ],
-                                    tgt: [
-                                        "R.split",
-                                        "R.Set.id",
-                                    ],
+                                    src: "R.split",
+                                    tgt: "(R.split #1 (R.Set.set #0 R.Set.id))",
                                 },
                                 Cell {
                                     name: "RC.Right_coact_split.dir",
-                                    src: [
-                                        "R.split",
-                                        "RC.coaction",
-                                    ],
-                                    tgt: [
-                                        "RC.coaction",
-                                        "RC.coaction",
-                                    ],
+                                    src: "(RC.coaction #1 (Set.set #0 R.split))",
+                                    tgt: "(RC.coaction #1 (RC.coaction #0 R.Set.set))",
                                 },
                                 Cell {
                                     name: "RC.Right_coact_split.inv",
-                                    src: [
-                                        "RC.coaction",
-                                        "RC.coaction",
-                                    ],
-                                    tgt: [
-                                        "R.split",
-                                        "RC.coaction",
-                                    ],
+                                    src: "(RC.coaction #1 (RC.coaction #0 R.Set.set))",
+                                    tgt: "(RC.coaction #1 (Set.set #0 R.split))",
                                 },
                                 Cell {
                                     name: "Right_coact_left_coact.dir",
-                                    src: [
-                                        "LC.coaction",
-                                        "RC.coaction",
-                                    ],
-                                    tgt: [
-                                        "RC.coaction",
-                                        "LC.coaction",
-                                    ],
+                                    src: "(RC.coaction #1 (LC.coaction #0 R.Set.set))",
+                                    tgt: "(LC.coaction #1 (L.Set.set #0 RC.coaction))",
                                 },
                                 Cell {
                                     name: "Right_coact_left_coact.inv",
-                                    src: [
-                                        "RC.coaction",
-                                        "LC.coaction",
-                                    ],
-                                    tgt: [
-                                        "LC.coaction",
-                                        "RC.coaction",
-                                    ],
+                                    src: "(LC.coaction #1 (L.Set.set #0 RC.coaction))",
+                                    tgt: "(RC.coaction #1 (LC.coaction #0 R.Set.set))",
                                 },
                                 Cell {
                                     name: "Set.Id_id.dir",
-                                    src: [
-                                        "Set.id",
-                                        "Set.id",
-                                    ],
-                                    tgt: [
-                                        "Set.id",
-                                    ],
+                                    src: "(Set.id #1 Set.id)",
+                                    tgt: "Set.id",
                                 },
                                 Cell {
                                     name: "Set.Id_id.inv",
-                                    src: [
-                                        "Set.id",
-                                    ],
-                                    tgt: [
-                                        "Set.id",
-                                        "Set.id",
-                                    ],
+                                    src: "Set.id",
+                                    tgt: "(Set.id #1 Set.id)",
                                 },
                             ],
                         },
@@ -911,8 +571,8 @@ Store {
                     diagrams: [
                         Cell {
                             name: "pt",
-                            src: [],
-                            tgt: [],
+                            src: "",
+                            tgt: "",
                         },
                     ],
                     maps: [
@@ -954,8 +614,8 @@ Store {
                             cells: [
                                 Cell {
                                     name: "pt",
-                                    src: [],
-                                    tgt: [],
+                                    src: "",
+                                    tgt: "",
                                 },
                             ],
                         },
@@ -964,30 +624,18 @@ Store {
                             cells: [
                                 Cell {
                                     name: "L.Set.set",
-                                    src: [
-                                        "pt",
-                                    ],
-                                    tgt: [
-                                        "pt",
-                                    ],
+                                    src: "pt",
+                                    tgt: "pt",
                                 },
                                 Cell {
                                     name: "R.Set.set",
-                                    src: [
-                                        "pt",
-                                    ],
-                                    tgt: [
-                                        "pt",
-                                    ],
+                                    src: "pt",
+                                    tgt: "pt",
                                 },
                                 Cell {
                                     name: "Set.set",
-                                    src: [
-                                        "pt",
-                                    ],
-                                    tgt: [
-                                        "pt",
-                                    ],
+                                    src: "pt",
+                                    tgt: "pt",
                                 },
                             ],
                         },
@@ -996,70 +644,38 @@ Store {
                             cells: [
                                 Cell {
                                     name: "L.Set.id",
-                                    src: [
-                                        "L.Set.set",
-                                    ],
-                                    tgt: [
-                                        "L.Set.set",
-                                    ],
+                                    src: "L.Set.set",
+                                    tgt: "L.Set.set",
                                 },
                                 Cell {
                                     name: "L.merge",
-                                    src: [
-                                        "L.Set.set",
-                                        "L.Set.set",
-                                    ],
-                                    tgt: [
-                                        "L.Set.set",
-                                    ],
+                                    src: "(L.Set.set #0 L.Set.set)",
+                                    tgt: "L.Set.set",
                                 },
                                 Cell {
                                     name: "LM.action",
-                                    src: [
-                                        "L.Set.set",
-                                        "Set.set",
-                                    ],
-                                    tgt: [
-                                        "Set.set",
-                                    ],
+                                    src: "(L.Set.set #0 Set.set)",
+                                    tgt: "Set.set",
                                 },
                                 Cell {
                                     name: "R.Set.id",
-                                    src: [
-                                        "R.Set.set",
-                                    ],
-                                    tgt: [
-                                        "R.Set.set",
-                                    ],
+                                    src: "R.Set.set",
+                                    tgt: "R.Set.set",
                                 },
                                 Cell {
                                     name: "R.merge",
-                                    src: [
-                                        "R.Set.set",
-                                        "R.Set.set",
-                                    ],
-                                    tgt: [
-                                        "R.Set.set",
-                                    ],
+                                    src: "(R.Set.set #0 R.Set.set)",
+                                    tgt: "R.Set.set",
                                 },
                                 Cell {
                                     name: "RM.action",
-                                    src: [
-                                        "Set.set",
-                                        "R.Set.set",
-                                    ],
-                                    tgt: [
-                                        "Set.set",
-                                    ],
+                                    src: "(Set.set #0 R.Set.set)",
+                                    tgt: "Set.set",
                                 },
                                 Cell {
                                     name: "Set.id",
-                                    src: [
-                                        "Set.set",
-                                    ],
-                                    tgt: [
-                                        "Set.set",
-                                    ],
+                                    src: "Set.set",
+                                    tgt: "Set.set",
                                 },
                             ],
                         },
@@ -1068,293 +684,143 @@ Store {
                             cells: [
                                 Cell {
                                     name: "L.Assoc.dir",
-                                    src: [
-                                        "L.merge",
-                                        "L.merge",
-                                    ],
-                                    tgt: [
-                                        "L.merge",
-                                        "L.merge",
-                                    ],
+                                    src: "((L.merge #0 L.Set.set) #1 L.merge)",
+                                    tgt: "((L.Set.set #0 L.merge) #1 L.merge)",
                                 },
                                 Cell {
                                     name: "L.Assoc.inv",
-                                    src: [
-                                        "L.merge",
-                                        "L.merge",
-                                    ],
-                                    tgt: [
-                                        "L.merge",
-                                        "L.merge",
-                                    ],
+                                    src: "((L.Set.set #0 L.merge) #1 L.merge)",
+                                    tgt: "((L.merge #0 L.Set.set) #1 L.merge)",
                                 },
                                 Cell {
                                     name: "L.Left_id_merge.dir",
-                                    src: [
-                                        "L.Set.id",
-                                        "L.merge",
-                                    ],
-                                    tgt: [
-                                        "L.merge",
-                                    ],
+                                    src: "((L.Set.id #0 L.Set.set) #1 L.merge)",
+                                    tgt: "L.merge",
                                 },
                                 Cell {
                                     name: "L.Left_id_merge.inv",
-                                    src: [
-                                        "L.merge",
-                                    ],
-                                    tgt: [
-                                        "L.Set.id",
-                                        "L.merge",
-                                    ],
+                                    src: "L.merge",
+                                    tgt: "((L.Set.id #0 L.Set.set) #1 L.merge)",
                                 },
                                 Cell {
                                     name: "L.Merge_id.dir",
-                                    src: [
-                                        "L.merge",
-                                        "L.Set.id",
-                                    ],
-                                    tgt: [
-                                        "L.merge",
-                                    ],
+                                    src: "(L.merge #1 L.Set.id)",
+                                    tgt: "L.merge",
                                 },
                                 Cell {
                                     name: "L.Merge_id.inv",
-                                    src: [
-                                        "L.merge",
-                                    ],
-                                    tgt: [
-                                        "L.merge",
-                                        "L.Set.id",
-                                    ],
+                                    src: "L.merge",
+                                    tgt: "(L.merge #1 L.Set.id)",
                                 },
                                 Cell {
                                     name: "L.Right_id_merge.dir",
-                                    src: [
-                                        "L.Set.id",
-                                        "L.merge",
-                                    ],
-                                    tgt: [
-                                        "L.merge",
-                                    ],
+                                    src: "((L.Set.set #0 L.Set.id) #1 L.merge)",
+                                    tgt: "L.merge",
                                 },
                                 Cell {
                                     name: "L.Right_id_merge.inv",
-                                    src: [
-                                        "L.merge",
-                                    ],
-                                    tgt: [
-                                        "L.Set.id",
-                                        "L.merge",
-                                    ],
+                                    src: "L.merge",
+                                    tgt: "((L.Set.set #0 L.Set.id) #1 L.merge)",
                                 },
                                 Cell {
                                     name: "L.Set.Id_id.dir",
-                                    src: [
-                                        "L.Set.id",
-                                        "L.Set.id",
-                                    ],
-                                    tgt: [
-                                        "L.Set.id",
-                                    ],
+                                    src: "(L.Set.id #1 L.Set.id)",
+                                    tgt: "L.Set.id",
                                 },
                                 Cell {
                                     name: "L.Set.Id_id.inv",
-                                    src: [
-                                        "L.Set.id",
-                                    ],
-                                    tgt: [
-                                        "L.Set.id",
-                                        "L.Set.id",
-                                    ],
+                                    src: "L.Set.id",
+                                    tgt: "(L.Set.id #1 L.Set.id)",
                                 },
                                 Cell {
                                     name: "LM.Merge_left_act.dir",
-                                    src: [
-                                        "L.merge",
-                                        "LM.action",
-                                    ],
-                                    tgt: [
-                                        "LM.action",
-                                        "LM.action",
-                                    ],
+                                    src: "((L.merge #0 Set.set) #1 LM.action)",
+                                    tgt: "((L.Set.set #0 LM.action) #1 LM.action)",
                                 },
                                 Cell {
                                     name: "LM.Merge_left_act.inv",
-                                    src: [
-                                        "LM.action",
-                                        "LM.action",
-                                    ],
-                                    tgt: [
-                                        "L.merge",
-                                        "LM.action",
-                                    ],
+                                    src: "((L.Set.set #0 LM.action) #1 LM.action)",
+                                    tgt: "((L.merge #0 Set.set) #1 LM.action)",
                                 },
                                 Cell {
                                     name: "Left_act_right_act.dir",
-                                    src: [
-                                        "LM.action",
-                                        "RM.action",
-                                    ],
-                                    tgt: [
-                                        "RM.action",
-                                        "LM.action",
-                                    ],
+                                    src: "((LM.action #0 R.Set.set) #1 RM.action)",
+                                    tgt: "((L.Set.set #0 RM.action) #1 LM.action)",
                                 },
                                 Cell {
                                     name: "Left_act_right_act.inv",
-                                    src: [
-                                        "RM.action",
-                                        "LM.action",
-                                    ],
-                                    tgt: [
-                                        "LM.action",
-                                        "RM.action",
-                                    ],
+                                    src: "((L.Set.set #0 RM.action) #1 LM.action)",
+                                    tgt: "((LM.action #0 R.Set.set) #1 RM.action)",
                                 },
                                 Cell {
                                     name: "R.Assoc.dir",
-                                    src: [
-                                        "R.merge",
-                                        "R.merge",
-                                    ],
-                                    tgt: [
-                                        "R.merge",
-                                        "R.merge",
-                                    ],
+                                    src: "((R.merge #0 R.Set.set) #1 R.merge)",
+                                    tgt: "((R.Set.set #0 R.merge) #1 R.merge)",
                                 },
                                 Cell {
                                     name: "R.Assoc.inv",
-                                    src: [
-                                        "R.merge",
-                                        "R.merge",
-                                    ],
-                                    tgt: [
-                                        "R.merge",
-                                        "R.merge",
-                                    ],
+                                    src: "((R.Set.set #0 R.merge) #1 R.merge)",
+                                    tgt: "((R.merge #0 R.Set.set) #1 R.merge)",
                                 },
                                 Cell {
                                     name: "R.Left_id_merge.dir",
-                                    src: [
-                                        "R.Set.id",
-                                        "R.merge",
-                                    ],
-                                    tgt: [
-                                        "R.merge",
-                                    ],
+                                    src: "((R.Set.id #0 R.Set.set) #1 R.merge)",
+                                    tgt: "R.merge",
                                 },
                                 Cell {
                                     name: "R.Left_id_merge.inv",
-                                    src: [
-                                        "R.merge",
-                                    ],
-                                    tgt: [
-                                        "R.Set.id",
-                                        "R.merge",
-                                    ],
+                                    src: "R.merge",
+                                    tgt: "((R.Set.id #0 R.Set.set) #1 R.merge)",
                                 },
                                 Cell {
                                     name: "R.Merge_id.dir",
-                                    src: [
-                                        "R.merge",
-                                        "R.Set.id",
-                                    ],
-                                    tgt: [
-                                        "R.merge",
-                                    ],
+                                    src: "(R.merge #1 R.Set.id)",
+                                    tgt: "R.merge",
                                 },
                                 Cell {
                                     name: "R.Merge_id.inv",
-                                    src: [
-                                        "R.merge",
-                                    ],
-                                    tgt: [
-                                        "R.merge",
-                                        "R.Set.id",
-                                    ],
+                                    src: "R.merge",
+                                    tgt: "(R.merge #1 R.Set.id)",
                                 },
                                 Cell {
                                     name: "R.Right_id_merge.dir",
-                                    src: [
-                                        "R.Set.id",
-                                        "R.merge",
-                                    ],
-                                    tgt: [
-                                        "R.merge",
-                                    ],
+                                    src: "((R.Set.set #0 R.Set.id) #1 R.merge)",
+                                    tgt: "R.merge",
                                 },
                                 Cell {
                                     name: "R.Right_id_merge.inv",
-                                    src: [
-                                        "R.merge",
-                                    ],
-                                    tgt: [
-                                        "R.Set.id",
-                                        "R.merge",
-                                    ],
+                                    src: "R.merge",
+                                    tgt: "((R.Set.set #0 R.Set.id) #1 R.merge)",
                                 },
                                 Cell {
                                     name: "R.Set.Id_id.dir",
-                                    src: [
-                                        "R.Set.id",
-                                        "R.Set.id",
-                                    ],
-                                    tgt: [
-                                        "R.Set.id",
-                                    ],
+                                    src: "(R.Set.id #1 R.Set.id)",
+                                    tgt: "R.Set.id",
                                 },
                                 Cell {
                                     name: "R.Set.Id_id.inv",
-                                    src: [
-                                        "R.Set.id",
-                                    ],
-                                    tgt: [
-                                        "R.Set.id",
-                                        "R.Set.id",
-                                    ],
+                                    src: "R.Set.id",
+                                    tgt: "(R.Set.id #1 R.Set.id)",
                                 },
                                 Cell {
                                     name: "RM.Merge_right_act.dir",
-                                    src: [
-                                        "R.merge",
-                                        "RM.action",
-                                    ],
-                                    tgt: [
-                                        "RM.action",
-                                        "RM.action",
-                                    ],
+                                    src: "((Set.set #0 R.merge) #1 RM.action)",
+                                    tgt: "((RM.action #0 R.Set.set) #1 RM.action)",
                                 },
                                 Cell {
                                     name: "RM.Merge_right_act.inv",
-                                    src: [
-                                        "RM.action",
-                                        "RM.action",
-                                    ],
-                                    tgt: [
-                                        "R.merge",
-                                        "RM.action",
-                                    ],
+                                    src: "((RM.action #0 R.Set.set) #1 RM.action)",
+                                    tgt: "((Set.set #0 R.merge) #1 RM.action)",
                                 },
                                 Cell {
                                     name: "Set.Id_id.dir",
-                                    src: [
-                                        "Set.id",
-                                        "Set.id",
-                                    ],
-                                    tgt: [
-                                        "Set.id",
-                                    ],
+                                    src: "(Set.id #1 Set.id)",
+                                    tgt: "Set.id",
                                 },
                                 Cell {
                                     name: "Set.Id_id.inv",
-                                    src: [
-                                        "Set.id",
-                                    ],
-                                    tgt: [
-                                        "Set.id",
-                                        "Set.id",
-                                    ],
+                                    src: "Set.id",
+                                    tgt: "(Set.id #1 Set.id)",
                                 },
                             ],
                         },
@@ -1362,8 +828,8 @@ Store {
                     diagrams: [
                         Cell {
                             name: "pt",
-                            src: [],
-                            tgt: [],
+                            src: "",
+                            tgt: "",
                         },
                     ],
                     maps: [
@@ -1405,8 +871,8 @@ Store {
                             cells: [
                                 Cell {
                                     name: "pt",
-                                    src: [],
-                                    tgt: [],
+                                    src: "",
+                                    tgt: "",
                                 },
                             ],
                         },
@@ -1415,12 +881,8 @@ Store {
                             cells: [
                                 Cell {
                                     name: "Set.set",
-                                    src: [
-                                        "pt",
-                                    ],
-                                    tgt: [
-                                        "pt",
-                                    ],
+                                    src: "pt",
+                                    tgt: "pt",
                                 },
                             ],
                         },
@@ -1429,22 +891,13 @@ Store {
                             cells: [
                                 Cell {
                                     name: "Set.id",
-                                    src: [
-                                        "Set.set",
-                                    ],
-                                    tgt: [
-                                        "Set.set",
-                                    ],
+                                    src: "Set.set",
+                                    tgt: "Set.set",
                                 },
                                 Cell {
                                     name: "split",
-                                    src: [
-                                        "Set.set",
-                                    ],
-                                    tgt: [
-                                        "Set.set",
-                                        "Set.set",
-                                    ],
+                                    src: "Set.set",
+                                    tgt: "(Set.set #0 Set.set)",
                                 },
                             ],
                         },
@@ -1453,105 +906,53 @@ Store {
                             cells: [
                                 Cell {
                                     name: "Assoc.dir",
-                                    src: [
-                                        "split",
-                                        "split",
-                                    ],
-                                    tgt: [
-                                        "split",
-                                        "split",
-                                    ],
+                                    src: "(split #1 (split #0 Set.set))",
+                                    tgt: "(split #1 (Set.set #0 split))",
                                 },
                                 Cell {
                                     name: "Assoc.inv",
-                                    src: [
-                                        "split",
-                                        "split",
-                                    ],
-                                    tgt: [
-                                        "split",
-                                        "split",
-                                    ],
+                                    src: "(split #1 (Set.set #0 split))",
+                                    tgt: "(split #1 (split #0 Set.set))",
                                 },
                                 Cell {
                                     name: "Id_split.dir",
-                                    src: [
-                                        "split",
-                                        "Set.id",
-                                    ],
-                                    tgt: [
-                                        "split",
-                                    ],
+                                    src: "(Set.id #1 split)",
+                                    tgt: "split",
                                 },
                                 Cell {
                                     name: "Id_split.inv",
-                                    src: [
-                                        "split",
-                                    ],
-                                    tgt: [
-                                        "split",
-                                        "Set.id",
-                                    ],
+                                    src: "split",
+                                    tgt: "(Set.id #1 split)",
                                 },
                                 Cell {
                                     name: "Set.Id_id.dir",
-                                    src: [
-                                        "Set.id",
-                                        "Set.id",
-                                    ],
-                                    tgt: [
-                                        "Set.id",
-                                    ],
+                                    src: "(Set.id #1 Set.id)",
+                                    tgt: "Set.id",
                                 },
                                 Cell {
                                     name: "Set.Id_id.inv",
-                                    src: [
-                                        "Set.id",
-                                    ],
-                                    tgt: [
-                                        "Set.id",
-                                        "Set.id",
-                                    ],
+                                    src: "Set.id",
+                                    tgt: "(Set.id #1 Set.id)",
                                 },
                                 Cell {
                                     name: "Split_left_id.dir",
-                                    src: [
-                                        "split",
-                                        "Set.id",
-                                    ],
-                                    tgt: [
-                                        "split",
-                                    ],
+                                    src: "(split #1 (Set.id #0 Set.set))",
+                                    tgt: "split",
                                 },
                                 Cell {
                                     name: "Split_left_id.inv",
-                                    src: [
-                                        "split",
-                                    ],
-                                    tgt: [
-                                        "split",
-                                        "Set.id",
-                                    ],
+                                    src: "split",
+                                    tgt: "(split #1 (Set.id #0 Set.set))",
                                 },
                                 Cell {
                                     name: "Split_right_id.dir",
-                                    src: [
-                                        "split",
-                                        "Set.id",
-                                    ],
-                                    tgt: [
-                                        "split",
-                                    ],
+                                    src: "(split #1 (Set.set #0 Set.id))",
+                                    tgt: "split",
                                 },
                                 Cell {
                                     name: "Split_right_id.inv",
-                                    src: [
-                                        "split",
-                                    ],
-                                    tgt: [
-                                        "split",
-                                        "Set.id",
-                                    ],
+                                    src: "split",
+                                    tgt: "(split #1 (Set.set #0 Set.id))",
                                 },
                             ],
                         },
@@ -1559,36 +960,23 @@ Store {
                     diagrams: [
                         Cell {
                             name: "id",
-                            src: [
-                                "Set.set",
-                            ],
-                            tgt: [
-                                "Set.set",
-                            ],
+                            src: "Set.set",
+                            tgt: "Set.set",
                         },
                         Cell {
                             name: "pt",
-                            src: [],
-                            tgt: [],
+                            src: "",
+                            tgt: "",
                         },
                         Cell {
                             name: "set",
-                            src: [
-                                "pt",
-                            ],
-                            tgt: [
-                                "pt",
-                            ],
+                            src: "pt",
+                            tgt: "pt",
                         },
                         Cell {
                             name: "split",
-                            src: [
-                                "Set.set",
-                            ],
-                            tgt: [
-                                "Set.set",
-                                "Set.set",
-                            ],
+                            src: "Set.set",
+                            tgt: "(Set.set #0 Set.set)",
                         },
                     ],
                     maps: [
@@ -1626,8 +1014,8 @@ Store {
                             cells: [
                                 Cell {
                                     name: "pt",
-                                    src: [],
-                                    tgt: [],
+                                    src: "",
+                                    tgt: "",
                                 },
                             ],
                         },
@@ -1636,21 +1024,13 @@ Store {
                             cells: [
                                 Cell {
                                     name: "L.Set.set",
-                                    src: [
-                                        "pt",
-                                    ],
-                                    tgt: [
-                                        "pt",
-                                    ],
+                                    src: "pt",
+                                    tgt: "pt",
                                 },
                                 Cell {
                                     name: "Set.set",
-                                    src: [
-                                        "pt",
-                                    ],
-                                    tgt: [
-                                        "pt",
-                                    ],
+                                    src: "pt",
+                                    tgt: "pt",
                                 },
                             ],
                         },
@@ -1659,41 +1039,23 @@ Store {
                             cells: [
                                 Cell {
                                     name: "L.Set.id",
-                                    src: [
-                                        "L.Set.set",
-                                    ],
-                                    tgt: [
-                                        "L.Set.set",
-                                    ],
+                                    src: "L.Set.set",
+                                    tgt: "L.Set.set",
                                 },
                                 Cell {
                                     name: "L.split",
-                                    src: [
-                                        "L.Set.set",
-                                    ],
-                                    tgt: [
-                                        "L.Set.set",
-                                        "L.Set.set",
-                                    ],
+                                    src: "L.Set.set",
+                                    tgt: "(L.Set.set #0 L.Set.set)",
                                 },
                                 Cell {
                                     name: "Set.id",
-                                    src: [
-                                        "Set.set",
-                                    ],
-                                    tgt: [
-                                        "Set.set",
-                                    ],
+                                    src: "Set.set",
+                                    tgt: "Set.set",
                                 },
                                 Cell {
                                     name: "coaction",
-                                    src: [
-                                        "Set.set",
-                                    ],
-                                    tgt: [
-                                        "L.Set.set",
-                                        "Set.set",
-                                    ],
+                                    src: "Set.set",
+                                    tgt: "(L.Set.set #0 Set.set)",
                                 },
                             ],
                         },
@@ -1702,147 +1064,73 @@ Store {
                             cells: [
                                 Cell {
                                     name: "L.Assoc.dir",
-                                    src: [
-                                        "L.split",
-                                        "L.split",
-                                    ],
-                                    tgt: [
-                                        "L.split",
-                                        "L.split",
-                                    ],
+                                    src: "(L.split #1 (L.split #0 L.Set.set))",
+                                    tgt: "(L.split #1 (L.Set.set #0 L.split))",
                                 },
                                 Cell {
                                     name: "L.Assoc.inv",
-                                    src: [
-                                        "L.split",
-                                        "L.split",
-                                    ],
-                                    tgt: [
-                                        "L.split",
-                                        "L.split",
-                                    ],
+                                    src: "(L.split #1 (L.Set.set #0 L.split))",
+                                    tgt: "(L.split #1 (L.split #0 L.Set.set))",
                                 },
                                 Cell {
                                     name: "L.Id_split.dir",
-                                    src: [
-                                        "L.split",
-                                        "L.Set.id",
-                                    ],
-                                    tgt: [
-                                        "L.split",
-                                    ],
+                                    src: "(L.Set.id #1 L.split)",
+                                    tgt: "L.split",
                                 },
                                 Cell {
                                     name: "L.Id_split.inv",
-                                    src: [
-                                        "L.split",
-                                    ],
-                                    tgt: [
-                                        "L.split",
-                                        "L.Set.id",
-                                    ],
+                                    src: "L.split",
+                                    tgt: "(L.Set.id #1 L.split)",
                                 },
                                 Cell {
                                     name: "L.Set.Id_id.dir",
-                                    src: [
-                                        "L.Set.id",
-                                        "L.Set.id",
-                                    ],
-                                    tgt: [
-                                        "L.Set.id",
-                                    ],
+                                    src: "(L.Set.id #1 L.Set.id)",
+                                    tgt: "L.Set.id",
                                 },
                                 Cell {
                                     name: "L.Set.Id_id.inv",
-                                    src: [
-                                        "L.Set.id",
-                                    ],
-                                    tgt: [
-                                        "L.Set.id",
-                                        "L.Set.id",
-                                    ],
+                                    src: "L.Set.id",
+                                    tgt: "(L.Set.id #1 L.Set.id)",
                                 },
                                 Cell {
                                     name: "L.Split_left_id.dir",
-                                    src: [
-                                        "L.split",
-                                        "L.Set.id",
-                                    ],
-                                    tgt: [
-                                        "L.split",
-                                    ],
+                                    src: "(L.split #1 (L.Set.id #0 L.Set.set))",
+                                    tgt: "L.split",
                                 },
                                 Cell {
                                     name: "L.Split_left_id.inv",
-                                    src: [
-                                        "L.split",
-                                    ],
-                                    tgt: [
-                                        "L.split",
-                                        "L.Set.id",
-                                    ],
+                                    src: "L.split",
+                                    tgt: "(L.split #1 (L.Set.id #0 L.Set.set))",
                                 },
                                 Cell {
                                     name: "L.Split_right_id.dir",
-                                    src: [
-                                        "L.split",
-                                        "L.Set.id",
-                                    ],
-                                    tgt: [
-                                        "L.split",
-                                    ],
+                                    src: "(L.split #1 (L.Set.set #0 L.Set.id))",
+                                    tgt: "L.split",
                                 },
                                 Cell {
                                     name: "L.Split_right_id.inv",
-                                    src: [
-                                        "L.split",
-                                    ],
-                                    tgt: [
-                                        "L.split",
-                                        "L.Set.id",
-                                    ],
+                                    src: "L.split",
+                                    tgt: "(L.split #1 (L.Set.set #0 L.Set.id))",
                                 },
                                 Cell {
                                     name: "Left_coact_split.dir",
-                                    src: [
-                                        "L.split",
-                                        "coaction",
-                                    ],
-                                    tgt: [
-                                        "coaction",
-                                        "coaction",
-                                    ],
+                                    src: "(coaction #1 (L.split #0 Set.set))",
+                                    tgt: "(coaction #1 (L.Set.set #0 coaction))",
                                 },
                                 Cell {
                                     name: "Left_coact_split.inv",
-                                    src: [
-                                        "coaction",
-                                        "coaction",
-                                    ],
-                                    tgt: [
-                                        "L.split",
-                                        "coaction",
-                                    ],
+                                    src: "(coaction #1 (L.Set.set #0 coaction))",
+                                    tgt: "(coaction #1 (L.split #0 Set.set))",
                                 },
                                 Cell {
                                     name: "Set.Id_id.dir",
-                                    src: [
-                                        "Set.id",
-                                        "Set.id",
-                                    ],
-                                    tgt: [
-                                        "Set.id",
-                                    ],
+                                    src: "(Set.id #1 Set.id)",
+                                    tgt: "Set.id",
                                 },
                                 Cell {
                                     name: "Set.Id_id.inv",
-                                    src: [
-                                        "Set.id",
-                                    ],
-                                    tgt: [
-                                        "Set.id",
-                                        "Set.id",
-                                    ],
+                                    src: "Set.id",
+                                    tgt: "(Set.id #1 Set.id)",
                                 },
                             ],
                         },
@@ -1850,18 +1138,13 @@ Store {
                     diagrams: [
                         Cell {
                             name: "coaction",
-                            src: [
-                                "Set.set",
-                            ],
-                            tgt: [
-                                "L.Set.set",
-                                "Set.set",
-                            ],
+                            src: "Set.set",
+                            tgt: "(L.Set.set #0 Set.set)",
                         },
                         Cell {
                             name: "pt",
-                            src: [],
-                            tgt: [],
+                            src: "",
+                            tgt: "",
                         },
                     ],
                     maps: [
@@ -1891,8 +1174,8 @@ Store {
                             cells: [
                                 Cell {
                                     name: "pt",
-                                    src: [],
-                                    tgt: [],
+                                    src: "",
+                                    tgt: "",
                                 },
                             ],
                         },
@@ -1901,21 +1184,13 @@ Store {
                             cells: [
                                 Cell {
                                     name: "L.Set.set",
-                                    src: [
-                                        "pt",
-                                    ],
-                                    tgt: [
-                                        "pt",
-                                    ],
+                                    src: "pt",
+                                    tgt: "pt",
                                 },
                                 Cell {
                                     name: "Set.set",
-                                    src: [
-                                        "pt",
-                                    ],
-                                    tgt: [
-                                        "pt",
-                                    ],
+                                    src: "pt",
+                                    tgt: "pt",
                                 },
                             ],
                         },
@@ -1924,41 +1199,23 @@ Store {
                             cells: [
                                 Cell {
                                     name: "L.Set.id",
-                                    src: [
-                                        "L.Set.set",
-                                    ],
-                                    tgt: [
-                                        "L.Set.set",
-                                    ],
+                                    src: "L.Set.set",
+                                    tgt: "L.Set.set",
                                 },
                                 Cell {
                                     name: "L.merge",
-                                    src: [
-                                        "L.Set.set",
-                                        "L.Set.set",
-                                    ],
-                                    tgt: [
-                                        "L.Set.set",
-                                    ],
+                                    src: "(L.Set.set #0 L.Set.set)",
+                                    tgt: "L.Set.set",
                                 },
                                 Cell {
                                     name: "Set.id",
-                                    src: [
-                                        "Set.set",
-                                    ],
-                                    tgt: [
-                                        "Set.set",
-                                    ],
+                                    src: "Set.set",
+                                    tgt: "Set.set",
                                 },
                                 Cell {
                                     name: "action",
-                                    src: [
-                                        "L.Set.set",
-                                        "Set.set",
-                                    ],
-                                    tgt: [
-                                        "Set.set",
-                                    ],
+                                    src: "(L.Set.set #0 Set.set)",
+                                    tgt: "Set.set",
                                 },
                             ],
                         },
@@ -1967,147 +1224,73 @@ Store {
                             cells: [
                                 Cell {
                                     name: "L.Assoc.dir",
-                                    src: [
-                                        "L.merge",
-                                        "L.merge",
-                                    ],
-                                    tgt: [
-                                        "L.merge",
-                                        "L.merge",
-                                    ],
+                                    src: "((L.merge #0 L.Set.set) #1 L.merge)",
+                                    tgt: "((L.Set.set #0 L.merge) #1 L.merge)",
                                 },
                                 Cell {
                                     name: "L.Assoc.inv",
-                                    src: [
-                                        "L.merge",
-                                        "L.merge",
-                                    ],
-                                    tgt: [
-                                        "L.merge",
-                                        "L.merge",
-                                    ],
+                                    src: "((L.Set.set #0 L.merge) #1 L.merge)",
+                                    tgt: "((L.merge #0 L.Set.set) #1 L.merge)",
                                 },
                                 Cell {
                                     name: "L.Left_id_merge.dir",
-                                    src: [
-                                        "L.Set.id",
-                                        "L.merge",
-                                    ],
-                                    tgt: [
-                                        "L.merge",
-                                    ],
+                                    src: "((L.Set.id #0 L.Set.set) #1 L.merge)",
+                                    tgt: "L.merge",
                                 },
                                 Cell {
                                     name: "L.Left_id_merge.inv",
-                                    src: [
-                                        "L.merge",
-                                    ],
-                                    tgt: [
-                                        "L.Set.id",
-                                        "L.merge",
-                                    ],
+                                    src: "L.merge",
+                                    tgt: "((L.Set.id #0 L.Set.set) #1 L.merge)",
                                 },
                                 Cell {
                                     name: "L.Merge_id.dir",
-                                    src: [
-                                        "L.merge",
-                                        "L.Set.id",
-                                    ],
-                                    tgt: [
-                                        "L.merge",
-                                    ],
+                                    src: "(L.merge #1 L.Set.id)",
+                                    tgt: "L.merge",
                                 },
                                 Cell {
                                     name: "L.Merge_id.inv",
-                                    src: [
-                                        "L.merge",
-                                    ],
-                                    tgt: [
-                                        "L.merge",
-                                        "L.Set.id",
-                                    ],
+                                    src: "L.merge",
+                                    tgt: "(L.merge #1 L.Set.id)",
                                 },
                                 Cell {
                                     name: "L.Right_id_merge.dir",
-                                    src: [
-                                        "L.Set.id",
-                                        "L.merge",
-                                    ],
-                                    tgt: [
-                                        "L.merge",
-                                    ],
+                                    src: "((L.Set.set #0 L.Set.id) #1 L.merge)",
+                                    tgt: "L.merge",
                                 },
                                 Cell {
                                     name: "L.Right_id_merge.inv",
-                                    src: [
-                                        "L.merge",
-                                    ],
-                                    tgt: [
-                                        "L.Set.id",
-                                        "L.merge",
-                                    ],
+                                    src: "L.merge",
+                                    tgt: "((L.Set.set #0 L.Set.id) #1 L.merge)",
                                 },
                                 Cell {
                                     name: "L.Set.Id_id.dir",
-                                    src: [
-                                        "L.Set.id",
-                                        "L.Set.id",
-                                    ],
-                                    tgt: [
-                                        "L.Set.id",
-                                    ],
+                                    src: "(L.Set.id #1 L.Set.id)",
+                                    tgt: "L.Set.id",
                                 },
                                 Cell {
                                     name: "L.Set.Id_id.inv",
-                                    src: [
-                                        "L.Set.id",
-                                    ],
-                                    tgt: [
-                                        "L.Set.id",
-                                        "L.Set.id",
-                                    ],
+                                    src: "L.Set.id",
+                                    tgt: "(L.Set.id #1 L.Set.id)",
                                 },
                                 Cell {
                                     name: "Merge_left_act.dir",
-                                    src: [
-                                        "L.merge",
-                                        "action",
-                                    ],
-                                    tgt: [
-                                        "action",
-                                        "action",
-                                    ],
+                                    src: "((L.merge #0 Set.set) #1 action)",
+                                    tgt: "((L.Set.set #0 action) #1 action)",
                                 },
                                 Cell {
                                     name: "Merge_left_act.inv",
-                                    src: [
-                                        "action",
-                                        "action",
-                                    ],
-                                    tgt: [
-                                        "L.merge",
-                                        "action",
-                                    ],
+                                    src: "((L.Set.set #0 action) #1 action)",
+                                    tgt: "((L.merge #0 Set.set) #1 action)",
                                 },
                                 Cell {
                                     name: "Set.Id_id.dir",
-                                    src: [
-                                        "Set.id",
-                                        "Set.id",
-                                    ],
-                                    tgt: [
-                                        "Set.id",
-                                    ],
+                                    src: "(Set.id #1 Set.id)",
+                                    tgt: "Set.id",
                                 },
                                 Cell {
                                     name: "Set.Id_id.inv",
-                                    src: [
-                                        "Set.id",
-                                    ],
-                                    tgt: [
-                                        "Set.id",
-                                        "Set.id",
-                                    ],
+                                    src: "Set.id",
+                                    tgt: "(Set.id #1 Set.id)",
                                 },
                             ],
                         },
@@ -2115,18 +1298,13 @@ Store {
                     diagrams: [
                         Cell {
                             name: "action",
-                            src: [
-                                "L.Set.set",
-                                "Set.set",
-                            ],
-                            tgt: [
-                                "Set.set",
-                            ],
+                            src: "(L.Set.set #0 Set.set)",
+                            tgt: "Set.set",
                         },
                         Cell {
                             name: "pt",
-                            src: [],
-                            tgt: [],
+                            src: "",
+                            tgt: "",
                         },
                     ],
                     maps: [
@@ -2156,8 +1334,8 @@ Store {
                             cells: [
                                 Cell {
                                     name: "pt",
-                                    src: [],
-                                    tgt: [],
+                                    src: "",
+                                    tgt: "",
                                 },
                             ],
                         },
@@ -2166,21 +1344,13 @@ Store {
                             cells: [
                                 Cell {
                                     name: "R.Set.set",
-                                    src: [
-                                        "pt",
-                                    ],
-                                    tgt: [
-                                        "pt",
-                                    ],
+                                    src: "pt",
+                                    tgt: "pt",
                                 },
                                 Cell {
                                     name: "Set.set",
-                                    src: [
-                                        "pt",
-                                    ],
-                                    tgt: [
-                                        "pt",
-                                    ],
+                                    src: "pt",
+                                    tgt: "pt",
                                 },
                             ],
                         },
@@ -2189,41 +1359,23 @@ Store {
                             cells: [
                                 Cell {
                                     name: "R.Set.id",
-                                    src: [
-                                        "R.Set.set",
-                                    ],
-                                    tgt: [
-                                        "R.Set.set",
-                                    ],
+                                    src: "R.Set.set",
+                                    tgt: "R.Set.set",
                                 },
                                 Cell {
                                     name: "R.split",
-                                    src: [
-                                        "R.Set.set",
-                                    ],
-                                    tgt: [
-                                        "R.Set.set",
-                                        "R.Set.set",
-                                    ],
+                                    src: "R.Set.set",
+                                    tgt: "(R.Set.set #0 R.Set.set)",
                                 },
                                 Cell {
                                     name: "Set.id",
-                                    src: [
-                                        "Set.set",
-                                    ],
-                                    tgt: [
-                                        "Set.set",
-                                    ],
+                                    src: "Set.set",
+                                    tgt: "Set.set",
                                 },
                                 Cell {
                                     name: "coaction",
-                                    src: [
-                                        "Set.set",
-                                    ],
-                                    tgt: [
-                                        "Set.set",
-                                        "R.Set.set",
-                                    ],
+                                    src: "Set.set",
+                                    tgt: "(Set.set #0 R.Set.set)",
                                 },
                             ],
                         },
@@ -2232,147 +1384,73 @@ Store {
                             cells: [
                                 Cell {
                                     name: "R.Assoc.dir",
-                                    src: [
-                                        "R.split",
-                                        "R.split",
-                                    ],
-                                    tgt: [
-                                        "R.split",
-                                        "R.split",
-                                    ],
+                                    src: "(R.split #1 (R.split #0 R.Set.set))",
+                                    tgt: "(R.split #1 (R.Set.set #0 R.split))",
                                 },
                                 Cell {
                                     name: "R.Assoc.inv",
-                                    src: [
-                                        "R.split",
-                                        "R.split",
-                                    ],
-                                    tgt: [
-                                        "R.split",
-                                        "R.split",
-                                    ],
+                                    src: "(R.split #1 (R.Set.set #0 R.split))",
+                                    tgt: "(R.split #1 (R.split #0 R.Set.set))",
                                 },
                                 Cell {
                                     name: "R.Id_split.dir",
-                                    src: [
-                                        "R.split",
-                                        "R.Set.id",
-                                    ],
-                                    tgt: [
-                                        "R.split",
-                                    ],
+                                    src: "(R.Set.id #1 R.split)",
+                                    tgt: "R.split",
                                 },
                                 Cell {
                                     name: "R.Id_split.inv",
-                                    src: [
-                                        "R.split",
-                                    ],
-                                    tgt: [
-                                        "R.split",
-                                        "R.Set.id",
-                                    ],
+                                    src: "R.split",
+                                    tgt: "(R.Set.id #1 R.split)",
                                 },
                                 Cell {
                                     name: "R.Set.Id_id.dir",
-                                    src: [
-                                        "R.Set.id",
-                                        "R.Set.id",
-                                    ],
-                                    tgt: [
-                                        "R.Set.id",
-                                    ],
+                                    src: "(R.Set.id #1 R.Set.id)",
+                                    tgt: "R.Set.id",
                                 },
                                 Cell {
                                     name: "R.Set.Id_id.inv",
-                                    src: [
-                                        "R.Set.id",
-                                    ],
-                                    tgt: [
-                                        "R.Set.id",
-                                        "R.Set.id",
-                                    ],
+                                    src: "R.Set.id",
+                                    tgt: "(R.Set.id #1 R.Set.id)",
                                 },
                                 Cell {
                                     name: "R.Split_left_id.dir",
-                                    src: [
-                                        "R.split",
-                                        "R.Set.id",
-                                    ],
-                                    tgt: [
-                                        "R.split",
-                                    ],
+                                    src: "(R.split #1 (R.Set.id #0 R.Set.set))",
+                                    tgt: "R.split",
                                 },
                                 Cell {
                                     name: "R.Split_left_id.inv",
-                                    src: [
-                                        "R.split",
-                                    ],
-                                    tgt: [
-                                        "R.split",
-                                        "R.Set.id",
-                                    ],
+                                    src: "R.split",
+                                    tgt: "(R.split #1 (R.Set.id #0 R.Set.set))",
                                 },
                                 Cell {
                                     name: "R.Split_right_id.dir",
-                                    src: [
-                                        "R.split",
-                                        "R.Set.id",
-                                    ],
-                                    tgt: [
-                                        "R.split",
-                                    ],
+                                    src: "(R.split #1 (R.Set.set #0 R.Set.id))",
+                                    tgt: "R.split",
                                 },
                                 Cell {
                                     name: "R.Split_right_id.inv",
-                                    src: [
-                                        "R.split",
-                                    ],
-                                    tgt: [
-                                        "R.split",
-                                        "R.Set.id",
-                                    ],
+                                    src: "R.split",
+                                    tgt: "(R.split #1 (R.Set.set #0 R.Set.id))",
                                 },
                                 Cell {
                                     name: "Right_coact_split.dir",
-                                    src: [
-                                        "R.split",
-                                        "coaction",
-                                    ],
-                                    tgt: [
-                                        "coaction",
-                                        "coaction",
-                                    ],
+                                    src: "(coaction #1 (Set.set #0 R.split))",
+                                    tgt: "(coaction #1 (coaction #0 R.Set.set))",
                                 },
                                 Cell {
                                     name: "Right_coact_split.inv",
-                                    src: [
-                                        "coaction",
-                                        "coaction",
-                                    ],
-                                    tgt: [
-                                        "R.split",
-                                        "coaction",
-                                    ],
+                                    src: "(coaction #1 (coaction #0 R.Set.set))",
+                                    tgt: "(coaction #1 (Set.set #0 R.split))",
                                 },
                                 Cell {
                                     name: "Set.Id_id.dir",
-                                    src: [
-                                        "Set.id",
-                                        "Set.id",
-                                    ],
-                                    tgt: [
-                                        "Set.id",
-                                    ],
+                                    src: "(Set.id #1 Set.id)",
+                                    tgt: "Set.id",
                                 },
                                 Cell {
                                     name: "Set.Id_id.inv",
-                                    src: [
-                                        "Set.id",
-                                    ],
-                                    tgt: [
-                                        "Set.id",
-                                        "Set.id",
-                                    ],
+                                    src: "Set.id",
+                                    tgt: "(Set.id #1 Set.id)",
                                 },
                             ],
                         },
@@ -2380,18 +1458,13 @@ Store {
                     diagrams: [
                         Cell {
                             name: "coaction",
-                            src: [
-                                "Set.set",
-                            ],
-                            tgt: [
-                                "Set.set",
-                                "R.Set.set",
-                            ],
+                            src: "Set.set",
+                            tgt: "(Set.set #0 R.Set.set)",
                         },
                         Cell {
                             name: "pt",
-                            src: [],
-                            tgt: [],
+                            src: "",
+                            tgt: "",
                         },
                     ],
                     maps: [
@@ -2421,8 +1494,8 @@ Store {
                             cells: [
                                 Cell {
                                     name: "pt",
-                                    src: [],
-                                    tgt: [],
+                                    src: "",
+                                    tgt: "",
                                 },
                             ],
                         },
@@ -2431,21 +1504,13 @@ Store {
                             cells: [
                                 Cell {
                                     name: "R.Set.set",
-                                    src: [
-                                        "pt",
-                                    ],
-                                    tgt: [
-                                        "pt",
-                                    ],
+                                    src: "pt",
+                                    tgt: "pt",
                                 },
                                 Cell {
                                     name: "Set.set",
-                                    src: [
-                                        "pt",
-                                    ],
-                                    tgt: [
-                                        "pt",
-                                    ],
+                                    src: "pt",
+                                    tgt: "pt",
                                 },
                             ],
                         },
@@ -2454,41 +1519,23 @@ Store {
                             cells: [
                                 Cell {
                                     name: "R.Set.id",
-                                    src: [
-                                        "R.Set.set",
-                                    ],
-                                    tgt: [
-                                        "R.Set.set",
-                                    ],
+                                    src: "R.Set.set",
+                                    tgt: "R.Set.set",
                                 },
                                 Cell {
                                     name: "R.merge",
-                                    src: [
-                                        "R.Set.set",
-                                        "R.Set.set",
-                                    ],
-                                    tgt: [
-                                        "R.Set.set",
-                                    ],
+                                    src: "(R.Set.set #0 R.Set.set)",
+                                    tgt: "R.Set.set",
                                 },
                                 Cell {
                                     name: "Set.id",
-                                    src: [
-                                        "Set.set",
-                                    ],
-                                    tgt: [
-                                        "Set.set",
-                                    ],
+                                    src: "Set.set",
+                                    tgt: "Set.set",
                                 },
                                 Cell {
                                     name: "action",
-                                    src: [
-                                        "Set.set",
-                                        "R.Set.set",
-                                    ],
-                                    tgt: [
-                                        "Set.set",
-                                    ],
+                                    src: "(Set.set #0 R.Set.set)",
+                                    tgt: "Set.set",
                                 },
                             ],
                         },
@@ -2497,147 +1544,73 @@ Store {
                             cells: [
                                 Cell {
                                     name: "Merge_right_act.dir",
-                                    src: [
-                                        "R.merge",
-                                        "action",
-                                    ],
-                                    tgt: [
-                                        "action",
-                                        "action",
-                                    ],
+                                    src: "((Set.set #0 R.merge) #1 action)",
+                                    tgt: "((action #0 R.Set.set) #1 action)",
                                 },
                                 Cell {
                                     name: "Merge_right_act.inv",
-                                    src: [
-                                        "action",
-                                        "action",
-                                    ],
-                                    tgt: [
-                                        "R.merge",
-                                        "action",
-                                    ],
+                                    src: "((action #0 R.Set.set) #1 action)",
+                                    tgt: "((Set.set #0 R.merge) #1 action)",
                                 },
                                 Cell {
                                     name: "R.Assoc.dir",
-                                    src: [
-                                        "R.merge",
-                                        "R.merge",
-                                    ],
-                                    tgt: [
-                                        "R.merge",
-                                        "R.merge",
-                                    ],
+                                    src: "((R.merge #0 R.Set.set) #1 R.merge)",
+                                    tgt: "((R.Set.set #0 R.merge) #1 R.merge)",
                                 },
                                 Cell {
                                     name: "R.Assoc.inv",
-                                    src: [
-                                        "R.merge",
-                                        "R.merge",
-                                    ],
-                                    tgt: [
-                                        "R.merge",
-                                        "R.merge",
-                                    ],
+                                    src: "((R.Set.set #0 R.merge) #1 R.merge)",
+                                    tgt: "((R.merge #0 R.Set.set) #1 R.merge)",
                                 },
                                 Cell {
                                     name: "R.Left_id_merge.dir",
-                                    src: [
-                                        "R.Set.id",
-                                        "R.merge",
-                                    ],
-                                    tgt: [
-                                        "R.merge",
-                                    ],
+                                    src: "((R.Set.id #0 R.Set.set) #1 R.merge)",
+                                    tgt: "R.merge",
                                 },
                                 Cell {
                                     name: "R.Left_id_merge.inv",
-                                    src: [
-                                        "R.merge",
-                                    ],
-                                    tgt: [
-                                        "R.Set.id",
-                                        "R.merge",
-                                    ],
+                                    src: "R.merge",
+                                    tgt: "((R.Set.id #0 R.Set.set) #1 R.merge)",
                                 },
                                 Cell {
                                     name: "R.Merge_id.dir",
-                                    src: [
-                                        "R.merge",
-                                        "R.Set.id",
-                                    ],
-                                    tgt: [
-                                        "R.merge",
-                                    ],
+                                    src: "(R.merge #1 R.Set.id)",
+                                    tgt: "R.merge",
                                 },
                                 Cell {
                                     name: "R.Merge_id.inv",
-                                    src: [
-                                        "R.merge",
-                                    ],
-                                    tgt: [
-                                        "R.merge",
-                                        "R.Set.id",
-                                    ],
+                                    src: "R.merge",
+                                    tgt: "(R.merge #1 R.Set.id)",
                                 },
                                 Cell {
                                     name: "R.Right_id_merge.dir",
-                                    src: [
-                                        "R.Set.id",
-                                        "R.merge",
-                                    ],
-                                    tgt: [
-                                        "R.merge",
-                                    ],
+                                    src: "((R.Set.set #0 R.Set.id) #1 R.merge)",
+                                    tgt: "R.merge",
                                 },
                                 Cell {
                                     name: "R.Right_id_merge.inv",
-                                    src: [
-                                        "R.merge",
-                                    ],
-                                    tgt: [
-                                        "R.Set.id",
-                                        "R.merge",
-                                    ],
+                                    src: "R.merge",
+                                    tgt: "((R.Set.set #0 R.Set.id) #1 R.merge)",
                                 },
                                 Cell {
                                     name: "R.Set.Id_id.dir",
-                                    src: [
-                                        "R.Set.id",
-                                        "R.Set.id",
-                                    ],
-                                    tgt: [
-                                        "R.Set.id",
-                                    ],
+                                    src: "(R.Set.id #1 R.Set.id)",
+                                    tgt: "R.Set.id",
                                 },
                                 Cell {
                                     name: "R.Set.Id_id.inv",
-                                    src: [
-                                        "R.Set.id",
-                                    ],
-                                    tgt: [
-                                        "R.Set.id",
-                                        "R.Set.id",
-                                    ],
+                                    src: "R.Set.id",
+                                    tgt: "(R.Set.id #1 R.Set.id)",
                                 },
                                 Cell {
                                     name: "Set.Id_id.dir",
-                                    src: [
-                                        "Set.id",
-                                        "Set.id",
-                                    ],
-                                    tgt: [
-                                        "Set.id",
-                                    ],
+                                    src: "(Set.id #1 Set.id)",
+                                    tgt: "Set.id",
                                 },
                                 Cell {
                                     name: "Set.Id_id.inv",
-                                    src: [
-                                        "Set.id",
-                                    ],
-                                    tgt: [
-                                        "Set.id",
-                                        "Set.id",
-                                    ],
+                                    src: "Set.id",
+                                    tgt: "(Set.id #1 Set.id)",
                                 },
                             ],
                         },
@@ -2645,18 +1618,13 @@ Store {
                     diagrams: [
                         Cell {
                             name: "action",
-                            src: [
-                                "Set.set",
-                                "R.Set.set",
-                            ],
-                            tgt: [
-                                "Set.set",
-                            ],
+                            src: "(Set.set #0 R.Set.set)",
+                            tgt: "Set.set",
                         },
                         Cell {
                             name: "pt",
-                            src: [],
-                            tgt: [],
+                            src: "",
+                            tgt: "",
                         },
                     ],
                     maps: [
@@ -2686,8 +1654,8 @@ Store {
                             cells: [
                                 Cell {
                                     name: "pt",
-                                    src: [],
-                                    tgt: [],
+                                    src: "",
+                                    tgt: "",
                                 },
                             ],
                         },
@@ -2696,12 +1664,8 @@ Store {
                             cells: [
                                 Cell {
                                     name: "Set.set",
-                                    src: [
-                                        "pt",
-                                    ],
-                                    tgt: [
-                                        "pt",
-                                    ],
+                                    src: "pt",
+                                    tgt: "pt",
                                 },
                             ],
                         },
@@ -2710,22 +1674,13 @@ Store {
                             cells: [
                                 Cell {
                                     name: "Set.id",
-                                    src: [
-                                        "Set.set",
-                                    ],
-                                    tgt: [
-                                        "Set.set",
-                                    ],
+                                    src: "Set.set",
+                                    tgt: "Set.set",
                                 },
                                 Cell {
                                     name: "merge",
-                                    src: [
-                                        "Set.set",
-                                        "Set.set",
-                                    ],
-                                    tgt: [
-                                        "Set.set",
-                                    ],
+                                    src: "(Set.set #0 Set.set)",
+                                    tgt: "Set.set",
                                 },
                             ],
                         },
@@ -2734,105 +1689,53 @@ Store {
                             cells: [
                                 Cell {
                                     name: "Assoc.dir",
-                                    src: [
-                                        "merge",
-                                        "merge",
-                                    ],
-                                    tgt: [
-                                        "merge",
-                                        "merge",
-                                    ],
+                                    src: "((merge #0 Set.set) #1 merge)",
+                                    tgt: "((Set.set #0 merge) #1 merge)",
                                 },
                                 Cell {
                                     name: "Assoc.inv",
-                                    src: [
-                                        "merge",
-                                        "merge",
-                                    ],
-                                    tgt: [
-                                        "merge",
-                                        "merge",
-                                    ],
+                                    src: "((Set.set #0 merge) #1 merge)",
+                                    tgt: "((merge #0 Set.set) #1 merge)",
                                 },
                                 Cell {
                                     name: "Left_id_merge.dir",
-                                    src: [
-                                        "Set.id",
-                                        "merge",
-                                    ],
-                                    tgt: [
-                                        "merge",
-                                    ],
+                                    src: "((Set.id #0 Set.set) #1 merge)",
+                                    tgt: "merge",
                                 },
                                 Cell {
                                     name: "Left_id_merge.inv",
-                                    src: [
-                                        "merge",
-                                    ],
-                                    tgt: [
-                                        "Set.id",
-                                        "merge",
-                                    ],
+                                    src: "merge",
+                                    tgt: "((Set.id #0 Set.set) #1 merge)",
                                 },
                                 Cell {
                                     name: "Merge_id.dir",
-                                    src: [
-                                        "merge",
-                                        "Set.id",
-                                    ],
-                                    tgt: [
-                                        "merge",
-                                    ],
+                                    src: "(merge #1 Set.id)",
+                                    tgt: "merge",
                                 },
                                 Cell {
                                     name: "Merge_id.inv",
-                                    src: [
-                                        "merge",
-                                    ],
-                                    tgt: [
-                                        "merge",
-                                        "Set.id",
-                                    ],
+                                    src: "merge",
+                                    tgt: "(merge #1 Set.id)",
                                 },
                                 Cell {
                                     name: "Right_id_merge.dir",
-                                    src: [
-                                        "Set.id",
-                                        "merge",
-                                    ],
-                                    tgt: [
-                                        "merge",
-                                    ],
+                                    src: "((Set.set #0 Set.id) #1 merge)",
+                                    tgt: "merge",
                                 },
                                 Cell {
                                     name: "Right_id_merge.inv",
-                                    src: [
-                                        "merge",
-                                    ],
-                                    tgt: [
-                                        "Set.id",
-                                        "merge",
-                                    ],
+                                    src: "merge",
+                                    tgt: "((Set.set #0 Set.id) #1 merge)",
                                 },
                                 Cell {
                                     name: "Set.Id_id.dir",
-                                    src: [
-                                        "Set.id",
-                                        "Set.id",
-                                    ],
-                                    tgt: [
-                                        "Set.id",
-                                    ],
+                                    src: "(Set.id #1 Set.id)",
+                                    tgt: "Set.id",
                                 },
                                 Cell {
                                     name: "Set.Id_id.inv",
-                                    src: [
-                                        "Set.id",
-                                    ],
-                                    tgt: [
-                                        "Set.id",
-                                        "Set.id",
-                                    ],
+                                    src: "Set.id",
+                                    tgt: "(Set.id #1 Set.id)",
                                 },
                             ],
                         },
@@ -2840,36 +1743,23 @@ Store {
                     diagrams: [
                         Cell {
                             name: "id",
-                            src: [
-                                "Set.set",
-                            ],
-                            tgt: [
-                                "Set.set",
-                            ],
+                            src: "Set.set",
+                            tgt: "Set.set",
                         },
                         Cell {
                             name: "merge",
-                            src: [
-                                "Set.set",
-                                "Set.set",
-                            ],
-                            tgt: [
-                                "Set.set",
-                            ],
+                            src: "(Set.set #0 Set.set)",
+                            tgt: "Set.set",
                         },
                         Cell {
                             name: "pt",
-                            src: [],
-                            tgt: [],
+                            src: "",
+                            tgt: "",
                         },
                         Cell {
                             name: "set",
-                            src: [
-                                "pt",
-                            ],
-                            tgt: [
-                                "pt",
-                            ],
+                            src: "pt",
+                            tgt: "pt",
                         },
                     ],
                     maps: [
@@ -2907,8 +1797,8 @@ Store {
                             cells: [
                                 Cell {
                                     name: "pt",
-                                    src: [],
-                                    tgt: [],
+                                    src: "",
+                                    tgt: "",
                                 },
                             ],
                         },
@@ -2917,21 +1807,13 @@ Store {
                             cells: [
                                 Cell {
                                     name: "cod",
-                                    src: [
-                                        "pt",
-                                    ],
-                                    tgt: [
-                                        "pt",
-                                    ],
+                                    src: "pt",
+                                    tgt: "pt",
                                 },
                                 Cell {
                                     name: "dom",
-                                    src: [
-                                        "pt",
-                                    ],
-                                    tgt: [
-                                        "pt",
-                                    ],
+                                    src: "pt",
+                                    tgt: "pt",
                                 },
                             ],
                         },
@@ -2940,21 +1822,13 @@ Store {
                             cells: [
                                 Cell {
                                     name: "lhs",
-                                    src: [
-                                        "dom",
-                                    ],
-                                    tgt: [
-                                        "cod",
-                                    ],
+                                    src: "dom",
+                                    tgt: "cod",
                                 },
                                 Cell {
                                     name: "rhs",
-                                    src: [
-                                        "dom",
-                                    ],
-                                    tgt: [
-                                        "cod",
-                                    ],
+                                    src: "dom",
+                                    tgt: "cod",
                                 },
                             ],
                         },
@@ -2963,21 +1837,13 @@ Store {
                             cells: [
                                 Cell {
                                     name: "dir",
-                                    src: [
-                                        "lhs",
-                                    ],
-                                    tgt: [
-                                        "rhs",
-                                    ],
+                                    src: "lhs",
+                                    tgt: "rhs",
                                 },
                                 Cell {
                                     name: "inv",
-                                    src: [
-                                        "rhs",
-                                    ],
-                                    tgt: [
-                                        "lhs",
-                                    ],
+                                    src: "rhs",
+                                    tgt: "lhs",
                                 },
                             ],
                         },
@@ -2985,62 +1851,38 @@ Store {
                     diagrams: [
                         Cell {
                             name: "cod",
-                            src: [
-                                "pt",
-                            ],
-                            tgt: [
-                                "pt",
-                            ],
+                            src: "pt",
+                            tgt: "pt",
                         },
                         Cell {
                             name: "dir",
-                            src: [
-                                "lhs",
-                            ],
-                            tgt: [
-                                "rhs",
-                            ],
+                            src: "lhs",
+                            tgt: "rhs",
                         },
                         Cell {
                             name: "dom",
-                            src: [
-                                "pt",
-                            ],
-                            tgt: [
-                                "pt",
-                            ],
+                            src: "pt",
+                            tgt: "pt",
                         },
                         Cell {
                             name: "inv",
-                            src: [
-                                "rhs",
-                            ],
-                            tgt: [
-                                "lhs",
-                            ],
+                            src: "rhs",
+                            tgt: "lhs",
                         },
                         Cell {
                             name: "lhs",
-                            src: [
-                                "dom",
-                            ],
-                            tgt: [
-                                "cod",
-                            ],
+                            src: "dom",
+                            tgt: "cod",
                         },
                         Cell {
                             name: "pt",
-                            src: [],
-                            tgt: [],
+                            src: "",
+                            tgt: "",
                         },
                         Cell {
                             name: "rhs",
-                            src: [
-                                "dom",
-                            ],
-                            tgt: [
-                                "cod",
-                            ],
+                            src: "dom",
+                            tgt: "cod",
                         },
                     ],
                     maps: [
@@ -3058,8 +1900,8 @@ Store {
                             cells: [
                                 Cell {
                                     name: "pt",
-                                    src: [],
-                                    tgt: [],
+                                    src: "",
+                                    tgt: "",
                                 },
                             ],
                         },
@@ -3068,21 +1910,13 @@ Store {
                             cells: [
                                 Cell {
                                     name: "Cod.set",
-                                    src: [
-                                        "pt",
-                                    ],
-                                    tgt: [
-                                        "pt",
-                                    ],
+                                    src: "pt",
+                                    tgt: "pt",
                                 },
                                 Cell {
                                     name: "Dom.set",
-                                    src: [
-                                        "pt",
-                                    ],
-                                    tgt: [
-                                        "pt",
-                                    ],
+                                    src: "pt",
+                                    tgt: "pt",
                                 },
                             ],
                         },
@@ -3091,30 +1925,18 @@ Store {
                             cells: [
                                 Cell {
                                     name: "Cod.id",
-                                    src: [
-                                        "Cod.set",
-                                    ],
-                                    tgt: [
-                                        "Cod.set",
-                                    ],
+                                    src: "Cod.set",
+                                    tgt: "Cod.set",
                                 },
                                 Cell {
                                     name: "Dom.id",
-                                    src: [
-                                        "Dom.set",
-                                    ],
-                                    tgt: [
-                                        "Dom.set",
-                                    ],
+                                    src: "Dom.set",
+                                    tgt: "Dom.set",
                                 },
                                 Cell {
                                     name: "fun",
-                                    src: [
-                                        "Dom.set",
-                                    ],
-                                    tgt: [
-                                        "Cod.set",
-                                    ],
+                                    src: "Dom.set",
+                                    tgt: "Cod.set",
                                 },
                             ],
                         },
@@ -3123,83 +1945,43 @@ Store {
                             cells: [
                                 Cell {
                                     name: "Cod.Id_id.dir",
-                                    src: [
-                                        "Cod.id",
-                                        "Cod.id",
-                                    ],
-                                    tgt: [
-                                        "Cod.id",
-                                    ],
+                                    src: "(Cod.id #1 Cod.id)",
+                                    tgt: "Cod.id",
                                 },
                                 Cell {
                                     name: "Cod.Id_id.inv",
-                                    src: [
-                                        "Cod.id",
-                                    ],
-                                    tgt: [
-                                        "Cod.id",
-                                        "Cod.id",
-                                    ],
+                                    src: "Cod.id",
+                                    tgt: "(Cod.id #1 Cod.id)",
                                 },
                                 Cell {
                                     name: "Dom.Id_id.dir",
-                                    src: [
-                                        "Dom.id",
-                                        "Dom.id",
-                                    ],
-                                    tgt: [
-                                        "Dom.id",
-                                    ],
+                                    src: "(Dom.id #1 Dom.id)",
+                                    tgt: "Dom.id",
                                 },
                                 Cell {
                                     name: "Dom.Id_id.inv",
-                                    src: [
-                                        "Dom.id",
-                                    ],
-                                    tgt: [
-                                        "Dom.id",
-                                        "Dom.id",
-                                    ],
+                                    src: "Dom.id",
+                                    tgt: "(Dom.id #1 Dom.id)",
                                 },
                                 Cell {
                                     name: "Fun_id.dir",
-                                    src: [
-                                        "fun",
-                                        "Cod.id",
-                                    ],
-                                    tgt: [
-                                        "fun",
-                                    ],
+                                    src: "(fun #1 Cod.id)",
+                                    tgt: "fun",
                                 },
                                 Cell {
                                     name: "Fun_id.inv",
-                                    src: [
-                                        "fun",
-                                    ],
-                                    tgt: [
-                                        "fun",
-                                        "Cod.id",
-                                    ],
+                                    src: "fun",
+                                    tgt: "(fun #1 Cod.id)",
                                 },
                                 Cell {
                                     name: "Id_fun.dir",
-                                    src: [
-                                        "Dom.id",
-                                        "fun",
-                                    ],
-                                    tgt: [
-                                        "fun",
-                                    ],
+                                    src: "(Dom.id #1 fun)",
+                                    tgt: "fun",
                                 },
                                 Cell {
                                     name: "Id_fun.inv",
-                                    src: [
-                                        "fun",
-                                    ],
-                                    tgt: [
-                                        "Dom.id",
-                                        "fun",
-                                    ],
+                                    src: "fun",
+                                    tgt: "(Dom.id #1 fun)",
                                 },
                             ],
                         },
@@ -3207,35 +1989,23 @@ Store {
                     diagrams: [
                         Cell {
                             name: "cod",
-                            src: [
-                                "pt",
-                            ],
-                            tgt: [
-                                "pt",
-                            ],
+                            src: "pt",
+                            tgt: "pt",
                         },
                         Cell {
                             name: "dom",
-                            src: [
-                                "pt",
-                            ],
-                            tgt: [
-                                "pt",
-                            ],
+                            src: "pt",
+                            tgt: "pt",
                         },
                         Cell {
                             name: "fun",
-                            src: [
-                                "Dom.set",
-                            ],
-                            tgt: [
-                                "Cod.set",
-                            ],
+                            src: "Dom.set",
+                            tgt: "Cod.set",
                         },
                         Cell {
                             name: "pt",
-                            src: [],
-                            tgt: [],
+                            src: "",
+                            tgt: "",
                         },
                     ],
                     maps: [
@@ -3269,8 +2039,8 @@ Store {
                             cells: [
                                 Cell {
                                     name: "pt",
-                                    src: [],
-                                    tgt: [],
+                                    src: "",
+                                    tgt: "",
                                 },
                             ],
                         },
@@ -3279,12 +2049,8 @@ Store {
                             cells: [
                                 Cell {
                                     name: "set",
-                                    src: [
-                                        "pt",
-                                    ],
-                                    tgt: [
-                                        "pt",
-                                    ],
+                                    src: "pt",
+                                    tgt: "pt",
                                 },
                             ],
                         },
@@ -3293,12 +2059,8 @@ Store {
                             cells: [
                                 Cell {
                                     name: "id",
-                                    src: [
-                                        "set",
-                                    ],
-                                    tgt: [
-                                        "set",
-                                    ],
+                                    src: "set",
+                                    tgt: "set",
                                 },
                             ],
                         },
@@ -3307,23 +2069,13 @@ Store {
                             cells: [
                                 Cell {
                                     name: "Id_id.dir",
-                                    src: [
-                                        "id",
-                                        "id",
-                                    ],
-                                    tgt: [
-                                        "id",
-                                    ],
+                                    src: "(id #1 id)",
+                                    tgt: "id",
                                 },
                                 Cell {
                                     name: "Id_id.inv",
-                                    src: [
-                                        "id",
-                                    ],
-                                    tgt: [
-                                        "id",
-                                        "id",
-                                    ],
+                                    src: "id",
+                                    tgt: "(id #1 id)",
                                 },
                             ],
                         },
@@ -3331,26 +2083,18 @@ Store {
                     diagrams: [
                         Cell {
                             name: "id",
-                            src: [
-                                "set",
-                            ],
-                            tgt: [
-                                "set",
-                            ],
+                            src: "set",
+                            tgt: "set",
                         },
                         Cell {
                             name: "pt",
-                            src: [],
-                            tgt: [],
+                            src: "",
+                            tgt: "",
                         },
                         Cell {
                             name: "set",
-                            src: [
-                                "pt",
-                            ],
-                            tgt: [
-                                "pt",
-                            ],
+                            src: "pt",
+                            tgt: "pt",
                         },
                     ],
                     maps: [

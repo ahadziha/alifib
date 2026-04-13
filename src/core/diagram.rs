@@ -689,19 +689,26 @@ fn paste_histories(
     n: usize,
     num_dims: usize,
 ) -> Vec<BoundaryHistory> {
-    let dummy = |k: usize| -> PasteTree {
-        u_hist
-            .get(k)
-            .or(v_hist.get(k))
-            .map(|h| h.source.clone())
-            .unwrap_or_else(missing_tree)
-    };
     (0..num_dims)
         .map(|k| BoundaryHistory::from_pair(
-            paste_tree(u_hist, v_hist, n, k, Sign::Source, &dummy),
-            paste_tree(u_hist, v_hist, n, k, Sign::Target, &dummy),
+            paste_tree(u_hist, v_hist, n, k, Sign::Source),
+            paste_tree(u_hist, v_hist, n, k, Sign::Target),
         ))
         .collect()
+}
+
+/// When `hist` has no entry at dimension `k` (the diagram is lower-dimensional),
+/// fall back to the top-dimensional tree of that same history. This preserves the
+/// identity of lower-dimensional cells when they participate in mixed-dimension
+/// pastes, rather than filling in a dummy from the other side.
+fn hist_tree_or_top(hist: &[BoundaryHistory], sign: Sign, k: usize) -> PasteTree {
+    if let Some(h) = hist.get(k) {
+        h.get(sign).clone()
+    } else {
+        hist.last()
+            .map(|h| h.get(sign).clone())
+            .unwrap_or_else(missing_tree)
+    }
 }
 
 /// The paste tree for `sign` at dimension `k` when pasting `u` and `v` at dimension `n`.
@@ -709,24 +716,26 @@ fn paste_histories(
 /// - k < n:  inherit from u
 /// - k == n: source from u, target from v
 /// - k > n:  join u and v into a Node at dimension n
+///
+/// When one side is lower-dimensional and has no tree at `k`, its own
+/// top-dimensional tree is used as a fallback (see [`hist_tree_or_top`]).
 fn paste_tree(
     u_hist: &[BoundaryHistory],
     v_hist: &[BoundaryHistory],
     n: usize,
     k: usize,
     sign: Sign,
-    dummy: &dyn Fn(usize) -> PasteTree,
 ) -> PasteTree {
     if k < n {
-        history_tree(u_hist, sign, k, || dummy(k))
+        hist_tree_or_top(u_hist, sign, k)
     } else if k == n {
         let hist = match sign { Sign::Source => u_hist, Sign::Target => v_hist };
-        history_tree(hist, sign, n, || dummy(n))
+        hist_tree_or_top(hist, sign, n)
     } else {
         PasteTree::Node {
             dim: n,
-            left:  Arc::new(history_tree(u_hist, sign, k, || dummy(k))),
-            right: Arc::new(history_tree(v_hist, sign, k, || dummy(k))),
+            left:  Arc::new(hist_tree_or_top(u_hist, sign, k)),
+            right: Arc::new(hist_tree_or_top(v_hist, sign, k)),
         }
     }
 }

@@ -23,13 +23,13 @@ Store {
                             cells: [
                                 Cell {
                                     name: "cod",
-                                    src: [],
-                                    tgt: [],
+                                    src: "",
+                                    tgt: "",
                                 },
                                 Cell {
                                     name: "dom",
-                                    src: [],
-                                    tgt: [],
+                                    src: "",
+                                    tgt: "",
                                 },
                             ],
                         },
@@ -38,21 +38,13 @@ Store {
                             cells: [
                                 Cell {
                                     name: "lhs",
-                                    src: [
-                                        "dom",
-                                    ],
-                                    tgt: [
-                                        "cod",
-                                    ],
+                                    src: "dom",
+                                    tgt: "cod",
                                 },
                                 Cell {
                                     name: "rhs",
-                                    src: [
-                                        "dom",
-                                    ],
-                                    tgt: [
-                                        "cod",
-                                    ],
+                                    src: "dom",
+                                    tgt: "cod",
                                 },
                             ],
                         },
@@ -61,21 +53,13 @@ Store {
                             cells: [
                                 Cell {
                                     name: "dir",
-                                    src: [
-                                        "lhs",
-                                    ],
-                                    tgt: [
-                                        "rhs",
-                                    ],
+                                    src: "lhs",
+                                    tgt: "rhs",
                                 },
                                 Cell {
                                     name: "inv",
-                                    src: [
-                                        "rhs",
-                                    ],
-                                    tgt: [
-                                        "lhs",
-                                    ],
+                                    src: "rhs",
+                                    tgt: "lhs",
                                 },
                             ],
                         },
@@ -83,49 +67,33 @@ Store {
                     diagrams: [
                         Cell {
                             name: "cod",
-                            src: [],
-                            tgt: [],
+                            src: "",
+                            tgt: "",
                         },
                         Cell {
                             name: "dir",
-                            src: [
-                                "lhs",
-                            ],
-                            tgt: [
-                                "rhs",
-                            ],
+                            src: "lhs",
+                            tgt: "rhs",
                         },
                         Cell {
                             name: "dom",
-                            src: [],
-                            tgt: [],
+                            src: "",
+                            tgt: "",
                         },
                         Cell {
                             name: "inv",
-                            src: [
-                                "rhs",
-                            ],
-                            tgt: [
-                                "lhs",
-                            ],
+                            src: "rhs",
+                            tgt: "lhs",
                         },
                         Cell {
                             name: "lhs",
-                            src: [
-                                "dom",
-                            ],
-                            tgt: [
-                                "cod",
-                            ],
+                            src: "dom",
+                            tgt: "cod",
                         },
                         Cell {
                             name: "rhs",
-                            src: [
-                                "dom",
-                            ],
-                            tgt: [
-                                "cod",
-                            ],
+                            src: "dom",
+                            tgt: "cod",
                         },
                     ],
                     maps: [
@@ -143,13 +111,13 @@ Store {
                             cells: [
                                 Cell {
                                     name: "Cod.ob",
-                                    src: [],
-                                    tgt: [],
+                                    src: "",
+                                    tgt: "",
                                 },
                                 Cell {
                                     name: "Dom.ob",
-                                    src: [],
-                                    tgt: [],
+                                    src: "",
+                                    tgt: "",
                                 },
                             ],
                         },
@@ -158,30 +126,18 @@ Store {
                             cells: [
                                 Cell {
                                     name: "Cod.id",
-                                    src: [
-                                        "Cod.ob",
-                                    ],
-                                    tgt: [
-                                        "Cod.ob",
-                                    ],
+                                    src: "Cod.ob",
+                                    tgt: "Cod.ob",
                                 },
                                 Cell {
                                     name: "Dom.id",
-                                    src: [
-                                        "Dom.ob",
-                                    ],
-                                    tgt: [
-                                        "Dom.ob",
-                                    ],
+                                    src: "Dom.ob",
+                                    tgt: "Dom.ob",
                                 },
                                 Cell {
                                     name: "mor",
-                                    src: [
-                                        "Dom.ob",
-                                    ],
-                                    tgt: [
-                                        "Cod.ob",
-                                    ],
+                                    src: "Dom.ob",
+                                    tgt: "Cod.ob",
                                 },
                             ],
                         },
@@ -190,83 +146,43 @@ Store {
                             cells: [
                                 Cell {
                                     name: "Cod.Id_id.dir",
-                                    src: [
-                                        "Cod.id",
-                                        "Cod.id",
-                                    ],
-                                    tgt: [
-                                        "Cod.id",
-                                    ],
+                                    src: "(Cod.id #0 Cod.id)",
+                                    tgt: "Cod.id",
                                 },
                                 Cell {
                                     name: "Cod.Id_id.inv",
-                                    src: [
-                                        "Cod.id",
-                                    ],
-                                    tgt: [
-                                        "Cod.id",
-                                        "Cod.id",
-                                    ],
+                                    src: "Cod.id",
+                                    tgt: "(Cod.id #0 Cod.id)",
                                 },
                                 Cell {
                                     name: "Dom.Id_id.dir",
-                                    src: [
-                                        "Dom.id",
-                                        "Dom.id",
-                                    ],
-                                    tgt: [
-                                        "Dom.id",
-                                    ],
+                                    src: "(Dom.id #0 Dom.id)",
+                                    tgt: "Dom.id",
                                 },
                                 Cell {
                                     name: "Dom.Id_id.inv",
-                                    src: [
-                                        "Dom.id",
-                                    ],
-                                    tgt: [
-                                        "Dom.id",
-                                        "Dom.id",
-                                    ],
+                                    src: "Dom.id",
+                                    tgt: "(Dom.id #0 Dom.id)",
                                 },
                                 Cell {
                                     name: "Left_id.dir",
-                                    src: [
-                                        "Dom.id",
-                                        "mor",
-                                    ],
-                                    tgt: [
-                                        "mor",
-                                    ],
+                                    src: "(Dom.id #0 mor)",
+                                    tgt: "mor",
                                 },
                                 Cell {
                                     name: "Left_id.inv",
-                                    src: [
-                                        "mor",
-                                    ],
-                                    tgt: [
-                                        "Dom.id",
-                                        "mor",
-                                    ],
+                                    src: "mor",
+                                    tgt: "(Dom.id #0 mor)",
                                 },
                                 Cell {
                                     name: "Right_id.dir",
-                                    src: [
-                                        "mor",
-                                        "Cod.id",
-                                    ],
-                                    tgt: [
-                                        "mor",
-                                    ],
+                                    src: "(mor #0 Cod.id)",
+                                    tgt: "mor",
                                 },
                                 Cell {
                                     name: "Right_id.inv",
-                                    src: [
-                                        "mor",
-                                    ],
-                                    tgt: [
-                                        "mor",
-                                        "Cod.id",
-                                    ],
+                                    src: "mor",
+                                    tgt: "(mor #0 Cod.id)",
                                 },
                             ],
                         },
@@ -274,12 +190,8 @@ Store {
                     diagrams: [
                         Cell {
                             name: "mor",
-                            src: [
-                                "Dom.ob",
-                            ],
-                            tgt: [
-                                "Cod.ob",
-                            ],
+                            src: "Dom.ob",
+                            tgt: "Cod.ob",
                         },
                     ],
                     maps: [
@@ -313,8 +225,8 @@ Store {
                             cells: [
                                 Cell {
                                     name: "ob",
-                                    src: [],
-                                    tgt: [],
+                                    src: "",
+                                    tgt: "",
                                 },
                             ],
                         },
@@ -323,12 +235,8 @@ Store {
                             cells: [
                                 Cell {
                                     name: "id",
-                                    src: [
-                                        "ob",
-                                    ],
-                                    tgt: [
-                                        "ob",
-                                    ],
+                                    src: "ob",
+                                    tgt: "ob",
                                 },
                             ],
                         },
@@ -337,23 +245,13 @@ Store {
                             cells: [
                                 Cell {
                                     name: "Id_id.dir",
-                                    src: [
-                                        "id",
-                                        "id",
-                                    ],
-                                    tgt: [
-                                        "id",
-                                    ],
+                                    src: "(id #0 id)",
+                                    tgt: "id",
                                 },
                                 Cell {
                                     name: "Id_id.inv",
-                                    src: [
-                                        "id",
-                                    ],
-                                    tgt: [
-                                        "id",
-                                        "id",
-                                    ],
+                                    src: "id",
+                                    tgt: "(id #0 id)",
                                 },
                             ],
                         },
@@ -361,17 +259,13 @@ Store {
                     diagrams: [
                         Cell {
                             name: "id",
-                            src: [
-                                "ob",
-                            ],
-                            tgt: [
-                                "ob",
-                            ],
+                            src: "ob",
+                            tgt: "ob",
                         },
                         Cell {
                             name: "ob",
-                            src: [],
-                            tgt: [],
+                            src: "",
+                            tgt: "",
                         },
                     ],
                     maps: [
@@ -397,18 +291,18 @@ Store {
                             cells: [
                                 Cell {
                                     name: "Fst.Cod.ob",
-                                    src: [],
-                                    tgt: [],
+                                    src: "",
+                                    tgt: "",
                                 },
                                 Cell {
                                     name: "Fst.Dom.ob",
-                                    src: [],
-                                    tgt: [],
+                                    src: "",
+                                    tgt: "",
                                 },
                                 Cell {
                                     name: "Snd.Cod.ob",
-                                    src: [],
-                                    tgt: [],
+                                    src: "",
+                                    tgt: "",
                                 },
                             ],
                         },
@@ -417,48 +311,28 @@ Store {
                             cells: [
                                 Cell {
                                     name: "Fst.Cod.id",
-                                    src: [
-                                        "Fst.Cod.ob",
-                                    ],
-                                    tgt: [
-                                        "Fst.Cod.ob",
-                                    ],
+                                    src: "Fst.Cod.ob",
+                                    tgt: "Fst.Cod.ob",
                                 },
                                 Cell {
                                     name: "Fst.Dom.id",
-                                    src: [
-                                        "Fst.Dom.ob",
-                                    ],
-                                    tgt: [
-                                        "Fst.Dom.ob",
-                                    ],
+                                    src: "Fst.Dom.ob",
+                                    tgt: "Fst.Dom.ob",
                                 },
                                 Cell {
                                     name: "Fst.mor",
-                                    src: [
-                                        "Fst.Dom.ob",
-                                    ],
-                                    tgt: [
-                                        "Fst.Cod.ob",
-                                    ],
+                                    src: "Fst.Dom.ob",
+                                    tgt: "Fst.Cod.ob",
                                 },
                                 Cell {
                                     name: "Snd.Cod.id",
-                                    src: [
-                                        "Snd.Cod.ob",
-                                    ],
-                                    tgt: [
-                                        "Snd.Cod.ob",
-                                    ],
+                                    src: "Snd.Cod.ob",
+                                    tgt: "Snd.Cod.ob",
                                 },
                                 Cell {
                                     name: "Snd.mor",
-                                    src: [
-                                        "Fst.Cod.ob",
-                                    ],
-                                    tgt: [
-                                        "Snd.Cod.ob",
-                                    ],
+                                    src: "Fst.Cod.ob",
+                                    tgt: "Snd.Cod.ob",
                                 },
                             ],
                         },
@@ -467,143 +341,73 @@ Store {
                             cells: [
                                 Cell {
                                     name: "Fst.Cod.Id_id.dir",
-                                    src: [
-                                        "Fst.Cod.id",
-                                        "Fst.Cod.id",
-                                    ],
-                                    tgt: [
-                                        "Fst.Cod.id",
-                                    ],
+                                    src: "(Fst.Cod.id #0 Fst.Cod.id)",
+                                    tgt: "Fst.Cod.id",
                                 },
                                 Cell {
                                     name: "Fst.Cod.Id_id.inv",
-                                    src: [
-                                        "Fst.Cod.id",
-                                    ],
-                                    tgt: [
-                                        "Fst.Cod.id",
-                                        "Fst.Cod.id",
-                                    ],
+                                    src: "Fst.Cod.id",
+                                    tgt: "(Fst.Cod.id #0 Fst.Cod.id)",
                                 },
                                 Cell {
                                     name: "Fst.Dom.Id_id.dir",
-                                    src: [
-                                        "Fst.Dom.id",
-                                        "Fst.Dom.id",
-                                    ],
-                                    tgt: [
-                                        "Fst.Dom.id",
-                                    ],
+                                    src: "(Fst.Dom.id #0 Fst.Dom.id)",
+                                    tgt: "Fst.Dom.id",
                                 },
                                 Cell {
                                     name: "Fst.Dom.Id_id.inv",
-                                    src: [
-                                        "Fst.Dom.id",
-                                    ],
-                                    tgt: [
-                                        "Fst.Dom.id",
-                                        "Fst.Dom.id",
-                                    ],
+                                    src: "Fst.Dom.id",
+                                    tgt: "(Fst.Dom.id #0 Fst.Dom.id)",
                                 },
                                 Cell {
                                     name: "Fst.Left_id.dir",
-                                    src: [
-                                        "Fst.Dom.id",
-                                        "Fst.mor",
-                                    ],
-                                    tgt: [
-                                        "Fst.mor",
-                                    ],
+                                    src: "(Fst.Dom.id #0 Fst.mor)",
+                                    tgt: "Fst.mor",
                                 },
                                 Cell {
                                     name: "Fst.Left_id.inv",
-                                    src: [
-                                        "Fst.mor",
-                                    ],
-                                    tgt: [
-                                        "Fst.Dom.id",
-                                        "Fst.mor",
-                                    ],
+                                    src: "Fst.mor",
+                                    tgt: "(Fst.Dom.id #0 Fst.mor)",
                                 },
                                 Cell {
                                     name: "Fst.Right_id.dir",
-                                    src: [
-                                        "Fst.mor",
-                                        "Fst.Cod.id",
-                                    ],
-                                    tgt: [
-                                        "Fst.mor",
-                                    ],
+                                    src: "(Fst.mor #0 Fst.Cod.id)",
+                                    tgt: "Fst.mor",
                                 },
                                 Cell {
                                     name: "Fst.Right_id.inv",
-                                    src: [
-                                        "Fst.mor",
-                                    ],
-                                    tgt: [
-                                        "Fst.mor",
-                                        "Fst.Cod.id",
-                                    ],
+                                    src: "Fst.mor",
+                                    tgt: "(Fst.mor #0 Fst.Cod.id)",
                                 },
                                 Cell {
                                     name: "Snd.Cod.Id_id.dir",
-                                    src: [
-                                        "Snd.Cod.id",
-                                        "Snd.Cod.id",
-                                    ],
-                                    tgt: [
-                                        "Snd.Cod.id",
-                                    ],
+                                    src: "(Snd.Cod.id #0 Snd.Cod.id)",
+                                    tgt: "Snd.Cod.id",
                                 },
                                 Cell {
                                     name: "Snd.Cod.Id_id.inv",
-                                    src: [
-                                        "Snd.Cod.id",
-                                    ],
-                                    tgt: [
-                                        "Snd.Cod.id",
-                                        "Snd.Cod.id",
-                                    ],
+                                    src: "Snd.Cod.id",
+                                    tgt: "(Snd.Cod.id #0 Snd.Cod.id)",
                                 },
                                 Cell {
                                     name: "Snd.Left_id.dir",
-                                    src: [
-                                        "Fst.Cod.id",
-                                        "Snd.mor",
-                                    ],
-                                    tgt: [
-                                        "Snd.mor",
-                                    ],
+                                    src: "(Fst.Cod.id #0 Snd.mor)",
+                                    tgt: "Snd.mor",
                                 },
                                 Cell {
                                     name: "Snd.Left_id.inv",
-                                    src: [
-                                        "Snd.mor",
-                                    ],
-                                    tgt: [
-                                        "Fst.Cod.id",
-                                        "Snd.mor",
-                                    ],
+                                    src: "Snd.mor",
+                                    tgt: "(Fst.Cod.id #0 Snd.mor)",
                                 },
                                 Cell {
                                     name: "Snd.Right_id.dir",
-                                    src: [
-                                        "Snd.mor",
-                                        "Snd.Cod.id",
-                                    ],
-                                    tgt: [
-                                        "Snd.mor",
-                                    ],
+                                    src: "(Snd.mor #0 Snd.Cod.id)",
+                                    tgt: "Snd.mor",
                                 },
                                 Cell {
                                     name: "Snd.Right_id.inv",
-                                    src: [
-                                        "Snd.mor",
-                                    ],
-                                    tgt: [
-                                        "Snd.mor",
-                                        "Snd.Cod.id",
-                                    ],
+                                    src: "Snd.mor",
+                                    tgt: "(Snd.mor #0 Snd.Cod.id)",
                                 },
                             ],
                         },
@@ -611,12 +415,8 @@ Store {
                     diagrams: [
                         Cell {
                             name: "mor",
-                            src: [
-                                "Fst.Dom.ob",
-                            ],
-                            tgt: [
-                                "Snd.Cod.ob",
-                            ],
+                            src: "Fst.Dom.ob",
+                            tgt: "Snd.Cod.ob",
                         },
                     ],
                     maps: [

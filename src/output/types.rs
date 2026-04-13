@@ -60,8 +60,9 @@ pub struct Dim {
 
 /// A named generator or diagram together with its boundary.
 ///
-/// The boundary is expressed as lists of generator names. Both `src` and `tgt`
-/// are empty for 0-dimensional generators, which have no boundary.
+/// The boundary is expressed as structured term expressions derived from the
+/// paste tree. Both `src` and `tgt` are empty for 0-dimensional generators,
+/// which have no boundary.
 ///
 /// The [`std::fmt::Display`] impl renders this as `name : src -> tgt` for
 /// higher-dimensional cells and as `name` for 0-dimensional ones.
@@ -69,10 +70,10 @@ pub struct Dim {
 pub struct Cell {
     /// Generator name. Empty string is displayed as `<empty>`.
     pub name: String,
-    /// Source boundary: names of the top-level generators of the input face.
-    pub src: Vec<String>,
-    /// Target boundary: names of the top-level generators of the output face.
-    pub tgt: Vec<String>,
+    /// Source boundary as a structured term expression (empty for 0-cells).
+    pub src: String,
+    /// Target boundary as a structured term expression (empty for 0-cells).
+    pub tgt: String,
 }
 
 /// A named map from a type to another type or module.
@@ -146,7 +147,7 @@ impl fmt::Display for Cell {
         if self.src.is_empty() && self.tgt.is_empty() {
             write!(f, "{}", label)
         } else {
-            write!(f, "{} : {} -> {}", label, self.src.join(" "), self.tgt.join(" "))
+            write!(f, "{} : {} -> {}", label, self.src, self.tgt)
         }
     }
 }
