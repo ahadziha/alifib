@@ -129,7 +129,8 @@ fn name_or_empty(s: &str) -> &str {
 /// Render a [`PasteTree`] as a structured term expression.
 ///
 /// - `Leaf(tag)` → generator name resolved against `scope`
-/// - `Node { dim, left, right }` → `(left #dim right)`
+/// - `Node { dim, left, right }` → chains at the same dimension are flattened:
+///   `paste(k, paste(k, a, b), c)` renders as `(a #k b #k c)` instead of `((a #k b) #k c)`
 fn render_paste_tree(tree: &PasteTree, scope: &Complex) -> String {
     match tree {
         PasteTree::Leaf(tag) => scope
@@ -137,11 +138,23 @@ fn render_paste_tree(tree: &PasteTree, scope: &Complex) -> String {
             .filter(|n| !n.is_empty())
             .cloned()
             .unwrap_or_else(|| format!("{}", tag)),
-        PasteTree::Node { dim, left, right } => {
-            let l = render_paste_tree(left, scope);
-            let r = render_paste_tree(right, scope);
-            format!("({} #{} {})", l, dim, r)
+        PasteTree::Node { dim, .. } => {
+            let k = *dim;
+            let mut parts = Vec::new();
+            collect_chain(tree, k, scope, &mut parts);
+            format!("({})", parts.join(&format!(" #{} ", k)))
         }
+    }
+}
+
+/// Collect all elements of a left- or right-associated chain at dimension `k`.
+fn collect_chain(tree: &PasteTree, k: usize, scope: &Complex, parts: &mut Vec<String>) {
+    match tree {
+        PasteTree::Node { dim, left, right } if *dim == k => {
+            collect_chain(left, k, scope, parts);
+            collect_chain(right, k, scope, parts);
+        }
+        _ => parts.push(render_paste_tree(tree, scope)),
     }
 }
 

@@ -38,17 +38,20 @@ pub fn render_match_from_step(
         _ => return "?".to_string(),
     };
 
-    // Get the rule's source boundary rendering (the pattern).
+    // Get the rule's input boundary rendering (the pattern being matched).
+    // Look up the rule's classifier and extract its input boundary.
     let n = n_plus_1.saturating_sub(1);
-    let source_render = match Diagram::boundary(Sign::Source, n, step) {
-        Ok(src) => render_diagram(&src, scope),
-        Err(_) => "?".to_string(),
-    };
+    let source_render = scope.find_generator_by_tag(rule_tag)
+        .and_then(|name| scope.classifier(name))
+        .and_then(|classifier| Diagram::boundary(Sign::Source, n, classifier).ok())
+        .map(|src| render_diagram(&src, scope))
+        .unwrap_or_else(|| "?".to_string());
 
     render_tree_with_substitution(tree, scope, rule_tag, &source_render)
 }
 
 /// Render a paste tree, substituting one specific leaf tag with a bracketed string.
+/// Chains at the same dimension are flattened.
 fn render_tree_with_substitution(
     tree: &PasteTree,
     scope: &Complex,
@@ -66,11 +69,29 @@ fn render_tree_with_substitution(
                     .unwrap_or_else(|| format!("{}", tag))
             }
         }
-        PasteTree::Node { dim, left, right } => {
-            let l = render_tree_with_substitution(left, scope, replace_tag, replacement);
-            let r = render_tree_with_substitution(right, scope, replace_tag, replacement);
-            format!("({} #{} {})", l, dim, r)
+        PasteTree::Node { dim, .. } => {
+            let k = *dim;
+            let mut parts = Vec::new();
+            collect_chain_with_sub(tree, k, scope, replace_tag, replacement, &mut parts);
+            format!("({})", parts.join(&format!(" #{} ", k)))
         }
+    }
+}
+
+fn collect_chain_with_sub(
+    tree: &PasteTree,
+    k: usize,
+    scope: &Complex,
+    replace_tag: &Tag,
+    replacement: &str,
+    parts: &mut Vec<String>,
+) {
+    match tree {
+        PasteTree::Node { dim, left, right } if *dim == k => {
+            collect_chain_with_sub(left, k, scope, replace_tag, replacement, parts);
+            collect_chain_with_sub(right, k, scope, replace_tag, replacement, parts);
+        }
+        _ => parts.push(render_tree_with_substitution(tree, scope, replace_tag, replacement)),
     }
 }
 
