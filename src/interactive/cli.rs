@@ -91,13 +91,21 @@ impl RewriteResponse {
                 .iter()
                 .enumerate()
                 .map(|(i, m)| {
-                    let n = m.step.top_dim().saturating_sub(1);
-                    let rule_source = crate::core::diagram::Diagram::boundary(
-                        crate::core::diagram::Sign::Source, n, &m.step,
-                    ).map(|s| render_diagram(&s, scope)).unwrap_or_else(|_| "?".into());
-                    let rule_target = crate::core::diagram::Diagram::boundary(
-                        crate::core::diagram::Sign::Target, n, &m.step,
-                    ).map(|t| render_diagram(&t, scope)).unwrap_or_else(|_| "?".into());
+                    let n_plus_1 = m.step.top_dim();
+                    let n = n_plus_1.saturating_sub(1);
+                    let rule_tag = m.step.labels_at(n_plus_1).and_then(|ls| ls.first());
+                    let classifier = rule_tag
+                        .and_then(|tag| scope.find_generator_by_tag(tag))
+                        .and_then(|name| scope.classifier(name));
+                    let (rule_source, rule_target) = classifier
+                        .and_then(|cl| {
+                            let s = crate::core::diagram::Diagram::boundary(
+                                crate::core::diagram::Sign::Source, n, cl).ok()?;
+                            let t = crate::core::diagram::Diagram::boundary(
+                                crate::core::diagram::Sign::Target, n, cl).ok()?;
+                            Some((render_diagram(&s, scope), render_diagram(&t, scope)))
+                        })
+                        .unwrap_or_else(|| ("?".into(), "?".into()));
                     AvailableRewrite {
                         index: i,
                         rule_name: m.rule_name.clone(),

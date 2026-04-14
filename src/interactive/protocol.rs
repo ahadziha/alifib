@@ -681,13 +681,27 @@ fn build_rewrite_info(
     scope: &Complex,
 ) -> RewriteInfo {
     let match_display = render_match_from_step(&m.step, scope);
-    let n = m.step.top_dim().saturating_sub(1);
-    let (source, target) = match (
-        Diagram::boundary(Sign::Source, n, &m.step),
-        Diagram::boundary(Sign::Target, n, &m.step),
-    ) {
-        (Ok(src), Ok(tgt)) => (diagram_info(&src, scope), diagram_info(&tgt, scope)),
-        _ => return RewriteInfo {
+    let n_plus_1 = m.step.top_dim();
+    let n = n_plus_1.saturating_sub(1);
+    // Get the rule's own input/output boundaries from its classifier.
+    let rule_tag = m.step.labels_at(n_plus_1).and_then(|ls| ls.first());
+    let classifier = rule_tag
+        .and_then(|tag| scope.find_generator_by_tag(tag))
+        .and_then(|name| scope.classifier(name));
+    let (source, target) = match classifier {
+        Some(cl) => match (
+            Diagram::boundary(Sign::Source, n, cl),
+            Diagram::boundary(Sign::Target, n, cl),
+        ) {
+            (Ok(src), Ok(tgt)) => (diagram_info(&src, scope), diagram_info(&tgt, scope)),
+            _ => return RewriteInfo {
+                index, rule_name: m.rule_name.clone(), match_display,
+                source: DiagramInfo { label: "?".into(), dim: 0, cell_count: 0, cells_by_dim: vec![] },
+                target: DiagramInfo { label: "?".into(), dim: 0, cell_count: 0, cells_by_dim: vec![] },
+                match_positions: m.image_positions.clone(),
+            },
+        },
+        None => return RewriteInfo {
             index, rule_name: m.rule_name.clone(), match_display,
             source: DiagramInfo { label: "?".into(), dim: 0, cell_count: 0, cells_by_dim: vec![] },
             target: DiagramInfo { label: "?".into(), dim: 0, cell_count: 0, cells_by_dim: vec![] },

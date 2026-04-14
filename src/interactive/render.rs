@@ -144,14 +144,19 @@ pub fn print_state(
     display.meta("rewrites:");
     for (i, m) in rewrites.iter().enumerate() {
         let highlight = render_match_from_step(&m.step, scope);
-        let n = m.step.top_dim().saturating_sub(1);
-        let (rule_src, rule_tgt) = match (
-            Diagram::boundary(Sign::Source, n, &m.step),
-            Diagram::boundary(Sign::Target, n, &m.step),
-        ) {
-            (Ok(src), Ok(tgt)) => (render_diagram(&src, scope), render_diagram(&tgt, scope)),
-            _ => ("?".to_string(), "?".to_string()),
-        };
+        // Get the rule's own input/output boundaries from its classifier.
+        let n_plus_1 = m.step.top_dim();
+        let n = n_plus_1.saturating_sub(1);
+        let rule_tag = m.step.labels_at(n_plus_1).and_then(|ls| ls.first());
+        let (rule_src, rule_tgt) = rule_tag
+            .and_then(|tag| scope.find_generator_by_tag(tag))
+            .and_then(|name| scope.classifier(name))
+            .and_then(|classifier| {
+                let src = Diagram::boundary(Sign::Source, n, classifier).ok()?;
+                let tgt = Diagram::boundary(Sign::Target, n, classifier).ok()?;
+                Some((render_diagram(&src, scope), render_diagram(&tgt, scope)))
+            })
+            .unwrap_or_else(|| ("?".to_string(), "?".to_string()));
         display.blank();
         display.inspect(&format!("  ({i}) {highlight}"));
         display.inspect(&format!("      by {} : {} -> {}", m.rule_name, rule_src, rule_tgt));
