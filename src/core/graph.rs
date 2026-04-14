@@ -1,12 +1,8 @@
-//! Lightweight directed graphs for flow graphs, contractions, and topological sort enumeration.
-//!
-//! This module provides the combinatorial graph machinery used by the subdiagram matching
-//! algorithms of Hadzihasanovic–Kessler (2304.09216):
+//! Lightweight directed graphs for flow graphs and topological sort enumeration.
 //!
 //! - [`DiGraph`] — a directed graph on nodes `0..n`, with sorted adjacency lists
-//! - [`flow_graph`] — constructs the k-flow graph **F**_k(U) (Definition 61)
-//! - [`maximal_flow_graph`] — constructs the maximal k-flow graph **M**_k(U) (Definition 63)
-//! - [`contract`] — computes the quotient **G**/**G**|_W (Definition 88)
+//! - [`flow_graph`] — constructs the k-flow graph **F**_k(U)
+//! - [`maximal_flow_graph`] — constructs the maximal k-flow graph **M**_k(U)
 //! - [`all_topological_sorts`] — enumerates all topological orderings of a DAG
 //!
 //! All graph nodes are identified by small non-negative integers.  Adjacency lists are
@@ -52,12 +48,6 @@ impl DiGraph {
         intset::insert(&mut self.predecessors[v], u);
     }
 
-    /// True if there is a directed edge from `u` to `v`.
-    #[allow(dead_code)]
-    pub(super) fn has_edge(&self, u: usize, v: usize) -> bool {
-        self.successors[u].binary_search(&v).is_ok()
-    }
-
     /// In-degree of node `v`: the number of nodes with an edge to `v`.
     pub(crate) fn indegree(&self, v: usize) -> usize {
         self.predecessors[v].len()
@@ -100,8 +90,8 @@ pub(super) fn flow_graph(g: &Arc<Ogposet>, k: usize) -> (DiGraph, Vec<(usize, us
     }).collect();
 
     // Add edges: x → y iff Δ⁺_k(x) ∩ Δ⁻_k(y) ≠ ∅.
-    for (xi, out) in out_k.iter().enumerate().take(n) {
-        for (yi, incoming) in in_k.iter().enumerate().take(n) {
+    for (xi, out) in out_k.iter().enumerate() {
+        for (yi, incoming) in in_k.iter().enumerate() {
             if xi == yi { continue; }
             if !intset::is_disjoint(out, incoming) {
                 graph.add_edge(xi, yi);
@@ -112,7 +102,7 @@ pub(super) fn flow_graph(g: &Arc<Ogposet>, k: usize) -> (DiGraph, Vec<(usize, us
     (graph, node_map)
 }
 
-/// Constructs the maximal k-flow graph **M**_k(U) (Definition 63 of Hadzihasanovic–Kessler).
+/// Constructs the maximal k-flow graph **M**_k(U).
 ///
 /// This is the induced subgraph of **F**_k(U) restricted to cells that are *maximal* —
 /// i.e. cells that have no cofaces in either direction within `g`.  For a pure regular
@@ -144,8 +134,8 @@ pub(crate) fn maximal_flow_graph(g: &Arc<Ogposet>, k: usize) -> (DiGraph, Vec<(u
         ogposet::signed_k_boundary_of_cell(g, Sign::Input, k, dim, pos)
     }).collect();
 
-    for (xi, out) in out_k.iter().enumerate().take(n) {
-        for (yi, incoming) in in_k.iter().enumerate().take(n) {
+    for (xi, out) in out_k.iter().enumerate() {
+        for (yi, incoming) in in_k.iter().enumerate() {
             if xi == yi { continue; }
             if !intset::is_disjoint(out, incoming) {
                 graph.add_edge(xi, yi);
@@ -154,98 +144,6 @@ pub(crate) fn maximal_flow_graph(g: &Arc<Ogposet>, k: usize) -> (DiGraph, Vec<(u
     }
 
     (graph, node_map)
-}
-
-// ---- Graph contraction ----
-
-/// Contract the induced subgraph on `subset` to a single node (Definition 88).
-///
-/// Computes the connected components of the *undirected* version of the induced subgraph
-/// `graph|_subset`, collapses each component to one representative node, and returns the
-/// quotient graph **G**/**G**|_W together with a mapping from old node indices to new ones.
-///
-/// Nodes outside `subset` retain their individual identities in the quotient.
-///
-/// **Returns** `(quotient_graph, mapping)` where `mapping[old_node] = new_node_index`.
-///
-/// This corresponds to the contraction used in Algorithm 95 to build
-/// **F**_{n-1}(U) / **F**_{n-1}(ι(V)).
-pub(super) fn contract(graph: &DiGraph, subset: &[usize]) -> (DiGraph, Vec<usize>) {
-    let n = graph.node_count();
-
-    // Union-Find on subset nodes to identify connected components,
-    // treating directed edges as undirected (Lemma 89 requires path-induced subgraphs,
-    // so we check connectivity undirectedly).
-    let mut parent: Vec<usize> = (0..n).collect();
-
-    fn find(parent: &mut Vec<usize>, x: usize) -> usize {
-        if parent[x] != x {
-            parent[x] = find(parent, parent[x]);
-        }
-        parent[x]
-    }
-
-    fn union(parent: &mut Vec<usize>, x: usize, y: usize) {
-        let rx = find(parent, x);
-        let ry = find(parent, y);
-        if rx != ry { parent[rx] = ry; }
-    }
-
-    let subset_set: Vec<bool> = {
-        let mut s = vec![false; n];
-        for &v in subset { s[v] = true; }
-        s
-    };
-
-    // Union connected nodes within the subset (both directions to handle all paths).
-    for &u in subset {
-        for &v in &graph.successors[u] {
-            if subset_set[v] { union(&mut parent, u, v); }
-        }
-        for &v in &graph.predecessors[u] {
-            if subset_set[v] { union(&mut parent, u, v); }
-        }
-    }
-
-    // Assign new node indices: one per connected component of the subset,
-    // then one per node outside the subset.
-    let mut new_idx: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
-    let mut mapping = vec![0usize; n];
-    let mut next_id = 0usize;
-
-    for &v in subset {
-        let root = find(&mut parent, v);
-        let id = *new_idx.entry(root).or_insert_with(|| {
-            let id = next_id;
-            next_id += 1;
-            id
-        });
-        mapping[v] = id;
-    }
-
-    for v in 0..n {
-        if !subset_set[v] {
-            mapping[v] = next_id;
-            next_id += 1;
-        }
-    }
-
-    // Build the quotient graph: add an edge nu → nv for each original edge u → v
-    // where the endpoints map to distinct new nodes (self-loops are dropped).
-    let new_n = next_id;
-    let mut quotient = DiGraph::new(new_n);
-
-    for u in 0..n {
-        for &v in &graph.successors[u] {
-            let nu = mapping[u];
-            let nv = mapping[v];
-            if nu != nv {
-                quotient.add_edge(nu, nv);
-            }
-        }
-    }
-
-    (quotient, mapping)
 }
 
 // ---- Topological sort enumeration ----
@@ -350,7 +248,7 @@ fn topo_backtrack(
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use super::{DiGraph, TopoSortResult, all_topological_sorts, contract, flow_graph};
+    use super::{DiGraph, TopoSortResult, all_topological_sorts, flow_graph};
     use super::super::ogposet::Ogposet;
 
     fn chain_graph(n: usize) -> DiGraph {
@@ -396,23 +294,6 @@ mod tests {
         assert!(matches!(all_topological_sorts(&g, None), TopoSortResult::HasCycle));
     }
 
-    // ---- contract ----
-
-    #[test]
-    fn contract_merges_connected_subset() {
-        // Graph: 0 → 1 → 2.  Contract subset {0, 1}: they are connected (edge 0→1),
-        // so they collapse to one node, leaving a 2-node quotient.
-        let g = chain_graph(3);
-        let (quotient, mapping) = contract(&g, &[0, 1]);
-        assert_eq!(mapping[0], mapping[1], "0 and 1 are in the same component");
-        assert_ne!(mapping[1], mapping[2], "node 2 is separate");
-        assert_eq!(quotient.node_count(), 2);
-        // Edge component → 2 must exist (from original 1 → 2).
-        assert!(quotient.has_edge(mapping[0], mapping[2]));
-        // No self-loop from the contracted 0→1 edge.
-        assert!(!quotient.has_edge(mapping[0], mapping[0]));
-    }
-
     // ---- flow_graph ----
 
     #[test]
@@ -446,7 +327,7 @@ mod tests {
         assert_eq!(fg.node_count(), 2, "one node per 1-cell");
         assert_eq!(node_map.len(), 2);
         // Node 0 = f, node 1 = g (in order of node_map construction).
-        assert!(fg.has_edge(0, 1), "f → g edge must exist (shared midpoint m)");
-        assert!(!fg.has_edge(1, 0), "no g → f edge (endpoints a and b are disjoint)");
+        assert!(fg.successors[0].contains(&1), "f → g edge must exist (shared midpoint m)");
+        assert!(!fg.successors[1].contains(&0), "no g → f edge (endpoints a and b are disjoint)");
     }
 }

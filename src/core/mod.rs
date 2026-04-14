@@ -9,8 +9,6 @@ pub mod partial_map;
 mod ogposet;
 mod pushout;
 pub mod reconstruct;
-pub mod rewrite;
 pub mod strdiag;
 
-pub use embeddings::Embedding;
 

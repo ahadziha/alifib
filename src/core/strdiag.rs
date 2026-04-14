@@ -44,11 +44,11 @@ pub struct StrDiag {
     /// Kind of each vertex.
     pub kinds: Vec<VertexKind>,
     /// Height constraint graph: "source is below target".
-    pub height: DiGraph,
+    pub(crate) height: DiGraph,
     /// Width constraint graph: "source is left of target".
-    pub width: DiGraph,
+    pub(crate) width: DiGraph,
     /// Depth constraint graph: "source is behind target" (wires only).
-    pub depth: DiGraph,
+    pub(crate) depth: DiGraph,
 }
 
 impl StrDiag {
@@ -147,27 +147,6 @@ impl StrDiag {
         let mut depth = DiGraph::new(total);
 
         if dim >= 3 {
-            for wp in 0..num_wires {
-                let vi = wire_idx(wp);
-                let out_3 = filtered_faces(
-                    shape, dim - 2, Sign::Output, &out_2[vi], Sign::Input,
-                );
-                let in_3 = filtered_faces(
-                    shape, dim - 2, Sign::Input, &in_2[vi], Sign::Output,
-                );
-                // Compare against all other wires.
-                for wp2 in 0..num_wires {
-                    if wp != wp2 && !intset::is_disjoint(&out_3, &in_2[wire_idx(wp2)]) {
-                        depth.add_edge(wire_idx(wp), wire_idx(wp2));
-                    }
-                }
-                // Store for the cross-check (we need in_3 for the target side).
-                // Actually we need to check out_3[x] ∩ in_3[y], so recompute below.
-                let _ = in_3;
-            }
-
-            // Recompute properly: for each pair (x, y) of wires, check out_3[x] ∩ in_3[y].
-            depth = DiGraph::new(total);
             let out_3s: Vec<IntSet> = (0..num_wires)
                 .map(|wp| {
                     filtered_faces(

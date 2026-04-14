@@ -39,7 +39,7 @@ pub fn reconstruct(
         shape: Arc::clone(shape),
         labels: labels.to_vec(),
     };
-    let tree = build_paste_tree(&pd, complex, &mut Vec::new())?;
+    let tree = build_paste_tree(&pd, complex)?;
     let diagram = Diagram::realise_tree(&tree, complex)?;
     check_sizes(&pd, &diagram)?;
     Ok(diagram)
@@ -58,16 +58,10 @@ fn check_sizes(pd: &PreDiagram, diagram: &Diagram) -> Result<(), Error> {
     Ok(())
 }
 
-/// A checkpoint for backtracking: stores the remaining topological sorts to try.
-struct Checkpoint {
-    remaining_sorts: Vec<Vec<usize>>,
-}
-
 /// Build a candidate paste tree for a pre-diagram.
 fn build_paste_tree(
     pd: &PreDiagram,
     complex: &Complex,
-    checkpoints: &mut Vec<Checkpoint>,
 ) -> Result<PasteTree, Error> {
     let k = pd.shape.layering_dimension();
 
@@ -93,14 +87,11 @@ fn build_paste_tree(
         }
     };
 
-    let need_checkpoint = pd.shape.dim > 3;
-
-    if need_checkpoint {
-        // Try each sort; on failure, try the next.
+    if pd.shape.dim > 3 {
+        // dim > 3: try each topological sort; on failure, try the next.
         for sort in &sorts {
-            let tree = try_sort(pd, complex, &node_map, sort, k, checkpoints);
+            let tree = try_sort(pd, complex, &node_map, sort, k);
             if let Ok(t) = tree {
-                // Verify realisation at this level.
                 match Diagram::realise_tree(&t, complex) {
                     Ok(d) if check_sizes(pd, &d).is_ok() => return Ok(t),
                     _ => continue,
@@ -109,9 +100,9 @@ fn build_paste_tree(
         }
         Err(Error::new("reconstruction failed: all topological sorts exhausted"))
     } else {
-        // dim <= 3: unique sort behaviour, no backtracking needed.
+        // dim <= 3: the topological sort is unique up to rewriting, so no backtracking.
         let sort = &sorts[0];
-        try_sort(pd, complex, &node_map, sort, k, checkpoints)
+        try_sort(pd, complex, &node_map, sort, k)
     }
 }
 
@@ -122,7 +113,6 @@ fn try_sort(
     node_map: &[(usize, usize)],
     sort: &[usize],
     k: usize,
-    checkpoints: &mut Vec<Checkpoint>,
 ) -> Result<PasteTree, Error> {
     let m = sort.len();
     if m == 0 {
@@ -133,7 +123,7 @@ fn try_sort(
     let layers = build_layers(pd, node_map, sort, k)?;
     let mut trees: Vec<PasteTree> = Vec::with_capacity(m);
     for layer in &layers {
-        trees.push(build_paste_tree(layer, complex, checkpoints)?);
+        trees.push(build_paste_tree(layer, complex)?);
     }
 
     // Left-associate: paste(k, t1, paste(k, t2, paste(k, t3, ...)))
@@ -225,7 +215,7 @@ fn build_layers(
     // Track the "running output k-boundary" — starts as input k-boundary of u.
     let mut prev_boundary_cells = in_bd_cells;
 
-    for (i, downset) in downsets.iter().enumerate() {
+    for downset in &downsets {
         // Union: previous boundary ∪ downset of x_i
         let layer_cells = union_bitsets(&prev_boundary_cells, downset, max_dim);
 

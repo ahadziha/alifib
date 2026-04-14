@@ -130,7 +130,7 @@ impl Diagram {
     ///
     /// - `Leaf(tag)` → the classifier diagram of the generator with that tag.
     /// - `Node { dim, left, right }` → `paste(dim, realise(left), realise(right))`.
-    pub fn realise_tree(tree: &PasteTree, complex: &super::complex::Complex) -> Result<Diagram, Error> {
+    pub(crate) fn realise_tree(tree: &PasteTree, complex: &super::complex::Complex) -> Result<Diagram, Error> {
         match tree {
             PasteTree::Leaf(tag) => {
                 let name = complex.find_generator_by_tag(tag)
@@ -432,11 +432,9 @@ impl Diagram {
     /// Construct a 0-dimensional cell diagram (a point labelled `tag`).
     fn cell0(tag: Tag) -> Result<Diagram, Error> {
         let shape = Arc::new(Ogposet::point());
-        let labels = vec![vec![tag.clone()]];
-        let paste_history = vec![BoundaryHistory::from_pair(
-            PasteTree::Leaf(tag.clone()),
-            PasteTree::Leaf(tag),
-        )];
+        let leaf = PasteTree::Leaf(tag.clone());
+        let paste_history = vec![BoundaryHistory::from_pair(leaf.clone(), leaf)];
+        let labels = vec![vec![tag]];
         Ok(Diagram::make(shape, labels, paste_history))
     }
 

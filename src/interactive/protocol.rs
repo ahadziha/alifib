@@ -27,7 +27,7 @@ use crate::core::complex::Complex;
 use crate::core::diagram::{CellData, Diagram, Sign};
 use crate::core::matching::MatchResult;
 use crate::core::strdiag::{StrDiag, VertexKind};
-use crate::output::{diagram_to_source, render_diagram};
+use crate::output::render_diagram;
 use super::engine::RewriteEngine;
 use super::render::render_match_from_step;
 
@@ -426,10 +426,10 @@ pub fn build_type_info_response(
             })
             .collect();
 
-        // Let-binding diagrams: in the diagrams table but NOT in the generators table.
+        // All named diagrams (including generator classifiers).
         let diagrams: Vec<DiagramEntryInfo> = live_tc
             .diagrams_iter()
-            .filter(|(n, _)| !n.is_empty() && live_tc.find_generator(n).is_none())
+            .filter(|(n, _)| !n.is_empty())
             .map(|(diag_name, diag)| {
                 let dim = diag.top_dim();
                 let (source, target) = if dim > 0 {
@@ -449,7 +449,7 @@ pub fn build_type_info_response(
                     dim,
                     source,
                     target,
-                    expr: diagram_to_source(diag, live_tc),
+                    expr: render_diagram(diag, live_tc),
                 }
             })
             .collect();
@@ -525,7 +525,7 @@ pub fn build_cell_response(engine: &RewriteEngine, name: &str) -> Result<Respons
                 kind: "diagram".to_owned(),
                 source,
                 target,
-                expr: Some(diagram_to_source(diag, scope)),
+                expr: Some(render_diagram(diag, scope)),
             })
         } else {
             Err(format!("'{}' not found in type", name))

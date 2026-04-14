@@ -227,12 +227,31 @@ impl WasmRepl {
             }),
 
             Request::Store { name } => {
-                match self.engine.as_mut() {
-                    None => err_json("no session active; call init_session first"),
-                    Some(e) => match e.register_proof(&name) {
-                        Ok(_) => ok_json(build_response(e, false)),
-                        Err(msg) => response_err(msg),
-                    },
+                let Some(e) = self.engine.as_mut() else {
+                    return err_json("no session active; call init_session first");
+                };
+                let proof_expr = e.running_diagram()
+                    .map(|d| alifib::output::render_diagram(d, e.type_complex()));
+                let type_name = e.type_name().to_owned();
+                match e.register_proof(&name) {
+                    Ok((new_store, _)) => {
+                        // Sync the top-level store so get_types() sees the update.
+                        self.store = Some(new_store);
+                        let data = build_response(e, false);
+                        let store_info = proof_expr.map(|expr| {
+                            serde_json::json!({
+                                "type_name": type_name,
+                                "def_name": name,
+                                "expr": expr,
+                            })
+                        });
+                        let mut val = serde_json::to_value(&data).unwrap();
+                        if let Some(info) = store_info {
+                            val.as_object_mut().unwrap().insert("stored".to_string(), info);
+                        }
+                        ok_json(val)
+                    }
+                    Err(msg) => response_err(msg),
                 }
             }
 
@@ -272,6 +291,39 @@ impl WasmRepl {
             Ok(data) => ok_json(data),
             Err(msg) => err_json(&msg),
         }
+    }
+
+    /// Return the current type list for the accordion (same format as load_source).
+    pub fn get_types(&self) -> String {
+        let store = match self.store.as_ref() {
+            Some(s) => s,
+            None => return err_json("no source loaded"),
+        };
+        let norm = store.normalize();
+        let types: Vec<serde_json::Value> = norm
+            .modules
+            .iter()
+            .flat_map(|m| &m.types)
+            .filter(|t| !t.name.is_empty())
+            .map(|t| {
+                let generators: Vec<serde_json::Value> = t
+                    .dims.iter()
+                    .flat_map(|d| d.cells.iter().map(move |c| serde_json::json!({
+                        "name": c.name, "dim": d.dim, "src": c.src, "tgt": c.tgt,
+                    })))
+                    .collect();
+                let diagrams: Vec<serde_json::Value> = t
+                    .diagrams.iter()
+                    .map(|c| serde_json::json!({ "name": c.name, "src": c.src, "tgt": c.tgt }))
+                    .collect();
+                let maps: Vec<serde_json::Value> = t
+                    .maps.iter()
+                    .map(|m| serde_json::json!({ "name": m.name, "domain": m.domain }))
+                    .collect();
+                serde_json::json!({ "name": t.name, "generators": generators, "diagrams": diagrams, "maps": maps })
+            })
+            .collect();
+        ok_json(serde_json::json!({ "types": types }))
     }
 
     /// Return the string diagram for the current session diagram.

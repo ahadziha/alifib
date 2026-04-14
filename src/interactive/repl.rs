@@ -134,7 +134,7 @@ fn write_updated_file(
         .map_err(|e| format!("cannot read '{}': {}", source_file, e))?;
     let mut out = original.trim_end().to_owned();
     for (type_name, def_name, label) in stored_defs {
-        write!(out, "\n\n@ {}\nlet {} = {}", type_name, def_name, label)
+        write!(out, "\n\n@{}\nlet {} = {}", type_name, def_name, label)
             .map_err(|e| e.to_string())?;
     }
     out.push('\n');
@@ -248,13 +248,6 @@ pub fn run_repl(
                             };
                         dispatch_print_type(&store, &canonical_path, &name, live_tc, &display);
                     }
-                    Cmd::Cell(name) => {
-                        match (&engine, &type_complex) {
-                            (Some(e), _) => dispatch_print_cell(e.type_complex(), &name, &display),
-                            (None, Some(tc)) => dispatch_print_cell(tc, &name, &display),
-                            (None, None) => display.error("set type first (@ <TypeName>)"),
-                        }
-                    }
                     Cmd::Clear => {
                         engine = None;
                         type_complex = None;
@@ -271,12 +264,15 @@ pub fn run_repl(
                         if type_complex.is_none() {
                             display.error("no type selected — use '@ <TypeName>' first");
                         } else {
-                            // Only pre-print if the engine won't start (which prints both).
+                            // Only pre-print if the engine won't start and it's a simple name.
                             let engine_will_start = type_name_str.is_some()
                                 && pending_target.is_some();
-                            if !engine_will_start
+                            let is_simple_name = !name.contains(char::is_whitespace);
+                            if !engine_will_start && is_simple_name
                                 && let Some(tc) = type_complex.as_deref() {
                                 dispatch_print_cell(tc, &name, &display);
+                            } else if !engine_will_start {
+                                display.meta(&format!("source: {}", name));
                             }
                             pending_source = Some(name);
                             maybe_start_engine(
@@ -289,12 +285,15 @@ pub fn run_repl(
                         if type_complex.is_none() {
                             display.error("no type selected — use '@ <TypeName>' first");
                         } else {
-                            // Only pre-print if the engine won't start (which prints both).
+                            // Only pre-print if the engine won't start and it's a simple name.
                             let engine_will_start = type_name_str.is_some()
                                 && pending_source.is_some();
-                            if !engine_will_start
+                            let is_simple_name = !name.contains(char::is_whitespace);
+                            if !engine_will_start && is_simple_name
                                 && let Some(tc) = type_complex.as_deref() {
                                 dispatch_print_cell(tc, &name, &display);
+                            } else if !engine_will_start {
+                                display.meta(&format!("target: {}", name));
                             }
                             pending_target = Some(name);
                             maybe_start_engine(
@@ -331,7 +330,7 @@ pub fn run_repl(
                                 // Store/Save handled here: need access to outer type_complex and stored_defs.
                                 Cmd::Store(name) => {
                                     let source_expr = e.running_diagram()
-                                        .map(|d| crate::output::diagram_to_source(d, e.type_complex()));
+                                        .map(|d| crate::output::render_diagram(d, e.type_complex()));
                                     match e.register_proof(&name) {
                                         Ok((new_store, new_complex)) => {
                                             store = new_store;
@@ -380,7 +379,6 @@ pub fn dispatch_rewrite_command(
             display.error("command not available here");
         }
         Cmd::Type(_) => display.error("command not available here"),
-        Cmd::Cell(name) => dispatch_print_cell(engine.type_complex(), &name, display),
         Cmd::Status => show_state(engine, display),
         cmd => dispatch_engine_cmd(engine, cmd, display),
     }
@@ -696,7 +694,7 @@ fn dispatch_print_type(
                 let tgt = crate::core::diagram::Diagram::boundary(Sign::Target, k, diag).ok()?;
                 Some(format!("{} : {}  ->  {}", diag_name, render_diagram(&src, tc), render_diagram(&tgt, tc)))
             }).unwrap_or_else(|| diag_name.to_string());
-            let expr = crate::output::diagram_to_source(diag, tc);
+            let expr = crate::output::render_diagram(diag, tc);
             writeln!(out, "    {}  = {}", boundary, expr).ok();
         }
     }
@@ -733,7 +731,7 @@ fn dispatch_print_cell(complex: &Complex, name: &str, display: &Display) {
         if dim > 0 {
             print_diagram_with_boundary(diag, complex, display);
         }
-        display.inspect(&format!("  = {}", crate::output::diagram_to_source(diag, complex)));
+        display.inspect(&format!("  = {}", crate::output::render_diagram(diag, complex)));
         return;
     }
 
@@ -771,6 +769,47 @@ fn print_diagram_with_boundary(diag: &crate::core::diagram::Diagram, complex: &C
         )),
         _ => display.inspect("  (boundary extraction failed)"),
     }
+}
+
+/// Render a proof diagram as `step1 #n step2 #n ... #n stepN`.
+///
+/// Walks the paste tree at dimension n+1, splitting at paste-at-n nodes
+/// to extract individual step subtrees. Each step is rendered with
+/// `render_diagram` (which gives parenthesised expressions).
+fn render_proof_steps(
+    proof: &crate::core::diagram::Diagram,
+    n: usize,
+    scope: &crate::core::complex::Complex,
+) -> String {
+    use crate::core::diagram::{PasteTree, Sign};
+
+    fn collect_steps(tree: &PasteTree, n: usize, out: &mut Vec<PasteTree>) {
+        match tree {
+            PasteTree::Node { dim, left, right } if *dim == n => {
+                collect_steps(left, n, out);
+                out.push((**right).clone());
+            }
+            _ => out.push(tree.clone()),
+        }
+    }
+
+    let top = n + 1;
+    let Some(tree) = proof.tree(Sign::Source, top) else {
+        return render_diagram(proof, scope);
+    };
+
+    let mut steps = Vec::new();
+    collect_steps(tree, n, &mut steps);
+
+    steps.iter()
+        .map(|t| {
+            match crate::core::diagram::Diagram::realise_tree(t, scope) {
+                Ok(d) => render_diagram(&d, scope),
+                Err(_) => "?".to_string(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(&format!(" #{} ", n))
 }
 
 /// Dispatch all commands that require an active engine.
@@ -822,15 +861,18 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
                 None => display.meta("(no proof built yet)"),
                 Some(d) => {
                     let n = engine.source_diagram().top_dim();
+                    let scope = engine.type_complex();
+                    // Render as step1 #n step2 #n ... #n stepN
+                    let proof_expr = render_proof_steps(d, n, scope);
                     match (
                         crate::core::diagram::Diagram::boundary(Sign::Source, n, d),
                         crate::core::diagram::Diagram::boundary(Sign::Target, n, d),
                     ) {
                         (Ok(src), Ok(tgt)) => display.inspect(&format!(
                             "{} : {} -> {}",
-                            crate::output::diagram_to_source(d, engine.type_complex()),
-                            render_diagram(&src, engine.type_complex()),
-                            render_diagram(&tgt, engine.type_complex()),
+                            proof_expr,
+                            render_diagram(&src, scope),
+                            render_diagram(&tgt, scope),
                         )),
                         _ => display.error("boundary extraction failed"),
                     }
@@ -854,7 +896,7 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
         Cmd::Quit => {}   // handled by caller
         // These are all handled before dispatch_engine_cmd is reached
         Cmd::Clear | Cmd::Source(_) | Cmd::Target(_) | Cmd::AtExpr(_) | Cmd::Types
-        | Cmd::PrintFile | Cmd::Type(_) | Cmd::Cell(_) | Cmd::Status
+        | Cmd::PrintFile | Cmd::Type(_) | Cmd::Status
         | Cmd::Store(_) | Cmd::Save(_) | Cmd::Unknown(_) | Cmd::UsageError(_) => unreachable!(),
     }
 }
@@ -865,7 +907,6 @@ fn print_help(display: &Display) {
          \x20 @ <type>         Select a type from the loaded file\n\
          \x20 types            List all types in the file\n\
          \x20 type <name>      Inspect a type: generators, diagrams, maps\n\
-         \x20 cell <name>      Inspect a generator or let-binding with boundary\n\
          \x20 source <name>    Set the source diagram  (requires type to be selected)\n\
          \x20 target <name>    Set the target diagram  (requires type to be selected)\n\
          \x20 status / show    Session state, or setup state when idle\n\
@@ -883,7 +924,7 @@ fn print_help(display: &Display) {
          \x20 rules            List rewrite rules at current dimension  (alias: r)\n\
          \x20 history          Show the move history                 (alias: h)\n\
          \x20 proof            Show the running proof diagram        (alias: p)\n\
-         \x20 store <name>     Register current proof as a first-class generator\n\
+         \x20 store <name>     Store the current proof as a named diagram\n\
          \x20 save <path>      Write source file with stored definitions appended\n\
          \x20 load <path>      Load and replay a session file        (alias: l)"
     );
@@ -903,8 +944,6 @@ enum Cmd {
     PrintFile,
     /// `type <name>` — inspect a type and its generators.
     Type(String),
-    /// `cell <name>` — inspect a generator or let-binding with its boundary.
-    Cell(String),
     /// `source <name>` — set the source diagram.
     Source(String),
     /// `target <name>` — set the target (goal) diagram.
@@ -962,10 +1001,6 @@ fn parse_command(line: &str) -> Cmd {
         "type" => {
             if rest.is_empty() { Cmd::UsageError("type <name>".to_owned()) }
             else { Cmd::Type(rest.to_owned()) }
-        }
-        "cell" => {
-            if rest.is_empty() { Cmd::UsageError("cell <name>".to_owned()) }
-            else { Cmd::Cell(rest.to_owned()) }
         }
         "source" => {
             if rest.is_empty() { Cmd::UsageError("source <name>".to_owned()) }

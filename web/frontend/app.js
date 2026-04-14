@@ -250,7 +250,18 @@ function handleCommand(raw) {
   } else {
     const rendered = renderCommandResult(cmd, result.data);
     appendReplEntry(raw, rendered);
-    updateVisInfo(result.data);
+    // Only update the session diagram display for state-changing commands.
+    const stateCommands = ['apply', 'a', 'undo', 'u', 'restart', 'show', 'status', 'store'];
+    if (stateCommands.includes(cmd)) {
+      updateVisInfo(result.data);
+    }
+    // Append definition to editor and refresh accordion when store succeeds.
+    if (cmd === 'store' && result.data && result.data.stored) {
+      const s = result.data.stored;
+      const code = `\n\n@${s.type_name}\nlet ${s.def_name} = ${s.expr}`;
+      editor.value = editor.value.trimEnd() + code + '\n';
+      refreshAccordion();
+    }
   }
 }
 
@@ -278,9 +289,6 @@ function buildCommand(cmd, arg, raw) {
     case 'type':
       if (!arg) { appendReplEntry(raw, formatError('usage: type <name>')); return null; }
       return JSON.stringify({ command: 'type', name: arg });
-    case 'cell':
-      if (!arg) { appendReplEntry(raw, formatError('usage: cell <name>')); return null; }
-      return JSON.stringify({ command: 'cell', name: arg });
     case 'store':
       if (!arg) { appendReplEntry(raw, formatError('usage: store <name>')); return null; }
       return JSON.stringify({ command: 'store', name: arg });
@@ -298,9 +306,9 @@ function renderCommandResult(cmd, data) {
   switch (cmd) {
     case 'types':          return renderTypes(data);
     case 'type':           return renderTypeDetail(data.type_detail);
-    case 'cell':           return renderCellDetail(data.cell_detail);
     case 'rules': case 'r':     return renderRules(data.rules);
     case 'history': case 'h':   return renderHistory(data.history);
+    case 'store':          return renderStore(data);
     default:               return renderState(data);
   }
 }
@@ -350,36 +358,44 @@ function renderTypes(data) {
 function renderTypeDetail(d) {
   if (!d) return dim('(no type detail)');
   let out = [sec(d.name)];
-  if (d.generators.length) {
+  if (d.generators && d.generators.length) {
     out.push(dim('generators:'));
     d.generators.forEach(g => {
       const bounds = g.source ? `  ${dim(g.source.label)} → ${dim(g.target.label)}` : '';
       out.push(`  ${hi(g.name)} ${dim(`(dim ${g.dim})`)}${bounds}`);
     });
   }
-  if (d.diagrams.length) {
+  if (d.diagrams && d.diagrams.length) {
     out.push(dim('diagrams:'));
     d.diagrams.forEach(g => {
-      out.push(`  let ${hi(g.name)} = ${dim(g.expr)}`);
+      const bounds = g.source ? `${hi(g.name)} : ${dim(g.source.label)} → ${dim(g.target.label)}` : hi(g.name);
+      out.push(`  ${bounds}  = ${dim(g.expr)}`);
+    });
+  }
+  if (d.maps && d.maps.length) {
+    out.push(dim('maps:'));
+    d.maps.forEach(m => {
+      out.push(`  ${hi(m.name)} :: ${dim(m.domain)}`);
     });
   }
   return out.join('\n');
 }
 
-function renderCellDetail(d) {
-  if (!d) return dim('(not found)');
-  let out = [`${hi(d.name)} ${dim(`[${d.kind}, dim ${d.dim}]`)}`];
-  if (d.source) out.push(`  src: ${esc(d.source.label)}`);
-  if (d.target) out.push(`  tgt: ${esc(d.target.label)}`);
-  if (d.expr)   out.push(`  = ${esc(d.expr)}`);
-  return out.join('\n');
-}
+
 
 function renderRules(rules) {
   if (!rules || !rules.length) return dim('(no rules)');
   return rules.map(r =>
     `  ${hi(r.name)}  ${dim(r.source.label)} → ${dim(r.target.label)}`
   ).join('\n');
+}
+
+function renderStore(data) {
+  if (!data || !data.stored) return formatError('store failed');
+  const s = data.stored;
+  let out = [ok(`Stored '${esc(s.def_name)}'.`)];
+  out.push(`  let ${hi(s.def_name)} = ${dim(s.expr)}`);
+  return out.join('\n');
 }
 
 function renderHistory(hist) {
@@ -470,8 +486,7 @@ const HELP_TEXT = `Commands:
   history (h)     show move history
   types           list all types in the file
   type <name>     inspect a type
-  cell <name>     inspect a generator or let-binding
-  store <name>    register current proof as a generator
+  store <name>    store the current proof as a named diagram
   help / ?        show this message
 
 Keyboard: ↑/↓ navigate history · Ctrl+Enter evaluate file`;
@@ -486,6 +501,16 @@ Semigroup <<= {
   assoc: (m ob) m -> (ob m) m
 }
 `;
+
+function refreshAccordion() {
+  if (!repl) return;
+  const result = JSON.parse(repl.get_types());
+  if (result.status !== 'ok') return;
+  const types = result.data.types || [];
+  fileOutput.innerHTML = '';
+  fileOutput.hidden = types.length === 0;
+  types.forEach(t => fileOutput.appendChild(buildTypeAccordion(t)));
+}
 
 // ── Session diagram display ──────────────────────────────────────────────────
 

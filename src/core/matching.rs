@@ -6,13 +6,11 @@
 
 use std::sync::Arc;
 use crate::aux::Error;
-use super::bitset::BitSet;
 use super::complex::Complex;
 use super::diagram::Diagram;
 use super::embeddings::{Embedding, NO_PREIMAGE};
 use super::graph::{self, DiGraph};
-use super::intset;
-use super::ogposet::{self, Ogposet, Sign};
+use super::ogposet::{self, Sign};
 use super::pushout;
 use super::reconstruct;
 
@@ -286,9 +284,12 @@ fn check_match_isomorphism(
     let target_sizes = target.shape.sizes();
 
     // Compute the closure of matched cells in the target ogposet.
-    let seeds_owned: Vec<(usize, Vec<usize>)> = matched_cells.iter()
-        .map(|&(dim, pos)| (dim, vec![pos]))
-        .collect();
+    // Group by dimension to avoid one-element vecs per cell.
+    let mut by_dim: std::collections::BTreeMap<usize, Vec<usize>> = std::collections::BTreeMap::new();
+    for &(dim, pos) in matched_cells {
+        by_dim.entry(dim).or_default().push(pos);
+    }
+    let seeds_owned: Vec<(usize, Vec<usize>)> = by_dim.into_iter().collect();
     let seeds_ref: Vec<(usize, &[usize])> = seeds_owned.iter()
         .map(|(dim, v)| (*dim, v.as_slice()))
         .collect();

@@ -168,7 +168,7 @@ fn load_context(
 }
 
 fn compute_rewrites(
-    store: &GlobalStore,
+    _store: &GlobalStore,
     type_complex: &Complex,
     current: &Diagram,
 ) -> Result<Vec<MatchResult>, String> {
@@ -481,7 +481,7 @@ impl RewriteEngine {
     /// Returns `None` if no steps have been taken yet.
     pub fn proof_label(&self) -> Option<String> {
         self.running_diagram.as_ref().map(|d| {
-            crate::output::diagram_to_source(d, &self.type_complex)
+            crate::output::render_diagram(d, &self.type_complex)
         })
     }
 
@@ -511,7 +511,7 @@ impl RewriteEngine {
         }
 
         // Check 2: round-trip through the interpreter.
-        let source_expr = crate::output::diagram_to_source(diagram, &self.type_complex);
+        let source_expr = crate::output::render_diagram(diagram, &self.type_complex);
         let ast = crate::language::parse_diagram(&source_expr)
             .map_err(|e| format!("sourcefier produced unparseable expression '{}': {}", source_expr, e))?;
         let ctx = crate::interpreter::Context::new_with_resolutions(
@@ -544,11 +544,8 @@ impl RewriteEngine {
         Ok(())
     }
 
-    /// Register the current running proof as a first-class generator.
-    ///
-    /// Computes the proof's source/target boundaries, delegates registration
-    /// to [`GlobalStore::register_generator`], then resyncs the engine's own
-    /// `type_complex` from the updated store.
+    /// Register the current running proof as a named diagram (let-binding)
+    /// in the type complex.
     ///
     /// Returns `(updated_store, updated_type_complex)` so the caller can resync
     /// its own `Arc` references.
@@ -556,22 +553,26 @@ impl RewriteEngine {
         let diagram = self.running_diagram.clone()
             .ok_or_else(|| "no proof steps taken yet".to_owned())?;
 
+        if self.type_complex.name_in_use(name) || self.type_complex.find_generator(name).is_some() {
+            return Err(format!("name '{}' is already in use", name));
+        }
+
         let type_gid = self.store
             .find_type_gid(&self.type_name)
             .ok_or_else(|| format!("type '{}' not found in store", self.type_name))?;
 
-        let dim = self.source_diagram.top_dim() + 1;
         Arc::make_mut(&mut self.store)
-            .register_proof_diagram(type_gid, name.to_owned(), diagram, dim)?;
+            .modify_type_complex(type_gid, |cx| {
+                cx.add_diagram(name.to_owned(), diagram);
+            })
+            .ok_or_else(|| format!("type '{}' not found in store", self.type_name))?;
 
         self.type_complex = self.store
             .find_type(type_gid)
             .map(|e| Arc::clone(&e.complex))
             .ok_or_else(|| format!("type '{}' missing after registration", self.type_name))?;
 
-        self.available_rewrites = compute_rewrites(
-            &self.store, &self.type_complex, &self.current_diagram,
-        )?;
+        // No need to recompute rewrites — a let-binding doesn't add new rewrite rules.
 
         Ok((Arc::clone(&self.store), Arc::clone(&self.type_complex)))
     }
