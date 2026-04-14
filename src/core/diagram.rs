@@ -125,6 +125,28 @@ impl Diagram {
         }
     }
 
+    /// Reconstruct a diagram from a paste tree by looking up each leaf's
+    /// classifier diagram in `complex` and pasting at the recorded dimensions.
+    ///
+    /// - `Leaf(tag)` → the classifier diagram of the generator with that tag.
+    /// - `Node { dim, left, right }` → `paste(dim, realise(left), realise(right))`.
+    pub fn realise_tree(tree: &PasteTree, complex: &super::complex::Complex) -> Result<Diagram, Error> {
+        match tree {
+            PasteTree::Leaf(tag) => {
+                let name = complex.find_generator_by_tag(tag)
+                    .ok_or_else(|| Error::new(format!("tag {} not found in complex", tag)))?;
+                complex.classifier(name)
+                    .cloned()
+                    .ok_or_else(|| Error::new(format!("no classifier for '{}'", name)))
+            }
+            PasteTree::Node { dim, left, right } => {
+                let d1 = Diagram::realise_tree(left, complex)?;
+                let d2 = Diagram::realise_tree(right, complex)?;
+                Diagram::paste(*dim, &d1, &d2)
+            }
+        }
+    }
+
     /// Paste u and v at level k.
     pub fn paste(k: usize, u: &Diagram, v: &Diagram) -> Result<Diagram, Error> {
         let m = Diagram::pastability(k, u, v)?;
@@ -232,6 +254,11 @@ impl Diagram {
     /// Returns the top dimension as a `usize`, clamped to 0 for empty diagrams.
     pub fn top_dim(&self) -> usize {
         self.dim().max(0) as usize
+    }
+
+    /// Returns the number of cells at each dimension.
+    pub fn shape_sizes(&self) -> Vec<usize> {
+        self.shape.sizes()
     }
 
     /// True if the top-level paste tree is just a single leaf (a genuine cell).
@@ -861,5 +888,106 @@ mod tests {
 
         assert_eq!(boundary.labels.len(), 1);
         assert_eq!(boundary.paste_history.len(), 1);
+    }
+
+    // ── realise_tree tests ──────────────────────────────────────────────
+
+    mod realise_tree_tests {
+        use super::*;
+        use crate::aux::loader::Loader;
+        use crate::core::complex::Complex;
+        use crate::interpreter::InterpretedFile;
+        use std::path::PathBuf;
+        use std::sync::Arc;
+
+        fn fixture(name: &str) -> String {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures")
+                .join(name)
+                .to_string_lossy()
+                .into_owned()
+        }
+
+        fn load_type(path: &str, type_name: &str) -> Arc<Complex> {
+            let loader = Loader::default(vec![]);
+            let file = InterpretedFile::load(&loader, path).ok().expect("fixture should load");
+            let store = Arc::clone(&file.state);
+            let module = store.find_module(&file.path).expect("module should exist");
+            let (tag, _) = module.find_generator(type_name).expect("type not found");
+            let gid = match tag { Tag::Global(gid) => *gid, _ => panic!("expected global tag") };
+            store.find_type(gid).expect("type entry not found").complex.clone()
+        }
+
+        /// For a diagram, realise from its top-dim source paste tree and check
+        /// isomorphism with the original.
+        fn assert_realise_roundtrip(diagram: &Diagram, complex: &Complex, label: &str) {
+            let n = diagram.top_dim();
+            let tree = diagram.tree(Sign::Source, n)
+                .unwrap_or_else(|| panic!("{}: no paste tree at dim {}", label, n));
+            let reconstructed = Diagram::realise_tree(tree, complex)
+                .unwrap_or_else(|e| panic!("{}: realise_tree failed: {}", label, e));
+            assert!(
+                Diagram::isomorphic(diagram, &reconstructed),
+                "{}: reconstructed diagram is not isomorphic to original",
+                label,
+            );
+        }
+
+        #[test]
+        fn realise_generator_classifier() {
+            // A generator's classifier is a single cell — realising its Leaf tree
+            // should return an isomorphic diagram.
+            let complex = load_type(&fixture("Idem.ali"), "Idem");
+            let id_diag = complex.classifier("id").expect("id classifier");
+            assert_realise_roundtrip(id_diag, &complex, "id");
+        }
+
+        #[test]
+        fn realise_composite_diagram_dim1() {
+            // lhs = id id id — a 3-cell paste at dim 0.
+            let complex = load_type(&fixture("Idem.ali"), "Idem");
+            let lhs = complex.find_diagram("lhs").expect("lhs diagram");
+            assert_realise_roundtrip(lhs, &complex, "lhs");
+        }
+
+        #[test]
+        fn realise_composite_diagram_dim2() {
+            // lhs2 = alpha alpha alpha — a 3-cell paste at dim 1.
+            let complex = load_type(&fixture("Assoc.ali"), "Assoc");
+            let lhs2 = complex.find_diagram("lhs2").expect("lhs2 diagram");
+            assert_realise_roundtrip(lhs2, &complex, "lhs2");
+        }
+
+        #[test]
+        fn realise_single_cell_diagram() {
+            // rhs = id — a single cell, same as the classifier.
+            let complex = load_type(&fixture("Idem.ali"), "Idem");
+            let rhs = complex.find_diagram("rhs").expect("rhs diagram");
+            assert_realise_roundtrip(rhs, &complex, "rhs");
+        }
+
+        #[test]
+        fn realise_generator_with_composite_boundary() {
+            // m : Ob.ob Ob.ob -> Ob.ob — its classifier has composite boundaries.
+            let complex = load_type(&fixture("Magma.ali"), "Magma");
+            let m_diag = complex.classifier("m").expect("m classifier");
+            assert_realise_roundtrip(m_diag, &complex, "m");
+        }
+
+        #[test]
+        fn realise_idem_classifier() {
+            // idem : id id -> id — a 2-cell with composite source boundary.
+            let complex = load_type(&fixture("Idem.ali"), "Idem");
+            let idem_diag = complex.classifier("idem").expect("idem classifier");
+            assert_realise_roundtrip(idem_diag, &complex, "idem");
+        }
+
+        #[test]
+        fn realise_beta_classifier() {
+            // beta : alpha alpha -> alpha — a 3-cell.
+            let complex = load_type(&fixture("Assoc.ali"), "Assoc");
+            let beta_diag = complex.classifier("beta").expect("beta classifier");
+            assert_realise_roundtrip(beta_diag, &complex, "beta");
+        }
     }
 }

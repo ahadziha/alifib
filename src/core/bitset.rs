@@ -89,6 +89,19 @@ impl BitSet {
         self.count = other.count;
     }
 
+    /// Return a new BitSet that is the union of self and other.
+    pub fn union(&self, other: &BitSet) -> BitSet {
+        let max_words = self.bits.len().max(other.bits.len());
+        let mut bits = vec![0u64; max_words];
+        for (i, w) in bits.iter_mut().enumerate() {
+            let a = self.bits.get(i).copied().unwrap_or(0);
+            let b = other.bits.get(i).copied().unwrap_or(0);
+            *w = a | b;
+        }
+        let count = bits.iter().map(|w| w.count_ones() as usize).sum();
+        BitSet { bits, count }
+    }
+
     /// self &= !other  (in-place set-difference using word-level bitops)
     pub fn difference_inplace(&mut self, other: &BitSet) {
         let n = self.bits.len().min(other.bits.len());

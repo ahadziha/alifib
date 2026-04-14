@@ -121,8 +121,7 @@ pub(super) fn flow_graph(g: &Arc<Ogposet>, k: usize) -> (DiGraph, Vec<(usize, us
 /// also included.
 ///
 /// Returns `(graph, node_map)` where `node_map[i] = (dim, pos)`.
-#[allow(dead_code)]
-pub(super) fn maximal_flow_graph(g: &Arc<Ogposet>, k: usize) -> (DiGraph, Vec<(usize, usize)>) {
+pub(crate) fn maximal_flow_graph(g: &Arc<Ogposet>, k: usize) -> (DiGraph, Vec<(usize, usize)>) {
     if g.dim < 0 { return (DiGraph::new(0), vec![]); }
     let gd = g.dim as usize;
     if k >= gd { return (DiGraph::new(0), vec![]); }

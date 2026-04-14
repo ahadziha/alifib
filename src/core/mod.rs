@@ -8,6 +8,7 @@ pub mod matching;
 pub mod partial_map;
 mod ogposet;
 mod pushout;
+pub mod reconstruct;
 pub mod rewrite;
 pub mod strdiag;
 

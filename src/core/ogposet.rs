@@ -156,6 +156,30 @@ impl Ogposet {
         }).collect()
     }
 
+    /// The smallest k >= -1 such that the ogposet has at most 1 maximal
+    /// element of dimension > k+1.
+    ///
+    /// For a pure molecule of dimension n with m top-cells, this is n-2 if
+    /// m <= 1, and n-1 if m > 1. For non-pure ogposets, maximal elements at
+    /// intermediate dimensions are counted too.
+    pub(crate) fn layering_dimension(&self) -> isize {
+        if self.dim < 0 { return -1; }
+        let d = self.dim as usize;
+        // k = -1: count all maximal elements at dim >= 1
+        // k = j (j >= 0): count all maximal elements at dim >= j+2
+        for k in -1..=(d as isize - 1) {
+            let min_dim = (k + 2) as usize; // dimensions strictly > k+1
+            let count: usize = (min_dim..=d)
+                .map(|dim| self.maximal(dim).len())
+                .sum();
+            if count <= 1 {
+                return k;
+            }
+        }
+        // k = d-1 always works: no elements at dim > d.
+        (d as isize) - 1
+    }
+
     /// True if every cell below the top dimension has at least one coface.
     pub(super) fn is_pure(&self) -> bool {
         if self.dim <= 0 { return true; }
