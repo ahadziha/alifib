@@ -224,17 +224,24 @@ function handleCommand(raw) {
 
 function buildCommand(cmd, arg, raw) {
   switch (cmd) {
-    case 'show':     return '{"command":"show"}';
+    case 'show':
+    case 'status':   return '{"command":"show"}';
     case 'undo':
+    case 'u':
+      if (arg === 'all') return JSON.stringify({ command: 'undo_to', step: 0 });
       if (arg) return JSON.stringify({ command: 'undo_to', step: parseInt(arg, 10) });
       return '{"command":"undo"}';
-    case 'step': {
+    case 'apply':
+    case 'a': {
       const n = parseInt(arg, 10);
-      if (isNaN(n)) { appendReplEntry(raw, formatError('usage: step <n>')); return null; }
+      if (isNaN(n)) { appendReplEntry(raw, formatError('usage: apply <n>')); return null; }
       return JSON.stringify({ command: 'step', choice: n });
     }
-    case 'rules':    return '{"command":"list_rules"}';
-    case 'history':  return '{"command":"history"}';
+    case 'restart':  return JSON.stringify({ command: 'undo_to', step: 0 });
+    case 'rules':
+    case 'r':        return '{"command":"list_rules"}';
+    case 'history':
+    case 'h':        return '{"command":"history"}';
     case 'types':    return '{"command":"types"}';
     case 'type':
       if (!arg) { appendReplEntry(raw, formatError('usage: type <name>')); return null; }
@@ -257,12 +264,12 @@ function renderCommandResult(cmd, data) {
   if (!data) return formatError('(no data)');
 
   switch (cmd) {
-    case 'types':   return renderTypes(data);
-    case 'type':    return renderTypeDetail(data.type_detail);
-    case 'cell':    return renderCellDetail(data.cell_detail);
-    case 'rules':   return renderRules(data.rules);
-    case 'history': return renderHistory(data.history);
-    default:        return renderState(data);
+    case 'types':          return renderTypes(data);
+    case 'type':           return renderTypeDetail(data.type_detail);
+    case 'cell':           return renderCellDetail(data.cell_detail);
+    case 'rules': case 'r':     return renderRules(data.rules);
+    case 'history': case 'h':   return renderHistory(data.history);
+    default:               return renderState(data);
   }
 }
 
@@ -412,17 +419,19 @@ btnClear.addEventListener('click', () => {
 });
 
 const HELP_TEXT = `Commands:
-  step <n>      apply rewrite choice n
-  undo          undo last step
-  undo <n>      undo back to step n (0 = reset)
-  show          show current state
-  rules         list all rewrite rules
-  history       show move history
-  types         list all types in the file
-  type <name>   inspect a type
-  cell <name>   inspect a generator or let-binding
-  store <name>  register current proof as a generator
-  help / ?      show this message
+  apply <n> (a)   apply rewrite choice n
+  undo (u)        undo last step
+  undo <n>        undo back to step n
+  undo all        undo all steps
+  restart         same as undo all
+  show / status   show current state
+  rules (r)       list all rewrite rules
+  history (h)     show move history
+  types           list all types in the file
+  type <name>     inspect a type
+  cell <name>     inspect a generator or let-binding
+  store <name>    register current proof as a generator
+  help / ?        show this message
 
 Keyboard: ↑/↓ navigate history · Ctrl+Enter evaluate file`;
 
