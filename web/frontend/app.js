@@ -26,6 +26,9 @@ const btnClear    = document.getElementById('btn-clear-repl');
 const visContainer = document.getElementById('vis-container');
 const infobox     = document.getElementById('infobox');
 const infoboxText = document.getElementById('infobox-text');
+const boundaryControls = document.getElementById('boundary-controls');
+const selBoundary = document.getElementById('sel-boundary');
+const signControls = document.getElementById('sign-controls');
 const visCanvas   = document.getElementById('vis-canvas');
 const visControls = document.getElementById('vis-controls');
 const selOrientation = document.getElementById('sel-orientation');
@@ -438,64 +441,140 @@ Keyboard: ↑/↓ navigate history · Ctrl+Enter evaluate file`;
 // ── Default example ───────────────────────────────────────────────────────────
 
 editor.value = `@Type
-(* A simple example: equation between two composable morphisms *)
 Ob <<= {
   pt,
   ob : pt -> pt
 },
 
-Cat <<= {
+Magma <<= {
   attach Ob :: Ob,
-  let o = Ob.ob,
-  f : o -> o,
-  g : o -> o,
-  h : o -> o,
-  assoc_l : (f g) h -> f (g h),
-  assoc_r : f (g h) -> (f g) h
+  m : Ob.ob Ob.ob -> Ob.ob
+},
+
+Comagma <<= {
+  attach Ob :: Ob,
+  c : Ob.ob -> Ob.ob Ob.ob
+},
+
+FrobeniusMagma <<= {
+  attach Ob :: Ob,
+  attach Magma :: Magma along [ Ob => Ob ],
+  attach Comagma :: Comagma along [ Ob => Ob ]
 }
 `;
 
 // ── String diagram visualisation ─────────────────────────────────────────────
 
+let currentItem = null;   // { typeName, item }
+let currentItemDim = null; // dimension of the main diagram
+
 function selectItem(typeName, item) {
+  currentItem = { typeName, item };
   infobox.hidden = false;
 
+  // For generators and diagrams: fetch dimension from the main strdiag response
+  if (item.kind !== 'map' && repl) {
+    const mainResult = JSON.parse(repl.get_strdiag(typeName, item.name, undefined, undefined));
+    if (mainResult.status === 'ok') {
+      currentItemDim = mainResult.data.dim;
+    } else {
+      currentItemDim = item.dim || 0;
+    }
+  } else {
+    currentItemDim = item.dim || 0;
+  }
+
+  // Populate boundary selector
+  if (item.kind !== 'map' && currentItemDim >= 1) {
+    selBoundary.innerHTML = '<option value="main">Main</option>';
+    for (let k = currentItemDim - 1; k >= 0; k--) {
+      const opt = document.createElement('option');
+      opt.value = String(k);
+      opt.textContent = `${k}-boundary`;
+      selBoundary.appendChild(opt);
+    }
+    boundaryControls.hidden = false;
+    selBoundary.value = 'main';
+    setSignControlsEnabled(false);
+  } else {
+    boundaryControls.hidden = true;
+  }
+
+  refreshInfobox();
+}
+
+function refreshInfobox() {
+  if (!currentItem) return;
+  const { typeName, item } = currentItem;
+  const bdVal = selBoundary.value;
+  const isBoundary = bdVal !== 'main' && item.kind !== 'map';
+  const bdDim = isBoundary ? parseInt(bdVal, 10) : null;
+  const bdSign = isBoundary ? document.querySelector('input[name="bd-sign"]:checked').value : null;
+
   // Build infobox text
-  const qual = item.kind === 'generator' ? 'Generator of'
-             : item.kind === 'diagram'   ? 'Diagram at'
-             : 'Map at';
-  let html = `<span class="infobox-qual">${esc(qual)} ${hi(typeName)}</span>`;
-  html += `<div class="infobox-name">${hi(item.name)}`;
-  if (item.kind === 'generator') html += ` <span class="acc-dim">dim ${item.dim}</span>`;
+  const qualPrefix = item.kind === 'generator' ? 'Generator of'
+                   : item.kind === 'diagram'   ? 'Diagram at'
+                   : 'Map at';
+  let displayName;
+  if (isBoundary) {
+    const signLabel = bdSign === 'output' ? 'Output' : 'Input';
+    displayName = `${signLabel} ${bdDim}-boundary of ${item.name}`;
+  } else {
+    displayName = item.name;
+  }
+
+  let html = `<span class="infobox-qual">${esc(qualPrefix)} ${hi(typeName)}</span>`;
+  html += `<div class="infobox-name">${hi(displayName)}`;
+  if (!isBoundary && item.kind === 'generator') html += ` <span class="acc-dim">dim ${item.dim}</span>`;
   html += `</div>`;
-  if (item.kind === 'generator' || item.kind === 'diagram') {
-    if (item.src || item.tgt) html += `<div class="infobox-boundary">${esc(item.src)} → ${esc(item.tgt)}</div>`;
-  } else if (item.kind === 'map') {
+
+  if (item.kind === 'map') {
     html += `<div class="infobox-boundary">:: ${esc(item.domain)}</div>`;
+    infoboxText.innerHTML = html;
+    visContainer.hidden = true;
+    visControls.hidden = true;
+    currentLayout = null;
+    return;
+  }
+
+  // Fetch strdiag (with optional boundary)
+  if (!repl) { infoboxText.innerHTML = html; return; }
+  const result = JSON.parse(
+    repl.get_strdiag(typeName, item.name, bdDim ?? undefined, bdSign ?? undefined)
+  );
+  if (result.status === 'error') {
+    html += `<div class="infobox-boundary" style="color:var(--err)">${esc(result.message)}</div>`;
+    infoboxText.innerHTML = html;
+    visContainer.hidden = true;
+    visControls.hidden = true;
+    currentLayout = null;
+    return;
+  }
+
+  const data = result.data;
+  if (data.src || data.tgt) {
+    html += `<div class="infobox-boundary">${esc(data.src)} → ${esc(data.tgt)}</div>`;
   }
   infoboxText.innerHTML = html;
 
-  // Show string diagram for generators and diagrams (not maps)
-  if (item.kind === 'map') {
-    visContainer.hidden = true;
-    visControls.hidden = true;
-    currentLayout = null;
-    return;
-  }
-
-  if (!repl) return;
-  const result = JSON.parse(repl.get_strdiag(typeName, item.name));
-  if (result.status === 'error') {
-    visContainer.hidden = true;
-    visControls.hidden = true;
-    currentLayout = null;
-    return;
-  }
-  currentLayout = layoutStrDiag(result.data, selOrientation.value);
+  currentLayout = layoutStrDiag(data.strdiag, selOrientation.value);
   visContainer.hidden = false;
   visControls.hidden = false;
   resizeAndRender();
 }
+
+function setSignControlsEnabled(enabled) {
+  signControls.style.opacity = enabled ? '1' : '0.35';
+  document.querySelectorAll('input[name="bd-sign"]').forEach(r => r.disabled = !enabled);
+}
+
+selBoundary.addEventListener('change', () => {
+  const isBd = selBoundary.value !== 'main';
+  setSignControlsEnabled(isBd);
+  refreshInfobox();
+});
+document.querySelectorAll('input[name="bd-sign"]').forEach(r =>
+  r.addEventListener('change', refreshInfobox));
 
 selOrientation.addEventListener('change', () => {
   if (currentLayout) {

@@ -603,16 +603,55 @@ pub fn strdiag_to_json(sd: &StrDiag) -> serde_json::Value {
 /// Build a StrDiag JSON for a named item within a type complex.
 ///
 /// Tries named diagrams first, then generator classifiers.
+/// If `boundary` is `Some((dim, sign))`, extracts the `(sign, dim)`-boundary
+/// of the diagram first. Returns a JSON object with `strdiag`, `dim`, `src`,
+/// and `tgt` fields.
 pub fn build_strdiag_response(
     store: &crate::interpreter::GlobalStore,
     source_path: &str,
     type_name: &str,
     item_name: &str,
+    boundary: Option<(usize, &str)>,
 ) -> Result<serde_json::Value, String> {
     let type_complex = super::engine::resolve_type(store, source_path, type_name)?;
-    let sd = StrDiag::from_named(item_name, &type_complex)
+    let diagram = type_complex.find_diagram(item_name)
+        .or_else(|| type_complex.classifier(item_name))
         .ok_or_else(|| format!("'{}' not found in type '{}'", item_name, type_name))?;
-    Ok(strdiag_to_json(&sd))
+
+    let target_diagram = match boundary {
+        None => diagram.clone(),
+        Some((k, sign_str)) => {
+            let sign = match sign_str {
+                "input" => crate::core::diagram::Sign::Source,
+                _ => crate::core::diagram::Sign::Target,
+            };
+            Diagram::boundary(sign, k, diagram)
+                .map_err(|e| format!("boundary extraction failed: {}", e))?
+        }
+    };
+
+    let dim = target_diagram.top_dim();
+    let (src, tgt) = if dim >= 1 {
+        let s = Diagram::boundary(crate::core::diagram::Sign::Source, dim - 1, &target_diagram)
+            .map_err(|e| format!("{}", e))?;
+        let t = Diagram::boundary(crate::core::diagram::Sign::Target, dim - 1, &target_diagram)
+            .map_err(|e| format!("{}", e))?;
+        (
+            crate::output::render_diagram(&s, &type_complex),
+            crate::output::render_diagram(&t, &type_complex),
+        )
+    } else {
+        (String::new(), String::new())
+    };
+
+    let sd = StrDiag::from_diagram(&target_diagram, &type_complex);
+
+    Ok(serde_json::json!({
+        "strdiag": strdiag_to_json(&sd),
+        "dim": dim,
+        "src": src,
+        "tgt": tgt,
+    }))
 }
 
 fn build_rewrite_info(

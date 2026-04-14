@@ -258,6 +258,35 @@ header {
   color: var(--text-dim);
   margin-top: 2px;
 }
+.boundary-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 6px;
+  font-size: 12px;
+}
+.boundary-controls select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 11px;
+  padding: 2px 6px;
+  outline: none;
+}
+.boundary-controls select:focus { border-color: var(--accent); }
+.sign-controls {
+  display: inline-flex;
+  gap: 8px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.sign-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+}
 
 .vis-container {
   height: 250px;

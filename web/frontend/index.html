@@ -9,7 +9,7 @@
 <body>
   <header>
     <span class="logo">alifib</span>
-    <span class="tagline">regular directed complex explorer</span>
+    <span class="tagline">directed complex explorer</span>
   </header>
 
   <main class="workspace">
@@ -80,7 +80,18 @@
       <div class="pane-body">
         <div id="file-output" class="output-area" hidden></div>
         <div id="infobox" class="infobox" hidden>
-          <div id="infobox-text" class="infobox-text"></div>
+          <div id="infobox-header" class="infobox-header">
+            <div id="infobox-text" class="infobox-text"></div>
+            <div id="boundary-controls" class="boundary-controls" hidden>
+              <select id="sel-boundary" title="View boundary">
+                <option value="main">Main</option>
+              </select>
+              <span id="sign-controls" class="sign-controls">
+                <label><input type="radio" name="bd-sign" value="input" checked> Input</label>
+                <label><input type="radio" name="bd-sign" value="output"> Output</label>
+              </span>
+            </div>
+          </div>
           <div id="vis-container" class="vis-container" hidden>
             <canvas id="vis-canvas"></canvas>
             <div id="vis-resize" class="vis-resize-handle"></div>

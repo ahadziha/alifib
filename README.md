@@ -1,6 +1,6 @@
 # alifib
 
-An interpreter for a language of pasting diagrams in regular directed complexes,
+An interpreter for a language of pasting diagrams in directed complexes,
 based on Amar Hadzihasanovic's theory of molecules.
 
 ## Overview

@@ -247,13 +247,27 @@ impl WasmRepl {
     ///
     /// Tries named diagrams first, then generator classifiers.
     /// Returns `{"status":"ok","data":{...}}` or `{"status":"error","message":"..."}`.
-    pub fn get_strdiag(&self, type_name: &str, item_name: &str) -> String {
+    /// Return string diagram data for a named item within a type.
+    ///
+    /// Optional boundary extraction: pass `boundary_dim` and `boundary_sign`
+    /// ("input" or "output") to get a boundary diagram instead of the main one.
+    pub fn get_strdiag(
+        &self,
+        type_name: &str,
+        item_name: &str,
+        boundary_dim: Option<usize>,
+        boundary_sign: Option<String>,
+    ) -> String {
         let store = match self.store.as_ref() {
             Some(s) => s,
             None => return err_json("no source loaded; call load_source first"),
         };
+        let boundary = boundary_dim.map(|d| {
+            let sign = boundary_sign.as_deref().unwrap_or("input");
+            (d, sign)
+        });
         match alifib::interactive::protocol::build_strdiag_response(
-            store, SOURCE_PATH, type_name, item_name,
+            store, SOURCE_PATH, type_name, item_name, boundary,
         ) {
             Ok(data) => ok_json(data),
             Err(msg) => err_json(&msg),
