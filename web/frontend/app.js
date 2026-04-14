@@ -296,7 +296,11 @@ function renderState(data) {
     out.push(sec('available rewrites:'));
     data.rewrites.forEach(r => {
       out.push(`  [${hi(r.index)}] ${hi(r.rule_name)}  ${dim(r.source.label)} → ${dim(r.target.label)}`);
-      if (r.match_display) out.push(`      match: ${esc(r.match_display)}`);
+      if (r.match_display) {
+        const highlighted = esc(r.match_display).replace(/\[([^\]]*)\]/g,
+          '<span class="repl-match-hi">$1</span>');
+        out.push(`      match: ${highlighted}`);
+      }
     });
   } else if (data.step_count > 0) {
     out.push(dim('no rewrites available'));

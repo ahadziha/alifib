@@ -5,7 +5,7 @@ use crate::aux::loader::Loader;
 use crate::aux::Tag;
 use crate::core::complex::Complex;
 use crate::core::diagram::{Diagram, Sign};
-use crate::core::rewrite::{CandidateRewrite, apply_rewrite, find_candidate_rewrites};
+use crate::core::matching::{MatchResult, find_matches};
 use crate::interpreter::{GlobalStore, InterpretedFile};
 use super::session::{Move, SessionFile};
 use std::sync::Arc;
@@ -37,7 +37,7 @@ pub struct RewriteEngine {
     current_diagram: Diagram,
     running_diagram: Option<Diagram>,
     history: Vec<HistoryEntry>,
-    available_rewrites: Vec<CandidateRewrite>,
+    available_rewrites: Vec<MatchResult>,
 
     // Metadata (for session file persistence)
     source_file: String,
@@ -171,12 +171,27 @@ fn compute_rewrites(
     store: &GlobalStore,
     type_complex: &Complex,
     current: &Diagram,
-) -> Result<Vec<CandidateRewrite>, String> {
-    find_candidate_rewrites(
-        |cx, tag| store.cell_data_for_tag(cx, tag),
-        type_complex,
-        current,
-    )
+) -> Result<Vec<MatchResult>, String> {
+    let n = current.top_dim();
+    let mut all_matches = Vec::new();
+
+    for (name, _tag, dim) in type_complex.generators_iter() {
+        if dim != n + 1 { continue; }
+        let Some(rewrite) = type_complex.classifier(name) else { continue; };
+
+        match find_matches(type_complex, rewrite, current, name) {
+            Ok(matches) => all_matches.extend(matches),
+            Err(e) => return Err(format!("failed to match rule '{}': {}", name, e)),
+        }
+    }
+
+    // Stable sort by (rule_name, image_positions) for deterministic indexing.
+    all_matches.sort_by(|a, b| {
+        a.rule_name.cmp(&b.rule_name)
+            .then_with(|| a.image_positions.cmp(&b.image_positions))
+    });
+
+    Ok(all_matches)
 }
 
 // ── Constructor impls ─────────────────────────────────────────────────────────
@@ -268,23 +283,22 @@ impl RewriteEngine {
             let candidates = compute_rewrites(&store, &type_complex, &current)
                 .map_err(|e| format!("replay failed at step {}: {}", step_idx + 1, e))?;
 
-            let candidate = candidates.get(mov.choice).ok_or_else(|| {
+            let match_result = candidates.get(mov.choice).ok_or_else(|| {
                 format!(
                     "replay failed at step {}: choice {} out of range ({} candidate(s) available)",
                     step_idx + 1, mov.choice, candidates.len(),
                 )
             })?;
 
-            if candidate.rule_name != mov.rule_name {
+            if match_result.rule_name != mov.rule_name {
                 return Err(format!(
                     "replay sanity check failed at step {}: \
                      expected rule '{}' at choice {}, found '{}'",
-                    step_idx + 1, mov.rule_name, mov.choice, candidate.rule_name,
+                    step_idx + 1, mov.rule_name, mov.choice, match_result.rule_name,
                 ));
             }
 
-            let step = apply_rewrite(&current, candidate)
-                .map_err(|e| format!("replay failed at step {}: {}", step_idx + 1, e))?;
+            let step = match_result.step.clone();
 
             // Save snapshot before advancing.
             history.push(HistoryEntry {
@@ -330,7 +344,7 @@ impl RewriteEngine {
     /// Saves a snapshot for O(diagram) undo, advances the current diagram,
     /// and recomputes available rewrites.
     pub fn step(&mut self, choice: usize) -> Result<&str, String> {
-        let candidate = self.available_rewrites.get(choice).ok_or_else(|| {
+        let match_result = self.available_rewrites.get(choice).ok_or_else(|| {
             format!(
                 "choice {} out of range ({} rewrite(s) available)",
                 choice, self.available_rewrites.len(),
@@ -338,10 +352,8 @@ impl RewriteEngine {
         })?;
 
         let n = self.current_diagram.top_dim();
-        let rule_name = candidate.rule_name.clone();
-
-        let step = apply_rewrite(&self.current_diagram, candidate)
-            .map_err(|e| format!("apply rewrite failed: {}", e))?;
+        let rule_name = match_result.rule_name.clone();
+        let step = match_result.step.clone();
 
         let prev_diagram = self.current_diagram.clone();
         let prev_running = self.running_diagram.clone();
@@ -428,7 +440,7 @@ impl RewriteEngine {
 
     /// The candidate rewrites applicable to the current diagram, precomputed
     /// after each [`step`](Self::step) or [`undo`](Self::undo).
-    pub fn available_rewrites(&self) -> &[CandidateRewrite] { &self.available_rewrites }
+    pub fn available_rewrites(&self) -> &[MatchResult] { &self.available_rewrites }
 
     /// The interpreter's global store, shared read-only across the session.
     pub fn store(&self) -> &GlobalStore { &self.store }

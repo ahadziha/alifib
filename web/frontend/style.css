@@ -396,6 +396,7 @@ header {
 .repl-dim { color: var(--text-dim); }
 .repl-hi  { color: var(--text-em); }
 .repl-ok  { color: var(--ok); }
+.repl-match-hi { color: var(--accent2); font-weight: 600; }
 .repl-warn { color: var(--warn); }
 
 .repl-input-row {

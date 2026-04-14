@@ -25,11 +25,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::complex::Complex;
 use crate::core::diagram::{CellData, Diagram, Sign};
-use crate::core::rewrite::CandidateRewrite;
+use crate::core::matching::MatchResult;
 use crate::core::strdiag::{StrDiag, VertexKind};
 use crate::output::{diagram_to_source, render_diagram};
 use super::engine::RewriteEngine;
-use super::render::render_match_highlight;
+use super::render::render_match_from_step;
 
 // ── Requests ─────────────────────────────────────────────────────────────────
 
@@ -304,7 +304,7 @@ pub fn build_response(engine: &RewriteEngine, include_history: bool) -> Response
         .available_rewrites()
         .iter()
         .enumerate()
-        .map(|(i, c)| build_rewrite_info(i, c, current, scope))
+        .map(|(i, m)| build_rewrite_info(i, m, scope))
         .collect();
 
     let proof = engine.running_diagram().and_then(|d| {
@@ -656,18 +656,29 @@ pub fn build_strdiag_response(
 
 fn build_rewrite_info(
     index: usize,
-    candidate: &CandidateRewrite,
-    current: &Diagram,
+    m: &MatchResult,
     scope: &Complex,
 ) -> RewriteInfo {
-    let match_display =
-        render_match_highlight(current, scope, &candidate.image_positions);
+    let match_display = render_match_from_step(&m.step, scope);
+    let n = m.step.top_dim().saturating_sub(1);
+    let (source, target) = match (
+        Diagram::boundary(Sign::Source, n, &m.step),
+        Diagram::boundary(Sign::Target, n, &m.step),
+    ) {
+        (Ok(src), Ok(tgt)) => (diagram_info(&src, scope), diagram_info(&tgt, scope)),
+        _ => return RewriteInfo {
+            index, rule_name: m.rule_name.clone(), match_display,
+            source: DiagramInfo { label: "?".into(), dim: 0, cell_count: 0, cells_by_dim: vec![] },
+            target: DiagramInfo { label: "?".into(), dim: 0, cell_count: 0, cells_by_dim: vec![] },
+            match_positions: m.image_positions.clone(),
+        },
+    };
     RewriteInfo {
         index,
-        rule_name: candidate.rule_name.clone(),
-        source: diagram_info(&candidate.source_boundary, scope),
-        target: diagram_info(&candidate.target_boundary, scope),
-        match_positions: candidate.image_positions.clone(),
+        rule_name: m.rule_name.clone(),
+        source,
+        target,
+        match_positions: m.image_positions.clone(),
         match_display,
     }
 }

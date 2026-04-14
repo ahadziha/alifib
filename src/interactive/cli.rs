@@ -90,11 +90,20 @@ impl RewriteResponse {
                 .available_rewrites()
                 .iter()
                 .enumerate()
-                .map(|(i, c)| AvailableRewrite {
-                    index: i,
-                    rule_name: c.rule_name.clone(),
-                    rule_source: render_diagram(&c.source_boundary, scope),
-                    rule_target: render_diagram(&c.target_boundary, scope),
+                .map(|(i, m)| {
+                    let n = m.step.top_dim().saturating_sub(1);
+                    let rule_source = crate::core::diagram::Diagram::boundary(
+                        crate::core::diagram::Sign::Source, n, &m.step,
+                    ).map(|s| render_diagram(&s, scope)).unwrap_or_else(|_| "?".into());
+                    let rule_target = crate::core::diagram::Diagram::boundary(
+                        crate::core::diagram::Sign::Target, n, &m.step,
+                    ).map(|t| render_diagram(&t, scope)).unwrap_or_else(|_| "?".into());
+                    AvailableRewrite {
+                        index: i,
+                        rule_name: m.rule_name.clone(),
+                        rule_source,
+                        rule_target,
+                    }
                 })
                 .collect(),
             error: None,

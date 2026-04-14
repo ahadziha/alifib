@@ -4,67 +4,74 @@
 //! functions (`print_*`) that accept a [`Display`] and produce output.
 //! All output goes through `Display`; no `println!` appears here.
 
+use crate::aux::Tag;
 use crate::core::complex::Complex;
-use crate::core::diagram::Diagram;
-use crate::core::rewrite::CandidateRewrite;
+use crate::core::diagram::{Diagram, PasteTree, Sign};
+use crate::core::matching::MatchResult;
 use crate::output::render_diagram;
 use super::display::Display;
 
 // ── Pure string builders ──────────────────────────────────────────────────────
 
-/// Render the top-dim labels of `diagram` with brackets around cells whose
-/// positions appear in `match_positions`.
+/// Render a match by taking the step diagram's paste tree and replacing the
+/// rewrite rule leaf (the single (n+1)-dimensional cell) with a bracketed
+/// rendering of the rule's source boundary.
 ///
-/// Example: labels `[id, id, id]`, positions `[0, 1]` → `"[id id] id"`.
-/// Handles any set of positions, including non-contiguous ones.
-pub fn render_match_highlight(
-    diagram: &Diagram,
+/// For example, if the step's paste tree renders as `(a #0 rewrite) #0 b`
+/// and the rewrite's source is `(a #0 a)`, the result is
+/// `(a #0 [(a #0 a)]) #0 b`.
+pub fn render_match_from_step(
+    step: &Diagram,
     scope: &Complex,
-    match_positions: &[usize],
 ) -> String {
-    let n = diagram.top_dim();
-    let labels: Vec<String> = match diagram.labels_at(n) {
-        Some(ls) if !ls.is_empty() => ls
-            .iter()
-            .map(|tag| {
-                scope
-                    .find_generator_by_tag(tag)
-                    .filter(|n| !n.is_empty())
-                    .cloned()
-                    .unwrap_or_else(|| format!("{}", tag))
-            })
-            .collect(),
+    let n_plus_1 = step.top_dim();
+    // The step has exactly one (n+1)-cell; its tag is the rewrite rule.
+    // Get the step's top-dim paste tree.
+    let tree = match step.tree(Sign::Source, n_plus_1) {
+        Some(t) => t,
+        None => return "?".to_string(),
+    };
+
+    // Find the rewrite rule tag: the unique label at the top dimension.
+    let rule_tag = match step.labels_at(n_plus_1) {
+        Some(labels) if labels.len() == 1 => &labels[0],
         _ => return "?".to_string(),
     };
 
-    if match_positions.is_empty() {
-        return labels.join(" ");
-    }
+    // Get the rule's source boundary rendering (the pattern).
+    let n = n_plus_1.saturating_sub(1);
+    let source_render = match Diagram::boundary(Sign::Source, n, step) {
+        Ok(src) => render_diagram(&src, scope),
+        Err(_) => "?".to_string(),
+    };
 
-    let mut positions: Vec<usize> = match_positions.to_vec();
-    positions.sort_unstable();
+    render_tree_with_substitution(tree, scope, rule_tag, &source_render)
+}
 
-    let mut out = String::new();
-    let mut i = 0;
-    while i < labels.len() {
-        if !out.is_empty() { out.push(' '); }
-        if positions.binary_search(&i).is_ok() {
-            // Consume all contiguous matched positions as one bracketed group.
-            out.push('[');
-            let mut first = true;
-            while i < labels.len() && positions.binary_search(&i).is_ok() {
-                if !first { out.push(' '); }
-                out.push_str(&labels[i]);
-                first = false;
-                i += 1;
+/// Render a paste tree, substituting one specific leaf tag with a bracketed string.
+fn render_tree_with_substitution(
+    tree: &PasteTree,
+    scope: &Complex,
+    replace_tag: &Tag,
+    replacement: &str,
+) -> String {
+    match tree {
+        PasteTree::Leaf(tag) => {
+            if tag == replace_tag {
+                format!("[{}]", replacement)
+            } else {
+                scope.find_generator_by_tag(tag)
+                    .filter(|n| !n.is_empty())
+                    .cloned()
+                    .unwrap_or_else(|| format!("{}", tag))
             }
-            out.push(']');
-        } else {
-            out.push_str(&labels[i]);
-            i += 1;
+        }
+        PasteTree::Node { dim, left, right } => {
+            let l = render_tree_with_substitution(left, scope, replace_tag, replacement);
+            let r = render_tree_with_substitution(right, scope, replace_tag, replacement);
+            format!("({} #{} {})", l, dim, r)
         }
     }
-    out
 }
 
 // ── Display functions ─────────────────────────────────────────────────────────
@@ -88,7 +95,7 @@ pub fn print_state(
     display: &Display,
     current: &Diagram,
     target: Option<&Diagram>,
-    rewrites: &[CandidateRewrite],
+    rewrites: &[MatchResult],
     scope: &Complex,
     // Running proof for completion display (source label, target label, proof label).
     proof: Option<(&str, &str, &str)>,
@@ -114,13 +121,19 @@ pub fn print_state(
     }
 
     display.meta("rewrites:");
-    for (i, c) in rewrites.iter().enumerate() {
-        let highlight = render_match_highlight(current, scope, &c.image_positions);
-        let rule_src = render_diagram(&c.source_boundary, scope);
-        let rule_tgt = render_diagram(&c.target_boundary, scope);
+    for (i, m) in rewrites.iter().enumerate() {
+        let highlight = render_match_from_step(&m.step, scope);
+        let n = m.step.top_dim().saturating_sub(1);
+        let (rule_src, rule_tgt) = match (
+            Diagram::boundary(Sign::Source, n, &m.step),
+            Diagram::boundary(Sign::Target, n, &m.step),
+        ) {
+            (Ok(src), Ok(tgt)) => (render_diagram(&src, scope), render_diagram(&tgt, scope)),
+            _ => ("?".to_string(), "?".to_string()),
+        };
         display.blank();
         display.inspect(&format!("  ({i}) {highlight}"));
-        display.inspect(&format!("      by {} : {} -> {}", c.rule_name, rule_src, rule_tgt));
+        display.inspect(&format!("      by {} : {} -> {}", m.rule_name, rule_src, rule_tgt));
     }
 }
 
