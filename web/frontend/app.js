@@ -479,25 +479,11 @@ Keyboard: ↑/↓ navigate history · Ctrl+Enter evaluate file`;
 // ── Default example ───────────────────────────────────────────────────────────
 
 editor.value = `@Type
-Ob <<= {
+Semigroup <<= {
   pt,
-  ob : pt -> pt
-},
-
-Magma <<= {
-  attach Ob :: Ob,
-  m : Ob.ob Ob.ob -> Ob.ob
-},
-
-Comagma <<= {
-  attach Ob :: Ob,
-  c : Ob.ob -> Ob.ob Ob.ob
-},
-
-FrobeniusMagma <<= {
-  attach Ob :: Ob,
-  attach Magma :: Magma along [ Ob => Ob ],
-  attach Comagma :: Comagma along [ Ob => Ob ]
+  ob: pt -> pt,
+  m: ob ob -> ob,
+  assoc: (m ob) m -> (ob m) m
 }
 `;
 
