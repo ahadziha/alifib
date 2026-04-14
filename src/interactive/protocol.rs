@@ -654,6 +654,27 @@ pub fn build_strdiag_response(
     }))
 }
 
+/// Build a StrDiag JSON for the target boundary of a step diagram.
+pub fn step_target_strdiag_json(
+    step: &Diagram,
+    scope: &Complex,
+) -> Result<serde_json::Value, String> {
+    let n = step.top_dim().checked_sub(1)
+        .ok_or_else(|| "step diagram has dim 0".to_string())?;
+    let tgt = Diagram::boundary(Sign::Target, n, step)
+        .map_err(|e| format!("{}", e))?;
+    Ok(strdiag_json_from_diagram(&tgt, scope))
+}
+
+/// Build a StrDiag JSON directly from a diagram and complex.
+pub fn strdiag_json_from_diagram(
+    diagram: &Diagram,
+    scope: &Complex,
+) -> serde_json::Value {
+    let sd = StrDiag::from_diagram(diagram, scope);
+    strdiag_to_json(&sd)
+}
+
 fn build_rewrite_info(
     index: usize,
     m: &MatchResult,

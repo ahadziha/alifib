@@ -33,6 +33,7 @@ const visCanvas   = document.getElementById('vis-canvas');
 const visControls = document.getElementById('vis-controls');
 const selOrientation = document.getElementById('sel-orientation');
 const visResize   = document.getElementById('vis-resize');
+const rewriteList = document.getElementById('rewrite-list');
 const canvasCtx   = visCanvas.getContext('2d');
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
@@ -144,12 +145,33 @@ function buildClickableRow(innerHTML, onClick) {
   div.className = 'acc-leaf';
   div.innerHTML = innerHTML;
   div.addEventListener('click', () => {
+    if (selectedEl === div) {
+      // Deselect: return to session view.
+      div.classList.remove('acc-leaf--selected');
+      selectedEl = null;
+      currentItem = null;
+      returnToSessionView();
+      return;
+    }
     if (selectedEl) selectedEl.classList.remove('acc-leaf--selected');
     selectedEl = div;
     div.classList.add('acc-leaf--selected');
     onClick();
   });
   return div;
+}
+
+function returnToSessionView() {
+  if (!sessionActive || !repl) {
+    infobox.hidden = true;
+    rewriteList.hidden = true;
+    return;
+  }
+  // Re-fetch session state and show diagram.
+  const result = JSON.parse(repl.run_command('{"command":"show"}'));
+  if (result.status === 'ok' && result.data) {
+    showSessionDiagram(result.data);
+  }
 }
 
 // ── Session setup ─────────────────────────────────────────────────────────────
@@ -172,8 +194,15 @@ function startSession() {
   sessionActive = true;
   replInput.disabled = false;
   replInput.focus();
+  // Clear any accordion selection so session display takes over.
+  if (selectedEl) {
+    selectedEl.classList.remove('acc-item--selected');
+    selectedEl.classList.remove('acc-leaf--selected');
+    selectedEl = null;
+  }
+  currentItem = null;
   appendReplEntry(`start ${typeName} ${src}${tgt ? ' → ' + tgt : ''}`, renderState(result.data));
-  updateVisInfo(result.data);
+  showSessionDiagram(result.data);
 }
 
 function resetSession() {
@@ -361,7 +390,12 @@ function renderHistory(hist) {
 }
 
 function updateVisInfo(data) {
-  // no-op: vis info now shown in infobox
+  // When a session is active and no accordion item is selected,
+  // show the current diagram in the analysis pane.
+  if (!sessionActive || !data || !data.current) return;
+  if (currentItem) return; // accordion item takes priority
+
+  showSessionDiagram(data);
 }
 
 // ── Formatting helpers ────────────────────────────────────────────────────────
@@ -467,14 +501,179 @@ FrobeniusMagma <<= {
 }
 `;
 
+// ── Session diagram display ──────────────────────────────────────────────────
+
+function showSessionDiagram(data) {
+  selectedRewrite = null;
+  previewActive = false;
+
+  // Fetch strdiag for current diagram.
+  if (!repl) return;
+  const strResult = JSON.parse(repl.get_session_strdiag());
+  if (strResult.status !== 'ok') return;
+
+  sessionStrdiag = strResult.data;
+
+  // Show infobox with session info.
+  infobox.hidden = false;
+  boundaryControls.hidden = true;
+
+  let html = '';
+  if (data.step_count > 0) html += `<button id="btn-undo-vis" class="btn-undo-vis btn-secondary" title="Undo">&#x21A9;</button>`;
+  html += `<span class="infobox-qual">Current diagram</span>`;
+  html += `<div class="infobox-name">${hi(data.current.label || '—')} <span class="acc-dim">dim ${data.current.dim}, step ${data.step_count}</span></div>`;
+  if (data.target) {
+    const reached = data.target_reached ? ` <span class="repl-ok">reached</span>` : '';
+    html += `<div class="infobox-boundary">target: ${esc(data.target.label)}${reached}</div>`;
+  }
+  infoboxText.innerHTML = html;
+  const btnUndo = document.getElementById('btn-undo-vis');
+  if (btnUndo) btnUndo.addEventListener('click', performUndo);
+
+  // Render the string diagram.
+  currentLayout = layoutStrDiag(sessionStrdiag, selOrientation.value);
+  visContainer.hidden = false;
+  visControls.hidden = false;
+  resizeAndRender();
+
+  // Build rewrite list.
+  buildRewriteList(data.rewrites || []);
+}
+
+function buildRewriteList(rewrites) {
+  rewriteList.innerHTML = '';
+  lastRewriteData = rewrites;
+  if (!rewrites.length) {
+    rewriteList.hidden = true;
+    return;
+  }
+  rewriteList.hidden = false;
+
+  rewrites.forEach((r, i) => {
+    const row = document.createElement('div');
+    row.className = 'rewrite-row';
+
+    const matchHtml = esc(r.match_display).replace(/\[([^\]]*)\]/g,
+      '<span class="rw-match-hi">$1</span>');
+
+    const content = document.createElement('span');
+    content.className = 'rw-content';
+    content.innerHTML = `<span class="rw-index">${r.index}</span>`
+      + `<span class="rw-name">${esc(r.rule_name)}</span> `
+      + `<span class="rw-match">${matchHtml}</span>`;
+    row.appendChild(content);
+
+    // Build action buttons (always present, shown on hover via CSS).
+    const actions = document.createElement('span');
+    actions.className = 'rewrite-actions';
+
+    const btnPreview = document.createElement('button');
+    btnPreview.className = 'rw-btn-preview';
+    btnPreview.textContent = 'Preview';
+    btnPreview.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+      previewActive = true;
+      showRewritePreview(i);
+    });
+    btnPreview.addEventListener('mouseup', () => {
+      previewActive = false;
+      endRewritePreview();
+    });
+    btnPreview.addEventListener('mouseleave', () => {
+      if (previewActive) { previewActive = false; endRewritePreview(); }
+    });
+    btnPreview.addEventListener('click', (e) => e.stopPropagation());
+
+    actions.appendChild(btnPreview);
+    row.appendChild(actions);
+
+    // Click anywhere on row (except Preview) applies the rewrite.
+    row.addEventListener('click', () => applyRewrite(i));
+
+    // Hover: highlight match positions.
+    row.addEventListener('mouseenter', () => {
+      if (previewActive) return;
+      selectedRewrite = i;
+      if (currentLayout) {
+        currentLayout._highlightPositions = r.match_positions;
+        resizeAndRender();
+      }
+    });
+    row.addEventListener('mouseleave', () => {
+      if (previewActive) return;
+      selectedRewrite = null;
+      if (currentLayout) {
+        currentLayout._highlightPositions = null;
+        resizeAndRender();
+      }
+    });
+
+    rewriteList.appendChild(row);
+  });
+}
+
+function showRewritePreview(choice) {
+  if (!repl) return;
+  const result = JSON.parse(repl.get_rewrite_preview_strdiag(choice));
+  if (result.status !== 'ok') return;
+  currentLayout = layoutStrDiag(result.data, selOrientation.value);
+  currentLayout._highlightPositions = null;
+  resizeAndRender();
+}
+
+function endRewritePreview() {
+  // Restore the current session diagram with match highlight.
+  if (!sessionStrdiag) return;
+  currentLayout = layoutStrDiag(sessionStrdiag, selOrientation.value);
+  if (selectedRewrite !== null && lastRewriteData && lastRewriteData[selectedRewrite]) {
+    currentLayout._highlightPositions = lastRewriteData[selectedRewrite].match_positions;
+  }
+  resizeAndRender();
+}
+
+function performUndo() {
+  if (!repl) return;
+  const result = JSON.parse(repl.run_command('{"command":"undo"}'));
+  if (result.status === 'error') {
+    appendReplMsg('Undo error: ' + result.message, 'repl-result err');
+    return;
+  }
+  appendReplEntry('undo', renderState(result.data));
+  selectedRewrite = null;
+  previewActive = false;
+  showSessionDiagram(result.data);
+}
+
+function applyRewrite(choice) {
+  // Send apply command through the REPL.
+  const json = JSON.stringify({ command: 'step', choice });
+  const result = JSON.parse(repl.run_command(json));
+  if (result.status === 'error') {
+    appendReplMsg('Apply error: ' + result.message, 'repl-result err');
+    return;
+  }
+  appendReplEntry(`apply ${choice}`, renderState(result.data));
+  selectedRewrite = null;
+  previewActive = false;
+  // Update the session display.
+  showSessionDiagram(result.data);
+}
+
+// Store last rewrite data for re-highlighting after preview ends.
+let lastRewriteData = null;
+
 // ── String diagram visualisation ─────────────────────────────────────────────
 
 let currentItem = null;   // { typeName, item }
 let currentItemDim = null; // dimension of the main diagram
+let sessionStrdiag = null; // strdiag data for current session diagram
+let selectedRewrite = null; // index of selected rewrite
+let previewActive = false;
 
 function selectItem(typeName, item) {
   currentItem = { typeName, item };
   infobox.hidden = false;
+  rewriteList.hidden = true; // hide session rewrite list when inspecting an item
 
   // For generators and diagrams: fetch dimension from the main strdiag response
   if (item.kind !== 'map' && repl) {
@@ -781,13 +980,16 @@ function renderStrDiag(ctx, L, cw, ch) {
   }
 
   // Draw nodes
+  const hlPositions = L._highlightPositions ? new Set(L._highlightPositions) : null;
   for (let i = L.numWires; i < L.verts.length; i++) {
     const np = px[i];
+    const nodePos = i - L.numWires;
+    const highlighted = hlPositions && hlPositions.has(nodePos);
     ctx.beginPath();
     ctx.arc(np.x, np.y, NODE_R, 0, Math.PI * 2);
-    ctx.fillStyle = '#7c6af2';
+    ctx.fillStyle = highlighted ? '#ffffff' : '#7c6af2';
     ctx.fill();
-    ctx.strokeStyle = '#d4d4d8';
+    ctx.strokeStyle = highlighted ? '#ffffff' : '#d4d4d8';
     ctx.lineWidth = 1.5;
     ctx.stroke();
   }

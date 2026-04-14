@@ -254,10 +254,21 @@ header {
 .infobox-name {
   font-weight: 600;
 }
+.btn-undo-vis {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: 14px;
+  line-height: 1;
+  padding: 3px 8px;
+}
+.infobox-text { position: relative; }
+
 .infobox-boundary {
   color: var(--text-dim);
   margin-top: 2px;
 }
+.boundary-controls[hidden] { display: none; }
 .boundary-controls {
   display: flex;
   align-items: center;
@@ -311,6 +322,60 @@ header {
 .vis-resize-handle:hover {
   background: rgba(124, 106, 242, 0.25);
 }
+
+/* ── Rewrite list ── */
+.rewrite-list {
+  border-top: 1px solid var(--border);
+  overflow-y: auto;
+  max-height: 200px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 4px 0;
+}
+.rewrite-row {
+  padding: 4px 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-dim);
+}
+.rewrite-row:hover { background: rgba(124, 106, 242, 0.08); }
+.rewrite-row--selected { background: rgba(124, 106, 242, 0.15) !important; }
+.rewrite-row .rw-index { color: var(--accent); font-weight: 600; min-width: 24px; }
+.rewrite-row .rw-name { color: var(--text-em); }
+.rewrite-row .rw-match { color: var(--text-dim); flex: 1; }
+.rewrite-row .rw-match-hi { color: var(--accent2); font-weight: 600; }
+.rewrite-actions {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: auto;
+  visibility: hidden;
+}
+.rewrite-row:hover .rewrite-actions {
+  visibility: visible;
+}
+.rw-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.rewrite-actions button {
+  border: none;
+  border-radius: var(--radius);
+  padding: 2px 8px;
+  font-size: 11px;
+  font-family: var(--font-ui);
+  cursor: pointer;
+}
+.rw-btn-preview {
+  background: var(--border);
+  color: var(--text);
+}
+.rw-btn-preview:hover { background: var(--accent); color: #fff; }
+.rw-btn-preview:active { background: var(--accent); color: #fff; }
 
 /* ── Selected accordion item ── */
 .acc-leaf--selected {

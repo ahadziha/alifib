@@ -274,6 +274,33 @@ impl WasmRepl {
         }
     }
 
+    /// Return the string diagram for the current session diagram.
+    pub fn get_session_strdiag(&self) -> String {
+        self.need_engine(|e| {
+            let data = alifib::interactive::protocol::strdiag_json_from_diagram(
+                e.current_diagram(), e.type_complex(),
+            );
+            ok_json(data)
+        })
+    }
+
+    /// Return the string diagram for the target of rewrite `choice`.
+    ///
+    /// This is the diagram that would result from applying the given rewrite.
+    pub fn get_rewrite_preview_strdiag(&self, choice: usize) -> String {
+        self.need_engine(|e| {
+            let rewrites = e.available_rewrites();
+            let Some(m) = rewrites.get(choice) else {
+                return err_json(&format!("choice {} out of range", choice));
+            };
+            let n = e.current_diagram().top_dim();
+            match alifib::interactive::protocol::step_target_strdiag_json(&m.step, e.type_complex()) {
+                Ok(data) => ok_json(data),
+                Err(msg) => err_json(&msg),
+            }
+        })
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────
 
     fn need_engine<F: FnOnce(&RewriteEngine) -> String>(&self, f: F) -> String {
