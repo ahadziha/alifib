@@ -123,7 +123,23 @@ impl WasmRepl {
                 })
                 .to_string()
             }
-            LoadResult::LoadError(e) => err_json(&format!("{e:?}")),
+            LoadResult::LoadError(e) => {
+                let msg = match &e {
+                    alifib::aux::loader::LoadFileError::Load { path, cause } =>
+                        format!("could not load '{}': {:?}", path, cause),
+                    alifib::aux::loader::LoadFileError::Parse { path, errors, .. } => {
+                        let msgs: Vec<String> = errors.iter().map(|e| format!("{e}")).collect();
+                        format!("parse error in '{}': {}", path, msgs.join("; "))
+                    }
+                    alifib::aux::loader::LoadFileError::ModuleNotFound { module_name } =>
+                        format!("module '{}' not found", module_name),
+                    alifib::aux::loader::LoadFileError::ModuleIoError { path, reason } =>
+                        format!("could not load '{}': {}", path, reason),
+                    alifib::aux::loader::LoadFileError::Cycle { path } =>
+                        format!("cyclic dependency involving '{}'", path),
+                };
+                err_json(&msg)
+            }
             LoadResult::InterpError { errors, .. } => {
                 let msgs: Vec<String> = errors.iter().map(|e| format!("{e}")).collect();
                 err_json(&msgs.join("\n"))
