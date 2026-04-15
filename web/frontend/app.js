@@ -801,7 +801,7 @@ selOrientation.addEventListener('change', () => {
 
 const NODE_R = 8;
 const WIRE_R = 3;
-const PAD = 40;
+const PAD = 0;
 
 function layoutStrDiag(data, orientation = 'bt') {
   const n = data.vertices.length;
@@ -822,6 +822,9 @@ function layoutStrDiag(data, orientation = 'bt') {
     w: (wDist.bw[i] + 1) / (wDist.bw[i] + wDist.fw[i] + 2),
     h: (hDist.bw[i] + 1) / (hDist.bw[i] + hDist.fw[i] + 2),
   }));
+
+  // Separate exactly-coincident vertices.
+  separateOverlaps(pos, n);
 
   return { _raw: data, verts: data.vertices, pos, orientation, hAdj, hPred, wAdj, wPred, dAdj,
            numWires: data.num_wires, numNodes: data.num_nodes, depthEdges: data.depth.edges };
@@ -892,6 +895,38 @@ function longestPathDistances(n, succ, pred) {
   }
 
   return { bw, fw };
+}
+
+/// Nudge vertices that are exactly (or nearly exactly) coincident.
+/// Only acts on vertices closer than EPSILON; does not enforce a global minimum distance.
+function separateOverlaps(pos, n) {
+  const EPSILON = 0.05;   // threshold for "overlapping"
+  const SPREAD = 0.08;    // how far apart to push overlapping vertices
+
+  // Group coincident vertices.
+  const visited = new Array(n).fill(false);
+  for (let i = 0; i < n; i++) {
+    if (visited[i]) continue;
+    const group = [i];
+    for (let j = i + 1; j < n; j++) {
+      if (visited[j]) continue;
+      const dist = Math.hypot(pos[j].w - pos[i].w, pos[j].h - pos[i].h);
+      if (dist < EPSILON) {
+        group.push(j);
+        visited[j] = true;
+      }
+    }
+    if (group.length <= 1) continue;
+    // Spread the group on a small circle around their centroid.
+    const cw = group.reduce((s, k) => s + pos[k].w, 0) / group.length;
+    const ch = group.reduce((s, k) => s + pos[k].h, 0) / group.length;
+    const r = SPREAD * (group.length - 1) / (2 * Math.PI);
+    for (let gi = 0; gi < group.length; gi++) {
+      const angle = (2 * Math.PI * gi) / group.length;
+      pos[group[gi]].w = cw + r * Math.cos(angle);
+      pos[group[gi]].h = ch + r * Math.sin(angle);
+    }
+  }
 }
 
 // ── Rendering ────────────────────────────────────────────────────────────────
@@ -1063,6 +1098,16 @@ function topoSort(numWires, dAdj) {
 
 // ── Drag interaction ─────────────────────────────────────────────────────────
 
+/// Compute the virtual "other end" position for a boundary wire.
+/// The h-coordinate is the canvas edge (edgeH = 0 or 1).
+/// The w-coordinate is the nearest canvas w-edge (0 or 1) based on
+/// which side of the node the wire sits, so that horizontal dragging
+/// preserves the proportional distance to the edge.
+function boundaryEdgePos(wirePos, nodePos, edgeH) {
+  const edgeW = wirePos.w <= nodePos.w ? 0 : 1;
+  return { w: edgeW, h: edgeH };
+}
+
 visCanvas.addEventListener('mousedown', (e) => {
   if (!currentLayout) return;
   const rect = visCanvas.getBoundingClientRect();
@@ -1079,7 +1124,40 @@ visCanvas.addEventListener('mousedown', (e) => {
     if (d < bestD) { bestD = d; best = i; }
   }
   if (best >= 0) {
-    dragState = { idx: best };
+    const isNode = best >= L.numWires;
+    // For node drags, record connected wire indices and their offsets from the node.
+    let connectedWires = null;
+    if (isNode) {
+      connectedWires = [];
+      // For each wire connected to this node, find the other endpoint
+      // and record the interpolation ratio.
+      for (const wi of L.hPred[best]) {
+        if (wi >= L.numWires) continue;
+        const otherNodes = L.hPred[wi].filter(ni => ni !== best && ni >= L.numWires);
+        const otherPos = otherNodes.length > 0
+          ? L.pos[otherNodes[0]]
+          : boundaryEdgePos(L.pos[wi], L.pos[best], 0); // input edge at h=0
+        connectedWires.push({ idx: wi, otherPos });
+      }
+      for (const wi of L.hAdj[best]) {
+        if (wi >= L.numWires) continue;
+        const otherNodes = L.hAdj[wi].filter(ni => ni !== best && ni >= L.numWires);
+        const otherPos = otherNodes.length > 0
+          ? L.pos[otherNodes[0]]
+          : boundaryEdgePos(L.pos[wi], L.pos[best], 1); // output edge at h=1
+        connectedWires.push({ idx: wi, otherPos });
+      }
+      // Record initial ratios for each wire between dragged node and other end.
+      for (const cw of connectedWires) {
+        const totalW = cw.otherPos.w - L.pos[best].w;
+        const totalH = cw.otherPos.h - L.pos[best].h;
+        const wireW = L.pos[cw.idx].w - L.pos[best].w;
+        const wireH = L.pos[cw.idx].h - L.pos[best].h;
+        cw.ratioW = Math.abs(totalW) > 1e-9 ? wireW / totalW : 0.5;
+        cw.ratioH = Math.abs(totalH) > 1e-9 ? wireH / totalH : 0.5;
+      }
+    }
+    dragState = { idx: best, connectedWires };
     e.preventDefault();
   }
 });
@@ -1091,8 +1169,8 @@ visCanvas.addEventListener('mousemove', (e) => {
   const cw = rect.width, ch = rect.height;
 
   // Convert mouse to screen normalised [0,1], then to abstract (w, h).
-  const sx = Math.max(0, Math.min(1, (mx - PAD) / (cw - 2 * PAD)));
-  const sy = Math.max(0, Math.min(1, (my - PAD) / (ch - 2 * PAD)));
+  const sx = (mx - PAD) / (cw - 2 * PAD);
+  const sy = (my - PAD) / (ch - 2 * PAD);
   let abs = fromScreen(sx, sy, currentLayout.orientation);
 
   const L = currentLayout;
@@ -1118,6 +1196,18 @@ visCanvas.addEventListener('mousemove', (e) => {
   for (const p of (L.wPred[i] || [])) abs.w = resist(abs.w, L.pos[p].w, false);
 
   L.pos[i] = abs;
+
+  // When dragging a node, interpolate connected wire positions between
+  // the dragged node and the wire's other endpoint.
+  if (dragState.connectedWires) {
+    for (const cw of dragState.connectedWires) {
+      L.pos[cw.idx] = {
+        w: abs.w + cw.ratioW * (cw.otherPos.w - abs.w),
+        h: abs.h + cw.ratioH * (cw.otherPos.h - abs.h),
+      };
+    }
+  }
+
   resizeAndRender();
 });
 
@@ -1127,13 +1217,21 @@ visCanvas.addEventListener('mouseleave', () => { dragState = null; });
 // ── Canvas resize handle ─────────────────────────────────────────────────────
 
 let resizeDrag = null;
+const visResizeTop = document.getElementById('vis-resize-top');
 visResize.addEventListener('mousedown', (e) => {
-  resizeDrag = { startY: e.clientY, startH: visContainer.offsetHeight };
+  resizeDrag = { startY: e.clientY, startH: visContainer.offsetHeight, edge: 'bottom' };
+  e.preventDefault();
+});
+visResizeTop.addEventListener('mousedown', (e) => {
+  resizeDrag = { startY: e.clientY, startH: visContainer.offsetHeight, edge: 'top' };
   e.preventDefault();
 });
 document.addEventListener('mousemove', (e) => {
   if (!resizeDrag) return;
-  const newH = Math.max(80, resizeDrag.startH + (e.clientY - resizeDrag.startY));
+  const dy = e.clientY - resizeDrag.startY;
+  const newH = resizeDrag.edge === 'bottom'
+    ? Math.max(80, resizeDrag.startH + dy)
+    : Math.max(80, resizeDrag.startH - dy);
   visContainer.style.height = newH + 'px';
   resizeAndRender();
 });

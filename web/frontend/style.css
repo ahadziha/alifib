@@ -312,7 +312,6 @@ header {
 }
 .vis-resize-handle {
   position: absolute;
-  bottom: 0;
   left: 0;
   right: 0;
   height: 6px;
@@ -322,6 +321,8 @@ header {
 .vis-resize-handle:hover {
   background: rgba(124, 106, 242, 0.25);
 }
+.vis-resize-top { top: 0; }
+.vis-resize-bottom { bottom: 0; }
 
 /* ── Rewrite list ── */
 .rewrite-list {
