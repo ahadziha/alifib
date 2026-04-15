@@ -47,6 +47,11 @@ async function boot() {
     btnEval.disabled = false;
     btnEval.textContent = 'Evaluate';
     appendReplMsg('WASM engine ready. Evaluate a file to begin.', 'repl-dim');
+    appendReplMsg('', 'repl-dim');
+    const helpEl = document.createElement('div');
+    helpEl.className = 'repl-result';
+    helpEl.textContent = HELP_TEXT;
+    replOutput.appendChild(helpEl);
   } catch (e) {
     btnEval.textContent = 'Error';
     appendReplMsg('Failed to load WASM: ' + e, 'repl-result err');
@@ -177,6 +182,8 @@ function returnToSessionView() {
 // ── Session setup ─────────────────────────────────────────────────────────────
 
 btnStart.addEventListener('click', startSession);
+inpSource.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); startSession(); } });
+inpTarget.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); startSession(); } });
 
 function startSession() {
   if (!repl) return;
@@ -236,7 +243,7 @@ function handleCommand(raw) {
   const arg = rest.join(' ');
 
   if (cmd === 'help' || cmd === '?') {
-    appendReplEntry(raw, HELP_TEXT);
+    appendReplEntry(raw, { cls: 'repl-result', text: HELP_TEXT });
     return;
   }
 
@@ -320,7 +327,7 @@ function renderState(data) {
   out.push(dim('step:') + ' ' + hi(data.step_count));
 
   const cur = data.current;
-  if (cur) out.push(dim('current:') + ' ' + hi(cur.label || '—') + dim(` (dim ${cur.dim}, ${cur.cell_count} cell${cur.cell_count !== 1 ? 's' : ''})`));
+  if (cur) out.push(dim('current:') + ' ' + hi(cur.label || '—'));
 
   if (data.target) {
     const reached = data.target_reached;
@@ -476,18 +483,18 @@ btnClear.addEventListener('click', () => {
 });
 
 const HELP_TEXT = `Commands:
-  apply <n> (a)   apply rewrite choice n
-  undo (u)        undo last step
-  undo <n>        undo back to step n
-  undo all        undo all steps
-  restart         same as undo all
-  show / status   show current state
-  rules (r)       list all rewrite rules
-  history (h)     show move history
-  types           list all types in the file
-  type <name>     inspect a type
-  store <name>    store the current proof as a named diagram
-  help / ?        show this message
+  apply <n> (a)    apply rewrite choice n
+  undo (u)         undo last step
+  undo <n>         undo back to step n
+  undo all         undo all steps
+  restart          same as undo all
+  show / status    show current state
+  rules (r)        list all rewrite rules
+  history (h)      show move history
+  types            list all types in the file
+  type <name>      inspect a type
+  store <name>     store the current proof as a named diagram
+  help / ?         show this message
 
 Keyboard: ↑/↓ navigate history · Ctrl+Enter evaluate file`;
 
@@ -799,7 +806,7 @@ selOrientation.addEventListener('change', () => {
 
 // ── Layout ───────────────────────────────────────────────────────────────────
 
-const NODE_R = 8;
+const NODE_R = 6;
 const WIRE_R = 3;
 const PAD = 0;
 
@@ -967,7 +974,7 @@ function renderStrDiag(ctx, L, cw, ch) {
   for (const [u, v] of L.depthEdges) depthSet.add(u + ',' + v);
 
   const bgColor = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#1a1a1e';
-  const wireColor = '#5fa8d3';
+  const wireColor = '#d4d4d8';
   const BORDER_W = 6;
   const WIRE_W = 2;
 
@@ -1031,18 +1038,28 @@ function renderStrDiag(ctx, L, cw, ch) {
     const np = px[i];
     const nodePos = i - L.numWires;
     const highlighted = hlPositions && hlPositions.has(nodePos);
-    ctx.beginPath();
-    ctx.arc(np.x, np.y, NODE_R, 0, Math.PI * 2);
-    ctx.fillStyle = highlighted ? '#ffffff' : '#7c6af2';
-    ctx.fill();
-    ctx.strokeStyle = highlighted ? '#ffffff' : '#d4d4d8';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
+    if (highlighted) {
+      ctx.save();
+      ctx.shadowColor = '#ffffff';
+      ctx.shadowBlur = 14;
+      ctx.beginPath();
+      ctx.arc(np.x, np.y, NODE_R, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.restore();
+    } else {
+      ctx.beginPath();
+      ctx.arc(np.x, np.y, NODE_R, 0, Math.PI * 2);
+      ctx.fillStyle = '#7c6af2';
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
   }
 
   // Draw labels
   ctx.font = '11px system-ui, sans-serif';
-  const labelsAbove = !isVert; // lr/rl: labels above; bt/tb: labels to the right
   for (let i = 0; i < L.verts.length; i++) {
     const p = px[i];
     const label = L.verts[i].label;
@@ -1050,14 +1067,26 @@ function renderStrDiag(ctx, L, cw, ch) {
     const isNode = L.verts[i].kind === 'node';
     ctx.fillStyle = isNode ? '#f4f4f5' : '#a1a1aa';
     const r = isNode ? NODE_R : WIRE_R;
-    if (labelsAbove) {
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'bottom';
-      ctx.fillText(label, p.x, p.y - r - 3);
+    if (isNode) {
+      if (isVert) {
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(label, p.x + r + 3, p.y - 2);
+      } else {
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(label, p.x + 2, p.y - r - 3);
+      }
     } else {
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(label, p.x + r + 4, p.y);
+      if (isVert) {
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, p.x + r + 4, p.y);
+      } else {
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(label, p.x, p.y - r - 3);
+      }
     }
   }
 }
@@ -1175,7 +1204,7 @@ visCanvas.addEventListener('mousemove', (e) => {
 
   const L = currentLayout;
   const i = dragState.idx;
-  const RESIST = 0.12;
+  const RESIST = 0.0;
   const MIN_GAP = 0.04;
 
   // In abstract space: height successors have HIGHER h, predecessors have LOWER h.
@@ -1198,13 +1227,18 @@ visCanvas.addEventListener('mousemove', (e) => {
   L.pos[i] = abs;
 
   // When dragging a node, interpolate connected wire positions between
-  // the dragged node and the wire's other endpoint.
+  // the dragged node and the wire's other endpoint, then apply constraints.
   if (dragState.connectedWires) {
     for (const cw of dragState.connectedWires) {
-      L.pos[cw.idx] = {
-        w: abs.w + cw.ratioW * (cw.otherPos.w - abs.w),
-        h: abs.h + cw.ratioH * (cw.otherPos.h - abs.h),
-      };
+      let ww = abs.w + cw.ratioW * (cw.otherPos.w - abs.w);
+      let wh = abs.h + cw.ratioH * (cw.otherPos.h - abs.h);
+      const wi = cw.idx;
+      // Apply the wire's own constraints.
+      for (const s of L.hAdj[wi])  wh = resist(wh, L.pos[s].h, true);
+      for (const p of L.hPred[wi]) wh = resist(wh, L.pos[p].h, false);
+      for (const s of (L.wAdj[wi] || []))  ww = resist(ww, L.pos[s].w, true);
+      for (const p of (L.wPred[wi] || [])) ww = resist(ww, L.pos[p].w, false);
+      L.pos[wi] = { w: ww, h: wh };
     }
   }
 
