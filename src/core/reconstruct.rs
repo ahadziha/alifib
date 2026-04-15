@@ -73,36 +73,19 @@ fn build_paste_tree(
     let k = k as usize;
     let (mf_graph, node_map) = graph::maximal_flow_graph(&pd.shape, k);
 
-    // Enumerate topological sorts.
-    let sorts = match graph::all_topological_sorts(&mf_graph, Some(10_000)) {
-        graph::TopoSortResult::Sorts(s) if !s.is_empty() => s,
-        graph::TopoSortResult::HasCycle => {
-            return Err(Error::new("reconstruction failed: maxflow graph has a cycle"));
-        }
-        graph::TopoSortResult::LimitExceeded => {
-            return Err(Error::new("reconstruction failed: too many topological sorts"));
-        }
-        _ => {
-            return Err(Error::new("reconstruction failed: no topological sorts"));
-        }
-    };
-
     if pd.shape.dim > 3 {
-        // dim > 3: try each topological sort; on failure, try the next.
-        for sort in &sorts {
-            let tree = try_sort(pd, complex, &node_map, sort, k);
-            if let Ok(t) = tree {
-                match Diagram::realise_tree(&t, complex) {
-                    Ok(d) if check_sizes(pd, &d).is_ok() => return Ok(t),
-                    _ => continue,
-                }
-            }
-        }
-        Err(Error::new("reconstruction failed: all topological sorts exhausted"))
+        // dim > 3: try topological sorts lazily; stop at the first that works.
+        graph::try_topological_sorts(&mf_graph, 10_000, |sort| {
+            let tree = try_sort(pd, complex, &node_map, sort, k).ok()?;
+            let d = Diagram::realise_tree(&tree, complex).ok()?;
+            check_sizes(pd, &d).ok()?;
+            Some(tree)
+        }).map_err(|msg| Error::new(format!("reconstruction failed: {}", msg)))
     } else {
-        // dim <= 3: the topological sort is unique up to rewriting, so no backtracking.
-        let sort = &sorts[0];
-        try_sort(pd, complex, &node_map, sort, k)
+        // dim <= 3: a single topological sort suffices.
+        let sort = graph::topological_sort(&mf_graph)
+            .map_err(|_| Error::new("reconstruction failed: maxflow graph has a cycle"))?;
+        try_sort(pd, complex, &node_map, &sort, k)
     }
 }
 
