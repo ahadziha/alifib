@@ -905,7 +905,6 @@ function layoutStrDiag(data, orientation = 'bt') {
     h: (hDist.bw[i] + 1) / (hDist.bw[i] + hDist.fw[i] + 2),
   }));
 
-  // Separate exactly-coincident vertices.
   separateOverlaps(pos, n);
 
   return { _raw: data, verts: data.vertices, pos, orientation, hAdj, hPred, wAdj, wPred, dAdj,
@@ -982,7 +981,7 @@ function longestPathDistances(n, succ, pred) {
 /// Nudge vertices that are exactly (or nearly exactly) coincident.
 /// Only acts on vertices closer than EPSILON; does not enforce a global minimum distance.
 function separateOverlaps(pos, n) {
-  const EPSILON = 0.05;   // threshold for "overlapping"
+  const EPSILON = 0.001;  // threshold for nearly-coincident vertices
   const SPREAD = 0.08;    // how far apart to push overlapping vertices
 
   // Group coincident vertices.
@@ -1252,11 +1251,8 @@ visCanvas.addEventListener('mousemove', (e) => {
 
   const L = currentLayout;
   const i = dragState.idx;
-  const MIN_GAP = 0.04;
-
   function clamp(val, limit, mustBeLess) {
-    const boundary = mustBeLess ? limit - MIN_GAP : limit + MIN_GAP;
-    if (mustBeLess ? val > boundary : val < boundary) return boundary;
+    if (mustBeLess ? val > limit : val < limit) return limit;
     return val;
   }
 
