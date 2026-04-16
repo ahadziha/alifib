@@ -1,0 +1,76 @@
+(*  
+    A minimal setup for the topological Eckmann-Hilton argument.
+    In type TwoCells, construct a diagram with source A.cell B.cell
+    and target B.cell A.cell. 
+*)
+
+@Type
+Equation <<= {
+    s0,
+    t0,
+    
+    s1: s0 -> t0,
+    t1: s0 -> t0,
+    
+    lhs: s1 -> t1,
+    rhs: s1 -> t1,
+    
+    dir: lhs -> rhs,
+    inv: rhs -> lhs
+},
+
+Unit <<= {
+    pt,
+    
+    ob: pt -> pt,
+
+    id: ob -> ob,
+
+    attach Id_id :: Equation along [
+        lhs => id id,
+        rhs => id
+    ],
+
+    merge: ob ob -> ob,
+    split: ob -> ob ob,
+
+    attach Split_merge :: Equation along [
+        lhs => split merge,
+        rhs => id
+    ]
+},
+
+Cell <<= Unit {
+    cell: ob -> ob,
+
+    attach Cell_id :: Equation along [
+        lhs => cell id,
+        rhs => cell
+    ],
+    attach Id_cell :: Equation along [
+        lhs => id cell,
+        rhs => cell
+    ],
+
+    attach Left_split :: Equation along [
+        lhs => cell split,
+        rhs => split (cell ob)
+    ],
+    attach Right_split :: Equation along [
+        lhs => cell split,
+        rhs => split (ob cell)
+    ],
+    attach Left_merge :: Equation along [
+        lhs => merge cell,
+        rhs => (cell ob) merge
+    ],
+    attach Right_merge :: Equation along [
+        lhs => merge cell,
+        rhs => (ob cell) merge
+    ]
+},
+
+TwoCells <<= Unit {
+    attach A :: Cell along [ Unit => Unit ],
+    attach B :: Cell along [ Unit => Unit ]
+}

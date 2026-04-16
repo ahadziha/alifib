@@ -500,12 +500,81 @@ Keyboard: ↑/↓ navigate history · Ctrl+Enter evaluate file`;
 
 // ── Default example ───────────────────────────────────────────────────────────
 
-editor.value = `@Type
-Semigroup <<= {
-  pt,
-  ob: pt -> pt,
-  m: ob ob -> ob,
-  assoc: (m ob) m -> (ob m) m
+editor.value = `(*
+    A minimal setup for the topological Eckmann-Hilton argument.
+    In type TwoCells, construct a diagram with source A.cell B.cell
+    and target B.cell A.cell.
+*)
+
+@Type
+Equation <<= {
+    s0,
+    t0,
+
+    s1: s0 -> t0,
+    t1: s0 -> t0,
+
+    lhs: s1 -> t1,
+    rhs: s1 -> t1,
+
+    dir: lhs -> rhs,
+    inv: rhs -> lhs
+},
+
+Unit <<= {
+    pt,
+
+    ob: pt -> pt,
+
+    id: ob -> ob,
+
+    attach Id_id :: Equation along [
+        lhs => id id,
+        rhs => id
+    ],
+
+    merge: ob ob -> ob,
+    split: ob -> ob ob,
+
+    attach Split_merge :: Equation along [
+        lhs => split merge,
+        rhs => id
+    ]
+},
+
+Cell <<= Unit {
+    cell: ob -> ob,
+
+    attach Cell_id :: Equation along [
+        lhs => cell id,
+        rhs => cell
+    ],
+    attach Id_cell :: Equation along [
+        lhs => id cell,
+        rhs => cell
+    ],
+
+    attach Left_split :: Equation along [
+        lhs => cell split,
+        rhs => split (cell ob)
+    ],
+    attach Right_split :: Equation along [
+        lhs => cell split,
+        rhs => split (ob cell)
+    ],
+    attach Left_merge :: Equation along [
+        lhs => merge cell,
+        rhs => (cell ob) merge
+    ],
+    attach Right_merge :: Equation along [
+        lhs => merge cell,
+        rhs => (ob cell) merge
+    ]
+},
+
+TwoCells <<= Unit {
+    attach A :: Cell along [ Unit => Unit ],
+    attach B :: Cell along [ Unit => Unit ]
 }
 `;
 
@@ -968,10 +1037,10 @@ function renderStrDiag(ctx, L, cw, ch) {
     return { x: PAD + s.x * (cw - 2 * PAD), y: PAD + s.y * (ch - 2 * PAD) };
   });
 
-  // Depth ordering for wires (earlier in topo sort = drawn first = behind).
-  const wireOrder = topoSort(L.numWires, L.dAdj);
-  const depthSet = new Set();
-  for (const [u, v] of L.depthEdges) depthSet.add(u + ',' + v);
+  // Depth ordering: draw wires front-to-back (reversed topo sort of depth graph).
+  // Every wire gets a background-colour contour; later-drawn (deeper) wires'
+  // contours occlude earlier (shallower) wires' lines, creating crossing gaps.
+  const wireOrder = topoSort(L.numWires, L.dAdj).reverse();
 
   const bgColor = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#1a1a1e';
   const wireColor = '#d4d4d8';
@@ -980,11 +1049,9 @@ function renderStrDiag(ctx, L, cw, ch) {
 
   for (const wi of wireOrder) {
     const wp = px[wi];
-    const preds = L.hPred[wi]; // nodes whose output face is this wire
-    const succs = L.hAdj[wi];  // nodes whose input face is this wire
-    const isBehind = wireOrder.some(wj => depthSet.has(wi + ',' + wj));
+    const preds = L.hPred[wi];
+    const succs = L.hAdj[wi];
 
-    // Determine source (input) and target (output) points for this wire.
     const sources = preds.length > 0
       ? preds.map(pi => ({ p: px[pi], boundary: false }))
       : [{ p: entryPoint(wp, o, 'input', cw, ch), boundary: true }];
@@ -992,28 +1059,22 @@ function renderStrDiag(ctx, L, cw, ch) {
       ? succs.map(si => ({ p: px[si], boundary: false }))
       : [{ p: entryPoint(wp, o, 'output', cw, ch), boundary: true }];
 
-    // Draw each source→midpoint→target wire as two joined quadratic Bezier halves.
-    // Control points ensure: tangent is along the main (flow) axis at the midpoint,
-    // and along the cross axis at each node (flattest at the node).
     for (const src of sources) {
       for (const tgt of targets) {
-        // Control point for source→midpoint half:
-        //   same cross-axis as midpoint, same main-axis as source
         const q0 = isVert ? { x: wp.x, y: src.p.y } : { x: src.p.x, y: wp.y };
-        // Control point for midpoint→target half:
-        //   same cross-axis as midpoint, same main-axis as target
         const q1 = isVert ? { x: wp.x, y: tgt.p.y } : { x: tgt.p.x, y: wp.y };
 
-        if (isBehind) {
-          ctx.beginPath();
-          ctx.moveTo(src.p.x, src.p.y);
-          ctx.quadraticCurveTo(q0.x, q0.y, wp.x, wp.y);
-          ctx.quadraticCurveTo(q1.x, q1.y, tgt.p.x, tgt.p.y);
-          ctx.strokeStyle = bgColor;
-          ctx.lineWidth = WIRE_W + BORDER_W;
-          ctx.lineCap = 'round';
-          ctx.stroke();
-        }
+        // Background contour (every wire gets one — creates crossing gaps).
+        ctx.beginPath();
+        ctx.moveTo(src.p.x, src.p.y);
+        ctx.quadraticCurveTo(q0.x, q0.y, wp.x, wp.y);
+        ctx.quadraticCurveTo(q1.x, q1.y, tgt.p.x, tgt.p.y);
+        ctx.strokeStyle = bgColor;
+        ctx.lineWidth = WIRE_W + BORDER_W;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+
+        // Main wire.
         ctx.beginPath();
         ctx.moveTo(src.p.x, src.p.y);
         ctx.quadraticCurveTo(q0.x, q0.y, wp.x, wp.y);
