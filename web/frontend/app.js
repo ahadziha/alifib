@@ -699,8 +699,12 @@ function buildRewriteList(rewrites) {
   });
 }
 
+let savedLayoutBeforePreview = null;
+
 function showRewritePreview(choice) {
   if (!repl) return;
+  // Save the current layout (including any drag modifications) before switching.
+  savedLayoutBeforePreview = currentLayout;
   const result = JSON.parse(repl.get_rewrite_preview_strdiag(choice));
   if (result.status !== 'ok') return;
   currentLayout = layoutStrDiag(result.data, selOrientation.value);
@@ -709,13 +713,15 @@ function showRewritePreview(choice) {
 }
 
 function endRewritePreview() {
-  // Restore the current session diagram with match highlight.
-  if (!sessionStrdiag) return;
-  currentLayout = layoutStrDiag(sessionStrdiag, selOrientation.value);
-  if (selectedRewrite !== null && lastRewriteData && lastRewriteData[selectedRewrite]) {
-    currentLayout._highlightPositions = lastRewriteData[selectedRewrite].match_positions;
+  // Restore the saved layout (with any drag modifications intact).
+  if (savedLayoutBeforePreview) {
+    currentLayout = savedLayoutBeforePreview;
+    savedLayoutBeforePreview = null;
+    if (selectedRewrite !== null && lastRewriteData && lastRewriteData[selectedRewrite]) {
+      currentLayout._highlightPositions = lastRewriteData[selectedRewrite].match_positions;
+    }
+    resizeAndRender();
   }
-  resizeAndRender();
 }
 
 function performUndo() {
@@ -1271,9 +1277,8 @@ visCanvas.addEventListener('mousemove', (e) => {
     if (inf === 0) continue;
     let newW = dragState.initPos[v].w + dw * inf;
     let newH = dragState.initPos[v].h + dh * inf;
-    // Clamp to this vertex's own constraints (using current positions of
-    // non-influenced neighbours and initial positions of influenced ones
-    // shifted by their own influence).
+    // Clamp to this vertex's own constraints (using projected positions of
+    // neighbours shifted by their own influence).
     for (const s of L.hAdj[v]) {
       const sH = dragState.initPos[s].h + dh * dragState.influence[s];
       newH = clamp(newH, sH, true);
