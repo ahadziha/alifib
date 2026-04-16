@@ -1188,16 +1188,6 @@ function topoSort(numWires, dAdj) {
 
 // ── Drag interaction ─────────────────────────────────────────────────────────
 
-/// Compute the virtual "other end" position for a boundary wire.
-/// The h-coordinate is the canvas edge (edgeH = 0 or 1).
-/// The w-coordinate is the nearest canvas w-edge (0 or 1) based on
-/// which side of the node the wire sits, so that horizontal dragging
-/// preserves the proportional distance to the edge.
-function boundaryEdgePos(wirePos, nodePos, edgeH) {
-  const edgeW = wirePos.w <= nodePos.w ? 0 : 1;
-  return { w: edgeW, h: edgeH };
-}
-
 visCanvas.addEventListener('mousedown', (e) => {
   if (!currentLayout) return;
   const rect = visCanvas.getBoundingClientRect();
@@ -1214,40 +1204,32 @@ visCanvas.addEventListener('mousedown', (e) => {
     if (d < bestD) { bestD = d; best = i; }
   }
   if (best >= 0) {
-    const isNode = best >= L.numWires;
-    // For node drags, record connected wire indices and their offsets from the node.
-    let connectedWires = null;
-    if (isNode) {
-      connectedWires = [];
-      // For each wire connected to this node, find the other endpoint
-      // and record the interpolation ratio.
-      for (const wi of L.hPred[best]) {
-        if (wi >= L.numWires) continue;
-        const otherNodes = L.hPred[wi].filter(ni => ni !== best && ni >= L.numWires);
-        const otherPos = otherNodes.length > 0
-          ? L.pos[otherNodes[0]]
-          : boundaryEdgePos(L.pos[wi], L.pos[best], 0); // input edge at h=0
-        connectedWires.push({ idx: wi, otherPos });
+    // BFS from dragged vertex through height graph to compute influence weights.
+    const n = L.verts.length;
+    const influence = new Array(n).fill(0);
+    influence[best] = 1;
+    const DECAY = 0.5;
+    const visited = new Set([best]);
+    let frontier = [best];
+    let weight = DECAY;
+    while (frontier.length > 0 && weight > 0.01) {
+      const next = [];
+      for (const v of frontier) {
+        // Height graph neighbours (both directions).
+        for (const nb of [...(L.hAdj[v] || []), ...(L.hPred[v] || [])]) {
+          if (!visited.has(nb)) {
+            visited.add(nb);
+            influence[nb] = weight;
+            next.push(nb);
+          }
+        }
       }
-      for (const wi of L.hAdj[best]) {
-        if (wi >= L.numWires) continue;
-        const otherNodes = L.hAdj[wi].filter(ni => ni !== best && ni >= L.numWires);
-        const otherPos = otherNodes.length > 0
-          ? L.pos[otherNodes[0]]
-          : boundaryEdgePos(L.pos[wi], L.pos[best], 1); // output edge at h=1
-        connectedWires.push({ idx: wi, otherPos });
-      }
-      // Record initial ratios for each wire between dragged node and other end.
-      for (const cw of connectedWires) {
-        const totalW = cw.otherPos.w - L.pos[best].w;
-        const totalH = cw.otherPos.h - L.pos[best].h;
-        const wireW = L.pos[cw.idx].w - L.pos[best].w;
-        const wireH = L.pos[cw.idx].h - L.pos[best].h;
-        cw.ratioW = Math.abs(totalW) > 1e-9 ? wireW / totalW : 0.5;
-        cw.ratioH = Math.abs(totalH) > 1e-9 ? wireH / totalH : 0.5;
-      }
+      frontier = next;
+      weight *= DECAY;
     }
-    dragState = { idx: best, connectedWires };
+    // Record initial positions for all influenced vertices.
+    const initPos = L.pos.map(p => ({ w: p.w, h: p.h }));
+    dragState = { idx: best, influence, initPos };
     e.preventDefault();
   }
 });
@@ -1258,49 +1240,57 @@ visCanvas.addEventListener('mousemove', (e) => {
   const mx = e.clientX - rect.left, my = e.clientY - rect.top;
   const cw = rect.width, ch = rect.height;
 
-  // Convert mouse to screen normalised [0,1], then to abstract (w, h).
   const sx = (mx - PAD) / (cw - 2 * PAD);
   const sy = (my - PAD) / (ch - 2 * PAD);
-  let abs = fromScreen(sx, sy, currentLayout.orientation);
+  const mouseAbs = fromScreen(sx, sy, currentLayout.orientation);
 
   const L = currentLayout;
   const i = dragState.idx;
-  const RESIST = 0.0;
   const MIN_GAP = 0.04;
 
-  // In abstract space: height successors have HIGHER h, predecessors have LOWER h.
-  // Width successors have HIGHER w, predecessors have LOWER w.
-  // So: my h must be < successor's h, and > predecessor's h. Same for w.
-
-  function resist(val, limit, mustBeLess) {
+  function clamp(val, limit, mustBeLess) {
     const boundary = mustBeLess ? limit - MIN_GAP : limit + MIN_GAP;
-    if (mustBeLess ? val > boundary : val < boundary) {
-      return boundary + (val - boundary) * RESIST;
-    }
+    if (mustBeLess ? val > boundary : val < boundary) return boundary;
     return val;
   }
 
-  for (const s of L.hAdj[i])  abs.h = resist(abs.h, L.pos[s].h, true);
-  for (const p of L.hPred[i]) abs.h = resist(abs.h, L.pos[p].h, false);
-  for (const s of (L.wAdj[i] || []))  abs.w = resist(abs.w, L.pos[s].w, true);
-  for (const p of (L.wPred[i] || [])) abs.w = resist(abs.w, L.pos[p].w, false);
+  // Compute the delta of the dragged vertex (clamped by its own constraints).
+  let dragW = mouseAbs.w;
+  let dragH = mouseAbs.h;
+  for (const s of L.hAdj[i])  dragH = clamp(dragH, dragState.initPos[s].h, true);
+  for (const p of L.hPred[i]) dragH = clamp(dragH, dragState.initPos[p].h, false);
+  for (const s of (L.wAdj[i] || []))  dragW = clamp(dragW, dragState.initPos[s].w, true);
+  for (const p of (L.wPred[i] || [])) dragW = clamp(dragW, dragState.initPos[p].w, false);
 
-  L.pos[i] = abs;
+  const dw = dragW - dragState.initPos[i].w;
+  const dh = dragH - dragState.initPos[i].h;
 
-  // When dragging a node, interpolate connected wire positions between
-  // the dragged node and the wire's other endpoint, then apply constraints.
-  if (dragState.connectedWires) {
-    for (const cw of dragState.connectedWires) {
-      let ww = abs.w + cw.ratioW * (cw.otherPos.w - abs.w);
-      let wh = abs.h + cw.ratioH * (cw.otherPos.h - abs.h);
-      const wi = cw.idx;
-      // Apply the wire's own constraints.
-      for (const s of L.hAdj[wi])  wh = resist(wh, L.pos[s].h, true);
-      for (const p of L.hPred[wi]) wh = resist(wh, L.pos[p].h, false);
-      for (const s of (L.wAdj[wi] || []))  ww = resist(ww, L.pos[s].w, true);
-      for (const p of (L.wPred[wi] || [])) ww = resist(ww, L.pos[p].w, false);
-      L.pos[wi] = { w: ww, h: wh };
+  // Apply influence-weighted delta to all vertices, then clamp constraints.
+  for (let v = 0; v < L.verts.length; v++) {
+    const inf = dragState.influence[v];
+    if (inf === 0) continue;
+    let newW = dragState.initPos[v].w + dw * inf;
+    let newH = dragState.initPos[v].h + dh * inf;
+    // Clamp to this vertex's own constraints (using current positions of
+    // non-influenced neighbours and initial positions of influenced ones
+    // shifted by their own influence).
+    for (const s of L.hAdj[v]) {
+      const sH = dragState.initPos[s].h + dh * dragState.influence[s];
+      newH = clamp(newH, sH, true);
     }
+    for (const p of L.hPred[v]) {
+      const pH = dragState.initPos[p].h + dh * dragState.influence[p];
+      newH = clamp(newH, pH, false);
+    }
+    for (const s of (L.wAdj[v] || [])) {
+      const sW = dragState.initPos[s].w + dw * dragState.influence[s];
+      newW = clamp(newW, sW, true);
+    }
+    for (const p of (L.wPred[v] || [])) {
+      const pW = dragState.initPos[p].w + dw * dragState.influence[p];
+      newW = clamp(newW, pW, false);
+    }
+    L.pos[v] = { w: newW, h: newH };
   }
 
   resizeAndRender();
