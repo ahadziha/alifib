@@ -552,64 +552,55 @@ fn interpret_sequence_as_term(
                     let block_hole_ids: Vec<_> =
                         result.holes[start..prev_hole_count].iter().map(|h| h.id).collect();
 
-                    // Consistent paste dimension from both neighbours.
-                    let k = match hole_block_left.as_ref() {
-                        Some(left_diag) => left_diag.top_dim().min(d_right.top_dim()).saturating_sub(1),
-                        None => d_right.top_dim().saturating_sub(1),
+                    // Infer hole dimension from the left neighbour (left-associative).
+                    let n_hole = match hole_block_left.as_ref() {
+                        Some(left_diag) => left_diag.top_dim(),
+                        None => d_right.top_dim(),
                     };
 
-                    // Deferred source constraint: only the *first* hole in the block
-                    // has its source determined by the left neighbour.  For a block of
-                    // multiple holes `a ?₁ ?₂ … ?ₙ b`, target(?ₙ₋₁) = source(?ₙ) is
-                    // unknown; over-constraining the inner holes produces false
-                    // inconsistencies.
+                    // Source boundary: paste with left at min(left, hole) - 1.
                     if let (Some(left_diag), Some(&first_id)) =
-                        (&hole_block_left, block_hole_ids.first())
-                        && let Ok(out_bd) =
-                            Diagram::boundary_normal(DiagramSign::Target, k, left_diag) {
-                        result.constraints.push(Constraint::BoundaryEq {
-                            hole: first_id,
-                            slot: BdSlot { sign: DiagramSign::Source, dim: k },
-                            diagram: out_bd,
-                            scope: scope_arc.clone(),
-                            origin: ConstraintOrigin::Paste { paste_dim: k },
-                        });
+                        (&hole_block_left, block_hole_ids.first()) {
+                        let k_left = left_diag.top_dim().min(n_hole).saturating_sub(1);
+                        if let Ok(out_bd) =
+                            Diagram::boundary_normal(DiagramSign::Target, k_left, left_diag) {
+                            result.constraints.push(Constraint::BoundaryEq {
+                                hole: first_id,
+                                slot: BdSlot { sign: DiagramSign::Source, dim: k_left },
+                                diagram: out_bd,
+                                scope: scope_arc.clone(),
+                                origin: ConstraintOrigin::Paste { paste_dim: k_left },
+                            });
+                        }
                     }
 
-                    // Target constraint: only the *last* hole in the block has its
-                    // target determined by the right neighbour.
-                    if let Some(&last_id) = block_hole_ids.last()
-                        && let Ok(in_bd) =
-                            Diagram::boundary_normal(DiagramSign::Source, k, &d_right) {
-                        result.constraints.push(Constraint::BoundaryEq {
-                            hole: last_id,
-                            slot: BdSlot { sign: DiagramSign::Target, dim: k },
-                            diagram: in_bd,
-                            scope: scope_arc.clone(),
-                            origin: ConstraintOrigin::Paste { paste_dim: k },
-                        });
+                    // Target boundary: paste with right at min(hole, right) - 1.
+                    if let Some(&last_id) = block_hole_ids.last() {
+                        let k_right = n_hole.min(d_right.top_dim()).saturating_sub(1);
+                        if let Ok(in_bd) =
+                            Diagram::boundary_normal(DiagramSign::Source, k_right, &d_right) {
+                            result.constraints.push(Constraint::BoundaryEq {
+                                hole: last_id,
+                                slot: BdSlot { sign: DiagramSign::Target, dim: k_right },
+                                diagram: in_bd,
+                                scope: scope_arc.clone(),
+                                origin: ConstraintOrigin::Paste { paste_dim: k_right },
+                            });
+                        }
                     }
 
-                    // Dimension constraints: holes must match both neighbours' dimensions.
-                    // Emitting from both sides means a left/right dimension mismatch (which
-                    // would make the paste ill-typed) is caught as a DimEq inconsistency.
-                    let n_right = d_right.top_dim();
+                    // Dimension constraint: infer from left neighbour (left-associative),
+                    // falling back to right if there is no left.
+                    let n_infer = match hole_block_left.as_ref() {
+                        Some(left_diag) => left_diag.top_dim(),
+                        None => d_right.top_dim(),
+                    };
                     for &id in &block_hole_ids {
                         result.constraints.push(Constraint::DimEq {
                             hole: id,
-                            dim: n_right,
-                            origin: ConstraintOrigin::Paste { paste_dim: k },
+                            dim: n_infer,
+                            origin: ConstraintOrigin::Paste { paste_dim: n_infer.saturating_sub(1) },
                         });
-                    }
-                    if let Some(ref left_diag) = hole_block_left {
-                        let n_left = left_diag.top_dim();
-                        for &id in &block_hole_ids {
-                            result.constraints.push(Constraint::DimEq {
-                                hole: id,
-                                dim: n_left,
-                                origin: ConstraintOrigin::Paste { paste_dim: k },
-                            });
-                        }
                     }
 
                     last_hole_block_start = None;

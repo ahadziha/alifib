@@ -192,20 +192,41 @@ pub fn render_diagram(diagram: &Diagram, scope: &Complex) -> String {
     render_diagram_tree(diagram, scope)
 }
 
-/// Render a partial boundary: each top-level label of `boundary` is mapped
-/// through `map` and the result rendered against `scope`. Labels outside the
-/// domain of `map` are rendered as `_` (unknown but distinct from a hole `?`).
+/// Render a partial boundary: uses the paste tree structure of `boundary`,
+/// mapping each leaf through `map`. Leaves outside the domain of `map` are
+/// rendered as `_`. Chains at the same dimension are flattened.
 pub fn render_boundary_partial(boundary: &Diagram, map: &PartialMap, scope: &Complex) -> String {
-    match boundary.labels_at(boundary.top_dim()) {
-        Some(labels) if !labels.is_empty() => labels
-            .iter()
-            .map(|tag| match map.image(tag) {
+    let n = boundary.top_dim();
+    match boundary.tree(Sign::Source, n) {
+        Some(tree) => render_tree_partial(tree, map, scope),
+        None => "_".to_string(),
+    }
+}
+
+fn render_tree_partial(tree: &PasteTree, map: &PartialMap, scope: &Complex) -> String {
+    match tree {
+        PasteTree::Leaf(tag) => {
+            match map.image(tag) {
                 Ok(img) => render_diagram(img, scope),
                 Err(_) => "_".to_string(),
-            })
-            .collect::<Vec<_>>()
-            .join(" "),
-        _ => "_".to_string(),
+            }
+        }
+        PasteTree::Node { dim, .. } => {
+            let k = *dim;
+            let mut parts = Vec::new();
+            collect_chain_partial(tree, k, map, scope, &mut parts);
+            format!("({})", parts.join(&format!(" #{} ", k)))
+        }
+    }
+}
+
+fn collect_chain_partial(tree: &PasteTree, k: usize, map: &PartialMap, scope: &Complex, parts: &mut Vec<String>) {
+    match tree {
+        PasteTree::Node { dim, left, right } if *dim == k => {
+            collect_chain_partial(left, k, map, scope, parts);
+            collect_chain_partial(right, k, map, scope, parts);
+        }
+        _ => parts.push(render_tree_partial(tree, map, scope)),
     }
 }
 
