@@ -271,6 +271,17 @@ impl WasmRepl {
                 }
             }
 
+            Request::Homology { name } => {
+                let store = match self.store.as_ref() {
+                    Some(s) => s,
+                    None => return err_json("no source loaded"),
+                };
+                match alifib::interactive::protocol::build_homology_response(store, SOURCE_PATH, &name) {
+                    Ok(data) => ok_json(data),
+                    Err(msg) => err_json(&msg),
+                }
+            }
+
             Request::Init { .. }
             | Request::Resume { .. }
             | Request::Save { .. }

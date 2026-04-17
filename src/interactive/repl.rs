@@ -19,7 +19,7 @@
 //! @ <type>         Select a type from the loaded file
 //! types            List all types in the file
 //! type <name>      Inspect a type: generators, diagrams, maps
-//! cell <name>      Inspect a generator or let-binding with boundary
+//! homology <name>  Compute cellular homology of a type
 //! source <name>    Set the source diagram  (requires type to be selected)
 //! target <name>    Set the target diagram  (requires type to be selected)
 //! status / show    Session state, or setup state when idle
@@ -39,7 +39,7 @@
 //! rules            List rewrite rules at current dimension  (alias: r)
 //! history          Show the move history                 (alias: h)
 //! proof            Show the running proof diagram        (alias: p)
-//! store <name>     Register current proof as a first-class generator
+//! store <name>     Store the current proof as a named diagram
 //! save <path>      Write source file with stored definitions appended
 //! load <path>      Load and replay a session file        (alias: l)
 //! ```
@@ -248,6 +248,9 @@ pub fn run_repl(
                             };
                         dispatch_print_type(&store, &canonical_path, &name, live_tc, &display);
                     }
+                    Cmd::Homology(name) => {
+                        dispatch_homology(&store, &canonical_path, &name, &display);
+                    }
                     Cmd::Clear => {
                         engine = None;
                         type_complex = None;
@@ -378,7 +381,7 @@ pub fn dispatch_rewrite_command(
         Cmd::Clear | Cmd::Source(_) | Cmd::Target(_) | Cmd::AtExpr(_) | Cmd::Types | Cmd::PrintFile => {
             display.error("command not available here");
         }
-        Cmd::Type(_) => display.error("command not available here"),
+        Cmd::Type(_) | Cmd::Homology(_) => display.error("command not available here"),
         Cmd::Status => show_state(engine, display),
         cmd => dispatch_engine_cmd(engine, cmd, display),
     }
@@ -433,6 +436,25 @@ fn handle_at_command(
                         store, source_file, display, engine,
                     );
                 }
+            }
+        }
+    }
+}
+
+/// Compute and display cellular homology of a type.
+fn dispatch_homology(store: &GlobalStore, canonical_path: &str, name: &str, display: &Display) {
+    use super::engine::resolve_type;
+    match resolve_type(store, canonical_path, name) {
+        Err(e) => display.error(&e),
+        Ok(tc) => {
+            let h = crate::core::homology::compute_homology(&tc);
+            if h.groups.is_empty() {
+                display.meta("  (no generators)");
+            } else {
+                for (dim, group) in &h.groups {
+                    display.inspect(&format!("  H_{} = {}", dim, group));
+                }
+                display.meta(&format!("  χ = {}", h.euler_characteristic));
             }
         }
     }
@@ -896,7 +918,7 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
         Cmd::Quit => {}   // handled by caller
         // These are all handled before dispatch_engine_cmd is reached
         Cmd::Clear | Cmd::Source(_) | Cmd::Target(_) | Cmd::AtExpr(_) | Cmd::Types
-        | Cmd::PrintFile | Cmd::Type(_) | Cmd::Status
+        | Cmd::PrintFile | Cmd::Type(_) | Cmd::Homology(_) | Cmd::Status
         | Cmd::Store(_) | Cmd::Save(_) | Cmd::Unknown(_) | Cmd::UsageError(_) => unreachable!(),
     }
 }
@@ -907,6 +929,7 @@ fn print_help(display: &Display) {
          \x20 @ <type>         Select a type from the loaded file\n\
          \x20 types            List all types in the file\n\
          \x20 type <name>      Inspect a type: generators, diagrams, maps\n\
+         \x20 homology <name>  Compute cellular homology of a type\n\
          \x20 source <name>    Set the source diagram  (requires type to be selected)\n\
          \x20 target <name>    Set the target diagram  (requires type to be selected)\n\
          \x20 status / show    Session state, or setup state when idle\n\
@@ -964,12 +987,14 @@ enum Cmd {
     History,
     /// `proof` — display the running proof cell.
     Proof,
-    /// `store <name>` — register the current proof as a local definition.
+    /// `store <name>` — store the current proof as a named diagram.
     Store(String),
     /// `save <path>` — write the original file with stored definitions appended.
     Save(String),
     /// `load <path>` — load and replay a session file.
     Load(String),
+    /// `homology <name>` — compute cellular homology of a type.
+    Homology(String),
     Help,
     Quit,
     /// Unrecognised command word.
@@ -1001,6 +1026,10 @@ fn parse_command(line: &str) -> Cmd {
         "type" => {
             if rest.is_empty() { Cmd::UsageError("type <name>".to_owned()) }
             else { Cmd::Type(rest.to_owned()) }
+        }
+        "homology" => {
+            if rest.is_empty() { Cmd::UsageError("homology <name>".to_owned()) }
+            else { Cmd::Homology(rest.to_owned()) }
         }
         "source" => {
             if rest.is_empty() { Cmd::UsageError("source <name>".to_owned()) }

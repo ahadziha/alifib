@@ -296,6 +296,9 @@ function buildCommand(cmd, arg, raw) {
     case 'type':
       if (!arg) { appendReplEntry(raw, formatError('usage: type <name>')); return null; }
       return JSON.stringify({ command: 'type', name: arg });
+    case 'homology':
+      if (!arg) { appendReplEntry(raw, formatError('usage: homology <name>')); return null; }
+      return JSON.stringify({ command: 'homology', name: arg });
     case 'store':
       if (!arg) { appendReplEntry(raw, formatError('usage: store <name>')); return null; }
       return JSON.stringify({ command: 'store', name: arg });
@@ -316,6 +319,7 @@ function renderCommandResult(cmd, data) {
     case 'rules': case 'r':     return renderRules(data.rules);
     case 'history': case 'h':   return renderHistory(data.history);
     case 'store':          return renderStore(data);
+    case 'homology':       return renderHomology(data);
     default:               return renderState(data);
   }
 }
@@ -403,6 +407,16 @@ function renderStore(data) {
   let out = [ok(`Stored '${esc(s.def_name)}'.`)];
   out.push(`  let ${hi(s.def_name)} = ${dim(s.expr)}`);
   return out.join('\n');
+}
+
+function renderHomology(data) {
+  if (!data || !data.homology) return dim('(no data)');
+  if (data.homology.length === 0) return dim('(no generators)');
+  const lines = data.homology.map(h =>
+    `  ${dim('H')}${dim('_' + h.dim)} = ${hi(h.display)}`
+  );
+  lines.push(`  ${dim('χ')} = ${hi(String(data.euler_characteristic))}`);
+  return lines.join('\n');
 }
 
 function renderHistory(hist) {
@@ -493,6 +507,7 @@ const HELP_TEXT = `Commands:
   history (h)      show move history
   types            list all types in the file
   type <name>      inspect a type
+  homology <name>  compute cellular homology of a type
   store <name>     store the current proof as a named diagram
   help / ?         show this message
 

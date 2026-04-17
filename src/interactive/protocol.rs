@@ -69,7 +69,7 @@ pub enum Request {
     ListRules,
     /// Return the full move history.
     History,
-    /// Register the current running proof as a first-class generator in the type.
+    /// Store the current proof as a named diagram in the type.
     Store {
         name: String,
     },
@@ -82,6 +82,10 @@ pub enum Request {
     },
     /// Inspect a named generator or let-binding in the active type complex.
     Cell {
+        name: String,
+    },
+    /// Compute cellular homology of a named type.
+    Homology {
         name: String,
     },
     /// Shut down the daemon.
@@ -673,6 +677,26 @@ pub fn strdiag_json_from_diagram(
 ) -> serde_json::Value {
     let sd = StrDiag::from_diagram(diagram, scope);
     strdiag_to_json(&sd)
+}
+
+/// Compute cellular homology of a named type and return as JSON.
+pub fn build_homology_response(
+    store: &crate::interpreter::GlobalStore,
+    source_path: &str,
+    type_name: &str,
+) -> Result<serde_json::Value, String> {
+    let tc = super::engine::resolve_type(store, source_path, type_name)?;
+    let h = crate::core::homology::compute_homology(&tc);
+    let groups: Vec<serde_json::Value> = h.groups.iter()
+        .map(|(dim, g)| serde_json::json!({
+            "dim": dim,
+            "display": format!("{}", g),
+        }))
+        .collect();
+    Ok(serde_json::json!({
+        "homology": groups,
+        "euler_characteristic": h.euler_characteristic,
+    }))
 }
 
 fn build_rewrite_info(

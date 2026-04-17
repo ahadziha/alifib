@@ -1,0 +1,8 @@
+@Type
+P2 <<= {
+  pt,
+  id: pt -> pt,
+  idem: id id -> id,
+  a: pt -> pt,
+  tor: a a -> id
+}

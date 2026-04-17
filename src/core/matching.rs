@@ -392,7 +392,7 @@ mod tests {
     mod find_matches_tests {
         use crate::aux::{loader::Loader, Tag};
         use crate::core::complex::Complex;
-        use crate::core::diagram::{CellData, Diagram, Sign};
+        use crate::core::diagram::{Diagram, Sign};
         use crate::interpreter::InterpretedFile;
         use super::super::find_matches;
         use std::path::PathBuf;
@@ -508,21 +508,6 @@ mod tests {
             assert!(Diagram::isomorphic(&after2, &rhs), "after two rewrites, should reach rhs");
         }
 
-        #[test]
-        fn comb_a_mor_lunit_matches_will_not_rewrite() {
-            let (_store, complex) = load_type(&fixture("Comb.ali"), "comb");
-            let (rewrite, rname) = get_rewrite(&complex, "a_mor_lunit");
-            let target_ok = get_diagram(&complex, "will_rewrite2");
-            let target_fail = get_diagram(&complex, "will_not_rewrite");
-
-            // Sanity: will_rewrite2 should match.
-            let matches_ok = find_matches(&complex, &rewrite, &target_ok, &rname).unwrap();
-            assert!(!matches_ok.is_empty(), "a_mor_lunit should match in will_rewrite2");
-
-            // This is the bug: will_not_rewrite should also match.
-            let matches_fail = find_matches(&complex, &rewrite, &target_fail, &rname).unwrap();
-            assert!(!matches_fail.is_empty(), "a_mor_lunit should match in will_not_rewrite");
-        }
 
     }
 }

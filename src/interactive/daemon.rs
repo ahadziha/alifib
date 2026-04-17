@@ -185,6 +185,10 @@ fn dispatch(engine: &mut Option<RewriteEngine>, req: Request) -> DispatchResult 
         Cell { name } => {
             with_engine(engine, |e| build_cell_response(e, &name))
         }
+        Homology { .. } => {
+            // Homology is not supported in daemon mode (no store access without session).
+            Response::error("homology command not supported in daemon mode".to_string())
+        }
         Shutdown => return DispatchResult::Shutdown,
     };
     DispatchResult::Respond(resp)

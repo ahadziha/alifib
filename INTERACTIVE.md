@@ -25,7 +25,7 @@ set them interactively before rewriting begins.
 | `@ <type>` | Select a type from the loaded file |
 | `types` | List all types defined in the file |
 | `type <name>` | Inspect a type: generators, diagrams, maps |
-| `cell <name>` | Inspect a named generator or let-binding with its boundary |
+| `homology <name>` | Compute cellular homology of a type |
 | `source <name>` | Set the source diagram (starts session when all three are set) |
 | `target <name>` | Set the target diagram (starts session when all three are set) |
 | `status` / `show` | Show setup state (module, type, pending source/target) |
@@ -47,7 +47,7 @@ set them interactively before rewriting begins.
 | `rules` | `r` | List rewrite rules at current dimension |
 | `history` | `h` | Show the sequence of moves applied so far |
 | `proof` | `p` | Show the running (n+1)-dim proof diagram and its source/target |
-| `store <name>` | | Register the current proof as a first-class generator in the type |
+| `store <name>` | | Store the current proof as a named diagram in the type |
 | `save <path>` | | Write the original source file with stored definitions appended |
 | `load <path>` | `l <path>` | Load and replay a session file, replacing current state |
 
@@ -72,12 +72,12 @@ match.
 
 ### Storing proofs
 
-`store <name>` registers the current running proof as a first-class generator
-in the active type. The new generator is immediately available as a rewrite
-rule for the rest of the session.
+`store <name>` stores the current running proof as a named diagram (let-binding)
+in the active type. The diagram is visible in `type <name>` for the rest of
+the session.
 
 `save <path>` writes the original `.ali` source file with all stored definitions
-appended as `@ TypeName { let name = <expr> }` blocks, making them permanent.
+appended as `@TypeName\nlet name = <expr>` blocks, making them permanent.
 
 ---
 
@@ -110,7 +110,7 @@ Otherwise the daemon starts blank and waits for an `init` request.
 {"command":"store","name":"myproof"}
 {"command":"types"}
 {"command":"type","name":"Idem"}
-{"command":"cell","name":"idem"}
+{"command":"homology","name":"Idem"}
 {"command":"shutdown"}
 ```
 
@@ -140,31 +140,28 @@ The `data` object includes:
 | `history` | Move list (only in response to `history` or `resume`) |
 | `rules` | All rewrite rules (only in response to `list_rules`) |
 | `types` | Type summaries (only in response to `types`) |
-| `type_detail` | Full type info (only in response to `type_info`) |
-| `cell_detail` | Cell info (only in response to `cell`) |
+| `type_detail` | Full type info (only in response to `type`) |
+| `homology` | Homology groups (only in response to `homology`) |
 
 `DiagramInfo` has: `label` (space-separated top-level names), `dim`,
 `cell_count`, `cells_by_dim` (labels at every dimension from 0 to top).
 
 ### Command details
 
-**`store`** — registers the current running proof as a first-class generator in
-the active type. After success, `type_info` will show the new generator and it
-is immediately available as a rewrite rule.
+**`store`** — stores the current proof as a named diagram (let-binding) in the
+active type. After success, `type` will show the new diagram.
 
 **`types`** — lists all named types in the loaded source file. The `types` array
 in the response contains `{name, max_dim, generator_count, diagram_count}` for
 each type.
 
 **`type`** — returns full detail for a named type: `generators` (with
-optional source/target boundaries), `diagrams` (let-bindings and stored proofs
+optional source/target boundaries), `diagrams` (including stored proofs
 with their expressions), and `maps`. Uses the live type complex for the current
-session type, so generators added via `store` are immediately visible.
+session type, so diagrams added via `store` are immediately visible.
 
-**`cell`** — returns detail for a single named generator or let-binding in the
-active type complex. `kind` is `"generator"` or `"diagram"`; generators include
-source/target boundaries; diagrams also include `expr` (the source-language
-expression).
+**`homology`** — computes the cellular homology of a named type. Returns an
+array of `{dim, display}` objects, one per dimension that has generators.
 
 ---
 
