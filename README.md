@@ -143,6 +143,30 @@ available rewrites). Informational commands add extra fields: `types`, `type_det
 
 See `INTERACTIVE.md` for the full protocol reference.
 
+### Web GUI
+
+A localhost-only browser GUI, intended for SSH-tunneled use in the style of a
+small notebook server.
+
+```
+alifib web [--bind <addr>]
+```
+
+This serves the files in `web/frontend` and runs a single long-lived Alifib
+session in the server process. By default it binds to `127.0.0.1:8000`.
+
+Typical remote workflow:
+
+```sh
+# on the remote machine
+alifib web --bind 127.0.0.1:8000
+
+# on your local machine
+ssh -L 8000:127.0.0.1:8000 user@remote-host
+```
+
+Then open `http://127.0.0.1:8000` in your local browser.
+
 ### Session workspace
 
 ```
@@ -157,8 +181,9 @@ to enter a guided proof sub-loop, then `export` or `export <path>` to save resul
 
 ```
 src/           Interpreter source (language/, core/, interpreter/, output/)
+web/           Browser frontend and WASM bindings
 examples/      Example .ali files
 docs/          Grammar, interpreter description, formal semantics (LaTeX)
 trs/           Plugin: convert term rewriting systems to alifib (see trs/README.md)
-INTERACTIVE.md Full reference for the REPL, daemon, and session workspace
+INTERACTIVE.md Full reference for the REPL, web GUI, daemon, and session workspace
 ```

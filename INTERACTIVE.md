@@ -1,8 +1,9 @@
 # Interactive Rewriting
 
-`alifib` provides two interfaces for constructing (n+1)-dimensional proof
-diagrams step by step: a **REPL** for interactive use and a **daemon** for
-editor and tooling integration.
+`alifib` provides several interfaces for constructing (n+1)-dimensional proof
+diagrams step by step: a **REPL** for interactive use, a localhost **web GUI**
+for notebook-style browser use, and a **daemon** for editor and tooling
+integration.
 
 ---
 
@@ -78,6 +79,35 @@ the session.
 
 `save <path>` writes the original `.ali` source file with all stored definitions
 appended as `@TypeName\nlet name = <expr>` blocks, making them permanent.
+
+---
+
+## Web GUI
+
+```
+alifib web [--bind <addr>]
+```
+
+Serves the browser GUI and a same-origin JSON API from one localhost process.
+The process owns a single long-lived in-memory session, so this mode is best
+thought of as a small notebook kernel rather than a multi-user web app.
+
+If `--bind` is omitted, the server listens on `127.0.0.1:8000`.
+
+Typical SSH-tunneled workflow:
+
+```sh
+# on the remote machine
+alifib web --bind 127.0.0.1:8000
+
+# on your local machine
+ssh -L 8000:127.0.0.1:8000 user@remote-host
+```
+
+Then open `http://127.0.0.1:8000` locally.
+
+The web GUI uses the same rewrite engine and visualization helpers as the WASM
+frontend, but keeps the live session state on the server side.
 
 ---
 
