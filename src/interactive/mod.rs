@@ -21,6 +21,8 @@
 //!   chosen type block, with incremental re-interpretation for validation.
 //! - **`alifib serve`** (`daemon`, `protocol`): a JSON-lines subprocess daemon
 //!   suitable for editor integration.
+//! - **Web frontends** (`web`): shared browser-facing session API used by the
+//!   WASM bindings and the localhost GUI server.
 //!
 //! # CLI usage
 //!
@@ -46,6 +48,7 @@
 //! | [`cli`] | Argument parsing and dispatch for `alifib rewrite` |
 //! | [`daemon`] | JSON-lines request loop for `alifib serve` |
 //! | [`protocol`] | JSON request/response types used by the daemon |
+//! | [`web`] | shared browser-facing session API used by the web frontends |
 //! | [`display`] | [`Display`](display::Display): all terminal output with optional ANSI colour |
 //! | [`render`] | `print_state`, `print_history`, `render_match_highlight` |
 
@@ -60,4 +63,5 @@ pub mod repl;
 pub mod session;
 #[cfg(feature = "cli")]
 pub mod session_repl;
+pub mod web;
 pub mod workspace;
