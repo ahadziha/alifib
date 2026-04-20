@@ -1048,6 +1048,32 @@ function showSessionDiagram(data) {
   syncAnalysisLayout();
 }
 
+const REWRITE_MATCH_CONTEXT_LIMIT = 100;
+
+function formatRewriteMatch(matchDisplay) {
+  if (!matchDisplay) return '';
+
+  const start = matchDisplay.indexOf('[');
+  const end = start >= 0 ? matchDisplay.indexOf(']', start + 1) : -1;
+
+  let display = matchDisplay;
+  if (start >= 0 && end > start) {
+    let before = matchDisplay.slice(0, start);
+    let after = matchDisplay.slice(end + 1);
+
+    if (before.length > REWRITE_MATCH_CONTEXT_LIMIT) {
+      before = '...' + before.slice(-REWRITE_MATCH_CONTEXT_LIMIT);
+    }
+    if (after.length > REWRITE_MATCH_CONTEXT_LIMIT) {
+      after = after.slice(0, REWRITE_MATCH_CONTEXT_LIMIT) + '...';
+    }
+
+    display = before + matchDisplay.slice(start, end + 1) + after;
+  }
+
+  return esc(display).replace(/\[([^\]]*)\]/g, '<span class="rw-match-hi">$1</span>');
+}
+
 function buildRewriteList(rewrites) {
   rewriteList.innerHTML = '';
   lastRewriteData = rewrites;
@@ -1061,8 +1087,7 @@ function buildRewriteList(rewrites) {
     const row = document.createElement('div');
     row.className = 'rewrite-row';
 
-    const matchHtml = esc(r.match_display).replace(/\[([^\]]*)\]/g,
-      '<span class="rw-match-hi">$1</span>');
+    const matchHtml = formatRewriteMatch(r.match_display);
 
     const content = document.createElement('span');
     content.className = 'rw-content';
