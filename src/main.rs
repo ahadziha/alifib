@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use alifib::aux::error::report_load_file_error;
 use alifib::aux::loader::Loader;
-use alifib::interactive::cli::{RewriteCommand, ReplArgs, ServeArgs, SessionArgs, parse_rewrite_args, parse_repl_args, parse_serve_args, parse_session_args, run_rewrite, run_repl_cmd, run_serve_cmd, run_session_cmd};
+use alifib::interactive::cli::{RewriteCommand, ReplArgs, ServeArgs, SessionArgs, WebArgs, parse_rewrite_args, parse_repl_args, parse_serve_args, parse_session_args, parse_web_args, run_rewrite, run_repl_cmd, run_serve_cmd, run_session_cmd, run_web_cmd};
 use alifib::interpreter::InterpretedFile;
 use alifib::language;
 use alifib::output;
@@ -14,6 +14,7 @@ Usage: alifib <input-file> [-o|--output <output-file>] [--ast] [--print] [--benc
        alifib rewrite <subcommand> [options]  (run 'alifib rewrite --help' for details)
        alifib repl <file> [--type <t>] [--source <s>] [--target <t>] [--emacs]
        alifib session <file> --type <t> [--emacs]
+       alifib web [--bind <addr>]
        alifib serve [<file> --type <t> --source <s> [--target <t>]]";
 
 enum RunMode {
@@ -24,6 +25,7 @@ enum RunMode {
     Rewrite(RewriteCommand),
     Repl(ReplArgs),
     Session(SessionArgs),
+    Web(WebArgs),
     Serve(ServeArgs),
 }
 
@@ -52,6 +54,10 @@ fn parse_args() -> Result<Args, String> {
         Some("session") => {
             let args = parse_session_args(&cli_args[1..])?;
             return Ok(Args { input: String::new(), output: None, mode: RunMode::Session(args) });
+        }
+        Some("web") => {
+            let args = parse_web_args(&cli_args[1..])?;
+            return Ok(Args { input: String::new(), output: None, mode: RunMode::Web(args) });
         }
         Some("serve") => {
             let args = parse_serve_args(&cli_args[1..])?;
@@ -158,6 +164,7 @@ fn main() {
         RunMode::Rewrite(cmd)  => run_rewrite(cmd),
         RunMode::Repl(args)    => run_repl_cmd(args),
         RunMode::Session(args) => run_session_cmd(args),
+        RunMode::Web(args)     => run_web_cmd(args),
         RunMode::Serve(args)   => run_serve_cmd(args),
     };
     if result.is_err() {

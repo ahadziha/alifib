@@ -49,6 +49,7 @@
 //! | [`daemon`] | JSON-lines request loop for `alifib serve` |
 //! | [`protocol`] | JSON request/response types used by the daemon |
 //! | [`web`] | shared browser-facing session API used by the web frontends |
+//! | [`web_server`] | localhost-only HTTP server for the web GUI |
 //! | [`display`] | [`Display`](display::Display): all terminal output with optional ANSI colour |
 //! | [`render`] | `print_state`, `print_history`, `render_match_highlight` |
 
@@ -64,4 +65,5 @@ pub mod session;
 #[cfg(feature = "cli")]
 pub mod session_repl;
 pub mod web;
+pub mod web_server;
 pub mod workspace;
