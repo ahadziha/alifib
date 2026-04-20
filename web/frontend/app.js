@@ -1,5 +1,3 @@
-import init, { WasmRepl } from './pkg/alifib_wasm.js';
-
 // ── State ─────────────────────────────────────────────────────────────────────
 
 let repl = null;
@@ -61,15 +59,138 @@ const canvasCtx   = visCanvas.getContext('2d');
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
+class WasmBackend {
+  constructor(inner) {
+    this.inner = inner;
+    this.label = 'WASM';
+  }
+
+  async load_source(source) {
+    return this.inner.load_source(source);
+  }
+
+  async init_session(typeName, sourceDiagram, targetDiagram) {
+    return this.inner.init_session(typeName, sourceDiagram, targetDiagram);
+  }
+
+  async run_command(commandJson) {
+    return this.inner.run_command(commandJson);
+  }
+
+  async get_types() {
+    return this.inner.get_types();
+  }
+
+  async get_strdiag(typeName, itemName, boundaryDim, boundarySign) {
+    return this.inner.get_strdiag(typeName, itemName, boundaryDim, boundarySign);
+  }
+
+  async get_session_strdiag() {
+    return this.inner.get_session_strdiag();
+  }
+
+  async get_rewrite_preview_strdiag(choice) {
+    return this.inner.get_rewrite_preview_strdiag(choice);
+  }
+}
+
+class HttpBackend {
+  constructor(baseUrl = '') {
+    this.baseUrl = baseUrl;
+    this.label = 'HTTP';
+  }
+
+  async load_source(source) {
+    return this.post('/api/load_source', { source });
+  }
+
+  async init_session(typeName, sourceDiagram, targetDiagram) {
+    return this.post('/api/init_session', {
+      type_name: typeName,
+      source_diagram: sourceDiagram,
+      target_diagram: targetDiagram,
+    });
+  }
+
+  async run_command(commandJson) {
+    return this.post('/api/run_command', { command_json: commandJson });
+  }
+
+  async get_types() {
+    return this.post('/api/get_types', {});
+  }
+
+  async get_strdiag(typeName, itemName, boundaryDim, boundarySign) {
+    return this.post('/api/get_strdiag', {
+      type_name: typeName,
+      item_name: itemName,
+      boundary_dim: boundaryDim,
+      boundary_sign: boundarySign,
+    });
+  }
+
+  async get_session_strdiag() {
+    return this.post('/api/get_session_strdiag', {});
+  }
+
+  async get_rewrite_preview_strdiag(choice) {
+    return this.post('/api/get_rewrite_preview_strdiag', { choice });
+  }
+
+  async post(path, body) {
+    try {
+      const response = await fetch(this.baseUrl + path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const text = await response.text();
+      if (text) return text;
+      return JSON.stringify({
+        status: 'error',
+        message: `empty response from ${path}`,
+      });
+    } catch (error) {
+      return JSON.stringify({
+        status: 'error',
+        message: `request failed: ${error}`,
+      });
+    }
+  }
+}
+
+function backendConfig() {
+  const query = new URLSearchParams(window.location.search);
+  const config = globalThis.ALIFIB_CONFIG || {};
+  return {
+    mode: config.backend || query.get('backend') || 'wasm',
+    apiBase: config.apiBase || '',
+  };
+}
+
+async function createBackend() {
+  const config = backendConfig();
+  if (config.mode === 'http') {
+    return new HttpBackend(config.apiBase);
+  }
+
+  const wasm = await import('./pkg/alifib_wasm.js');
+  await wasm.default();
+  return new WasmBackend(new wasm.WasmRepl());
+}
+
+async function parseReplResponse(promise) {
+  return JSON.parse(await promise);
+}
+
 async function boot() {
   btnEval.disabled = true;
   btnEval.textContent = 'Loading…';
   try {
-    await init();
-    repl = new WasmRepl();
+    repl = await createBackend();
     btnEval.disabled = false;
     btnEval.textContent = 'Evaluate';
-    appendReplMsg('WASM engine ready. Evaluate a file to begin.', 'repl-dim');
+    appendReplMsg(`${repl.label} engine ready. Evaluate a file to begin.`, 'repl-dim');
     appendReplMsg('', 'repl-dim');
     const helpEl = document.createElement('div');
     helpEl.className = 'repl-result';
@@ -77,7 +198,7 @@ async function boot() {
     replOutput.appendChild(helpEl);
   } catch (e) {
     btnEval.textContent = 'Error';
-    appendReplMsg('Failed to load WASM: ' + e, 'repl-result err');
+    appendReplMsg('Failed to load backend: ' + e, 'repl-result err');
   }
 }
 
@@ -461,17 +582,17 @@ analysisResizeObs.observe(analysisBody);
 
 // ── Evaluate ──────────────────────────────────────────────────────────────────
 
-btnEval.addEventListener('click', evaluateSource);
+btnEval.addEventListener('click', () => { void evaluateSource(); });
 editor.addEventListener('keydown', e => {
-  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); evaluateSource(); }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); void evaluateSource(); }
 });
 
-function evaluateSource() {
+async function evaluateSource() {
   if (!repl) return;
   const src = editor.value.trim();
   if (!src) return;
 
-  const result = JSON.parse(repl.load_source(src));
+  const result = await parseReplResponse(repl.load_source(src));
 
   if (result.status === 'error') {
     fileOutput.innerHTML = '';
@@ -558,18 +679,18 @@ function buildClickableRow(innerHTML, onClick) {
       div.classList.remove('acc-leaf--selected');
       selectedEl = null;
       currentItem = null;
-      returnToSessionView();
+      void returnToSessionView();
       return;
     }
     if (selectedEl) selectedEl.classList.remove('acc-leaf--selected');
     selectedEl = div;
     div.classList.add('acc-leaf--selected');
-    onClick();
+    void onClick();
   });
   return div;
 }
 
-function returnToSessionView() {
+async function returnToSessionView() {
   if (!sessionActive || !repl) {
     infobox.hidden = true;
     rewriteList.hidden = true;
@@ -577,19 +698,19 @@ function returnToSessionView() {
     return;
   }
   // Re-fetch session state and show diagram.
-  const result = JSON.parse(repl.run_command('{"command":"show"}'));
+  const result = await parseReplResponse(repl.run_command('{"command":"show"}'));
   if (result.status === 'ok' && result.data) {
-    showSessionDiagram(result.data);
+    await showSessionDiagram(result.data);
   }
 }
 
 // ── Session setup ─────────────────────────────────────────────────────────────
 
-btnStart.addEventListener('click', startSession);
-inpSource.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); startSession(); } });
-inpTarget.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); startSession(); } });
+btnStart.addEventListener('click', () => { void startSession(); });
+inpSource.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); void startSession(); } });
+inpTarget.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); void startSession(); } });
 
-function startSession() {
+async function startSession() {
   if (!repl) return;
   const typeName = selType.value;
   const src = inpSource.value.trim();
@@ -597,7 +718,7 @@ function startSession() {
   if (!typeName) { appendReplMsg('Select a type first.', 'repl-result err'); return; }
   if (!src)      { appendReplMsg('Enter a source diagram.', 'repl-result err'); return; }
 
-  const result = JSON.parse(repl.init_session(typeName, src, tgt));
+  const result = await parseReplResponse(repl.init_session(typeName, src, tgt));
   if (result.status === 'error') {
     appendReplEntry('(start session)', formatError(result.message));
     return;
@@ -613,7 +734,7 @@ function startSession() {
   }
   currentItem = null;
   appendReplEntry(`start ${typeName} ${src}${tgt ? ' → ' + tgt : ''}`, renderState(result.data));
-  showSessionDiagram(result.data);
+  await showSessionDiagram(result.data);
 }
 
 function resetSession() {
@@ -631,7 +752,7 @@ replInput.addEventListener('keydown', e => {
     history.unshift(cmd);
     histIdx = -1;
     replInput.value = '';
-    handleCommand(cmd);
+    void handleCommand(cmd);
   } else if (e.key === 'ArrowUp') {
     e.preventDefault();
     if (histIdx + 1 < history.length) { histIdx++; replInput.value = history[histIdx]; }
@@ -642,7 +763,7 @@ replInput.addEventListener('keydown', e => {
   }
 });
 
-function handleCommand(raw) {
+async function handleCommand(raw) {
   const [cmd, ...rest] = raw.trim().split(/\s+/);
   const arg = rest.join(' ');
 
@@ -654,7 +775,7 @@ function handleCommand(raw) {
   const json = buildCommand(cmd, arg, raw);
   if (!json) return;
 
-  const result = JSON.parse(repl.run_command(json));
+  const result = await parseReplResponse(repl.run_command(json));
 
   if (result.status === 'error') {
     appendReplEntry(raw, formatError(result.message));
@@ -664,14 +785,14 @@ function handleCommand(raw) {
     // Only update the session diagram display for state-changing commands.
     const stateCommands = ['apply', 'a', 'undo', 'u', 'restart', 'show', 'status', 'store'];
     if (stateCommands.includes(cmd)) {
-      updateVisInfo(result.data);
+      await updateVisInfo(result.data);
     }
     // Append definition to editor and refresh accordion when store succeeds.
     if (cmd === 'store' && result.data && result.data.stored) {
       const s = result.data.stored;
       const code = `\n\n@${s.type_name}\nlet ${s.def_name} = ${s.expr}`;
       editor.value = editor.value.trimEnd() + code + '\n';
-      refreshAccordion();
+      await refreshAccordion();
     }
   }
 }
@@ -830,13 +951,13 @@ function renderHistory(hist) {
   ).join('\n');
 }
 
-function updateVisInfo(data) {
+async function updateVisInfo(data) {
   // When a session is active and no accordion item is selected,
   // show the current diagram in the analysis pane.
   if (!sessionActive || !data || !data.current) return;
   if (currentItem) return; // accordion item takes priority
 
-  showSessionDiagram(data);
+  await showSessionDiagram(data);
 }
 
 // ── Formatting helpers ────────────────────────────────────────────────────────
@@ -997,9 +1118,9 @@ TwoCells <<= Unit {
 }
 `;
 
-function refreshAccordion() {
+async function refreshAccordion() {
   if (!repl) return;
-  const result = JSON.parse(repl.get_types());
+  const result = await parseReplResponse(repl.get_types());
   if (result.status !== 'ok') return;
   const types = result.data.types || [];
   fileOutput.innerHTML = '';
@@ -1010,13 +1131,13 @@ function refreshAccordion() {
 
 // ── Session diagram display ──────────────────────────────────────────────────
 
-function showSessionDiagram(data) {
+async function showSessionDiagram(data) {
   selectedRewrite = null;
   previewActive = false;
 
   // Fetch strdiag for current diagram.
   if (!repl) return;
-  const strResult = JSON.parse(repl.get_session_strdiag());
+  const strResult = await parseReplResponse(repl.get_session_strdiag());
   if (strResult.status !== 'ok') return;
 
   sessionStrdiag = strResult.data;
@@ -1035,7 +1156,7 @@ function showSessionDiagram(data) {
   }
   infoboxText.innerHTML = html;
   const btnUndo = document.getElementById('btn-undo-vis');
-  if (btnUndo) btnUndo.addEventListener('click', performUndo);
+  if (btnUndo) btnUndo.addEventListener('click', () => { void performUndo(); });
 
   // Render the string diagram.
   currentLayout = layoutStrDiag(sessionStrdiag, selOrientation.value);
@@ -1106,7 +1227,7 @@ function buildRewriteList(rewrites) {
     btnPreview.addEventListener('mousedown', (e) => {
       e.stopPropagation();
       previewActive = true;
-      showRewritePreview(i);
+      void showRewritePreview(i);
     });
     btnPreview.addEventListener('mouseup', () => {
       previewActive = false;
@@ -1121,7 +1242,7 @@ function buildRewriteList(rewrites) {
     row.appendChild(actions);
 
     // Click anywhere on row (except Preview) applies the rewrite.
-    row.addEventListener('click', () => applyRewrite(i));
+    row.addEventListener('click', () => { void applyRewrite(i); });
 
     // Hover: highlight match positions.
     row.addEventListener('mouseenter', () => {
@@ -1147,11 +1268,11 @@ function buildRewriteList(rewrites) {
 
 let savedLayoutBeforePreview = null;
 
-function showRewritePreview(choice) {
+async function showRewritePreview(choice) {
   if (!repl) return;
   // Save the current layout (including any drag modifications) before switching.
   savedLayoutBeforePreview = currentLayout;
-  const result = JSON.parse(repl.get_rewrite_preview_strdiag(choice));
+  const result = await parseReplResponse(repl.get_rewrite_preview_strdiag(choice));
   if (result.status !== 'ok') return;
   currentLayout = layoutStrDiag(result.data, selOrientation.value);
   currentLayout._highlightPositions = null;
@@ -1170,9 +1291,9 @@ function endRewritePreview() {
   }
 }
 
-function performUndo() {
+async function performUndo() {
   if (!repl) return;
-  const result = JSON.parse(repl.run_command('{"command":"undo"}'));
+  const result = await parseReplResponse(repl.run_command('{"command":"undo"}'));
   if (result.status === 'error') {
     appendReplMsg('Undo error: ' + result.message, 'repl-result err');
     return;
@@ -1180,13 +1301,13 @@ function performUndo() {
   appendReplEntry('undo', renderState(result.data));
   selectedRewrite = null;
   previewActive = false;
-  showSessionDiagram(result.data);
+  await showSessionDiagram(result.data);
 }
 
-function applyRewrite(choice) {
+async function applyRewrite(choice) {
   // Send apply command through the REPL.
   const json = JSON.stringify({ command: 'step', choice });
-  const result = JSON.parse(repl.run_command(json));
+  const result = await parseReplResponse(repl.run_command(json));
   if (result.status === 'error') {
     appendReplMsg('Apply error: ' + result.message, 'repl-result err');
     return;
@@ -1195,7 +1316,7 @@ function applyRewrite(choice) {
   selectedRewrite = null;
   previewActive = false;
   // Update the session display.
-  showSessionDiagram(result.data);
+  await showSessionDiagram(result.data);
 }
 
 // Store last rewrite data for re-highlighting after preview ends.
@@ -1209,14 +1330,16 @@ let sessionStrdiag = null; // strdiag data for current session diagram
 let selectedRewrite = null; // index of selected rewrite
 let previewActive = false;
 
-function selectItem(typeName, item) {
+async function selectItem(typeName, item) {
   currentItem = { typeName, item };
   infobox.hidden = false;
   rewriteList.hidden = true; // hide session rewrite list when inspecting an item
 
   // For generators and diagrams: fetch dimension from the main strdiag response
   if (item.kind !== 'map' && repl) {
-    const mainResult = JSON.parse(repl.get_strdiag(typeName, item.name, undefined, undefined));
+    const mainResult = await parseReplResponse(
+      repl.get_strdiag(typeName, item.name, undefined, undefined)
+    );
     if (mainResult.status === 'ok') {
       currentItemDim = mainResult.data.dim;
     } else {
@@ -1242,10 +1365,10 @@ function selectItem(typeName, item) {
     boundaryControls.hidden = true;
   }
 
-  refreshInfobox();
+  await refreshInfobox();
 }
 
-function refreshInfobox() {
+async function refreshInfobox() {
   if (!currentItem) return;
   const { typeName, item } = currentItem;
   const bdVal = selBoundary.value;
@@ -1282,7 +1405,7 @@ function refreshInfobox() {
 
   // Fetch strdiag (with optional boundary)
   if (!repl) { infoboxText.innerHTML = html; return; }
-  const result = JSON.parse(
+  const result = await parseReplResponse(
     repl.get_strdiag(typeName, item.name, bdDim ?? undefined, bdSign ?? undefined)
   );
   if (result.status === 'error') {
@@ -1316,10 +1439,10 @@ function setSignControlsEnabled(enabled) {
 selBoundary.addEventListener('change', () => {
   const isBd = selBoundary.value !== 'main';
   setSignControlsEnabled(isBd);
-  refreshInfobox();
+  void refreshInfobox();
 });
 document.querySelectorAll('input[name="bd-sign"]').forEach(r =>
-  r.addEventListener('change', refreshInfobox));
+  r.addEventListener('change', () => { void refreshInfobox(); }));
 
 selOrientation.addEventListener('change', () => {
   if (currentLayout) {
