@@ -1,0 +1,161 @@
+@Type
+(* Equations *)
+Eq <<= {
+  dom,
+  cod, 
+  lhs: dom -> cod,
+  rhs: dom -> cod,
+  dir: lhs -> rhs,
+  inv: rhs -> lhs
+},
+
+(* Object *)
+Ob <<= {
+  ob,
+  tight_id: ob -> ob,
+  loose_id: ob -> ob,
+  id_square: loose_id tight_id -> tight_id loose_id,
+
+  attach Tight_id_id :: Eq along [
+    lhs => tight_id tight_id,
+    rhs => tight_id
+  ]
+},
+
+(* Tight arrow *)
+Tight <<= {
+  attach Dom :: Ob,
+  attach Cod :: Ob,
+
+  arrow: Dom.ob -> Cod.ob,
+  id: Dom.loose_id arrow -> arrow Cod.loose_id
+},
+
+(* Loose arrow *)
+Loose <<= {
+  attach Dom :: Ob,
+  attach Cod :: Ob,
+
+  arrow: Dom.ob -> Cod.ob,
+  id: arrow Cod.tight_id -> Dom.tight_id arrow
+},
+
+(* Square *)
+Square <<= {
+  attach TL :: Ob,
+  attach TR :: Ob,
+  attach BL :: Ob,
+  attach BR :: Ob,
+  attach Top :: Loose along [
+    Dom => TL,
+    Cod => TR
+  ],
+  attach Bottom :: Loose along [
+    Dom => BL,
+    Cod => BR
+  ], 
+  attach Left :: Tight along [
+    Dom => TL,
+    Cod => BL
+  ],
+  attach Right :: Tight along [
+    Dom => TR,
+    Cod => BR
+  ],
+
+  square: Top.arrow Right.arrow -> 
+    Left.arrow Bottom.arrow
+}
+
+@Ob
+let Tight_id :: Tight = [
+  Dom => Ob,
+  Cod => Ob,
+  arrow => tight_id,
+  id => id_square
+],
+let Loose_id :: Loose = [
+  Dom => Ob,
+  Cod => Ob,
+  arrow => loose_id,
+  id => id_square
+],
+let Id_square :: Square = [
+  Top => Loose_id,
+  Bottom => Loose_id,
+  Left => Tight_id,
+  Right => Tight_id
+]
+
+@Loose
+let Id :: Square = [
+  Top => Loose,
+  Bottom => Loose,
+  Left => Dom.Tight_id,
+  Right => Cod.Tight_id
+]
+
+@Tight
+let Id :: Square = [
+  Top => Dom.Loose_id,
+  Bottom => Cod.Loose_id,
+  Left => Tight,
+  Right => Tight
+]
+
+@Type
+Tight_pair <<= {
+  attach Fst :: Tight,
+  attach Snd :: Tight along [
+    Dom => Fst.Cod
+  ],
+
+  let Compose :: Tight = [
+    Dom => Fst.Dom,
+    Cod => Snd.Cod,
+    arrow => Fst.arrow Snd.arrow,
+    id => (Fst.id Snd.arrow) (Fst.arrow Snd.id)
+  ]
+},
+
+Loose_pair <<= {
+  attach Fst :: Loose,
+  attach Snd :: Loose along [
+    Dom => Fst.Cod
+  ],
+
+  let Compose :: Loose = [
+    Dom => Fst.Dom,
+    Cod => Snd.Cod,
+    arrow => Fst.arrow Snd.arrow,
+    id => (Fst.arrow Snd.id) (Fst.id Snd.arrow)
+  ]
+},
+
+(* Horizontal composition of squares *)
+H_Pair <<= {
+  attach Fst :: Square,
+  attach Snd :: Square along [
+    Left => Fst.Right
+  ],
+
+  let Compose :: Square = [
+    Left => Fst.Left,
+    Right => Snd.Right,
+    Top => ( map 
+      [ Fst => Fst.Top, Snd => Snd.Top ]
+      :: Loose_pair ).Compose,
+    Bottom => ( map
+      [ Fst => Fst.Bottom, Snd => Snd.Bottom ]
+      :: Loose_pair).Compose,
+    square => (Fst.Top.arrow Snd.square)
+      (Fst.square Snd.Bottom.arrow)
+  ]
+}
+
+(* 
+To do horizontal composition of A :: Square,
+B :: Square:
+
+( map [ Fst => A, Snd => B ] :: H_Pair ).Compose
+*)

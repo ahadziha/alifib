@@ -25,6 +25,13 @@ fn load_example(name: &str) -> Store {
 const PATH_FILTER: (&str, &str) = (r#"/(?:[^/"]+/)*([^/"]+\.ali)"#, "$1");
 
 #[test]
+fn golden_dblcat() {
+    insta::with_settings!({ filters => vec![PATH_FILTER] }, {
+        insta::assert_debug_snapshot!(load_example("Dblcat.ali"));
+    });
+}
+
+#[test]
 fn golden_category() {
     insta::with_settings!({ filters => vec![PATH_FILTER] }, {
         insta::assert_debug_snapshot!(load_example("Category.ali"));

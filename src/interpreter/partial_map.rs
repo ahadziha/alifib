@@ -147,7 +147,7 @@ fn enrich_holes(
 /// Interpret an anonymous map component (inline map definition with an explicit target complex).
 pub fn interpret_anon_map_component(
     context: &Context,
-    domain: &Complex,
+    scope: &Complex,
     target: &Spanned<ast::Complex>,
     def: &Spanned<PartialMapDef>,
 ) -> Step<EvalMap> {
@@ -155,7 +155,7 @@ pub fn interpret_anon_map_component(
         super::eval::interpret_complex(context, super::types::Mode::Local, target);
     let Some(ns) = ns_opt else { return (None, target_result); };
     let (mc_opt, def_result) =
-        interpret_pmap_def(&target_result.context, &ns.working_complex, domain, def);
+        interpret_pmap_def(&target_result.context, scope, &ns.working_complex, def);
     (mc_opt, target_result.merge(def_result))
 }
 
