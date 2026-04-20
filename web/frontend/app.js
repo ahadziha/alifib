@@ -9,9 +9,30 @@ let histIdx = -1;
 let currentLayout = null;
 let selectedEl = null;
 let dragState = null;
+let splitterDrag = null;
+
+const MIN_WORKSPACE_WIDTHS = [240, 260, 280];
+const MIN_ANALYSIS_HEIGHTS = [60, 180];
+const MIN_INFOBOX_HEADER_HEIGHT = 56;
+const MIN_INFOBOX_VIS_HEIGHT = 120;
+const MIN_REWRITE_HEIGHT = 72;
+const layoutState = {
+  workspaceRatios: [1 / 3, 1 / 3, 1 / 3],
+  analysisRatio: 0.2,
+  infoboxHeaderRatio: 0.18,
+  rewriteRatio: 0.22,
+};
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
+const workspace   = document.getElementById('workspace');
+const paneFile    = document.getElementById('pane-file');
+const paneRepl    = document.getElementById('pane-repl');
+const paneAnalysis = document.getElementById('pane-analysis');
+const resizerFileRepl = document.getElementById('resizer-file-repl');
+const resizerReplAnalysis = document.getElementById('resizer-repl-analysis');
+const analysisBody = document.getElementById('analysis-body');
+const analysisResizer = document.getElementById('analysis-resizer');
 const editor      = document.getElementById('editor');
 const btnEval     = document.getElementById('btn-evaluate');
 const fileOutput  = document.getElementById('file-output');
@@ -25,6 +46,8 @@ const replInput   = document.getElementById('repl-input');
 const btnClear    = document.getElementById('btn-clear-repl');
 const visContainer = document.getElementById('vis-container');
 const infobox     = document.getElementById('infobox');
+const infoboxHeader = document.getElementById('infobox-header');
+const infoboxResizer = document.getElementById('infobox-resizer');
 const infoboxText = document.getElementById('infobox-text');
 const boundaryControls = document.getElementById('boundary-controls');
 const selBoundary = document.getElementById('sel-boundary');
@@ -32,7 +55,7 @@ const signControls = document.getElementById('sign-controls');
 const visCanvas   = document.getElementById('vis-canvas');
 const visControls = document.getElementById('vis-controls');
 const selOrientation = document.getElementById('sel-orientation');
-const visResize   = document.getElementById('vis-resize');
+const rewriteResizer = document.getElementById('rewrite-resizer');
 const rewriteList = document.getElementById('rewrite-list');
 const canvasCtx   = visCanvas.getContext('2d');
 
@@ -58,6 +81,384 @@ async function boot() {
   }
 }
 
+// ── Pane layout ──────────────────────────────────────────────────────────────
+
+function cssPx(name, fallback) {
+  const value = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name));
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function scaledMins(mins, total) {
+  const sum = mins.reduce((acc, min) => acc + min, 0);
+  if (sum <= total || total <= 0) return mins.slice();
+  const scale = total / sum;
+  return mins.map(min => min * scale);
+}
+
+function distributeSizes(total, ratios, mins) {
+  if (total <= 0) return mins.slice();
+
+  const widths = ratios.map(r => Math.max(0, r) * total);
+  const baseTotal = widths.reduce((acc, width) => acc + width, 0);
+  if (baseTotal > 0) {
+    for (let i = 0; i < widths.length; i++) {
+      widths[i] = widths[i] / baseTotal * total;
+    }
+  } else {
+    widths.fill(total / widths.length);
+  }
+
+  const locked = new Array(widths.length).fill(false);
+  while (true) {
+    let fixedTotal = 0;
+    let flexTotal = 0;
+    const flexIdx = [];
+
+    for (let i = 0; i < widths.length; i++) {
+      if (locked[i]) {
+        fixedTotal += widths[i];
+      } else {
+        flexIdx.push(i);
+        flexTotal += widths[i];
+      }
+    }
+
+    if (!flexIdx.length) break;
+
+    const remaining = total - fixedTotal;
+    for (const idx of flexIdx) {
+      widths[idx] = flexTotal > 0 ? widths[idx] / flexTotal * remaining : remaining / flexIdx.length;
+    }
+
+    let changed = false;
+    for (const idx of flexIdx) {
+      if (widths[idx] < mins[idx]) {
+        widths[idx] = mins[idx];
+        locked[idx] = true;
+        changed = true;
+      }
+    }
+    if (!changed) break;
+  }
+
+  widths[widths.length - 1] += total - widths.reduce((acc, width) => acc + width, 0);
+  return widths;
+}
+
+function setSplitterActive(resizer, cursor) {
+  resizer.classList.add('is-active');
+  document.body.classList.add('is-resizing');
+  document.body.style.setProperty('--resize-cursor', cursor);
+}
+
+function clearSplitterActive() {
+  document.body.classList.remove('is-resizing');
+  document.body.style.removeProperty('--resize-cursor');
+  if (splitterDrag?.resizer) splitterDrag.resizer.classList.remove('is-active');
+}
+
+function getSplitterLineSize() {
+  return cssPx('--splitter-line', 1);
+}
+
+function applyWorkspaceWidths(widths) {
+  const splitterSize = getSplitterLineSize();
+  const total = widths.reduce((acc, width) => acc + width, 0) || 1;
+  workspace.style.gridTemplateColumns = `${widths[0]}px ${splitterSize}px ${widths[1]}px ${splitterSize}px ${widths[2]}px`;
+  layoutState.workspaceRatios = widths.map(width => width / total);
+}
+
+function syncWorkspaceLayout() {
+  const splitterSize = getSplitterLineSize();
+  const available = workspace.clientWidth - splitterSize * 2;
+  if (available <= 0) return;
+
+  const mins = scaledMins(MIN_WORKSPACE_WIDTHS, available);
+  const widths = distributeSizes(available, layoutState.workspaceRatios, mins);
+  applyWorkspaceWidths(widths);
+}
+
+function applyAnalysisHeights(top, bottom) {
+  const splitterSize = getSplitterLineSize();
+  analysisBody.style.gridTemplateRows = `${top}px ${splitterSize}px ${bottom}px`;
+  fileOutput.style.gridRow = '1';
+  analysisResizer.style.gridRow = '2';
+  infobox.style.gridRow = '3';
+  analysisResizer.hidden = false;
+  layoutState.analysisRatio = top / Math.max(1, top + bottom);
+}
+
+function getInfoboxSectionRatios() {
+  const header = Math.max(0.01, layoutState.infoboxHeaderRatio);
+  const rewrite = Math.max(0, layoutState.rewriteRatio);
+  const vis = Math.max(0.01, 1 - header - rewrite);
+  const total = header + vis + rewrite || 1;
+  return [header / total, vis / total, rewrite / total];
+}
+
+function syncInfoboxRatios(headerHeight, visHeight, rewriteHeight) {
+  const total = headerHeight + visHeight + rewriteHeight || 1;
+  layoutState.infoboxHeaderRatio = headerHeight / total;
+  layoutState.rewriteRatio = rewriteHeight / total;
+}
+
+function syncInfoboxHeaderRatio(headerHeight, visHeight) {
+  const rewriteRatio = Math.max(0, layoutState.rewriteRatio);
+  const activeShare = Math.max(0.01, 1 - rewriteRatio);
+  const total = headerHeight + visHeight || 1;
+  layoutState.infoboxHeaderRatio = activeShare * (headerHeight / total);
+}
+
+function applyInfoboxHeights(headerHeight, visHeight, rewriteHeight = null) {
+  const splitterSize = getSplitterLineSize();
+  infoboxHeader.style.gridRow = '1';
+
+  if (rewriteHeight === null) {
+    infobox.style.gridTemplateRows = `${headerHeight}px ${splitterSize}px ${visHeight}px`;
+    infoboxResizer.style.gridRow = '2';
+    visContainer.style.gridRow = '3';
+    infoboxResizer.hidden = false;
+    rewriteResizer.hidden = true;
+    syncInfoboxHeaderRatio(headerHeight, visHeight);
+    return;
+  }
+
+  infobox.style.gridTemplateRows = `${headerHeight}px ${splitterSize}px ${visHeight}px ${splitterSize}px ${rewriteHeight}px`;
+  infoboxResizer.style.gridRow = '2';
+  visContainer.style.gridRow = '3';
+  rewriteResizer.style.gridRow = '4';
+  rewriteList.style.gridRow = '5';
+  infoboxResizer.hidden = false;
+  rewriteResizer.hidden = false;
+  syncInfoboxRatios(headerHeight, visHeight, rewriteHeight);
+}
+
+function syncInfoboxLayout() {
+  if (infobox.hidden) return;
+
+  const visVisible = !visContainer.hidden;
+  const rewriteVisible = !rewriteList.hidden;
+  const splitterSize = getSplitterLineSize();
+
+  if (visVisible && rewriteVisible) {
+    const available = infobox.clientHeight - splitterSize * 2;
+    if (available <= 0) return;
+
+    const heights = distributeSizes(
+      available,
+      getInfoboxSectionRatios(),
+      [MIN_INFOBOX_HEADER_HEIGHT, MIN_INFOBOX_VIS_HEIGHT, MIN_REWRITE_HEIGHT],
+    );
+    applyInfoboxHeights(heights[0], heights[1], heights[2]);
+    return;
+  }
+
+  if (visVisible) {
+    const [headerRatio, visRatio] = getInfoboxSectionRatios();
+    const available = infobox.clientHeight - splitterSize;
+    if (available <= 0) return;
+
+    const heights = distributeSizes(
+      available,
+      [headerRatio, visRatio],
+      [MIN_INFOBOX_HEADER_HEIGHT, MIN_INFOBOX_VIS_HEIGHT],
+    );
+    applyInfoboxHeights(heights[0], heights[1]);
+    return;
+  }
+
+  infoboxResizer.hidden = true;
+  rewriteResizer.hidden = true;
+  if (rewriteVisible) {
+    infobox.style.gridTemplateRows = 'auto minmax(0, 1fr)';
+    infoboxHeader.style.gridRow = '1';
+    rewriteList.style.gridRow = '2';
+    return;
+  }
+
+  infobox.style.gridTemplateRows = 'minmax(0, 1fr)';
+  infoboxHeader.style.gridRow = '1';
+}
+
+function syncAnalysisLayout() {
+  const topVisible = !fileOutput.hidden;
+  const bottomVisible = !infobox.hidden;
+
+  if (topVisible && bottomVisible) {
+    const splitterSize = getSplitterLineSize();
+    const available = analysisBody.clientHeight - splitterSize;
+    if (available <= 0) return;
+
+    const mins = scaledMins(MIN_ANALYSIS_HEIGHTS, available);
+    const top = clamp(layoutState.analysisRatio * available, mins[0], available - mins[1]);
+    applyAnalysisHeights(top, available - top);
+    syncInfoboxLayout();
+    return;
+  }
+
+  analysisResizer.hidden = true;
+  analysisBody.style.gridTemplateRows = 'minmax(0, 1fr)';
+  if (topVisible) fileOutput.style.gridRow = '1';
+  if (bottomVisible) infobox.style.gridRow = '1';
+  syncInfoboxLayout();
+}
+
+function startWorkspaceDrag(which, event) {
+  const widths = [paneFile, paneRepl, paneAnalysis].map(pane => pane.getBoundingClientRect().width);
+  splitterDrag = {
+    kind: 'workspace',
+    which,
+    startX: event.clientX,
+    widths,
+    resizer: which === 0 ? resizerFileRepl : resizerReplAnalysis,
+  };
+  setSplitterActive(splitterDrag.resizer, 'ew-resize');
+  event.preventDefault();
+}
+
+function updateWorkspaceDrag(clientX) {
+  if (!splitterDrag || splitterDrag.kind !== 'workspace') return;
+
+  const dx = clientX - splitterDrag.startX;
+  const widths = splitterDrag.widths.slice();
+  const mins = scaledMins(MIN_WORKSPACE_WIDTHS, widths.reduce((acc, width) => acc + width, 0));
+
+  if (splitterDrag.which === 0) {
+    const pair = widths[0] + widths[1];
+    widths[0] = clamp(widths[0] + dx, mins[0], pair - mins[1]);
+    widths[1] = pair - widths[0];
+  } else {
+    const pair = widths[1] + widths[2];
+    widths[1] = clamp(widths[1] + dx, mins[1], pair - mins[2]);
+    widths[2] = pair - widths[1];
+  }
+
+  applyWorkspaceWidths(widths);
+}
+
+function startAnalysisDrag(event) {
+  if (fileOutput.hidden || infobox.hidden) return;
+
+  splitterDrag = {
+    kind: 'analysis',
+    startY: event.clientY,
+    heights: [
+      fileOutput.getBoundingClientRect().height,
+      infobox.getBoundingClientRect().height,
+    ],
+    resizer: analysisResizer,
+  };
+  setSplitterActive(analysisResizer, 'ns-resize');
+  event.preventDefault();
+}
+
+function startInfoboxDrag(event) {
+  if (visContainer.hidden || infobox.hidden) return;
+
+  splitterDrag = {
+    kind: 'infobox',
+    startY: event.clientY,
+    heights: [
+      infoboxHeader.getBoundingClientRect().height,
+      visContainer.getBoundingClientRect().height,
+    ],
+    rewriteHeight: rewriteList.hidden ? null : rewriteList.getBoundingClientRect().height,
+    resizer: infoboxResizer,
+  };
+  setSplitterActive(infoboxResizer, 'ns-resize');
+  event.preventDefault();
+}
+
+function startRewriteDrag(event) {
+  if (visContainer.hidden || rewriteList.hidden || infobox.hidden) return;
+
+  splitterDrag = {
+    kind: 'rewrite',
+    startY: event.clientY,
+    headerHeight: infoboxHeader.getBoundingClientRect().height,
+    heights: [
+      visContainer.getBoundingClientRect().height,
+      rewriteList.getBoundingClientRect().height,
+    ],
+    resizer: rewriteResizer,
+  };
+  setSplitterActive(rewriteResizer, 'ns-resize');
+  event.preventDefault();
+}
+
+function updateAnalysisDrag(clientY) {
+  if (!splitterDrag || splitterDrag.kind !== 'analysis') return;
+
+  const dy = clientY - splitterDrag.startY;
+  const [startTop, startBottom] = splitterDrag.heights;
+  const total = startTop + startBottom;
+  const mins = scaledMins(MIN_ANALYSIS_HEIGHTS, total);
+  const top = clamp(startTop + dy, mins[0], total - mins[1]);
+  applyAnalysisHeights(top, total - top);
+  syncInfoboxLayout();
+}
+
+function updateInfoboxDrag(clientY) {
+  if (!splitterDrag || splitterDrag.kind !== 'infobox') return;
+
+  const dy = clientY - splitterDrag.startY;
+  const [startHeader, startVis] = splitterDrag.heights;
+  const total = startHeader + startVis;
+  const mins = scaledMins([MIN_INFOBOX_HEADER_HEIGHT, MIN_INFOBOX_VIS_HEIGHT], total);
+  const headerHeight = clamp(startHeader + dy, mins[0], total - mins[1]);
+  const visHeight = total - headerHeight;
+
+  if (splitterDrag.rewriteHeight === null) {
+    applyInfoboxHeights(headerHeight, visHeight);
+    return;
+  }
+
+  applyInfoboxHeights(headerHeight, visHeight, splitterDrag.rewriteHeight);
+}
+
+function updateRewriteDrag(clientY) {
+  if (!splitterDrag || splitterDrag.kind !== 'rewrite') return;
+
+  const dy = clientY - splitterDrag.startY;
+  const [startVis, startRewrite] = splitterDrag.heights;
+  const total = startVis + startRewrite;
+  const mins = scaledMins([MIN_INFOBOX_VIS_HEIGHT, MIN_REWRITE_HEIGHT], total);
+  const visHeight = clamp(startVis + dy, mins[0], total - mins[1]);
+  applyInfoboxHeights(splitterDrag.headerHeight, visHeight, total - visHeight);
+}
+
+function endSplitterDrag() {
+  if (!splitterDrag) return;
+  clearSplitterActive();
+  splitterDrag = null;
+}
+
+resizerFileRepl.addEventListener('mousedown', (event) => startWorkspaceDrag(0, event));
+resizerReplAnalysis.addEventListener('mousedown', (event) => startWorkspaceDrag(1, event));
+analysisResizer.addEventListener('mousedown', startAnalysisDrag);
+infoboxResizer.addEventListener('mousedown', startInfoboxDrag);
+rewriteResizer.addEventListener('mousedown', startRewriteDrag);
+
+document.addEventListener('mousemove', (event) => {
+  if (!splitterDrag) return;
+  if (splitterDrag.kind === 'workspace') updateWorkspaceDrag(event.clientX);
+  if (splitterDrag.kind === 'analysis') updateAnalysisDrag(event.clientY);
+  if (splitterDrag.kind === 'infobox') updateInfoboxDrag(event.clientY);
+  if (splitterDrag.kind === 'rewrite') updateRewriteDrag(event.clientY);
+});
+document.addEventListener('mouseup', endSplitterDrag);
+window.addEventListener('blur', endSplitterDrag);
+
+const workspaceResizeObs = new ResizeObserver(() => syncWorkspaceLayout());
+workspaceResizeObs.observe(workspace);
+
+const analysisResizeObs = new ResizeObserver(() => syncAnalysisLayout());
+analysisResizeObs.observe(analysisBody);
+
 // ── Evaluate ──────────────────────────────────────────────────────────────────
 
 btnEval.addEventListener('click', evaluateSource);
@@ -78,6 +479,7 @@ function evaluateSource() {
     appendReplEntry('(evaluate)', formatError(result.message));
     sessionSetup.hidden = true;
     resetSession();
+    syncAnalysisLayout();
     return;
   }
 
@@ -98,6 +500,7 @@ function evaluateSource() {
 
   sessionSetup.hidden = false;
   resetSession();
+  syncAnalysisLayout();
   appendReplEntry('(evaluate)', formatOk(
     types.length
       ? `Loaded ${types.length} type${types.length !== 1 ? 's' : ''}.`
@@ -170,6 +573,7 @@ function returnToSessionView() {
   if (!sessionActive || !repl) {
     infobox.hidden = true;
     rewriteList.hidden = true;
+    syncAnalysisLayout();
     return;
   }
   // Re-fetch session state and show diagram.
@@ -601,6 +1005,7 @@ function refreshAccordion() {
   fileOutput.innerHTML = '';
   fileOutput.hidden = types.length === 0;
   types.forEach(t => fileOutput.appendChild(buildTypeAccordion(t)));
+  syncAnalysisLayout();
 }
 
 // ── Session diagram display ──────────────────────────────────────────────────
@@ -640,6 +1045,7 @@ function showSessionDiagram(data) {
 
   // Build rewrite list.
   buildRewriteList(data.rewrites || []);
+  syncAnalysisLayout();
 }
 
 function buildRewriteList(rewrites) {
@@ -845,6 +1251,7 @@ function refreshInfobox() {
     visContainer.hidden = true;
     visControls.hidden = true;
     currentLayout = null;
+    syncAnalysisLayout();
     return;
   }
 
@@ -859,6 +1266,7 @@ function refreshInfobox() {
     visContainer.hidden = true;
     visControls.hidden = true;
     currentLayout = null;
+    syncAnalysisLayout();
     return;
   }
 
@@ -872,6 +1280,7 @@ function refreshInfobox() {
   visContainer.hidden = false;
   visControls.hidden = false;
   resizeAndRender();
+  syncAnalysisLayout();
 }
 
 function setSignControlsEnabled(enabled) {
@@ -1315,29 +1724,8 @@ visCanvas.addEventListener('mousemove', (e) => {
 visCanvas.addEventListener('mouseup', () => { dragState = null; });
 visCanvas.addEventListener('mouseleave', () => { dragState = null; });
 
-// ── Canvas resize handle ─────────────────────────────────────────────────────
-
-let resizeDrag = null;
-const visResizeTop = document.getElementById('vis-resize-top');
-visResize.addEventListener('mousedown', (e) => {
-  resizeDrag = { startY: e.clientY, startH: visContainer.offsetHeight, edge: 'bottom' };
-  e.preventDefault();
-});
-visResizeTop.addEventListener('mousedown', (e) => {
-  resizeDrag = { startY: e.clientY, startH: visContainer.offsetHeight, edge: 'top' };
-  e.preventDefault();
-});
-document.addEventListener('mousemove', (e) => {
-  if (!resizeDrag) return;
-  const dy = e.clientY - resizeDrag.startY;
-  const newH = resizeDrag.edge === 'bottom'
-    ? Math.max(80, resizeDrag.startH + dy)
-    : Math.max(80, resizeDrag.startH - dy);
-  visContainer.style.height = newH + 'px';
-  resizeAndRender();
-});
-document.addEventListener('mouseup', () => { resizeDrag = null; });
-
 // ── Init ──────────────────────────────────────────────────────────────────────
 
+syncWorkspaceLayout();
+syncAnalysisLayout();
 boot();

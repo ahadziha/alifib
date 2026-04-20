@@ -2,7 +2,7 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg:        #1a1a1e;
+  --bg:        #1e1a1a;
   --surface:   #24242a;
   --border:    #38383f;
   --accent:    #7c6af2;
@@ -18,6 +18,8 @@
   --radius:    6px;
   --header-h:  44px;
   --pane-hdr:  36px;
+  --splitter-line: 1px;
+  --splitter-hitbox: 8px;
 }
 
 html, body {
@@ -26,6 +28,13 @@ html, body {
   color: var(--text);
   font-family: var(--font-ui);
   font-size: 13px;
+}
+body.is-resizing,
+body.is-resizing * {
+  user-select: none;
+}
+body.is-resizing {
+  cursor: var(--resize-cursor, default);
 }
 
 /* ── Top header ── */
@@ -53,7 +62,7 @@ header {
 /* ── Three-pane workspace ── */
 .workspace {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: minmax(240px, 1fr) var(--splitter-line) minmax(260px, 1fr) var(--splitter-line) minmax(280px, 1fr);
   height: calc(100vh - var(--header-h));
   overflow: hidden;
 }
@@ -61,10 +70,9 @@ header {
 .pane {
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--border);
   overflow: hidden;
+  min-width: 0;
 }
-.pane:last-child { border-right: none; }
 
 .pane-header {
   height: var(--pane-hdr);
@@ -89,6 +97,54 @@ header {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+.pane-body-analysis {
+  display: grid;
+  grid-template-rows: minmax(120px, 1fr) var(--splitter-line) minmax(180px, 1fr);
+  min-height: 0;
+}
+
+.pane-splitter {
+  position: relative;
+  background: transparent;
+  touch-action: none;
+  z-index: 2;
+}
+.pane-splitter::before {
+  content: "";
+  position: absolute;
+  background: var(--border);
+}
+.pane-splitter:hover,
+.pane-splitter.is-active {
+  background: rgba(124, 106, 242, 0.4);
+}
+.pane-splitter-x {
+  width: var(--splitter-hitbox);
+  justify-self: center;
+  align-self: stretch;
+  cursor: ew-resize;
+}
+.pane-splitter-x::before {
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+}
+.pane-splitter-y {
+  height: var(--splitter-hitbox);
+  align-self: center;
+  justify-self: stretch;
+  cursor: ns-resize;
+}
+.pane-splitter-y::before {
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  transform: translateY(-50%);
 }
 
 /* ── Buttons ── */
@@ -129,7 +185,6 @@ header {
   font-size: 12px;
   overflow-y: auto;
   color: var(--text-dim);
-  flex-shrink: 1;
   min-height: 0;
 }
 
@@ -235,12 +290,17 @@ header {
 
 /* ── Infobox ── */
 .infobox {
-  border-top: 1px solid var(--border);
   padding: 0;
   font-family: var(--font-mono);
   font-size: 12px;
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: minmax(56px, auto) var(--splitter-line) minmax(120px, 1fr) var(--splitter-line) minmax(72px, 0.45fr);
+}
+.infobox-header {
+  min-height: 0;
   overflow-y: auto;
-  flex-shrink: 0;
 }
 .infobox-text {
   padding: 8px 12px;
@@ -300,38 +360,23 @@ header {
 }
 
 .vis-container {
-  height: 250px;
   position: relative;
   overflow: hidden;
-  border-top: 1px solid var(--border);
+  min-height: 0;
 }
 .vis-container canvas {
   width: 100%;
   height: 100%;
   display: block;
 }
-.vis-resize-handle {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 6px;
-  cursor: ns-resize;
-  background: transparent;
-}
-.vis-resize-handle:hover {
-  background: rgba(124, 106, 242, 0.25);
-}
-.vis-resize-top { top: 0; }
-.vis-resize-bottom { bottom: 0; }
 
 /* ── Rewrite list ── */
 .rewrite-list {
-  border-top: 1px solid var(--border);
   overflow-y: auto;
-  max-height: 200px;
   font-family: var(--font-mono);
   font-size: 12px;
   padding: 4px 0;
+  min-height: 0;
 }
 .rewrite-row {
   padding: 4px 12px;
