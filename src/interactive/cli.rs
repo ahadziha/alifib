@@ -241,6 +241,12 @@ pub struct ServeArgs {
     pub target: Option<String>,
 }
 
+/// Arguments for the `alifib web` subcommand.
+pub struct WebArgs {
+    /// Address to bind the localhost HTTP server to.
+    pub bind: String,
+}
+
 // ── Parsers ───────────────────────────────────────────────────────────────────
 
 /// Parse the arguments following `alifib rewrite` into a [`RewriteCommand`].
@@ -259,6 +265,10 @@ pub fn parse_rewrite_args(args: &[String]) -> Result<RewriteCommand, String> {
 
 const REPL_USAGE: &str = "\
 Usage: alifib repl <file> [--type <t>] [--source <s>] [--target <t>] [--emacs]
+";
+
+const WEB_USAGE: &str = "\
+Usage: alifib web [--bind <addr>]
 ";
 
 /// Parse the arguments following `alifib repl`.
@@ -296,6 +306,27 @@ pub fn parse_repl_args(args: &[String]) -> Result<ReplArgs, String> {
         target,
         emacs,
     })
+}
+
+/// Parse the arguments following `alifib web`.
+pub fn parse_web_args(args: &[String]) -> Result<WebArgs, String> {
+    let mut bind = "127.0.0.1:8000".to_string();
+
+    let mut it = args.iter();
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--bind" => { bind = next_arg(&mut it, "--bind")?; }
+            "-h" | "--help" => return Err(WEB_USAGE.to_string()),
+            s if s.starts_with('-') => {
+                return Err(format!("unknown option '{}' for web\n{}", s, WEB_USAGE));
+            }
+            s => {
+                return Err(format!("unexpected argument '{}' for web\n{}", s, WEB_USAGE));
+            }
+        }
+    }
+
+    Ok(WebArgs { bind })
 }
 
 fn parse_init(args: &[String]) -> Result<RewriteCommand, String> {
@@ -517,6 +548,18 @@ pub fn run_serve_cmd(args: ServeArgs) -> Result<(), ()> {
         }
     };
     run_daemon(initial)
+}
+
+/// Run the localhost web server with the given arguments.
+#[allow(clippy::result_unit_err)]
+pub fn run_web_cmd(args: WebArgs) -> Result<(), ()> {
+    match super::web_server::run_web_server(&args.bind) {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            eprintln!("error: {}", err);
+            Err(())
+        }
+    }
 }
 
 /// Run the REPL with the given arguments.

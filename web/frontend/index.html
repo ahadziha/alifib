@@ -12,7 +12,7 @@
     <span class="tagline">directed complex explorer</span>
   </header>
 
-  <main class="workspace">
+  <main class="workspace" id="workspace">
 
     <!-- ── File pane ── -->
     <section class="pane" id="pane-file">
@@ -25,6 +25,9 @@
           placeholder="Enter .ali source here…"></textarea>
       </div>
     </section>
+
+    <div id="resizer-file-repl" class="pane-splitter pane-splitter-x"
+      role="separator" aria-orientation="vertical" aria-label="Resize file and REPL panes"></div>
 
     <!-- ── REPL pane ── -->
     <section class="pane" id="pane-repl">
@@ -64,6 +67,9 @@
       </div>
     </section>
 
+    <div id="resizer-repl-analysis" class="pane-splitter pane-splitter-x"
+      role="separator" aria-orientation="vertical" aria-label="Resize REPL and analysis panes"></div>
+
     <!-- ── Analysis pane ── -->
     <section class="pane" id="pane-analysis">
       <div class="pane-header">
@@ -77,8 +83,10 @@
           </select>
         </div>
       </div>
-      <div class="pane-body">
+      <div class="pane-body pane-body-analysis" id="analysis-body">
         <div id="file-output" class="output-area" hidden></div>
+        <div id="analysis-resizer" class="pane-splitter pane-splitter-y"
+          role="separator" aria-orientation="horizontal" aria-label="Resize analysis panes" hidden></div>
         <div id="infobox" class="infobox" hidden>
           <div id="infobox-header" class="infobox-header">
             <div id="infobox-text" class="infobox-text"></div>
@@ -92,11 +100,13 @@
               </span>
             </div>
           </div>
+          <div id="infobox-resizer" class="pane-splitter pane-splitter-y"
+            role="separator" aria-orientation="horizontal" aria-label="Resize infobox and diagram" hidden></div>
           <div id="vis-container" class="vis-container" hidden>
-            <div id="vis-resize-top" class="vis-resize-handle vis-resize-top"></div>
             <canvas id="vis-canvas"></canvas>
-            <div id="vis-resize" class="vis-resize-handle vis-resize-bottom"></div>
           </div>
+          <div id="rewrite-resizer" class="pane-splitter pane-splitter-y"
+            role="separator" aria-orientation="horizontal" aria-label="Resize diagram and rewrite list" hidden></div>
           <div id="rewrite-list" class="rewrite-list" hidden></div>
         </div>
       </div>
