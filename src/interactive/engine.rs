@@ -16,8 +16,6 @@ struct HistoryEntry {
     mov: Move,
     /// The current n-diagram *before* this step was applied.
     prev_diagram: Diagram,
-    /// The running (n+1)-diagram *before* this step was applied.
-    prev_running: Option<Diagram>,
 }
 
 /// Stateful rewrite session engine.
@@ -35,7 +33,9 @@ pub struct RewriteEngine {
 
     // Mutable session state
     current_diagram: Diagram,
-    running_diagram: Option<Diagram>,
+    /// The individual (n+1)-dimensional rewrite steps applied so far.
+    /// The full proof diagram is only built on demand — see [`assemble_proof`].
+    steps: Vec<Diagram>,
     history: Vec<HistoryEntry>,
     available_rewrites: Vec<MatchResult>,
 
@@ -221,7 +221,7 @@ impl RewriteEngine {
 
         Ok(Self {
             current_diagram: source_diagram.clone(),
-            running_diagram: None,
+            steps: Vec::new(),
             history: Vec::new(),
             available_rewrites,
             source_file,
@@ -249,7 +249,7 @@ impl RewriteEngine {
 
         Ok(Self {
             current_diagram: source_diagram.clone(),
-            running_diagram: None,
+            steps: Vec::new(),
             history: Vec::new(),
             available_rewrites,
             store,
@@ -276,7 +276,7 @@ impl RewriteEngine {
 
         let n = source_diagram.top_dim();
         let mut current = source_diagram.clone();
-        let mut running: Option<Diagram> = None;
+        let mut steps: Vec<Diagram> = Vec::with_capacity(session.moves.len());
         let mut history: Vec<HistoryEntry> = Vec::with_capacity(session.moves.len());
 
         for (step_idx, mov) in session.moves.iter().enumerate() {
@@ -304,24 +304,18 @@ impl RewriteEngine {
             history.push(HistoryEntry {
                 mov: mov.clone(),
                 prev_diagram: current.clone(),
-                prev_running: running.clone(),
             });
 
-            running = Some(match running {
-                None => step,
-                Some(r) => Diagram::paste(n, &r, &step)
-                    .map_err(|e| format!("compose failed at step {}: {}", step_idx + 1, e))?,
-            });
-
-            current = Diagram::boundary(Sign::Target, n, running.as_ref().unwrap())
+            current = Diagram::boundary(Sign::Target, n, &step)
                 .map_err(|e| format!("target boundary at step {}: {}", step_idx + 1, e))?;
+            steps.push(step);
         }
 
         let available_rewrites = compute_rewrites(&store, &type_complex, &current)?;
 
         Ok(Self {
             current_diagram: current,
-            running_diagram: running,
+            steps,
             history,
             available_rewrites,
             source_file: session.source_file.clone(),
@@ -341,8 +335,9 @@ impl RewriteEngine {
 impl RewriteEngine {
     /// Apply the rewrite at index `choice` in the current available-rewrites list.
     ///
-    /// Saves a snapshot for O(diagram) undo, advances the current diagram,
-    /// and recomputes available rewrites.
+    /// Records the step and advances the current diagram without pasting a
+    /// running proof — the full proof is only assembled on demand via
+    /// [`assemble_proof`](Self::assemble_proof) when storing or typechecking.
     pub fn step(&mut self, choice: usize) -> Result<&str, String> {
         let match_result = self.available_rewrites.get(choice).ok_or_else(|| {
             format!(
@@ -356,22 +351,16 @@ impl RewriteEngine {
         let step = match_result.step.clone();
 
         let prev_diagram = self.current_diagram.clone();
-        let prev_running = self.running_diagram.clone();
 
-        self.running_diagram = Some(match self.running_diagram.take() {
-            None => step,
-            Some(r) => Diagram::paste(n, &r, &step)
-                .map_err(|e| format!("compose step failed: {}", e))?,
-        });
+        let new_current = Diagram::boundary(Sign::Target, n, &step)
+            .map_err(|e| format!("target boundary failed: {}", e))?;
 
-        self.current_diagram = Diagram::boundary(
-            Sign::Target, n, self.running_diagram.as_ref().unwrap(),
-        ).map_err(|e| format!("target boundary failed: {}", e))?;
+        self.current_diagram = new_current;
+        self.steps.push(step);
 
         self.history.push(HistoryEntry {
             mov: Move { choice, rule_name: rule_name.clone() },
             prev_diagram,
-            prev_running,
         });
 
         self.available_rewrites = compute_rewrites(
@@ -389,7 +378,7 @@ impl RewriteEngine {
     pub fn undo(&mut self) -> Result<(), String> {
         let entry = self.history.pop().ok_or("nothing to undo")?;
         self.current_diagram = entry.prev_diagram;
-        self.running_diagram = entry.prev_running;
+        self.steps.pop();
         self.available_rewrites = compute_rewrites(
             &self.store,
             &self.type_complex,
@@ -401,6 +390,25 @@ impl RewriteEngine {
     /// Undo all steps, resetting to the source diagram.
     pub fn undo_all(&mut self) -> Result<(), String> {
         self.undo_to(0)
+    }
+
+    /// Apply up to `max_steps` rewrites automatically, always picking the
+    /// first available candidate.  Stops early if the target is reached or
+    /// no rewrites remain; returns the number of steps actually applied and
+    /// a short reason when the loop stopped before `max_steps`.
+    pub fn auto(&mut self, max_steps: usize) -> Result<(usize, Option<&'static str>), String> {
+        let mut applied = 0usize;
+        for _ in 0..max_steps {
+            if self.target_reached() {
+                return Ok((applied, Some("target reached")));
+            }
+            if self.available_rewrites.is_empty() {
+                return Ok((applied, Some("no rewrites available")));
+            }
+            self.step(0)?;
+            applied += 1;
+        }
+        Ok((applied, None))
     }
 
     /// Undo back to (but not past) the given step index (0 = fully undone,
@@ -434,9 +442,30 @@ impl RewriteEngine {
     /// The declared goal diagram, or `None` if no target was specified.
     pub fn target_diagram(&self) -> Option<&Diagram> { self.target_diagram.as_ref() }
 
-    /// The accumulated (n+1)-dimensional proof cell, or `None` if no steps have
-    /// been taken.  Each [`step`](Self::step) pastes a new rewrite onto this.
-    pub fn running_diagram(&self) -> Option<&Diagram> { self.running_diagram.as_ref() }
+    /// The individual (n+1)-dimensional rewrite steps applied so far, in order.
+    ///
+    /// Each step is a single rewrite — they are *not* pasted together here.
+    /// Use [`assemble_proof`](Self::assemble_proof) to build the full proof
+    /// diagram (only done when storing or typechecking).
+    pub fn steps(&self) -> &[Diagram] { &self.steps }
+
+    /// Paste the recorded rewrite steps together into the full (n+1)-dimensional
+    /// proof diagram.  Returns `Ok(None)` if no steps have been taken.
+    ///
+    /// This is the one place where the "diagram up to now" is actually built —
+    /// call it only when the assembled proof is needed (storing, typechecking,
+    /// or rendering the final proof label).
+    pub fn assemble_proof(&self) -> Result<Option<Diagram>, String> {
+        let n = self.source_diagram.top_dim();
+        let mut iter = self.steps.iter();
+        let Some(first) = iter.next() else { return Ok(None); };
+        let mut acc = first.clone();
+        for step in iter {
+            acc = Diagram::paste(n, &acc, step)
+                .map_err(|e| format!("compose step failed: {}", e))?;
+        }
+        Ok(Some(acc))
+    }
 
     /// The candidate rewrites applicable to the current diagram, precomputed
     /// after each [`step`](Self::step) or [`undo`](Self::undo).
@@ -469,20 +498,21 @@ impl RewriteEngine {
     /// one rewrite step has been applied.  Regular directed complexes have no
     /// identities, so source == target at the start is never a valid proof.
     pub fn target_reached(&self) -> bool {
-        self.running_diagram.is_some()
+        !self.steps.is_empty()
             && self.target_diagram.as_ref()
                 .map(|t| Diagram::equal(&self.current_diagram, t))
                 .unwrap_or(false)
     }
 
-    /// Render the running proof diagram as a `.ali` source expression, for the completion
-    /// message and the `store`/`save` commands.
+    /// Render the assembled proof diagram as a `.ali` source expression, for
+    /// the completion message and the `store`/`save` commands.
     ///
-    /// Returns `None` if no steps have been taken yet.
-    pub fn proof_label(&self) -> Option<String> {
-        self.running_diagram.as_ref().map(|d| {
-            crate::output::render_diagram(d, &self.type_complex)
-        })
+    /// Builds the full proof by pasting all recorded steps together — call
+    /// only when the rendered label is actually needed.  Returns
+    /// `Ok(None)` if no steps have been taken yet.
+    pub fn proof_label(&self) -> Result<Option<String>, String> {
+        Ok(self.assemble_proof()?
+            .map(|d| crate::output::render_diagram(&d, &self.type_complex)))
     }
 
     /// Typecheck the current proof diagram.
@@ -495,8 +525,9 @@ impl RewriteEngine {
     /// Returns `Ok(())` if both pass, `Err(message)` on any failure.
     /// Returns `Err` immediately if no proof steps have been taken.
     pub fn typecheck_proof(&self) -> Result<(), String> {
-        let diagram = self.running_diagram.as_ref()
+        let assembled = self.assemble_proof()?
             .ok_or_else(|| "no proof steps taken yet".to_owned())?;
+        let diagram = &assembled;
 
         // Check 1: source boundary.
         let n = self.source_diagram.top_dim();
@@ -550,7 +581,7 @@ impl RewriteEngine {
     /// Returns `(updated_store, updated_type_complex)` so the caller can resync
     /// its own `Arc` references.
     pub fn register_proof(&mut self, name: &str) -> Result<(Arc<GlobalStore>, Arc<Complex>), String> {
-        let diagram = self.running_diagram.clone()
+        let diagram = self.assemble_proof()?
             .ok_or_else(|| "no proof steps taken yet".to_owned())?;
 
         if self.type_complex.name_in_use(name) || self.type_complex.find_generator(name).is_some() {

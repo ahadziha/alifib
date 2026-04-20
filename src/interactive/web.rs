@@ -134,6 +134,22 @@ impl WebRepl {
                 Err(msg) => response_err(msg),
             }),
 
+            Request::Auto { max_steps } => self.need_engine_mut(|e| match e.auto(max_steps) {
+                Ok((applied, stop_reason)) => {
+                    let data = build_response(e, false);
+                    let mut val = serde_json::to_value(&data).unwrap();
+                    val.as_object_mut().unwrap().insert(
+                        "auto".to_string(),
+                        serde_json::json!({
+                            "applied": applied,
+                            "stop_reason": stop_reason,
+                        }),
+                    );
+                    ok_json(val)
+                }
+                Err(msg) => response_err(msg),
+            }),
+
             Request::Undo => self.need_engine_mut(|e| match e.undo() {
                 Ok(()) => ok_json(build_response(e, false)),
                 Err(msg) => response_err(msg),
@@ -166,9 +182,10 @@ impl WebRepl {
                 let Some(e) = self.engine.as_mut() else {
                     return err_json("no session active; call init_session first");
                 };
-                let proof_expr = e
-                    .running_diagram()
-                    .map(|d| crate::output::render_diagram(d, e.type_complex()));
+                let proof_expr = match e.proof_label() {
+                    Ok(opt) => opt,
+                    Err(msg) => return response_err(msg),
+                };
                 let type_name = e.type_name().to_owned();
                 match e.register_proof(&name) {
                     Ok((new_store, _)) => {

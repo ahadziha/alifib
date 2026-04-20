@@ -33,6 +33,7 @@
 //! Rewriting (require active session):
 //! ```text
 //! apply <n>        Apply rewrite at index <n>            (alias: a)
+//! auto <n>         Apply up to <n> rewrites automatically, always picking index 0
 //! undo             Undo the last step                    (alias: u)
 //! undo <n>         Undo back to step <n>
 //! undo all         Reset to source diagram               (= restart)
@@ -332,8 +333,13 @@ pub fn run_repl(
                             match cmd {
                                 // Store/Save handled here: need access to outer type_complex and stored_defs.
                                 Cmd::Store(name) => {
-                                    let source_expr = e.running_diagram()
-                                        .map(|d| crate::output::render_diagram(d, e.type_complex()));
+                                    let source_expr = match e.proof_label() {
+                                        Ok(opt) => opt,
+                                        Err(err) => {
+                                            display.error(&err);
+                                            continue;
+                                        }
+                                    };
                                     match e.register_proof(&name) {
                                         Ok((new_store, new_complex)) => {
                                             store = new_store;
@@ -542,18 +548,24 @@ fn show_state(engine: &RewriteEngine, display: &Display) {
     let src_label = render_diagram(engine.source_diagram(), engine.type_complex());
     let tgt_label = engine.target_diagram()
         .map(|t| render_diagram(t, engine.type_complex()));
-    let proof_label = engine.proof_label();
 
-    let proof = if engine.target_reached() {
+    // Only assemble the full proof diagram when the goal is reached — the
+    // rewrite steps are not pasted together until storage or typechecking.
+    let proof_label = if engine.target_reached() {
         if let Err(e) = engine.typecheck_proof() {
             display.error(&format!("proof typecheck failed: {}", e));
         }
-        match (&tgt_label, &proof_label) {
-            (Some(tl), Some(pl)) => Some((src_label.as_str(), tl.as_str(), pl.as_str())),
-            _ => None,
+        match engine.proof_label() {
+            Ok(pl) => pl,
+            Err(e) => { display.error(&format!("assembling proof failed: {}", e)); None }
         }
     } else {
         None
+    };
+
+    let proof = match (&tgt_label, &proof_label) {
+        (Some(tl), Some(pl)) => Some((src_label.as_str(), tl.as_str(), pl.as_str())),
+        _ => None,
     };
 
     print_state(
@@ -793,47 +805,6 @@ fn print_diagram_with_boundary(diag: &crate::core::diagram::Diagram, complex: &C
     }
 }
 
-/// Render a proof diagram as `step1 #n step2 #n ... #n stepN`.
-///
-/// Walks the paste tree at dimension n+1, splitting at paste-at-n nodes
-/// to extract individual step subtrees. Each step is rendered with
-/// `render_diagram` (which gives parenthesised expressions).
-fn render_proof_steps(
-    proof: &crate::core::diagram::Diagram,
-    n: usize,
-    scope: &crate::core::complex::Complex,
-) -> String {
-    use crate::core::diagram::{PasteTree, Sign};
-
-    fn collect_steps(tree: &PasteTree, n: usize, out: &mut Vec<PasteTree>) {
-        match tree {
-            PasteTree::Node { dim, left, right } if *dim == n => {
-                collect_steps(left, n, out);
-                out.push((**right).clone());
-            }
-            _ => out.push(tree.clone()),
-        }
-    }
-
-    let top = n + 1;
-    let Some(tree) = proof.tree(Sign::Source, top) else {
-        return render_diagram(proof, scope);
-    };
-
-    let mut steps = Vec::new();
-    collect_steps(tree, n, &mut steps);
-
-    steps.iter()
-        .map(|t| {
-            match crate::core::diagram::Diagram::realise_tree(t, scope) {
-                Ok(d) => render_diagram(&d, scope),
-                Err(_) => "?".to_string(),
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(&format!(" #{} ", n))
-}
-
 /// Dispatch all commands that require an active engine.
 fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) {
     match cmd {
@@ -841,6 +812,19 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
             match engine.step(n) {
                 Ok(rule) => {
                     display.meta(&format!("Applied {}.", rule));
+                    show_state(engine, display);
+                }
+                Err(e) => display.error(&e),
+            }
+        }
+        Cmd::Auto(n) => {
+            match engine.auto(n) {
+                Ok((applied, stop_reason)) => {
+                    let tail = stop_reason.map(|r| format!(" ({})", r)).unwrap_or_default();
+                    display.meta(&format!(
+                        "Applied {} step{}{}.",
+                        applied, if applied == 1 { "" } else { "s" }, tail,
+                    ));
                     show_state(engine, display);
                 }
                 Err(e) => display.error(&e),
@@ -879,26 +863,24 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
             print_history(display, engine.source_diagram(), &entries, engine.type_complex());
         }
         Cmd::Proof => {
-            match engine.running_diagram() {
-                None => display.meta("(no proof built yet)"),
-                Some(d) => {
-                    let n = engine.source_diagram().top_dim();
-                    let scope = engine.type_complex();
-                    // Render as step1 #n step2 #n ... #n stepN
-                    let proof_expr = render_proof_steps(d, n, scope);
-                    match (
-                        crate::core::diagram::Diagram::boundary(Sign::Source, n, d),
-                        crate::core::diagram::Diagram::boundary(Sign::Target, n, d),
-                    ) {
-                        (Ok(src), Ok(tgt)) => display.inspect(&format!(
-                            "{} : {} -> {}",
-                            proof_expr,
-                            render_diagram(&src, scope),
-                            render_diagram(&tgt, scope),
-                        )),
-                        _ => display.error("boundary extraction failed"),
-                    }
-                }
+            let steps = engine.steps();
+            if steps.is_empty() {
+                display.meta("(no proof built yet)");
+            } else {
+                let n = engine.source_diagram().top_dim();
+                let scope = engine.type_complex();
+                // Render as step1 #n step2 #n ... #n stepN — the individual
+                // rewrite steps are not pasted together for display.
+                let proof_expr = steps.iter()
+                    .map(|s| render_diagram(s, scope))
+                    .collect::<Vec<_>>()
+                    .join(&format!(" #{} ", n));
+                display.inspect(&format!(
+                    "{} : {} -> {}",
+                    proof_expr,
+                    render_diagram(engine.source_diagram(), scope),
+                    render_diagram(engine.current_diagram(), scope),
+                ));
             }
         }
         Cmd::Load(path) => {
@@ -941,6 +923,7 @@ fn print_help(display: &Display) {
          \n\
          Rewriting commands (require active session):\n\
          \x20 apply <n>        Apply rewrite at index <n>            (alias: a)\n\
+         \x20 auto <n>         Apply up to <n> rewrites, always picking index 0\n\
          \x20 undo             Undo the last step                    (alias: u)\n\
          \x20 undo <n>         Undo back to step <n>\n\
          \x20 undo all         Reset to source diagram               (= restart)\n\
@@ -973,6 +956,9 @@ enum Cmd {
     Target(String),
     /// `apply <n>` — apply the nth candidate rewrite.
     Apply(usize),
+    /// `auto <n>` — apply up to `n` rewrites automatically, always picking the
+    /// first available candidate each step.
+    Auto(usize),
     /// `undo [<n>]` — undo the last step, or undo back to step n.
     Undo(Option<usize>),
     /// `undo all` — undo all steps.
@@ -1043,6 +1029,12 @@ fn parse_command(line: &str) -> Cmd {
             match rest.parse::<usize>() {
                 Ok(n) => Cmd::Apply(n),
                 Err(_) => Cmd::UsageError("apply <n>".to_owned()),
+            }
+        }
+        "auto" => {
+            match rest.parse::<usize>() {
+                Ok(n) => Cmd::Auto(n),
+                Err(_) => Cmd::UsageError("auto <n>".to_owned()),
             }
         }
         "undo" | "u" => {

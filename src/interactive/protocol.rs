@@ -53,6 +53,12 @@ pub enum Request {
     Step {
         choice: usize,
     },
+    /// Apply up to `max_steps` rewrites automatically, always picking index 0.
+    ///
+    /// Stops early when the target is reached or no rewrites remain.
+    Auto {
+        max_steps: usize,
+    },
     /// Undo the last step.
     Undo,
     /// Undo back to a specific step count (0 = reset to source).
@@ -311,21 +317,20 @@ pub fn build_response(engine: &RewriteEngine, include_history: bool) -> Response
         .map(|(i, m)| build_rewrite_info(i, m, scope))
         .collect();
 
-    let proof = engine.running_diagram().and_then(|d| {
+    // The proof's source/target boundaries are the session's source diagram
+    // and the current diagram respectively — no need to assemble the full
+    // proof diagram just to extract these.
+    let proof = if engine.steps().is_empty() {
+        None
+    } else {
         let n = engine.source_diagram().top_dim();
-        let src = crate::core::diagram::Diagram::boundary(
-            crate::core::diagram::Sign::Source, n, d,
-        ).ok()?;
-        let tgt = crate::core::diagram::Diagram::boundary(
-            crate::core::diagram::Sign::Target, n, d,
-        ).ok()?;
         Some(ProofInfo {
-            dim: d.top_dim(),
+            dim: n + 1,
             step_count: engine.step_count(),
-            source_label: render_diagram(&src, scope),
-            target_label: render_diagram(&tgt, scope),
+            source_label: render_diagram(engine.source_diagram(), scope),
+            target_label: render_diagram(engine.current_diagram(), scope),
         })
-    });
+    };
 
     let history = if include_history {
         engine.history_moves()

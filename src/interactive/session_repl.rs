@@ -162,12 +162,16 @@ fn run_goal(
             display.meta("Goal abandoned.");
         }
         GoalOutcome::Done => {
-            let proof = match engine.running_diagram() {
-                None => {
+            let proof = match engine.assemble_proof() {
+                Ok(Some(d)) => d,
+                Ok(None) => {
                     display.error("no proof steps applied — goal not proved");
                     return;
                 }
-                Some(d) => d.clone(),
+                Err(e) => {
+                    display.error(&format!("assembling proof failed: {}", e));
+                    return;
+                }
             };
             let moves = engine.to_session_file().moves;
             match ws.add_goal_result(name, src_name, tgt_name, proof, moves) {

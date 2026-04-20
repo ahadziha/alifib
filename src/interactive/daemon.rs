@@ -143,6 +143,12 @@ fn dispatch(engine: &mut Option<RewriteEngine>, req: Request) -> DispatchResult 
                 Ok(build_response(e, false))
             })
         }
+        Auto { max_steps } => {
+            with_engine(engine, |e| {
+                e.auto(max_steps)?;
+                Ok(build_response(e, false))
+            })
+        }
         Undo => {
             with_engine(engine, |e| {
                 e.undo()?;

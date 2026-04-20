@@ -783,7 +783,7 @@ async function handleCommand(raw) {
     const rendered = renderCommandResult(cmd, result.data);
     appendReplEntry(raw, rendered);
     // Only update the session diagram display for state-changing commands.
-    const stateCommands = ['apply', 'a', 'undo', 'u', 'restart', 'show', 'status', 'store'];
+    const stateCommands = ['apply', 'a', 'auto', 'undo', 'u', 'restart', 'show', 'status', 'store'];
     if (stateCommands.includes(cmd)) {
       await updateVisInfo(result.data);
     }
@@ -811,6 +811,11 @@ function buildCommand(cmd, arg, raw) {
       const n = parseInt(arg, 10);
       if (isNaN(n)) { appendReplEntry(raw, formatError('usage: apply <n>')); return null; }
       return JSON.stringify({ command: 'step', choice: n });
+    }
+    case 'auto': {
+      const n = parseInt(arg, 10);
+      if (isNaN(n) || n < 0) { appendReplEntry(raw, formatError('usage: auto <n>')); return null; }
+      return JSON.stringify({ command: 'auto', max_steps: n });
     }
     case 'restart':  return JSON.stringify({ command: 'undo_to', step: 0 });
     case 'rules':
@@ -845,8 +850,18 @@ function renderCommandResult(cmd, data) {
     case 'history': case 'h':   return renderHistory(data.history);
     case 'store':          return renderStore(data);
     case 'homology':       return renderHomology(data);
+    case 'auto':           return renderAuto(data);
     default:               return renderState(data);
   }
+}
+
+function renderAuto(data) {
+  const info = data && data.auto;
+  const applied = info ? info.applied : 0;
+  const reason = info && info.stop_reason ? ` (${info.stop_reason})` : '';
+  const summary = dim(`applied ${applied} step${applied === 1 ? '' : 's'}${reason}`);
+  const state = renderState(data);
+  return state ? `${summary}\n${state}` : summary;
 }
 
 function renderState(data) {
@@ -1023,6 +1038,7 @@ btnClear.addEventListener('click', () => {
 
 const HELP_TEXT = `Commands:
   apply <n> (a)    apply rewrite choice n
+  auto <n>         apply up to n rewrites, always picking choice 0
   undo (u)         undo last step
   undo <n>         undo back to step n
   undo all         undo all steps
