@@ -58,9 +58,14 @@ impl WebRepl {
             LoadResult::Loaded(file) => {
                 self.store = Some(Arc::clone(&file.state));
                 self.engine = None;
-                ok_json(serde_json::json!({
+                // Preserve the original frontend contract for `load_source`,
+                // which returns `types` at the top level instead of under
+                // `data`.
+                serde_json::json!({
+                    "status": "ok",
                     "types": type_summaries_json(&file.state),
-                }))
+                })
+                .to_string()
             }
             LoadResult::LoadError(e) => err_json(&load_error_message(&e)),
             LoadResult::InterpError { errors, .. } => {
