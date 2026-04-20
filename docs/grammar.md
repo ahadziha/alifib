@@ -17,9 +17,10 @@
 -- A local definition of a map _must_ come with a partial map definition. The reason
 -- is that a _partial map extension_ should only be allowed when its domain is
 -- explicitly requested, e.g. in a let with "::" or in an anonymous map.
+-- The optional "total" keyword asserts that the map is total.
 
 <LetDiag> ::= "let" <Name> "=" <Diagram>
-<DefPMap> ::= "let" <Name> "::" <Address> "=" <PMapDef>
+<DefPMap> ::= "let" ["total"] <Name> "::" <Address> "=" <PMapDef>
 <PMapDef> ::= <PMap> | <PMapExt>
 
 -- A program is a (potentially empty) series of blocks
@@ -53,14 +54,14 @@
 <Complex> ::= <Address> | [ <Address> ] "{" [ <ComplexBlock> ] "}"
 
 -- A _complex block_ defines a new complex.
--- It consists of a series of is a series of complex instructions:
+-- It consists of a series of complex instructions:
 
-<ComplexBlock> ::= <CInstr> { "," <CInstr> }
+<ComplexBlock> ::= <CInstr> { "," <CInstr> } [ "," ]
 
 -- A _complex instruction_ alters a block. It can be either:
 -- * A name with a boundary
 -- * A local definition of a diagram
--- * A local definition of a Map
+-- * A local definition of a map
 -- * An attach statement (attaching a copy of a previously existing block)
 -- * An include statement (making another complex a subcomplex of this one)
 
@@ -80,11 +81,14 @@
 <LocalInst> ::= <LetDiag> | <DefPMap> | <AssertStmt>
 <AssertStmt> ::= "assert" <Diagram> "=" <Diagram>
 
--- a diagram is either
+-- Comments are delimited by (* ... *) and may be nested.
+
+-- A diagram is either
 -- * a concatenation of explicit pastings
 -- * each of which is a concatenation of implicit pastings
 -- * each part of which is a dotted series of components
--- * which are either names, partial maps, boundaries (+ or -), (diagrams), or holes
+-- * which are either names, partial maps, anonymous maps, boundaries, (diagrams), or holes
+
 <Diagram> ::= <DPrincipal> | <Diagram> "#" <Nat> <DPrincipal>
 <DPrincipal> ::= <DExpr> | <DPrincipal> <DExpr>
 <DExpr> ::= <DComponent> | <DExpr> "." <DComponent>
@@ -95,14 +99,19 @@
 -- A basic partial map is either
 -- * a name
 -- * a parenthesized partial map
--- * an anonymous map, which is necessarily an extension
+-- * an anonymous map
 
 <PMap> ::= <PMapBasic> | <PMap> "." <PMapBasic>
 <PMapBasic> ::= <Name> | <AnonMap> | "(" <PMap> ")"
+
+-- An anonymous map is a partial map definition with an explicit target type,
+-- enclosed in parentheses.
+
+<AnonMap> ::= "(" "map" <PMapDef> "::" <Complex> ")"
 
 -- An extension is (optionally) a partial map followed by a number of clauses
 -- that extend it.
 
 <PMapExt> ::= [ <PMap> ] "[" <PMapClauses> "]"
-<PMapClauses> ::= <PMapClause> { "," <PMapClause> }
+<PMapClauses> ::= <PMapClause> { "," <PMapClause> } [ "," ]
 <PMapClause> ::= <Diagram> "=>" <Diagram>
