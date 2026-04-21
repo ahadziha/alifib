@@ -18,10 +18,10 @@ const COLOR_CELL: &str  = "\x1b[33m";  // yellow
 const COLOR_FILE: &str  = "\x1b[33m";  // yellow
 
 /// Colour for matched source pattern (the `[...]` region in rewrite display).
-const COLOR_MATCH: &str = "\x1b[36m";  // cyan
+const COLOR_MATCH: &str = "\x1b[33m";  // yellow/amber
 
 /// Colour for the rule's output (target) in rewrite display.
-const COLOR_REWTGT: &str = "\x1b[95m"; // bright magenta
+const COLOR_REWTGT: &str = "\x1b[36m"; // cyan
 
 const RESET: &str = "\x1b[0m";
 
