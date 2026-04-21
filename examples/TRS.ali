@@ -464,10 +464,48 @@ Nat_Addition <<= {
     attach Add :: Binary along [ Dom1 => Nat, Dom2 => Nat, Cod => Nat, Dom1_Dom2 => Nat.Pair ],
     let add = Add.node,
 
-    attach Zero_Nat :: Nullary_nat along [ Nullary => Zero, Other => Nat ],
-    attach Succ_Nat :: Unary_nat along [ Unary => Succ, Other => Nat ],
-    attach Add_Nat :: Binary_nat along [ Binary => Add, Other => Nat ],
+    attach Zero_Nat :: Nullary_nat along [ Nullary => Zero, Other => Nat, Cod_Other => Nat.Pair ],
+    attach Succ_Nat :: Unary_nat along [ 
+        Unary => Succ, Other => Nat, 
+        Dom_Other => Nat.Pair, Cod_Other => Nat.Pair 
+    ],
+    attach Add_Nat :: Binary_nat along [ 
+        Binary => Add, Other => Nat,
+        Dom1_Other => Nat.Pair, Dom2_Other => Nat.Pair, Cod_Other => Nat.Pair 
+    ],
 
     add_zero: (zero nat) add -> Nat.left_unitor,
     add_succ: (succ nat) add -> add succ
+},
+
+(* Another example: SKI combinator calculus *)
+SKI <<= {
+    pt,
+    attach Unit :: Unit along [ pt => pt ],
+
+    attach Ob :: Sort along [ Unit => Unit ],
+    let ob = Ob.ob,
+
+    attach S :: Nullary along [ Cod => Ob ],
+    let s = S.node,
+    attach K :: Nullary along [ Cod => Ob ],
+    let k = K.node,
+    attach I :: Nullary along [ Cod => Ob ],
+    let i = I.node,
+    attach Apply :: Binary along [ Dom1 => Ob, Dom2 => Ob, Cod => Ob, Dom1_Dom2 => Ob.Pair ],
+    let apply = Apply.node,
+
+    attach S_nat :: Nullary_nat along [ Nullary => S, Other => Ob, Cod_Other => Ob.Pair ],
+    attach K_nat :: Nullary_nat along [ Nullary => K, Other => Ob, Cod_Other => Ob.Pair ],
+    attach I_nat :: Nullary_nat along [ Nullary => I, Other => Ob, Cod_Other => Ob.Pair ],
+    attach Apply_nat :: Binary_nat along [ 
+        Binary => Apply, Other => Ob,
+        Dom1_Other => Ob.Pair, Dom2_Other => Ob.Pair, Cod_Other => Ob.Pair 
+    ],
+
+    S_rule: (s ob ob ob) (apply ob ob) (apply ob) apply
+        -> (Ob.left_unitor ob ob) (ob ob Ob.copy) (ob Ob.swap ob) (apply ob ob) (ob apply) apply,
+    K_rule: (k ob ob) (apply ob) apply
+        -> (Ob.left_unitor ob) (ob Ob.discard) Ob.right_unitor,
+    I_rule: (i ob) apply -> Ob.left_unitor
 }
