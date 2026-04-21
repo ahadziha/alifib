@@ -494,13 +494,13 @@ impl RewriteEngine {
     /// Name of the target diagram, or `None` if no goal was declared.
     pub fn target_diagram_name(&self) -> Option<&str> { self.target_diagram_name.as_deref() }
 
-    /// Returns true only if the current diagram equals the target AND at least
-    /// one rewrite step has been applied.  Regular directed complexes have no
-    /// identities, so source == target at the start is never a valid proof.
+    /// Returns true only if the current diagram is isomorphic to the target AND
+    /// at least one rewrite step has been applied.  Regular directed complexes
+    /// have no identities, so source == target at the start is never a valid proof.
     pub fn target_reached(&self) -> bool {
         !self.steps.is_empty()
             && self.target_diagram.as_ref()
-                .map(|t| Diagram::equal(&self.current_diagram, t))
+                .map(|t| Diagram::isomorphic(&self.current_diagram, t))
                 .unwrap_or(false)
     }
 
