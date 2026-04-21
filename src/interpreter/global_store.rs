@@ -35,6 +35,9 @@ pub struct GlobalStore {
     pub(crate) types: HashMap<GlobalId, TypeEntry>,
     /// Modules in load order (dependencies before the files that depend on them).
     pub(crate) modules: IndexMap<ModuleId, Arc<Complex>>,
+    /// Module short names (filename without extension) to canonical paths.
+    /// Populated as modules are registered; used for domain resolution in type blocks.
+    pub(crate) module_names: HashMap<String, ModuleId>,
 }
 
 /// Allocate a fresh global cell, create its classifier diagram, and insert
@@ -88,7 +91,13 @@ impl GlobalStore {
     }
 
     /// Register a module with its complex.
+    ///
+    /// Also records the module's short name (filename without `.ali` extension)
+    /// in the module names table for domain resolution in type blocks.
     pub fn set_module(&mut self, id: ModuleId, complex: Complex) {
+        if let Some(short_name) = module_short_name(&id) {
+            self.module_names.insert(short_name, id.clone());
+        }
         self.modules.insert(id, Arc::new(complex));
         self.assert_invariants();
     }
@@ -240,6 +249,15 @@ impl GlobalStore {
         self.register_generator(type_gid, name, cell_data, Some(diagram))
     }
 
+    /// Look up a module's complex by its short name (filename without extension).
+    ///
+    /// Returns the canonical path and an `Arc` to the module's complex.
+    pub fn resolve_module_by_name(&self, name: &str) -> Option<(&str, Arc<Complex>)> {
+        let canonical_path = self.module_names.get(name)?;
+        let arc = self.modules.get(canonical_path).map(Arc::clone)?;
+        Some((canonical_path.as_str(), arc))
+    }
+
     /// Debug-only check that every ID in `cells_by_dim` exists in `cells`.
     fn assert_invariants(&self) {
         for ids in self.cells_by_dim.values() {
@@ -248,4 +266,14 @@ impl GlobalStore {
             }
         }
     }
+}
+
+/// Extract a module's short name from its canonical file path.
+///
+/// Strips the directory and the `.ali` extension: `/path/to/Filename.ali` → `"Filename"`.
+fn module_short_name(canonical_path: &str) -> Option<String> {
+    let filename = std::path::Path::new(canonical_path)
+        .file_stem()?
+        .to_str()?;
+    Some(filename.to_owned())
 }

@@ -1,9 +1,27 @@
-use crate::aux::{GlobalId, LocalId, Tag};
+use crate::aux::{GlobalId, LocalId, ModuleId, Tag};
 use crate::core::complex::{Complex, MapDomain};
 use crate::language::ast::{Address, Span, Spanned};
 use std::sync::Arc;
 
 use super::types::{Context, InterpResult, Step, TypeScope, make_error};
+
+/// The resolved domain for a partial map defined in a type block.
+pub struct ResolvedModuleDomain {
+    pub path: ModuleId,
+    pub complex: Arc<Complex>,
+}
+
+impl ResolvedModuleDomain {
+    /// Get the domain complex.
+    pub fn complex(&self) -> &Arc<Complex> {
+        &self.complex
+    }
+
+    /// Convert to a `MapDomain` for storage in a complex.
+    pub fn map_domain(&self) -> MapDomain {
+        MapDomain::Module(self.path.clone())
+    }
+}
 
 // ---- Type/complex resolution ----
 
@@ -247,4 +265,36 @@ pub fn interpret_address(context: &Context, address: &Address, addr_span: Span) 
     let (id_opt, id_result) =
         type_id_of_named_diagram(&target_scope, last_name, *last_span, context);
     (id_opt, module_result.merge(prefix_result).merge(id_result))
+}
+
+/// Resolve a domain address as a module name.
+///
+/// Looks up the address (which must be a single segment) in the global module
+/// names table. Used for domain resolution in type blocks, where `:: Name`
+/// refers to a module rather than a type.
+pub fn resolve_module_domain(
+    context: &Context,
+    address: &Address,
+    span: Span,
+) -> (Option<ResolvedModuleDomain>, InterpResult) {
+    let mut result = InterpResult::ok(context.clone());
+
+    if address.len() != 1 {
+        result.add_error(make_error(span, "Module domain must be a single name"));
+        return (None, result);
+    }
+
+    let name = &address[0].inner;
+    let name_span = address[0].span;
+
+    let Some((canonical_path, module_arc)) = context.state.resolve_module_by_name(name) else {
+        result.add_error(make_error(name_span, format!("Module `{}` not found", name)));
+        return (None, result);
+    };
+
+    let domain = ResolvedModuleDomain {
+        path: canonical_path.to_owned(),
+        complex: module_arc,
+    };
+    (Some(domain), result)
 }

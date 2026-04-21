@@ -1,6 +1,6 @@
 use super::diagram::{interpret_diagram_as_term, is_pure_hole_diagram};
 use super::inference::{BdSlot, Constraint, ConstraintOrigin};
-use super::resolve::{interpret_address, resolve_map_domain_complex, resolve_type_complex};
+use super::resolve::{interpret_address, resolve_map_domain_complex, resolve_module_domain, resolve_type_complex};
 use super::types::{
     Context, EvalMap, InterpResult, PartialHint, Step, Term,
     fail, get_cell_data, make_error, make_error_from_core, sorted_generators,
@@ -563,7 +563,37 @@ fn check_map_totality(
     }
 }
 
-/// Interpret a named partial map definition, producing the `(name, map, domain)` triple for binding.
+/// Shared post-resolution logic for named partial map definitions.
+///
+/// Given a resolved domain (complex + MapDomain), interprets the map body,
+/// checks totality, and returns the binding triple.
+fn finish_def_pmap(
+    scope: &Complex,
+    domain: &Complex,
+    map_domain: MapDomain,
+    dp: &DefPartialMap,
+    prior_result: InterpResult,
+) -> (Option<(LocalId, PartialMap, MapDomain)>, InterpResult) {
+    let (eval_map_opt, def_result) = interpret_pmap_def(
+        &prior_result.context, scope, domain, &dp.value,
+    );
+    let mut combined = prior_result.merge(def_result);
+
+    let Some(eval_map) = eval_map_opt else {
+        return (None, combined);
+    };
+
+    check_map_totality(&mut combined, domain, &eval_map.map, &dp.name.inner, dp.name.span, dp.total);
+    if combined.has_errors() {
+        return (None, combined);
+    }
+
+    let name = dp.name.inner.clone();
+    (Some((name, eval_map.map, map_domain)), combined)
+}
+
+/// Interpret a named partial map definition, resolving the domain as a type
+/// via `interpret_address`. Used in complex and local blocks.
 pub fn interpret_def_pmap(
     context: &Context,
     scope: &Complex,
@@ -581,21 +611,27 @@ pub fn interpret_def_pmap(
         return (None, addr_result.merge(domain_result));
     };
 
-    let (eval_map_opt, def_result) = interpret_pmap_def(&context_after, scope, &domain, &dp.value);
-    let mut combined = addr_result.merge(def_result);
+    finish_def_pmap(
+        scope, &domain, MapDomain::Type(id), dp,
+        addr_result.merge(domain_result),
+    )
+}
 
-    let Some(eval_map) = eval_map_opt else {
-        return (None, combined);
+/// Interpret a named partial map definition, resolving the domain as a module
+/// via the module names table. Used in type blocks.
+pub fn interpret_def_pmap_module(
+    context: &Context,
+    scope: &Complex,
+    dp: &DefPartialMap,
+) -> (Option<(LocalId, PartialMap, MapDomain)>, InterpResult) {
+    let (resolved_opt, resolve_result) =
+        resolve_module_domain(context, &dp.address.inner, dp.address.span);
+    let Some(resolved) = resolved_opt else {
+        return (None, resolve_result);
     };
 
-    check_map_totality(&mut combined, &domain, &eval_map.map, &dp.name.inner, dp.name.span, dp.total);
-    if combined.has_errors() {
-        // Named maps should not be published into scope once we know they are invalid.
-        // In particular, total maps that are missing generators must not become visible
-        // to later statements in the same interpretation run.
-        return (None, combined);
-    }
-
-    let name = dp.name.inner.clone();
-    (Some((name, eval_map.map, MapDomain::Type(id))), combined)
+    finish_def_pmap(
+        scope, resolved.complex(), resolved.map_domain(), dp,
+        resolve_result,
+    )
 }

@@ -13,7 +13,7 @@ use super::diagram::{check_assert, interpret_assert, interpret_let_diag};
 use super::include::{
     interpret_attach_instr, interpret_include_instr, interpret_include_module_instr,
 };
-use super::partial_map::interpret_def_pmap;
+use super::partial_map::{interpret_def_pmap, interpret_def_pmap_module};
 use super::resolve::resolve_type_scope;
 use super::binding::{
     cell_dim, create_generator_diagram,
@@ -120,7 +120,7 @@ fn interpret_type_inst(
             let Some(scope) = current_module_scope(context) else {
                 return InterpResult::ok(context.clone());
             };
-            let (map_binding, result) = interpret_def_pmap(context, scope, dp);
+            let (map_binding, result) = interpret_def_pmap_module(context, scope, dp);
             insert_module_map_binding(result, map_binding)
         }
         TypeInst::IncludeModule(include_mod) => {
