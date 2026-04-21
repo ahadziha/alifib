@@ -157,9 +157,12 @@ pub fn print_state(
                 Some((render_diagram(&src, scope), render_diagram(&tgt, scope)))
             })
             .unwrap_or_else(|| ("?".to_string(), "?".to_string()));
+        let colored_highlight = display.colorize_match_display(&highlight);
+        let colored_src = display.paint_source(&rule_src);
+        let colored_tgt = display.paint_target(&rule_tgt);
         display.blank();
-        display.inspect(&format!("  ({i}) {highlight}"));
-        display.inspect(&format!("      by {} : {} -> {}", m.rule_name, rule_src, rule_tgt));
+        display.inspect_rich(&format!("  ({i}) {colored_highlight}"));
+        display.inspect_rich(&format!("      by {} : {} -> {}", m.rule_name, colored_src, colored_tgt));
     }
 }
 
