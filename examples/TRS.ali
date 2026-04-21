@@ -1,0 +1,473 @@
+@Type
+Wire <<= {
+    pt,
+    ob: pt -> pt,
+
+    id: ob -> ob,
+
+    id_id: id id -> id
+},
+
+Node_1_to_1 <<= {
+    pt,
+    attach Dom :: Wire along [ pt => pt ],
+    attach Cod :: Wire along [ pt => pt ],
+
+    node: Dom.ob -> Cod.ob,
+
+    dom_id: Dom.id node -> node,
+    cod_id: node Cod.id -> node
+},
+
+Node_2_to_1 <<= {
+    pt,
+    attach Dom1 :: Wire along [ pt => pt ],
+    attach Dom2 :: Wire along [ pt => pt ],
+    attach Cod :: Wire along [ pt => pt ],
+
+    node: Dom1.ob Dom2.ob -> Cod.ob,
+
+    dom1_id: (Dom1.id Dom2.ob) node -> node,
+    dom2_id: (Dom1.ob Dom2.id) node -> node,
+    cod_id: node Cod.id -> node
+},
+
+Node_1_to_2 <<= {
+    pt,
+    attach Dom :: Wire along [ pt => pt ],
+    attach Cod1 :: Wire along [ pt => pt ],
+    attach Cod2 :: Wire along [ pt => pt ],
+
+    node: Dom.ob -> Cod1.ob Cod2.ob,
+
+    cod1_id: node (Cod1.id Cod2.ob) -> node,
+    cod2_id: node (Cod1.ob Cod2.id)  -> node,
+    dom_id: Dom.id node -> node
+},
+
+Node_2_to_2 <<= {
+    pt,
+    attach Dom1 :: Wire along [ pt => pt ],
+    attach Dom2 :: Wire along [ pt => pt ],
+    attach Cod1 :: Wire along [ pt => pt ],
+    attach Cod2 :: Wire along [ pt => pt ],
+
+    node: Dom1.ob Dom2.ob -> Cod1.ob Cod2.ob,
+
+    dom1_id: (Dom1.id Dom2.ob) node -> node,
+    dom2_id: (Dom1.ob Dom2.id) node -> node,
+    cod1_id: node (Cod1.id Cod2.ob) -> node,
+    cod2_id: node (Cod1.ob Cod2.id)  -> node
+},
+
+Unit <<= Wire { 
+    attach Merge :: Node_2_to_1 along [
+        Dom1 => Wire,
+        Dom2 => Wire,
+        Cod => Wire
+    ],
+    let merge = Merge.node,
+
+    attach Split :: Node_1_to_2 along [
+        Dom => Wire,
+        Cod1 => Wire,
+        Cod2 => Wire
+    ],
+    let split = Split.node,
+
+    merge_assoc: (merge ob) merge -> (ob merge) merge,
+    split_assoc: split (split ob) -> split (ob split),
+
+    split_merge: split merge -> id,
+    left_frobenius: (split ob) (ob merge) -> merge split,
+    right_frobenius: (ob split) (merge ob) -> merge split
+},
+
+Monoidal_Wire <<= Wire {
+    attach Unit :: Unit along [ pt => pt ],
+    let unit = Unit.ob,
+
+    (* Left and right unitors *)
+    attach Left_unitor :: Node_2_to_1 along [
+        Dom1 => Unit.Wire,
+        Dom2 => Wire,
+        Cod => Wire
+    ],
+    let left_unitor = Left_unitor.node,
+    attach Right_unitor :: Node_2_to_1 along [
+        Dom1 => Wire,
+        Dom2 => Unit.Wire,
+        Cod => Wire
+    ],
+    let right_unitor = Right_unitor.node,
+    attach Left_unitor_inv :: Node_1_to_2 along [
+        Cod1 => Unit.Wire,
+        Cod2 => Wire,
+        Dom => Wire
+    ],
+    let left_unitor_inv = Left_unitor_inv.node,
+    attach Right_unitor_inv :: Node_1_to_2 along [
+        Cod1 => Wire,
+        Cod2 => Unit.Wire,
+        Dom => Wire
+    ],
+    let right_unitor_inv = Right_unitor_inv.node,
+
+    (* Left and right unitor rewrites *)
+    left_unitor_inversion: left_unitor_inv left_unitor -> id,
+    right_unitor_inversion: right_unitor_inv right_unitor -> id,
+
+    left_unitor_assoc: 
+        (Unit.merge ob) left_unitor -> (unit left_unitor) left_unitor,
+    right_unitor_assoc: 
+        (right_unitor unit) right_unitor -> (ob Unit.merge) right_unitor,
+
+    left_unitor_inv_assoc: 
+        left_unitor_inv (Unit.split ob) -> left_unitor_inv (unit left_unitor_inv),
+    right_unitor_inv_assoc: 
+        right_unitor_inv (right_unitor_inv unit) -> right_unitor_inv (ob Unit.split),
+
+    left_right_unitor_assoc: 
+        (left_unitor unit) right_unitor -> (unit right_unitor) left_unitor,
+    left_right_unitor_inv_assoc: 
+        right_unitor_inv (left_unitor_inv unit) -> left_unitor_inv (unit right_unitor_inv),
+
+    left_unitor_frobenius: 
+        (Unit.split ob) (unit left_unitor) -> left_unitor left_unitor_inv,
+    right_unitor_frobenius: 
+        (ob Unit.split) (right_unitor unit) -> right_unitor right_unitor_inv,
+
+    left_right_unitor_frobenius: 
+        (left_unitor_inv unit) (unit right_unitor) -> right_unitor left_unitor_inv,
+    right_left_unitor_frobenius: 
+        (unit right_unitor_inv) (left_unitor unit) -> left_unitor right_unitor_inv
+}
+
+@Unit
+let total Monoidal_Wire :: Monoidal_Wire = [
+    Wire => Wire,
+    Unit => Unit,
+    Left_unitor => Merge,
+    Right_unitor => Merge,
+    Left_unitor_inv => Split,
+    Right_unitor_inv => Split,
+    left_unitor_inversion => split_merge,
+    right_unitor_inversion => split_merge,
+    left_unitor_assoc => merge_assoc,
+    right_unitor_assoc => merge_assoc,
+    left_unitor_inv_assoc => split_assoc,
+    right_unitor_inv_assoc => split_assoc,
+    left_right_unitor_assoc => merge_assoc,
+    left_right_unitor_inv_assoc => split_assoc,
+    left_unitor_frobenius => left_frobenius,
+    right_unitor_frobenius => right_frobenius,
+    left_right_unitor_frobenius => left_frobenius,
+    right_left_unitor_frobenius => right_frobenius
+]
+
+@Type
+Monoidal_Node_1_to_1 <<= {
+    pt,
+    attach Unit :: Unit along [ pt => pt ],
+    attach Dom :: Monoidal_Wire along [ Unit => Unit ],
+    attach Cod :: Monoidal_Wire along [ Unit => Unit ],
+
+    attach Node :: Node_1_to_1 along [ 
+        Dom => Dom.Wire, 
+        Cod => Cod.Wire 
+    ],
+    let node = Node.node,
+
+    left_unitor_node: (Unit.ob node) Cod.left_unitor -> Dom.left_unitor node,
+    right_unitor_node: (node Unit.ob) Cod.right_unitor -> Dom.right_unitor node,
+
+    left_unitor_inv_node: node Cod.left_unitor_inv -> Dom.left_unitor_inv (Unit.ob node),
+    right_unitor_inv_node: node Cod.right_unitor_inv -> Dom.right_unitor_inv (node Unit.ob)
+},
+
+Monoidal_Node_2_to_1 <<= {
+    pt,
+    attach Unit :: Unit along [ pt => pt ],
+    attach Dom1 :: Monoidal_Wire along [ Unit => Unit ],
+    attach Dom2 :: Monoidal_Wire along [ Unit => Unit ],
+    attach Cod :: Monoidal_Wire along [ Unit => Unit ],
+
+    attach Node :: Node_2_to_1 along [ 
+        Dom1 => Dom1.Wire,
+        Dom2 => Dom2.Wire,
+        Cod => Cod.Wire 
+    ],
+    let node = Node.node,
+
+    left_unitor_node: 
+        (Unit.ob node) Cod.left_unitor -> (Dom1.left_unitor Dom2.ob) node,
+    right_unitor_node: 
+        (node Unit.ob) Cod.right_unitor -> (Dom1.ob Dom2.right_unitor) node,
+
+    left_unitor_inv_node: 
+        node Cod.left_unitor_inv -> (Dom1.left_unitor_inv Dom2.ob) (Unit.ob node),
+    right_unitor_inv_node: 
+        node Cod.right_unitor_inv -> (Dom1.ob Dom2.right_unitor_inv) (node Unit.ob),
+
+    domain_triangle:
+        (Dom1.right_unitor Dom2.ob) node -> (Dom1.ob Dom2.left_unitor) node,
+    domain_id:
+        (Dom1.right_unitor_inv Dom2.ob) (Dom1.ob Dom2.left_unitor) node -> node
+},
+
+Monoidal_Node_1_to_2 <<= {
+    pt,
+    attach Unit :: Unit along [ pt => pt ],
+    attach Cod1 :: Monoidal_Wire along [ Unit => Unit ],
+    attach Cod2 :: Monoidal_Wire along [ Unit => Unit ],
+    attach Dom :: Monoidal_Wire along [ Unit => Unit ],
+
+    attach Node :: Node_1_to_2 along [ 
+        Cod1 => Cod1.Wire,
+        Cod2 => Cod2.Wire,
+        Dom => Dom.Wire 
+    ],
+    let node = Node.node,
+
+    left_unitor_inv_node: 
+        node (Cod1.left_unitor_inv Cod2.ob) -> Dom.left_unitor_inv (Unit.ob node),
+    right_unitor_inv_node: 
+        node (Cod1.ob Cod2.right_unitor_inv) -> Dom.right_unitor_inv (node Unit.ob),
+
+    left_unitor_node: 
+        (Unit.ob node) (Cod1.left_unitor Cod2.ob) -> Dom.left_unitor node,
+    right_unitor_node: 
+        (node Unit.ob) (Cod1.ob Cod2.right_unitor) -> Dom.right_unitor node,
+
+    codomain_triangle:
+        node (Cod1.right_unitor_inv Cod2.ob) -> node (Cod1.ob Cod2.left_unitor_inv),
+    codomain_id:
+        node (Cod1.ob Cod2.left_unitor_inv) (Cod1.right_unitor Cod2.ob) -> node
+},
+
+Monoidal_Node_2_to_2 <<= {
+    pt,
+    attach Unit :: Unit along [ pt => pt ],
+    attach Dom1 :: Monoidal_Wire along [ Unit => Unit ],
+    attach Dom2 :: Monoidal_Wire along [ Unit => Unit ],
+    attach Cod1 :: Monoidal_Wire along [ Unit => Unit ],
+    attach Cod2 :: Monoidal_Wire along [ Unit => Unit ],
+
+    attach Node :: Node_2_to_2 along [ 
+        Dom1 => Dom1.Wire,
+        Dom2 => Dom2.Wire,
+        Cod1 => Cod1.Wire,
+        Cod2 => Cod2.Wire
+    ],
+    let node = Node.node,
+
+    left_unitor_node: 
+        (Unit.ob node) (Cod1.left_unitor Cod2.ob) -> (Dom1.left_unitor Dom2.ob) node,
+    right_unitor_node: 
+        (node Unit.ob) (Cod1.ob Cod2.right_unitor) -> (Dom1.ob Dom2.right_unitor) node,
+
+    left_unitor_inv_node: 
+        node (Cod1.left_unitor_inv Cod2.ob) -> (Dom1.left_unitor_inv Dom2.ob) (Unit.ob node),
+    right_unitor_inv_node: 
+        node (Cod1.ob Cod2.right_unitor_inv) -> (Dom1.ob Dom2.right_unitor_inv) (node Unit.ob),
+
+    domain_triangle:
+        (Dom1.right_unitor Dom2.ob) node -> (Dom1.ob Dom2.left_unitor) node,
+    codomain_triangle:
+        node (Cod1.right_unitor_inv Cod2.ob) -> node (Cod1.ob Cod2.left_unitor_inv),
+    domain_id:
+        (Dom1.right_unitor_inv Dom2.ob) (Dom1.ob Dom2.left_unitor) node -> node,
+    codomain_id:
+        node (Cod1.ob Cod2.left_unitor_inv) (Cod1.right_unitor Cod2.ob) -> node
+},
+
+Sort <<= Monoidal_Wire {
+    attach Swap :: Monoidal_Node_2_to_2 along [
+        Dom1 => Monoidal_Wire,
+        Dom2 => Monoidal_Wire,
+        Cod1 => Monoidal_Wire,
+        Cod2 => Monoidal_Wire
+    ],
+    let swap = Swap.node,
+
+    swap_swap: swap swap -> (ob left_unitor_inv) (right_unitor ob),
+    (* May need Reidemeister 3?? *)
+
+    attach Copy :: Monoidal_Node_1_to_2 along [
+        Dom => Monoidal_Wire,
+        Cod1 => Monoidal_Wire,
+        Cod2 => Monoidal_Wire
+    ],
+    let copy = Copy.node,
+
+    (* copy_assoc: copy (copy ob) -> copy (ob copy),
+    copy_commutative: copy swap -> copy,
+    copy_swap_left: (ob copy) (swap ob) (ob swap) -> swap (copy ob),
+    copy_swap_right: (copy ob) (ob swap) (swap ob) -> swap (ob copy), *)
+
+    attach Discard :: Monoidal_Node_1_to_1 along [
+        Dom => Monoidal_Wire,
+        Cod => Unit.Monoidal_Wire
+    ],
+    let discard = Discard.node,
+
+    (* copy_left_discard: copy (discard ob) -> left_unitor_inv,
+    copy_right_discard: copy (ob discard) -> right_unitor_inv,
+
+    discard_swap_left: (ob discard) right_unitor left_unitor_inv -> swap (discard ob),
+    discard_swap_right: (discard ob) left_unitor right_unitor_inv -> swap (ob discard) *)
+},
+
+Sort_Pair <<= {
+    pt,
+    attach Unit :: Unit along [ pt => pt ],
+    attach Fst :: Sort along [ Unit => Unit ],
+    attach Snd :: Sort along [ Unit => Unit ],
+
+    attach Swap :: Monoidal_Node_2_to_2 along [
+        Dom1 => Fst.Monoidal_Wire,
+        Dom2 => Snd.Monoidal_Wire,
+        Cod1 => Snd.Monoidal_Wire,
+        Cod2 => Fst.Monoidal_Wire
+    ],
+    let swap = Swap.node,
+    attach Swap_inv :: Monoidal_Node_2_to_2 along [
+        Dom1 => Snd.Monoidal_Wire,
+        Dom2 => Fst.Monoidal_Wire,
+        Cod1 => Fst.Monoidal_Wire,
+        Cod2 => Snd.Monoidal_Wire
+    ],
+    let swap_inv = Swap_inv.node,
+
+    (* swap_swap_inv: swap swap_inv -> (Fst.ob Snd.left_unitor_inv) (Fst.right_unitor Snd.ob),
+    swap_inv_swap: swap_inv swap -> (Snd.ob Fst.left_unitor_inv) (Snd.right_unitor Fst.ob) *)
+},
+
+@Sort
+let total Pair :: Sort_Pair = [
+    Fst => Sort,
+    Snd => Sort,
+    Swap => Swap,
+    Swap_inv => Swap,
+    (* swap_swap_inv => swap_swap,
+    swap_inv_swap => swap_swap *)
+]
+
+@Type
+Nullary <<= {
+    pt,
+    attach Unit :: Unit along [ pt => pt ],
+    attach Cod :: Sort along [ Unit => Unit ],
+
+    attach Node :: Monoidal_Node_1_to_1 along [
+        Dom => Unit.Monoidal_Wire,
+        Cod => Cod.Monoidal_Wire
+    ],
+    let node = Node.node,
+
+    node_copy:
+        node Cod.copy -> Unit.split (node #0 node),
+    node_discard:
+        node Cod.discard -> Unit.id
+},
+
+Unary <<= {
+    pt,
+    attach Unit :: Unit along [ pt => pt ],
+    attach Dom :: Sort along [ Unit => Unit ],
+    attach Cod :: Sort along [ Unit => Unit ],
+
+    attach Node :: Monoidal_Node_1_to_1 along [
+        Dom => Dom.Monoidal_Wire,
+        Cod => Cod.Monoidal_Wire
+    ],
+    let node = Node.node,
+
+    node_copy:
+        node Cod.copy -> Dom.copy (node #0 node),
+    node_discard:
+        node Cod.discard -> Dom.discard
+},
+
+Binary <<= {
+    pt,
+    attach Unit :: Unit along [ pt => pt ],
+    attach Dom1 :: Sort along [ Unit => Unit ],
+    attach Dom2 :: Sort along [ Unit => Unit ],
+    attach Cod :: Sort along [ Unit => Unit ],
+    attach Dom1_Dom2 :: Sort_Pair along [ Fst => Dom1, Snd => Dom2 ],
+
+    attach Node :: Monoidal_Node_2_to_1 along [
+        Dom1 => Dom1.Monoidal_Wire,
+        Dom2 => Dom2.Monoidal_Wire,
+        Cod => Cod.Monoidal_Wire
+    ],
+    let node = Node.node,
+
+    node_copy:
+        node Cod.copy 
+        -> (Dom1.copy #0 Dom2.copy) (Dom1.ob Dom1_Dom2.swap Dom2.ob) (node #0 node),
+    node_discard:
+        node Cod.discard -> (Dom1.discard #0 Dom2.discard) Unit.merge
+},
+
+Nullary_nat <<= Nullary {
+    attach Other :: Sort along [ Unit => Unit ],
+    attach Cod_Other :: Sort_Pair along [ Fst => Cod, Snd => Other ],
+
+    node_swap_left: 
+        (Other.ob node) Cod_Other.swap_inv
+        -> Other.right_unitor Other.left_unitor_inv (node Other.ob),
+    node_swap_right:
+        (node Other.ob) Cod_Other.swap
+        -> Other.left_unitor Other.right_unitor_inv (Other.ob node)
+},
+
+Unary_nat <<= Unary { 
+    attach Other :: Sort along [ Unit => Unit ],
+    attach Dom_Other :: Sort_Pair along [ Fst => Dom, Snd => Other ],
+    attach Cod_Other :: Sort_Pair along [ Fst => Cod, Snd => Other ],
+
+    node_swap_left:
+        (Other.ob node) Cod_Other.swap_inv -> Dom_Other.swap_inv (node Other.ob),
+    node_swap_right:
+        (node Other.ob) Cod_Other.swap -> Dom_Other.swap (Other.ob node)
+},
+
+Binary_nat <<= Binary {
+    attach Other :: Sort along [ Unit => Unit ],
+    attach Dom1_Other :: Sort_Pair along [ Fst => Dom1, Snd => Other ],
+    attach Dom2_Other :: Sort_Pair along [ Fst => Dom2, Snd => Other ],
+    attach Cod_Other :: Sort_Pair along [ Fst => Cod, Snd => Other ],
+
+    node_swap_left:
+        (Other.ob node) Cod_Other.swap_inv 
+        -> (Dom1_Other.swap_inv Dom2.ob) (Dom1.ob Dom2_Other.swap_inv) (node Other.ob),
+    node_swap_right:
+        (node Other.ob) Cod_Other.swap
+        -> (Dom1.ob Dom2_Other.swap) (Dom1_Other.swap Dom2.ob) (Other.ob node)
+},
+
+
+(* An example: natural numbers with addition *)
+Nat_Addition <<= {
+    pt,
+    attach Unit :: Unit along [ pt => pt ],
+
+    attach Nat :: Sort along [ Unit => Unit ],
+    let nat = Nat.ob,
+
+    attach Zero :: Nullary along [ Cod => Nat ],
+    let zero = Zero.node,
+    attach Succ :: Unary along [ Dom => Nat, Cod => Nat ],
+    let succ = Succ.node,
+    attach Add :: Binary along [ Dom1 => Nat, Dom2 => Nat, Cod => Nat, Dom1_Dom2 => Nat.Pair ],
+    let add = Add.node,
+
+    attach Zero_Nat :: Nullary_nat along [ Nullary => Zero, Other => Nat ],
+    attach Succ_Nat :: Unary_nat along [ Unary => Succ, Other => Nat ],
+    attach Add_Nat :: Binary_nat along [ Binary => Add, Other => Nat ],
+
+    add_zero: (zero nat) add -> Nat.left_unitor,
+    add_succ: (succ nat) add -> add succ
+}
