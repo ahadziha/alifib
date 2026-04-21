@@ -883,10 +883,10 @@ function renderState(data) {
     out.push('');
     out.push(sec('available rewrites:'));
     data.rewrites.forEach(r => {
-      out.push(`  [${hi(r.index)}] ${hi(r.rule_name)}  ${dim(r.source.label)} → ${dim(r.target.label)}`);
+      out.push(`  [${hi(r.index)}] ${hi(r.rule_name)}  ${src(r.source.label)} → ${tgt(r.target.label)}`);
       if (r.match_display) {
         const highlighted = esc(r.match_display).replace(/\[([^\]]*)\]/g,
-          '<span class="repl-match-hi">$1</span>');
+          '<span class="repl-src">$1</span>');
         out.push(`      match: ${highlighted}`);
       }
     });
@@ -990,6 +990,8 @@ function hi(s)  { return `<span class="repl-hi">${esc(s)}</span>`; }
 function dim(s) { return `<span class="repl-dim">${esc(s)}</span>`; }
 function sec(s) { return `<span class="repl-section-title">${esc(s)}</span>`; }
 function ok(s)  { return `<span class="repl-ok">${esc(s)}</span>`; }
+function src(s) { return `<span class="repl-src">${esc(s)}</span>`; }
+function tgt(s) { return `<span class="repl-tgt">${esc(s)}</span>`; }
 
 // Plain-text messages (errors, status) — no HTML, use textContent.
 function formatOk(msg)    { return { cls: 'repl-result ok',  text: msg }; }
@@ -1230,6 +1232,10 @@ function buildRewriteList(rewrites) {
     content.className = 'rw-content';
     content.innerHTML = `<span class="rw-index">${r.index}</span>`
       + `<span class="rw-name">${esc(r.rule_name)}</span> `
+      + `<span class="rw-src">${esc(r.source.label)}</span>`
+      + `<span class="rw-arrow"> → </span>`
+      + `<span class="rw-tgt">${esc(r.target.label)}</span>`
+      + `<span class="rw-match-sep"> &nbsp; </span>`
       + `<span class="rw-match">${matchHtml}</span>`;
     row.appendChild(content);
 
