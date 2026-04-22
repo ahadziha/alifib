@@ -47,9 +47,19 @@ impl WebRepl {
         }
     }
 
+    pub fn reset(&mut self) {
+        self.engine = None;
+        self.store = None;
+    }
+
     /// Interpret `.ali` source text and return a JSON response with structured
     /// type data (generators with boundaries, diagrams, maps).
     pub fn load_source(&mut self, source: &str) -> String {
+        // Free old state before allocating the new store so that both don't
+        // coexist — in WASM, linear memory pages from the peak are permanent.
+        self.engine = None;
+        self.store = None;
+
         let mut files = HashMap::new();
         files.insert(WEB_SOURCE_PATH.to_string(), source.to_string());
         let loader = Loader::with_virtual_files(files);
@@ -57,7 +67,6 @@ impl WebRepl {
         match InterpretedFile::load(&loader, WEB_SOURCE_PATH) {
             LoadResult::Loaded(file) => {
                 self.store = Some(Arc::clone(&file.state));
-                self.engine = None;
                 // Preserve the original frontend contract for `load_source`,
                 // which returns `types` at the top level instead of under
                 // `data`.
@@ -87,6 +96,8 @@ impl WebRepl {
         source_diagram: &str,
         target_diagram: Option<String>,
     ) -> String {
+        self.engine = None;
+
         let store = match self.store.clone() {
             Some(s) => s,
             None => return err_json("no source loaded; call load_source first"),

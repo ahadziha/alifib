@@ -65,6 +65,10 @@ class WasmBackend {
     this.label = 'WASM';
   }
 
+  async reset() {
+    this.inner.reset();
+  }
+
   async load_source(source) {
     return this.inner.load_source(source);
   }
@@ -99,6 +103,8 @@ class HttpBackend {
     this.baseUrl = baseUrl;
     this.label = 'HTTP';
   }
+
+  async reset() {}
 
   async load_source(source) {
     return this.post('/api/load_source', { source });
@@ -594,6 +600,7 @@ async function evaluateSource() {
 
   const previousType = selType.value;
 
+  await repl.reset();
   const result = await parseReplResponse(repl.load_source(src));
 
   if (result.status === 'error') {

@@ -29,6 +29,13 @@ impl WasmRepl {
         }
     }
 
+    /// Drop all interpreter state, freeing the `GlobalStore` and any active
+    /// session.  In WASM the freed pages stay in linear memory but become
+    /// available for reuse by subsequent `load_source` calls.
+    pub fn reset(&mut self) {
+        self.inner.reset();
+    }
+
     /// Interpret `.ali` source text and return a JSON response with structured
     /// type data (generators with boundaries, diagrams, maps).
     pub fn load_source(&mut self, source: &str) -> String {
