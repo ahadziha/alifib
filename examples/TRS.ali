@@ -300,9 +300,9 @@ Sort <<= Monoidal_Wire {
     ],
     let copy = Copy.node,
 
-    (* copy_assoc: copy (copy ob) -> copy (ob copy),
+    copy_assoc: copy (copy ob) -> copy (ob copy),
     copy_commutative: copy swap -> copy,
-    copy_swap_left: (ob copy) (swap ob) (ob swap) -> swap (copy ob),
+    (* copy_swap_left: (ob copy) (swap ob) (ob swap) -> swap (copy ob),
     copy_swap_right: (copy ob) (ob swap) (swap ob) -> swap (ob copy), *)
 
     attach Discard :: Monoidal_Node_1_to_1 along [
@@ -311,10 +311,10 @@ Sort <<= Monoidal_Wire {
     ],
     let discard = Discard.node,
 
-    (* copy_left_discard: copy (discard ob) -> left_unitor_inv,
+    copy_left_discard: copy (discard ob) -> left_unitor_inv,
     copy_right_discard: copy (ob discard) -> right_unitor_inv,
 
-    discard_swap_left: (ob discard) right_unitor left_unitor_inv -> swap (discard ob),
+    (* discard_swap_left: (ob discard) right_unitor left_unitor_inv -> swap (discard ob),
     discard_swap_right: (discard ob) left_unitor right_unitor_inv -> swap (ob discard) *)
 },
 
