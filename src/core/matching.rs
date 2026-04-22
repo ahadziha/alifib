@@ -72,14 +72,24 @@ impl RulePattern {
 /// rule name, and match positions. The step diagram is (n+1)-dimensional:
 /// its source n-boundary equals `target` and its target n-boundary is
 /// `target` with the matched region replaced.
-///
-/// Results are sorted by `(rule_name, image_positions)` for deterministic indexing.
 pub fn find_matches(
     complex: &Complex,
     rewrite: &Diagram,
     rule: &RulePattern,
     target: &Diagram,
     rule_name: &str,
+) -> Result<Vec<MatchResult>, Error> {
+    find_matches_impl(complex, rewrite, rule, target, rule_name, None)
+}
+
+/// Find up to `limit` matches (`None` = all).
+pub(crate) fn find_matches_impl(
+    complex: &Complex,
+    rewrite: &Diagram,
+    rule: &RulePattern,
+    target: &Diagram,
+    rule_name: &str,
+    limit: Option<usize>,
 ) -> Result<Vec<MatchResult>, Error> {
     let n = target.top_dim();
     if rewrite.top_dim() != n + 1 {
@@ -95,12 +105,13 @@ pub fn find_matches(
         return Err(Error::new("find_matches: pattern dimension mismatch"));
     }
 
+    if n == 0 { return find_matches_dim0(complex, rewrite, rule, target, rule_name, limit); }
+
     // Step 1: (n-1)-flow graphs.
-    let k = if n == 0 { return find_matches_dim0(complex, rewrite, rule, target, rule_name); } else { n - 1 };
+    let k = n - 1;
     let (p_flow, p_node_map) = graph::flow_graph(&pattern.shape, k);
     let (t_flow, t_node_map) = graph::flow_graph(&target.shape, k);
 
-    // Build label arrays for the flow graph vertices (tags of the top-dim cells).
     let p_labels: Vec<&crate::aux::Tag> = p_node_map.iter()
         .map(|&(dim, pos)| &pattern.labels[dim][pos])
         .collect();
@@ -114,36 +125,28 @@ pub fn find_matches(
     let mut results = Vec::new();
 
     for vertex_match in &flow_matches {
-        // vertex_match[i] = index in t_flow that p_flow node i maps to.
-
         // Step 3: Restrict target to closure of matched top-cells; check isomorphism.
         let matched_cells: Vec<(usize, usize)> = vertex_match.iter()
             .map(|&ti| t_node_map[ti])
             .collect();
 
-        // Extract image positions (top-dim positions in the target).
         let mut image_positions: Vec<usize> = matched_cells.iter()
             .filter(|(dim, _)| *dim == n)
             .map(|(_, pos)| *pos)
             .collect();
         image_positions.sort_unstable();
 
-        let iso_emb = match check_match_isomorphism(
-            pattern, target, &matched_cells,
-        ) {
+        let iso_emb = match check_match_isomorphism(pattern, target, &matched_cells) {
             Some(e) => e,
             None => continue,
         };
 
         // Step 4: Pushout to build the pre-rewrite.
-        let pattern_to_rewrite = &rule.pattern_to_rewrite;
-
         let pushout::Pushout { tip, inl, inr } = pushout::pushout(
-            &iso_emb,             // pattern → target
-            pattern_to_rewrite,   // pattern → rewrite
+            &iso_emb,
+            &rule.pattern_to_rewrite,
         );
 
-        // Compute the induced labelling on the pushout.
         let tip_sizes = tip.sizes();
         let pre_labels = merge_pushout_labels(
             &tip_sizes, &inl, &inr, &target.labels, &rewrite.labels,
@@ -157,13 +160,11 @@ pub fn find_matches(
                     rule_name: rule_name.to_owned(),
                     image_positions,
                 });
+                if limit.is_some_and(|l| results.len() >= l) { return Ok(results); }
             }
             Err(_) => continue,
         }
     }
-
-    // Deterministic sort by image positions.
-    results.sort_by(|a, b| a.image_positions.cmp(&b.image_positions));
 
     Ok(results)
 }
@@ -175,9 +176,9 @@ fn find_matches_dim0(
     rule: &RulePattern,
     target: &Diagram,
     rule_name: &str,
+    limit: Option<usize>,
 ) -> Result<Vec<MatchResult>, Error> {
     let pattern = &rule.pattern;
-    // A 0-dim pattern has a single point. Check label compatibility.
     let pat_sizes = pattern.shape.sizes();
     let tgt_sizes = target.shape.sizes();
     if pat_sizes.is_empty() || pat_sizes[0] != 1 {
@@ -187,15 +188,13 @@ fn find_matches_dim0(
     let mut results = Vec::new();
     for pos in 0..tgt_sizes[0] {
         if &target.labels[0][pos] != pat_tag { continue; }
-        // Build the embedding and pushout.
         let map = vec![vec![pos]];
         let mut inv = vec![vec![NO_PREIMAGE; tgt_sizes[0]]];
         inv[0][pos] = 0;
         let emb = Embedding::make(
             Arc::clone(&pattern.shape), Arc::clone(&target.shape), map, inv,
         );
-        let pat_to_rew = &rule.pattern_to_rewrite;
-        let pushout::Pushout { tip, inl, inr } = pushout::pushout(&emb, pat_to_rew);
+        let pushout::Pushout { tip, inl, inr } = pushout::pushout(&emb, &rule.pattern_to_rewrite);
         let tip_sizes = tip.sizes();
         let pre_labels = merge_pushout_labels(
             &tip_sizes, &inl, &inr, &target.labels, &rewrite.labels,
@@ -206,6 +205,7 @@ fn find_matches_dim0(
                 rule_name: rule_name.to_owned(),
                 image_positions: vec![pos],
             });
+            if limit.is_some_and(|l| results.len() >= l) { return Ok(results); }
         }
     }
     Ok(results)

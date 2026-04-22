@@ -5,7 +5,7 @@ use crate::aux::loader::Loader;
 use crate::aux::Tag;
 use crate::core::complex::Complex;
 use crate::core::diagram::{Diagram, Sign};
-use crate::core::matching::{MatchResult, RulePattern, find_matches};
+use crate::core::matching::{MatchResult, RulePattern, find_matches, find_matches_impl};
 use crate::interpreter::{GlobalStore, InterpretedFile};
 use super::session::{Move, SessionFile};
 use std::collections::HashMap;
@@ -193,7 +193,6 @@ fn build_rule_patterns(
 }
 
 fn compute_rewrites(
-    _store: &GlobalStore,
     type_complex: &Complex,
     rule_patterns: &HashMap<String, RulePattern>,
     current: &Diagram,
@@ -212,13 +211,28 @@ fn compute_rewrites(
         }
     }
 
-    // Stable sort by (rule_name, image_positions) for deterministic indexing.
-    all_matches.sort_by(|a, b| {
-        a.rule_name.cmp(&b.rule_name)
-            .then_with(|| a.image_positions.cmp(&b.image_positions))
-    });
-
     Ok(all_matches)
+}
+
+fn compute_first_rewrite(
+    type_complex: &Complex,
+    rule_patterns: &HashMap<String, RulePattern>,
+    current: &Diagram,
+) -> Result<Option<MatchResult>, String> {
+    let n = current.top_dim();
+
+    for (name, _tag, dim) in type_complex.generators_iter() {
+        if dim != n + 1 { continue; }
+        let Some(rewrite) = type_complex.classifier(name) else { continue; };
+        let Some(rp) = rule_patterns.get(name) else { continue; };
+
+        match find_matches_impl(type_complex, rewrite, rp, current, name, Some(1)) {
+            Ok(matches) => if let Some(m) = matches.into_iter().next() { return Ok(Some(m)); },
+            Err(e) => return Err(format!("failed to match rule '{}': {}", name, e)),
+        }
+    }
+
+    Ok(None)
 }
 
 // ── Constructor impls ─────────────────────────────────────────────────────────
@@ -246,7 +260,7 @@ impl RewriteEngine {
 
         let rule_patterns = build_rule_patterns(&type_complex, source_diagram.top_dim())?;
         let available_rewrites =
-            compute_rewrites(&store, &type_complex, &rule_patterns, &source_diagram)?;
+            compute_rewrites(&type_complex, &rule_patterns, &source_diagram)?;
 
         Ok(Self {
             current_diagram: source_diagram.clone(),
@@ -277,7 +291,7 @@ impl RewriteEngine {
 
         let rule_patterns = build_rule_patterns(&type_complex, source_diagram.top_dim())?;
         let available_rewrites =
-            compute_rewrites(&store, &type_complex, &rule_patterns, &source_diagram)?;
+            compute_rewrites(&type_complex, &rule_patterns, &source_diagram)?;
 
         Ok(Self {
             current_diagram: source_diagram.clone(),
@@ -314,7 +328,7 @@ impl RewriteEngine {
         let mut history: Vec<HistoryEntry> = Vec::with_capacity(session.moves.len());
 
         for (step_idx, mov) in session.moves.iter().enumerate() {
-            let candidates = compute_rewrites(&store, &type_complex, &rule_patterns, &current)
+            let candidates = compute_rewrites(&type_complex, &rule_patterns, &current)
                 .map_err(|e| format!("replay failed at step {}: {}", step_idx + 1, e))?;
 
             let match_result = candidates.get(mov.choice).ok_or_else(|| {
@@ -346,7 +360,7 @@ impl RewriteEngine {
         }
 
         let available_rewrites =
-            compute_rewrites(&store, &type_complex, &rule_patterns, &current)?;
+            compute_rewrites(&type_complex, &rule_patterns, &current)?;
 
         Ok(Self {
             current_diagram: current,
@@ -400,7 +414,6 @@ impl RewriteEngine {
         });
 
         self.available_rewrites = compute_rewrites(
-            &self.store,
             &self.type_complex,
             &self.rule_patterns,
             &self.current_diagram,
@@ -417,7 +430,6 @@ impl RewriteEngine {
         self.current_diagram = entry.prev_diagram;
         self.steps.pop();
         self.available_rewrites = compute_rewrites(
-            &self.store,
             &self.type_complex,
             &self.rule_patterns,
             &self.current_diagram,
@@ -431,22 +443,57 @@ impl RewriteEngine {
     }
 
     /// Apply up to `max_steps` rewrites automatically, always picking the
-    /// first available candidate.  Stops early if the target is reached or
-    /// no rewrites remain; returns the number of steps actually applied and
-    /// a short reason when the loop stopped before `max_steps`.
+    /// first available candidate.  Uses first-match search at each step for
+    /// speed; only computes the full rewrite list when the loop stops.
     pub fn auto(&mut self, max_steps: usize) -> Result<(usize, Option<&'static str>), String> {
         let mut applied = 0usize;
-        for _ in 0..max_steps {
+        let stop_reason: Option<&'static str>;
+
+        loop {
             if self.target_reached() {
-                return Ok((applied, Some("target reached")));
+                stop_reason = Some("target reached");
+                break;
             }
-            if self.available_rewrites.is_empty() {
-                return Ok((applied, Some("no rewrites available")));
+            if applied >= max_steps {
+                stop_reason = None;
+                break;
             }
-            self.step(0)?;
+
+            let first = compute_first_rewrite(
+                &self.type_complex,
+                &self.rule_patterns,
+                &self.current_diagram,
+            )?;
+
+            let Some(match_result) = first else {
+                stop_reason = Some("no rewrites available");
+                break;
+            };
+
+            let n = self.current_diagram.top_dim();
+            let rule_name = match_result.rule_name;
+            let step = match_result.step;
+            let prev_diagram = self.current_diagram.clone();
+
+            let new_current = Diagram::boundary(Sign::Target, n, &step)
+                .map_err(|e| format!("target boundary failed: {}", e))?;
+
+            self.current_diagram = new_current;
+            self.steps.push(step);
+            self.history.push(HistoryEntry {
+                mov: Move { choice: 0, rule_name },
+                prev_diagram,
+            });
             applied += 1;
         }
-        Ok((applied, None))
+
+        self.available_rewrites = compute_rewrites(
+            &self.type_complex,
+            &self.rule_patterns,
+            &self.current_diagram,
+        )?;
+
+        Ok((applied, stop_reason))
     }
 
     /// Undo back to (but not past) the given step index (0 = fully undone,
@@ -458,9 +505,19 @@ impl RewriteEngine {
                 target_step, self.history.len(),
             ));
         }
-        while self.history.len() > target_step {
-            self.undo()?;
-        }
+        if target_step == self.history.len() { return Ok(()); }
+        self.current_diagram = if target_step == 0 {
+            self.source_diagram.clone()
+        } else {
+            self.history[target_step].prev_diagram.clone()
+        };
+        self.history.truncate(target_step);
+        self.steps.truncate(target_step);
+        self.available_rewrites = compute_rewrites(
+            &self.type_complex,
+            &self.rule_patterns,
+            &self.current_diagram,
+        )?;
         Ok(())
     }
 }

@@ -482,6 +482,7 @@ Nat_Addition <<= {
 SKI <<= {
     pt,
     attach Unit :: Unit along [ pt => pt ],
+    let unit = Unit.ob,
 
     attach Ob :: Sort along [ Unit => Unit ],
     let ob = Ob.ob,
@@ -509,3 +510,14 @@ SKI <<= {
         -> (Ob.left_unitor ob) (ob Ob.discard) Ob.right_unitor,
     I_rule: (i ob) apply -> Ob.left_unitor
 }
+
+@SKI
+let succ = Unit.split (Unit.split unit) (Unit.split unit unit) (Unit.split unit unit unit) 
+    (s #0 s #0 k #0 s #0 k) (ob ob apply ob) (ob apply ob) (ob apply) apply,
+let zero = Unit.split (k #0 i) apply,
+
+let one = Unit.split (succ #0 zero) apply,
+let two = Unit.split (succ #0 one) apply,
+let three = Unit.split (succ #0 two) apply,
+
+let threefx = (three ob ob) (apply ob) apply
