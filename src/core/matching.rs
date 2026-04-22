@@ -24,6 +24,45 @@ pub struct MatchResult {
     pub image_positions: Vec<usize>,
 }
 
+/// Precomputed, reusable data about a rewrite rule's pattern side.
+///
+/// Builds once per rule and reused across every [`find_matches`] call so that
+/// long-running sessions don't redo the rule-side boundary/normalisation work
+/// on every step.  The pattern's shape is kept in canonical form, so the
+/// isomorphism check inside matching becomes a normalise-and-compare where the
+/// rule side is already normal.
+pub struct RulePattern {
+    /// The normalised input (source) n-boundary of the rule, as a diagram.
+    pub pattern: Diagram,
+    /// Embedding of [`pattern.shape`] into the rule's full (n+1) shape.
+    /// Used as the right injection in the pushout that builds each step.
+    pub(crate) pattern_to_rewrite: Embedding,
+}
+
+impl RulePattern {
+    /// Build a [`RulePattern`] from a rewrite rule's classifier diagram.
+    ///
+    /// The rule must be at least 1-dimensional (i.e. `rewrite.top_dim() >= 1`);
+    /// the pattern is the rule's input boundary at dimension `rewrite.top_dim() - 1`.
+    pub fn new(rewrite: &Diagram) -> Result<Self, Error> {
+        let top = rewrite.top_dim();
+        if rewrite.dim() < 1 {
+            return Err(Error::new(
+                "RulePattern::new: rewrite must be at least 1-dimensional",
+            ));
+        }
+        let n = top - 1;
+        // Normalised input boundary diagram (pattern.shape is in canonical form).
+        let pattern = Diagram::boundary_normal(super::diagram::Sign::Source, n, rewrite)?;
+        // Embedding from the normalised boundary sub-shape into the rule's shape.
+        // `boundary_traverse` is deterministic so calling it again yields the
+        // same cell ordering that `boundary_normal` used above.
+        let (_, pattern_to_rewrite) =
+            ogposet::boundary_traverse(Sign::Input, n, &rewrite.shape);
+        Ok(Self { pattern, pattern_to_rewrite })
+    }
+}
+
 /// Find all valid rewrite applications of `rewrite` inside `target`.
 ///
 /// `rewrite` must be a cell — an (n+1)-dimensional round diagram with a single
@@ -38,6 +77,7 @@ pub struct MatchResult {
 pub fn find_matches(
     complex: &Complex,
     rewrite: &Diagram,
+    rule: &RulePattern,
     target: &Diagram,
     rule_name: &str,
 ) -> Result<Vec<MatchResult>, Error> {
@@ -49,15 +89,14 @@ pub fn find_matches(
         )));
     }
 
-    // Pattern = input n-boundary of rewrite.
-    let pattern = Diagram::boundary(super::diagram::Sign::Source, n, rewrite)?;
+    let pattern = &rule.pattern;
 
     if pattern.top_dim() != n {
         return Err(Error::new("find_matches: pattern dimension mismatch"));
     }
 
     // Step 1: (n-1)-flow graphs.
-    let k = if n == 0 { return find_matches_dim0(complex, rewrite, &pattern, target, rule_name); } else { n - 1 };
+    let k = if n == 0 { return find_matches_dim0(complex, rewrite, rule, target, rule_name); } else { n - 1 };
     let (p_flow, p_node_map) = graph::flow_graph(&pattern.shape, k);
     let (t_flow, t_node_map) = graph::flow_graph(&target.shape, k);
 
@@ -90,20 +129,18 @@ pub fn find_matches(
         image_positions.sort_unstable();
 
         let iso_emb = match check_match_isomorphism(
-            &pattern, target, &matched_cells,
+            pattern, target, &matched_cells,
         ) {
             Some(e) => e,
             None => continue,
         };
 
         // Step 4: Pushout to build the pre-rewrite.
-        let (_, pattern_to_rewrite) = ogposet::boundary(
-            Sign::Input, n, &rewrite.shape,
-        );
+        let pattern_to_rewrite = &rule.pattern_to_rewrite;
 
         let pushout::Pushout { tip, inl, inr } = pushout::pushout(
             &iso_emb,             // pattern → target
-            &pattern_to_rewrite,  // pattern → rewrite
+            pattern_to_rewrite,   // pattern → rewrite
         );
 
         // Compute the induced labelling on the pushout.
@@ -135,10 +172,11 @@ pub fn find_matches(
 fn find_matches_dim0(
     complex: &Complex,
     rewrite: &Diagram,
-    pattern: &Diagram,
+    rule: &RulePattern,
     target: &Diagram,
     rule_name: &str,
 ) -> Result<Vec<MatchResult>, Error> {
+    let pattern = &rule.pattern;
     // A 0-dim pattern has a single point. Check label compatibility.
     let pat_sizes = pattern.shape.sizes();
     let tgt_sizes = target.shape.sizes();
@@ -156,8 +194,8 @@ fn find_matches_dim0(
         let emb = Embedding::make(
             Arc::clone(&pattern.shape), Arc::clone(&target.shape), map, inv,
         );
-        let (_, pat_to_rew) = ogposet::boundary(Sign::Input, 0, &rewrite.shape);
-        let pushout::Pushout { tip, inl, inr } = pushout::pushout(&emb, &pat_to_rew);
+        let pat_to_rew = &rule.pattern_to_rewrite;
+        let pushout::Pushout { tip, inl, inr } = pushout::pushout(&emb, pat_to_rew);
         let tip_sizes = tip.sizes();
         let pre_labels = merge_pushout_labels(
             &tip_sizes, &inl, &inr, &target.labels, &rewrite.labels,
@@ -424,6 +462,10 @@ mod tests {
             (diag, name.to_owned())
         }
 
+        fn pattern_for(rewrite: &Diagram) -> super::super::RulePattern {
+            super::super::RulePattern::new(rewrite).expect("RulePattern::new")
+        }
+
         fn get_diagram(complex: &Complex, name: &str) -> Diagram {
             complex.find_diagram(name).cloned()
                 .unwrap_or_else(|| complex.classifier(name).cloned()
@@ -439,7 +481,8 @@ mod tests {
             let target = get_diagram(&complex, "lhs"); // lhs = id id id
             // Pattern = source boundary of idem = id id.
             // In "id id id" there should be 2 matches: at positions [0,1] and [1,2].
-            let matches = find_matches(&complex, &rewrite, &target, &rname).unwrap();
+            let rp = pattern_for(&rewrite);
+            let matches = find_matches(&complex, &rewrite, &rp, &target, &rname).unwrap();
             assert_eq!(matches.len(), 2, "expected 2 matches of idem in id id id");
             for m in &matches {
                 assert_eq!(m.step.top_dim(), target.top_dim() + 1, "each match is (n+1)-dimensional");
@@ -454,7 +497,8 @@ mod tests {
             let (rewrite, rname) = get_rewrite(&complex, "idem");
             let n = rewrite.top_dim().saturating_sub(1);
             let idem_src = Diagram::boundary(Sign::Source, n, &rewrite).unwrap();
-            let matches = find_matches(&complex, &rewrite, &idem_src, &rname).unwrap();
+            let rp = pattern_for(&rewrite);
+            let matches = find_matches(&complex, &rewrite, &rp, &idem_src, &rname).unwrap();
             assert_eq!(matches.len(), 1, "expected 1 match of idem in its own source");
         }
 
@@ -465,7 +509,8 @@ mod tests {
             let (_store, complex) = load_type(&fixture("Idem.ali"), "Idem");
             let (rewrite, rname) = get_rewrite(&complex, "idem");
             let target = get_diagram(&complex, "rhs"); // rhs = id
-            let matches = find_matches(&complex, &rewrite, &target, &rname).unwrap();
+            let rp = pattern_for(&rewrite);
+            let matches = find_matches(&complex, &rewrite, &rp, &target, &rname).unwrap();
             assert_eq!(matches.len(), 0, "no match of id id in id");
         }
 
@@ -477,7 +522,8 @@ mod tests {
             let (_store, complex) = load_type(&fixture("Assoc.ali"), "Assoc");
             let (rewrite, rname) = get_rewrite(&complex, "beta");
             let target = get_diagram(&complex, "lhs2");
-            let matches = find_matches(&complex, &rewrite, &target, &rname).unwrap();
+            let rp = pattern_for(&rewrite);
+            let matches = find_matches(&complex, &rewrite, &rp, &target, &rname).unwrap();
             assert_eq!(matches.len(), 2, "expected 2 matches of beta in alpha alpha alpha");
             for m in &matches {
                 assert_eq!(m.step.top_dim(), target.top_dim() + 1);
@@ -494,13 +540,14 @@ mod tests {
             let n = lhs.top_dim();
 
             // First application: pick first match.
-            let matches1 = find_matches(&complex, &rewrite, &lhs, &rname).unwrap();
+            let rp = pattern_for(&rewrite);
+            let matches1 = find_matches(&complex, &rewrite, &rp, &lhs, &rname).unwrap();
             assert!(!matches1.is_empty());
             let step1 = &matches1[0].step;
             let after1 = Diagram::boundary(Sign::Target, n, step1).unwrap();
 
             // Second application.
-            let matches2 = find_matches(&complex, &rewrite, &after1, &rname).unwrap();
+            let matches2 = find_matches(&complex, &rewrite, &rp, &after1, &rname).unwrap();
             assert_eq!(matches2.len(), 1);
             let step2 = &matches2[0].step;
             let after2 = Diagram::boundary(Sign::Target, n, step2).unwrap();

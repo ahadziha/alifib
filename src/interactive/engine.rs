@@ -5,9 +5,10 @@ use crate::aux::loader::Loader;
 use crate::aux::Tag;
 use crate::core::complex::Complex;
 use crate::core::diagram::{Diagram, Sign};
-use crate::core::matching::{MatchResult, find_matches};
+use crate::core::matching::{MatchResult, RulePattern, find_matches};
 use crate::interpreter::{GlobalStore, InterpretedFile};
 use super::session::{Move, SessionFile};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 /// A snapshot of a single past step, stored for O(1) undo.
@@ -38,6 +39,12 @@ pub struct RewriteEngine {
     steps: Vec<Diagram>,
     history: Vec<HistoryEntry>,
     available_rewrites: Vec<MatchResult>,
+
+    /// Per-rule precomputed pattern data (normalised input boundary + embedding
+    /// into the rule's shape).  Built once when the engine is constructed and
+    /// reused for every [`find_matches`] call so that rule-side boundary
+    /// traversal and normalisation aren't redone on every step.
+    rule_patterns: HashMap<String, RulePattern>,
 
     // Metadata (for session file persistence)
     source_file: String,
@@ -167,9 +174,28 @@ fn load_context(
     Ok((store, type_complex, source_diagram, target_diagram))
 }
 
+/// Build precomputed [`RulePattern`]s for every rewrite rule at dimension
+/// `n + 1` in `type_complex`, indexed by rule name.
+fn build_rule_patterns(
+    type_complex: &Complex,
+    n: usize,
+) -> Result<HashMap<String, RulePattern>, String> {
+    let mut out = HashMap::new();
+    for (name, _tag, dim) in type_complex.generators_iter() {
+        if dim != n + 1 { continue; }
+        let Some(rewrite) = type_complex.classifier(name) else { continue; };
+        let rp = RulePattern::new(rewrite).map_err(|e| {
+            format!("failed to precompute pattern for rule '{}': {}", name, e)
+        })?;
+        out.insert(name.to_owned(), rp);
+    }
+    Ok(out)
+}
+
 fn compute_rewrites(
     _store: &GlobalStore,
     type_complex: &Complex,
+    rule_patterns: &HashMap<String, RulePattern>,
     current: &Diagram,
 ) -> Result<Vec<MatchResult>, String> {
     let n = current.top_dim();
@@ -178,8 +204,9 @@ fn compute_rewrites(
     for (name, _tag, dim) in type_complex.generators_iter() {
         if dim != n + 1 { continue; }
         let Some(rewrite) = type_complex.classifier(name) else { continue; };
+        let Some(rp) = rule_patterns.get(name) else { continue; };
 
-        match find_matches(type_complex, rewrite, current, name) {
+        match find_matches(type_complex, rewrite, rp, current, name) {
             Ok(matches) => all_matches.extend(matches),
             Err(e) => return Err(format!("failed to match rule '{}': {}", name, e)),
         }
@@ -217,13 +244,16 @@ impl RewriteEngine {
             .map(|expr| eval_diagram_expr(&store, &type_complex, &source_file, expr))
             .transpose()?;
 
-        let available_rewrites = compute_rewrites(&store, &type_complex, &source_diagram)?;
+        let rule_patterns = build_rule_patterns(&type_complex, source_diagram.top_dim())?;
+        let available_rewrites =
+            compute_rewrites(&store, &type_complex, &rule_patterns, &source_diagram)?;
 
         Ok(Self {
             current_diagram: source_diagram.clone(),
             steps: Vec::new(),
             history: Vec::new(),
             available_rewrites,
+            rule_patterns,
             source_file,
             type_name,
             source_diagram_name: source_diagram_name.to_owned(),
@@ -245,13 +275,16 @@ impl RewriteEngine {
         let (store, type_complex, source_diagram, target_diagram) =
             load_context(source_file, type_name, source_diagram_name, target_diagram_name)?;
 
-        let available_rewrites = compute_rewrites(&store, &type_complex, &source_diagram)?;
+        let rule_patterns = build_rule_patterns(&type_complex, source_diagram.top_dim())?;
+        let available_rewrites =
+            compute_rewrites(&store, &type_complex, &rule_patterns, &source_diagram)?;
 
         Ok(Self {
             current_diagram: source_diagram.clone(),
             steps: Vec::new(),
             history: Vec::new(),
             available_rewrites,
+            rule_patterns,
             store,
             type_complex,
             source_diagram,
@@ -275,12 +308,13 @@ impl RewriteEngine {
         )?;
 
         let n = source_diagram.top_dim();
+        let rule_patterns = build_rule_patterns(&type_complex, n)?;
         let mut current = source_diagram.clone();
         let mut steps: Vec<Diagram> = Vec::with_capacity(session.moves.len());
         let mut history: Vec<HistoryEntry> = Vec::with_capacity(session.moves.len());
 
         for (step_idx, mov) in session.moves.iter().enumerate() {
-            let candidates = compute_rewrites(&store, &type_complex, &current)
+            let candidates = compute_rewrites(&store, &type_complex, &rule_patterns, &current)
                 .map_err(|e| format!("replay failed at step {}: {}", step_idx + 1, e))?;
 
             let match_result = candidates.get(mov.choice).ok_or_else(|| {
@@ -311,13 +345,15 @@ impl RewriteEngine {
             steps.push(step);
         }
 
-        let available_rewrites = compute_rewrites(&store, &type_complex, &current)?;
+        let available_rewrites =
+            compute_rewrites(&store, &type_complex, &rule_patterns, &current)?;
 
         Ok(Self {
             current_diagram: current,
             steps,
             history,
             available_rewrites,
+            rule_patterns,
             source_file: session.source_file.clone(),
             type_name: session.type_name.clone(),
             source_diagram_name: session.source_diagram.clone(),
@@ -366,6 +402,7 @@ impl RewriteEngine {
         self.available_rewrites = compute_rewrites(
             &self.store,
             &self.type_complex,
+            &self.rule_patterns,
             &self.current_diagram,
         )?;
 
@@ -382,6 +419,7 @@ impl RewriteEngine {
         self.available_rewrites = compute_rewrites(
             &self.store,
             &self.type_complex,
+            &self.rule_patterns,
             &self.current_diagram,
         )?;
         Ok(())

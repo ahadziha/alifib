@@ -11,8 +11,6 @@
 //! - [`traverse`] — general sub-ogposet traversal (drives all of the above)
 
 use std::sync::Arc;
-use std::cell::RefCell;
-use std::collections::HashMap;
 use crate::aux::Error;
 use super::bitset::BitSet;
 use super::embeddings::{Embedding, NO_PREIMAGE};
@@ -535,19 +533,8 @@ pub(super) fn normalisation(g: &Arc<Ogposet>) -> (Arc<Ogposet>, Embedding) {
     if g.is_normal() {
         return (Arc::clone(g), Embedding::id(Arc::clone(g)));
     }
-
-    let key = Arc::as_ptr(g) as usize;
-    let cached = NORM_CACHE.with(|c| c.borrow().get(&key).cloned());
-    if let Some((shape, emb)) = cached {
-        return (shape, emb);
-    }
-
     let stack = build_stack_extremal(Sign::Input, g);
-    let (dom, emb) = traverse(g, stack, true);
-
-    NORM_CACHE.with(|c| c.borrow_mut().insert(key, (Arc::clone(&dom), emb.clone())));
-
-    (dom, emb)
+    traverse(g, stack, true)
 }
 
 /// Build a traversal stack seeded with the sign-extremal cells of `g` at every
@@ -588,21 +575,10 @@ fn build_stack_cell_n(g: &Ogposet) -> Vec<(usize, IntSet)> {
 ///   needed when forming an n-cell from a pair of parallel (n-1)-diagrams.
 pub(super) fn boundary_traverse(sign: Sign, k: usize, g: &Arc<Ogposet>) -> (Arc<Ogposet>, Embedding) {
     let effective_k = if g.dim < 0 { 0 } else { k.min(g.dim as usize) };
-
-    let cache_key = (Arc::as_ptr(g) as usize, sign, effective_k);
-    let cached = BT_CACHE.with(|c| c.borrow().get(&cache_key).cloned());
-    if let Some((shape, emb)) = cached {
-        return (shape, emb);
-    }
-
-    let (dom, emb) = match sign {
+    match sign {
         Sign::Input | Sign::Output => traverse(g, build_stack_paste(sign, g, effective_k), true),
         Sign::Both => traverse(g, build_stack_cell_n(g), false),
-    };
-
-    BT_CACHE.with(|c| c.borrow_mut().insert(cache_key, (Arc::clone(&dom), emb.clone())));
-
-    (dom, emb)
+    }
 }
 
 /// Find a shape isomorphism from `u` to `v`, or return an error if none exists.
@@ -657,17 +633,6 @@ pub(super) fn find_isomorphism(u: &Arc<Ogposet>, v: &Arc<Ogposet>) -> Result<Emb
     Ok(Embedding::make(Arc::clone(u), Arc::clone(v), map, inv))
 }
 
-// ---- Thread-local memoisation caches ----
-//
-// Keyed by the raw pointer of the Arc<Ogposet>.  This is safe because the Arc
-// keeps the allocation live for as long as any cache entry that references it.
-
-type ShapeWithEmbedding = (Arc<Ogposet>, Embedding);
-
-thread_local! {
-    static NORM_CACHE: RefCell<HashMap<usize, ShapeWithEmbedding>> = RefCell::new(HashMap::new());
-    static BT_CACHE: RefCell<HashMap<(usize, Sign, usize), ShapeWithEmbedding>> = RefCell::new(HashMap::new());
-}
 
 /// Compute the downward closure of a set of seed cells as BitSets per dimension,
 /// without constructing a sub-ogposet or embedding.
@@ -740,10 +705,3 @@ pub(super) fn signed_k_boundary_of_cell(
     }
 }
 
-/// Clear all memoisation caches.  Call between independent interpreter runs
-/// if long-lived threads are reused.
-#[allow(dead_code)]
-pub(super) fn clear_caches() {
-    NORM_CACHE.with(|c| c.borrow_mut().clear());
-    BT_CACHE.with(|c| c.borrow_mut().clear());
-}
