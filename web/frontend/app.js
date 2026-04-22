@@ -592,6 +592,8 @@ async function evaluateSource() {
   const src = editor.value.trim();
   if (!src) return;
 
+  const previousType = selType.value;
+
   const result = await parseReplResponse(repl.load_source(src));
 
   if (result.status === 'error') {
@@ -618,6 +620,10 @@ async function evaluateSource() {
     opt.value = opt.textContent = t.name;
     selType.appendChild(opt);
   });
+
+  if (previousType && types.some(t => t.name === previousType)) {
+    selType.value = previousType;
+  }
 
   sessionSetup.hidden = false;
   resetSession();
