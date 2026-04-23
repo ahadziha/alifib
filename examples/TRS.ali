@@ -309,14 +309,14 @@ Monoidal_Node_2_to_2 <<= {
     let node = Node.node,
 
     left_unitor_node: 
-        (Unit.ob node) (Cod1.left_unitor Cod2.ob) -> (Dom1.left_unitor Dom2.ob) node,
+        (Dom1.left_unitor Dom2.ob) node -> (Unit.ob node) (Cod1.left_unitor Cod2.ob),
     right_unitor_node: 
-        (node Unit.ob) (Cod1.ob Cod2.right_unitor) -> (Dom1.ob Dom2.right_unitor) node,
+        (Dom1.ob Dom2.right_unitor) node -> (node Unit.ob) (Cod1.ob Cod2.right_unitor),
 
     left_unitor_inv_node: 
-        node (Cod1.left_unitor_inv Cod2.ob) -> (Dom1.left_unitor_inv Dom2.ob) (Unit.ob node),
+        (Dom1.left_unitor_inv Dom2.ob) (Unit.ob node) -> node (Cod1.left_unitor_inv Cod2.ob),
     right_unitor_inv_node: 
-        node (Cod1.ob Cod2.right_unitor_inv) -> (Dom1.ob Dom2.right_unitor_inv) (node Unit.ob),
+        (Dom1.ob Dom2.right_unitor_inv) (node Unit.ob) -> node (Cod1.ob Cod2.right_unitor_inv),
 
     domain_triangle:
         (Dom1.right_unitor Dom2.ob) node -> (Dom1.ob Dom2.left_unitor) node,
