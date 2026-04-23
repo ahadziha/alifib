@@ -333,12 +333,17 @@ pub fn run_repl(
                             match cmd {
                                 // Store/Save handled here: need access to outer type_complex and stored_defs.
                                 Cmd::Store(name) => {
-                                    let source_expr = match e.proof_label() {
-                                        Ok(opt) => opt,
-                                        Err(err) => {
-                                            display.error(&err);
-                                            continue;
-                                        }
+                                    let source_expr = if e.steps().is_empty() {
+                                        None
+                                    } else {
+                                        let n = e.source_diagram().top_dim();
+                                        let scope = e.type_complex();
+                                        let mut steps = e.steps().iter();
+                                        let first = render_diagram(steps.next().unwrap(), scope);
+                                        let rest: String = steps
+                                            .map(|s| format!("\n#{} {}", n, render_diagram(s, scope)))
+                                            .collect();
+                                        Some(format!("{}{}", first, rest))
                                     };
                                     match e.register_proof(&name) {
                                         Ok((new_store, new_complex)) => {

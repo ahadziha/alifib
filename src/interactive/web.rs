@@ -193,9 +193,17 @@ impl WebRepl {
                 let Some(e) = self.engine.as_mut() else {
                     return err_json("no session active; call init_session first");
                 };
-                let proof_expr = match e.proof_label() {
-                    Ok(opt) => opt,
-                    Err(msg) => return response_err(msg),
+                let proof_expr = if e.steps().is_empty() {
+                    None
+                } else {
+                    let n = e.source_diagram().top_dim();
+                    let scope = e.type_complex();
+                    let mut steps = e.steps().iter();
+                    let first = crate::output::render_diagram(steps.next().unwrap(), scope);
+                    let rest: String = steps
+                        .map(|s| format!("\n#{} {}", n, crate::output::render_diagram(s, scope)))
+                        .collect();
+                    Some(format!("{}{}", first, rest))
                 };
                 let type_name = e.type_name().to_owned();
                 match e.register_proof(&name) {
