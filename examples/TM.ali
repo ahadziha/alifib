@@ -22,7 +22,7 @@ TM <<= {
 },
 
 (* 
-    Encoding a machine ACCEPTing a^n b^n.
+    Encoding a machine accepting a^n b^n.
     Run on L INIT <input> R.
 *)
 AnBn <<= TM {
