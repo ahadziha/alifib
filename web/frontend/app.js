@@ -8,6 +8,7 @@ let currentLayout = null;
 let selectedEl = null;
 let dragState = null;
 let splitterDrag = null;
+const thinGenerators = new Set();
 
 const MIN_WORKSPACE_WIDTHS = [240, 260, 280];
 const MIN_ANALYSIS_HEIGHTS = [60, 180];
@@ -655,8 +656,7 @@ function buildTypeAccordion(t) {
   body.className = 'acc-type-body';
 
   if (t.generators.length) body.appendChild(buildSection('Generators', t.generators,
-    g => buildClickableRow(`${hi(g.name)} <span class="acc-dim">dim ${g.dim}</span>`,
-      () => selectItem(t.name, { kind: 'generator', name: g.name, dim: g.dim, src: g.src, tgt: g.tgt }))));
+    g => buildGeneratorRow(g, t.name)));
   if (t.diagrams.length) body.appendChild(buildSection('Diagrams', t.diagrams,
     d => buildClickableRow(hi(d.name),
       () => selectItem(t.name, { kind: 'diagram', name: d.name, src: d.src, tgt: d.tgt }))));
@@ -700,6 +700,52 @@ function buildClickableRow(innerHTML, onClick) {
     div.classList.add('acc-leaf--selected');
     void onClick();
   });
+  return div;
+}
+
+function buildGeneratorRow(g, typeName) {
+  const div = document.createElement('div');
+  div.className = 'acc-leaf acc-leaf-gen';
+  if (thinGenerators.has(g.name)) div.classList.add('acc-leaf--thin');
+
+  const text = document.createElement('span');
+  text.className = 'acc-leaf-text';
+  text.innerHTML = `${hi(g.name)} <span class="acc-dim">dim ${g.dim}</span>`;
+  div.appendChild(text);
+
+  const toggle = document.createElement('span');
+  toggle.className = 'thin-toggle' + (thinGenerators.has(g.name) ? ' thin-toggle--active' : '');
+  toggle.title = 'Toggle thin';
+  toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const wasThin = thinGenerators.has(g.name);
+    if (wasThin) thinGenerators.delete(g.name);
+    else thinGenerators.add(g.name);
+    toggle.classList.toggle('thin-toggle--active', !wasThin);
+    div.classList.toggle('acc-leaf--thin', !wasThin);
+    document.querySelectorAll(`.acc-leaf-gen[data-gen="${CSS.escape(g.name)}"]`).forEach(row => {
+      row.classList.toggle('acc-leaf--thin', !wasThin);
+      row.querySelector('.thin-toggle')?.classList.toggle('thin-toggle--active', !wasThin);
+    });
+    resizeAndRender();
+  });
+  div.appendChild(toggle);
+  div.dataset.gen = g.name;
+
+  div.addEventListener('click', () => {
+    if (selectedEl === div) {
+      div.classList.remove('acc-leaf--selected');
+      selectedEl = null;
+      currentItem = null;
+      void returnToSessionView();
+      return;
+    }
+    if (selectedEl) selectedEl.classList.remove('acc-leaf--selected');
+    selectedEl = div;
+    div.classList.add('acc-leaf--selected');
+    void selectItem(typeName, { kind: 'generator', name: g.name, dim: g.dim, src: g.src, tgt: g.tgt });
+  });
+
   return div;
 }
 
@@ -1649,60 +1695,74 @@ function renderStrDiag(ctx, L, cw, ch) {
     return { x: PAD + s.x * (cw - 2 * PAD), y: PAD + s.y * (ch - 2 * PAD) };
   });
 
-  // Depth ordering: draw wires front-to-back (reversed topo sort of depth graph).
-  // Every wire gets a background-colour contour; later-drawn (deeper) wires'
-  // contours occlude earlier (shallower) wires' lines, creating crossing gaps.
-  const wireOrder = topoSort(L.numWires, L.dAdj).reverse();
-
-  const bgColor = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#1a1a1e';
   const wireColor = '#d4d4d8';
   const BORDER_W = 6;
   const WIRE_W = 2;
 
-  for (const wi of wireOrder) {
+  function strokeWirePaths(wi) {
     const wp = px[wi];
-    const preds = L.hPred[wi];
-    const succs = L.hAdj[wi];
-
-    const sources = preds.length > 0
-      ? preds.map(pi => ({ p: px[pi], boundary: false }))
-      : [{ p: entryPoint(wp, o, 'input', cw, ch), boundary: true }];
-    const targets = succs.length > 0
-      ? succs.map(si => ({ p: px[si], boundary: false }))
-      : [{ p: entryPoint(wp, o, 'output', cw, ch), boundary: true }];
-
+    const sources = L.hPred[wi].length > 0
+      ? L.hPred[wi].map(pi => px[pi])
+      : [entryPoint(wp, o, 'input', cw, ch)];
+    const targets = L.hAdj[wi].length > 0
+      ? L.hAdj[wi].map(si => px[si])
+      : [entryPoint(wp, o, 'output', cw, ch)];
     for (const src of sources) {
       for (const tgt of targets) {
-        const q0 = isVert ? { x: wp.x, y: src.p.y } : { x: src.p.x, y: wp.y };
-        const q1 = isVert ? { x: wp.x, y: tgt.p.y } : { x: tgt.p.x, y: wp.y };
-
-        // Background contour (every wire gets one — creates crossing gaps).
+        const q0 = isVert ? { x: wp.x, y: src.y } : { x: src.x, y: wp.y };
+        const q1 = isVert ? { x: wp.x, y: tgt.y } : { x: tgt.x, y: wp.y };
         ctx.beginPath();
-        ctx.moveTo(src.p.x, src.p.y);
+        ctx.moveTo(src.x, src.y);
         ctx.quadraticCurveTo(q0.x, q0.y, wp.x, wp.y);
-        ctx.quadraticCurveTo(q1.x, q1.y, tgt.p.x, tgt.p.y);
-        ctx.strokeStyle = bgColor;
-        ctx.lineWidth = WIRE_W + BORDER_W;
-        ctx.lineCap = 'round';
-        ctx.stroke();
-
-        // Main wire.
-        ctx.beginPath();
-        ctx.moveTo(src.p.x, src.p.y);
-        ctx.quadraticCurveTo(q0.x, q0.y, wp.x, wp.y);
-        ctx.quadraticCurveTo(q1.x, q1.y, tgt.p.x, tgt.p.y);
-        ctx.strokeStyle = wireColor;
-        ctx.lineWidth = WIRE_W;
-        ctx.lineCap = 'round';
+        ctx.quadraticCurveTo(q1.x, q1.y, tgt.x, tgt.y);
         ctx.stroke();
       }
     }
+  }
 
-    // Wire vertex dot
-    ctx.beginPath();
-    ctx.arc(wp.x, wp.y, WIRE_R, 0, Math.PI * 2);
-    ctx.fillStyle = wireColor;
-    ctx.fill();
+  function drawWire(wi) {
+    const wireThin = thinGenerators.has(L.verts[wi].label);
+    if (wireThin) ctx.globalAlpha = 0.3;
+    ctx.strokeStyle = wireColor;
+    ctx.lineWidth = WIRE_W;
+    ctx.lineCap = 'round';
+    strokeWirePaths(wi);
+    if (wireThin) ctx.globalAlpha = 1.0;
+    if (!wireThin) {
+      ctx.beginPath();
+      ctx.arc(px[wi].x, px[wi].y, WIRE_R, 0, Math.PI * 2);
+      ctx.fillStyle = wireColor;
+      ctx.fill();
+    }
+  }
+
+  if (L.depthEdges.length > 0) {
+    // Layer-based rendering: crossing gaps only between depth-related wires.
+    const depthLevel = new Array(L.numWires).fill(0);
+    const dTopoOrder = topoSort(L.numWires, L.dAdj);
+    for (const u of dTopoOrder) {
+      for (const v of (L.dAdj[u] || [])) {
+        if (v < L.numWires) depthLevel[v] = Math.max(depthLevel[v], depthLevel[u] + 1);
+      }
+    }
+    const maxLevel = Math.max(0, ...depthLevel);
+    const levels = Array.from({length: maxLevel + 1}, () => []);
+    for (let i = 0; i < L.numWires; i++) levels[depthLevel[i]].push(i);
+
+    for (let lv = 0; lv <= maxLevel; lv++) {
+      if (lv > 0) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.strokeStyle = 'rgba(255,255,255,1)';
+        ctx.lineWidth = WIRE_W + BORDER_W;
+        ctx.lineCap = 'round';
+        for (const wi of levels[lv]) strokeWirePaths(wi);
+        ctx.restore();
+      }
+      for (const wi of levels[lv]) drawWire(wi);
+    }
+  } else {
+    for (let wi = 0; wi < L.numWires; wi++) drawWire(wi);
   }
 
   // Draw nodes
@@ -1711,7 +1771,24 @@ function renderStrDiag(ctx, L, cw, ch) {
     const np = px[i];
     const nodePos = i - L.numWires;
     const highlighted = hlPositions && hlPositions.has(nodePos);
-    if (highlighted) {
+    const nodeThin = thinGenerators.has(L.verts[i].label);
+    if (nodeThin && highlighted) {
+      ctx.save();
+      ctx.shadowColor = '#ffffff';
+      ctx.shadowBlur = 14;
+      ctx.beginPath();
+      ctx.arc(np.x, np.y, WIRE_R, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.restore();
+    } else if (nodeThin) {
+      ctx.globalAlpha = 0.3;
+      ctx.beginPath();
+      ctx.arc(np.x, np.y, WIRE_R, 0, Math.PI * 2);
+      ctx.fillStyle = wireColor;
+      ctx.fill();
+      ctx.globalAlpha = 1.0;
+    } else if (highlighted) {
       ctx.save();
       ctx.shadowColor = '#ffffff';
       ctx.shadowBlur = 14;
@@ -1738,8 +1815,10 @@ function renderStrDiag(ctx, L, cw, ch) {
     const label = L.verts[i].label;
     if (!label) continue;
     const isNode = L.verts[i].kind === 'node';
-    ctx.fillStyle = isNode ? '#f4f4f5' : '#a1a1aa';
-    const r = isNode ? NODE_R : WIRE_R;
+    const labelThin = thinGenerators.has(label);
+    if (labelThin) ctx.globalAlpha = 0.5;
+    ctx.fillStyle = (isNode && !labelThin) ? '#f4f4f5' : '#a1a1aa';
+    const r = (isNode && !labelThin) ? NODE_R : WIRE_R;
     if (isNode) {
       if (isVert) {
         ctx.textAlign = 'left';
@@ -1761,6 +1840,7 @@ function renderStrDiag(ctx, L, cw, ch) {
         ctx.fillText(label, p.x, p.y - r - 3);
       }
     }
+    if (labelThin) ctx.globalAlpha = 1.0;
   }
 }
 

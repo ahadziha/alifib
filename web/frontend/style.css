@@ -271,6 +271,50 @@ header {
   background: rgba(124, 106, 242, 0.08);
 }
 
+/* ── Thin toggle on generator rows ── */
+.acc-leaf-gen {
+  display: flex;
+  align-items: center;
+}
+.acc-leaf-text {
+  flex: 1;
+  min-width: 0;
+}
+.acc-leaf--thin .acc-leaf-text {
+  opacity: 0.45;
+}
+.thin-toggle {
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.acc-leaf-gen:hover .thin-toggle,
+.thin-toggle--active {
+  opacity: 1;
+}
+.thin-toggle::after {
+  content: '';
+  display: block;
+  border-radius: 50%;
+  width: 8px;
+  height: 8px;
+  background: var(--accent);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  transition: all 0.15s ease;
+}
+.thin-toggle--active::after {
+  width: 5px;
+  height: 5px;
+  background: var(--text-dim);
+  border: none;
+}
+
 /* ── Analysis pane ── */
 .vis-controls {
   display: flex;
