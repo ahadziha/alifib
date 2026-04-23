@@ -14,6 +14,20 @@ use std::sync::Arc;
 
 // ---- Helpers ----
 
+fn try_dotted_name(expr: &DExpr) -> Option<String> {
+    match expr {
+        DExpr::Component(DComponent::PartialMap(PartialMapBasic::Name(s))) => Some(s.clone()),
+        DExpr::Dot { base, field } => {
+            let prefix = try_dotted_name(&base.inner)?;
+            match &field.inner {
+                DComponent::PartialMap(PartialMapBasic::Name(s)) => Some(format!("{}.{}", prefix, s)),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
 /// Extract a `Diagram` from an `Option<Term>`, recording an error if it is a map.
 fn require_diagram_term(
     term: Option<Term>,
@@ -187,7 +201,17 @@ pub fn interpret_dexpr(
                 Some(Component::Value(t)) => (Some(t), result),
             }
         }
-        DExpr::Dot { base, field } => interpret_dot_access(context, scope, base, field),
+        DExpr::Dot { base, field } => {
+            if let Some(dotted) = try_dotted_name(&d_expr.inner) {
+                if let Some(diagram) = scope.find_diagram(&dotted) {
+                    return (Some(Term::Diag(diagram.clone())), InterpResult::ok(context.clone()));
+                }
+                if let Some(classifier) = scope.classifier(&dotted) {
+                    return (Some(Term::Diag(classifier.clone())), InterpResult::ok(context.clone()));
+                }
+            }
+            interpret_dot_access(context, scope, base, field)
+        }
     }
 }
 
@@ -304,29 +328,29 @@ pub fn interpret_assert(
     // exact value and emit parallel boundary constraints.  For embedded holes (e.g.,
     // `f ? g = h`) the paste context already emits BoundaryEq; claiming Value(hole, h)
     // would be wrong.
-    let scope_arc = Arc::new(scope.clone());
-    if let Some(Term::Diag(ref d)) = right_opt
-        && is_pure_hole_diagram(&assert_stmt.lhs.inner) {
-        for hole in &combined.holes[..lhs_hole_count] {
-            combined.constraints.push(Constraint::Value {
-                hole: hole.id,
-                diagram: d.clone(),
-                scope: scope_arc.clone(),
-                origin: ConstraintOrigin::Assertion,
-            });
-            // DimEq and principal BoundaryEq are derived by the solver from Value.
+    if !combined.holes.is_empty() {
+        let scope_arc = Arc::new(scope.clone());
+        if let Some(Term::Diag(ref d)) = right_opt
+            && is_pure_hole_diagram(&assert_stmt.lhs.inner) {
+            for hole in &combined.holes[..lhs_hole_count] {
+                combined.constraints.push(Constraint::Value {
+                    hole: hole.id,
+                    diagram: d.clone(),
+                    scope: scope_arc.clone(),
+                    origin: ConstraintOrigin::Assertion,
+                });
+            }
         }
-    }
-    if let Some(Term::Diag(ref d)) = left_opt
-        && is_pure_hole_diagram(&assert_stmt.rhs.inner) {
-        for hole in &combined.holes[lhs_hole_count..] {
-            combined.constraints.push(Constraint::Value {
-                hole: hole.id,
-                diagram: d.clone(),
-                scope: scope_arc.clone(),
-                origin: ConstraintOrigin::Assertion,
-            });
-            // DimEq and principal BoundaryEq are derived by the solver from Value.
+        if let Some(Term::Diag(ref d)) = left_opt
+            && is_pure_hole_diagram(&assert_stmt.rhs.inner) {
+            for hole in &combined.holes[lhs_hole_count..] {
+                combined.constraints.push(Constraint::Value {
+                    hole: hole.id,
+                    diagram: d.clone(),
+                    scope: scope_arc.clone(),
+                    origin: ConstraintOrigin::Assertion,
+                });
+            }
         }
     }
 
@@ -416,47 +440,49 @@ fn interpret_paste(
     // LHS holes (index rhs_hole_count..) get boundary_out from RHS.source_k.
     // RHS holes (index ..rhs_hole_count) get boundary_in from LHS.target_k.
     // Both sides also learn their dimension from the concrete partner.
-    let scope_arc = Arc::new(scope.clone());
-    if let Some(ref d_right) = d_right_opt {
-        if let Ok(in_bd) = Diagram::boundary_normal(DiagramSign::Source, k, d_right) {
+    if !combined.holes.is_empty() {
+        let scope_arc = Arc::new(scope.clone());
+        if let Some(ref d_right) = d_right_opt {
+            if let Ok(in_bd) = Diagram::boundary_normal(DiagramSign::Source, k, d_right) {
+                for hole in &combined.holes[rhs_hole_count..] {
+                    combined.constraints.push(Constraint::BoundaryEq {
+                        hole: hole.id,
+                        slot: BdSlot { sign: DiagramSign::Target, dim: k },
+                        diagram: in_bd.clone(),
+                        scope: scope_arc.clone(),
+                        origin: ConstraintOrigin::Paste { paste_dim: k },
+                    });
+                }
+            }
+            let n = d_right.top_dim();
             for hole in &combined.holes[rhs_hole_count..] {
-                combined.constraints.push(Constraint::BoundaryEq {
+                combined.constraints.push(Constraint::DimEq {
                     hole: hole.id,
-                    slot: BdSlot { sign: DiagramSign::Target, dim: k },
-                    diagram: in_bd.clone(),
-                    scope: scope_arc.clone(),
+                    dim: n,
                     origin: ConstraintOrigin::Paste { paste_dim: k },
                 });
             }
         }
-        let n = d_right.top_dim();
-        for hole in &combined.holes[rhs_hole_count..] {
-            combined.constraints.push(Constraint::DimEq {
-                hole: hole.id,
-                dim: n,
-                origin: ConstraintOrigin::Paste { paste_dim: k },
-            });
-        }
-    }
-    if let Some(ref d_left) = d_left_opt {
-        if let Ok(out_bd) = Diagram::boundary_normal(DiagramSign::Target, k, d_left) {
+        if let Some(ref d_left) = d_left_opt {
+            if let Ok(out_bd) = Diagram::boundary_normal(DiagramSign::Target, k, d_left) {
+                for hole in &combined.holes[..rhs_hole_count] {
+                    combined.constraints.push(Constraint::BoundaryEq {
+                        hole: hole.id,
+                        slot: BdSlot { sign: DiagramSign::Source, dim: k },
+                        diagram: out_bd.clone(),
+                        scope: scope_arc.clone(),
+                        origin: ConstraintOrigin::Paste { paste_dim: k },
+                    });
+                }
+            }
+            let n = d_left.top_dim();
             for hole in &combined.holes[..rhs_hole_count] {
-                combined.constraints.push(Constraint::BoundaryEq {
+                combined.constraints.push(Constraint::DimEq {
                     hole: hole.id,
-                    slot: BdSlot { sign: DiagramSign::Source, dim: k },
-                    diagram: out_bd.clone(),
-                    scope: scope_arc.clone(),
+                    dim: n,
                     origin: ConstraintOrigin::Paste { paste_dim: k },
                 });
             }
-        }
-        let n = d_left.top_dim();
-        for hole in &combined.holes[..rhs_hole_count] {
-            combined.constraints.push(Constraint::DimEq {
-                hole: hole.id,
-                dim: n,
-                origin: ConstraintOrigin::Paste { paste_dim: k },
-            });
         }
     }
 
@@ -688,15 +714,17 @@ pub fn interpret_boundaries(
 
     // Constraint system: a hole in source position must be parallel to the target,
     // and vice versa.  Decomposed eagerly into DimEq + BoundaryEq at principal slots.
-    let scope_arc = Arc::new(scope.clone());
-    if let Some(ref tgt) = target_opt {
-        for hole in &combined.holes[..pre_target_holes] {
-            push_parallel_constraints(hole.id, tgt, &scope_arc, ConstraintOrigin::Declaration, &mut combined.constraints);
+    if !combined.holes.is_empty() {
+        let scope_arc = Arc::new(scope.clone());
+        if let Some(ref tgt) = target_opt {
+            for hole in &combined.holes[..pre_target_holes] {
+                push_parallel_constraints(hole.id, tgt, &scope_arc, ConstraintOrigin::Declaration, &mut combined.constraints);
+            }
         }
-    }
-    if let Some(ref src) = source_opt {
-        for hole in &combined.holes[pre_target_holes..] {
-            push_parallel_constraints(hole.id, src, &scope_arc, ConstraintOrigin::Declaration, &mut combined.constraints);
+        if let Some(ref src) = source_opt {
+            for hole in &combined.holes[pre_target_holes..] {
+                push_parallel_constraints(hole.id, src, &scope_arc, ConstraintOrigin::Declaration, &mut combined.constraints);
+            }
         }
     }
 
