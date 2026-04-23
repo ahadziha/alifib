@@ -80,7 +80,8 @@ Unit <<= Wire {
 
     split_merge: split merge -> id,
     left_frobenius: (split ob) (ob merge) -> merge split,
-    right_frobenius: (ob split) (merge ob) -> merge split
+    right_frobenius: (ob split) (merge ob) -> merge split,
+    frobenius_flip: (split ob) (ob merge) -> (ob split) (merge ob)
 },
 
 Monoidal_Wire <<= Wire {
@@ -132,15 +133,22 @@ Monoidal_Wire <<= Wire {
     left_right_unitor_inv_assoc: 
         right_unitor_inv (left_unitor_inv unit) -> left_unitor_inv (unit right_unitor_inv),
 
-    left_unitor_frobenius: 
+    left_frobenius_left_unitor: 
         (Unit.split ob) (unit left_unitor) -> left_unitor left_unitor_inv,
-    right_unitor_frobenius: 
+    left_frobenius_right_unitor:
+        (right_unitor_inv unit) (ob Unit.merge) -> right_unitor right_unitor_inv,
+    right_frobenius_left_unitor: 
+        (unit left_unitor_inv) (Unit.merge ob) -> left_unitor left_unitor_inv,
+    right_frobenius_right_unitor:
         (ob Unit.split) (right_unitor unit) -> right_unitor right_unitor_inv,
 
-    left_right_unitor_frobenius: 
+    left_frobenius_both_unitors: 
         (left_unitor_inv unit) (unit right_unitor) -> right_unitor left_unitor_inv,
-    right_left_unitor_frobenius: 
-        (unit right_unitor_inv) (left_unitor unit) -> left_unitor right_unitor_inv
+    right_frobenius_both_unitors: 
+        (unit right_unitor_inv) (left_unitor unit) -> left_unitor right_unitor_inv,
+
+    frobenius_flip:
+        (right_unitor_inv ob) (ob left_unitor) -> (ob left_unitor_inv) (right_unitor ob)
 }
 
 @Unit
@@ -159,13 +167,52 @@ let total Monoidal_Wire :: Monoidal_Wire = [
     right_unitor_inv_assoc => split_assoc,
     left_right_unitor_assoc => merge_assoc,
     left_right_unitor_inv_assoc => split_assoc,
-    left_unitor_frobenius => left_frobenius,
-    right_unitor_frobenius => right_frobenius,
-    left_right_unitor_frobenius => left_frobenius,
-    right_left_unitor_frobenius => right_frobenius
+    left_frobenius_left_unitor => left_frobenius,
+    left_frobenius_right_unitor => left_frobenius,
+    left_frobenius_both_unitors => left_frobenius,
+    right_frobenius_left_unitor => right_frobenius,
+    right_frobenius_right_unitor => right_frobenius,
+    right_frobenius_both_unitors => right_frobenius,
+    frobenius_flip => frobenius_flip
 ]
 
 @Type
+Monoidal_Node_0_to_1 <<= {
+    pt,
+    attach Unit :: Unit along [ pt => pt ],
+    attach Cod :: Monoidal_Wire along [ Unit => Unit ],
+
+    attach Node :: Node_1_to_1 along [ 
+        Dom => Unit.Wire, 
+        Cod => Cod.Wire 
+    ],
+    let node = Node.node,
+
+    left_unitor_node: (Unit.ob node) Cod.left_unitor -> Unit.merge node,
+    right_unitor_node: (node Unit.ob) Cod.right_unitor -> Unit.merge node,
+
+    left_unitor_inv_node: node Cod.left_unitor_inv -> Unit.split (Unit.ob node),
+    right_unitor_inv_node: node Cod.right_unitor_inv -> Unit.split (node Unit.ob)
+},
+
+Monoidal_Node_1_to_0 <<= {
+    pt,
+    attach Unit :: Unit along [ pt => pt ],
+    attach Dom :: Monoidal_Wire along [ Unit => Unit ],
+
+    attach Node :: Node_1_to_1 along [ 
+        Dom => Dom.Wire, 
+        Cod => Unit.Wire 
+    ],
+    let node = Node.node,
+
+    left_unitor_node: Dom.left_unitor node -> (Unit.ob node) Unit.merge,
+    right_unitor_node: Dom.right_unitor node -> (node Unit.ob) Unit.merge,
+
+    left_unitor_inv_node: Dom.left_unitor_inv (Unit.ob node) -> node Unit.split,
+    right_unitor_inv_node: Dom.right_unitor_inv (node Unit.ob) -> node Unit.split,
+},
+
 Monoidal_Node_1_to_1 <<= {
     pt,
     attach Unit :: Unit along [ pt => pt ],
@@ -230,14 +277,14 @@ Monoidal_Node_1_to_2 <<= {
     let node = Node.node,
 
     left_unitor_inv_node: 
-        node (Cod1.left_unitor_inv Cod2.ob) -> Dom.left_unitor_inv (Unit.ob node),
+        Dom.left_unitor_inv (Unit.ob node) -> node (Cod1.left_unitor_inv Cod2.ob),
     right_unitor_inv_node: 
-        node (Cod1.ob Cod2.right_unitor_inv) -> Dom.right_unitor_inv (node Unit.ob),
+        Dom.right_unitor_inv (node Unit.ob) -> node (Cod1.ob Cod2.right_unitor_inv),
 
     left_unitor_node: 
-        (Unit.ob node) (Cod1.left_unitor Cod2.ob) -> Dom.left_unitor node,
+        Dom.left_unitor node -> (Unit.ob node) (Cod1.left_unitor Cod2.ob),
     right_unitor_node: 
-        (node Unit.ob) (Cod1.ob Cod2.right_unitor) -> Dom.right_unitor node,
+        Dom.right_unitor node -> (node Unit.ob) (Cod1.ob Cod2.right_unitor),
 
     codomain_triangle:
         node (Cod1.right_unitor_inv Cod2.ob) -> node (Cod1.ob Cod2.left_unitor_inv),
@@ -302,23 +349,22 @@ Sort <<= Monoidal_Wire {
 
     copy_assoc: copy (copy ob) -> copy (ob copy),
     copy_commutative: copy swap -> copy,
-    (* copy_swap_left: (ob copy) (swap ob) (ob swap) -> swap (copy ob),
-    copy_swap_right: (copy ob) (ob swap) (swap ob) -> swap (ob copy), *)
+    copy_swap_left: swap (copy ob) -> (ob copy) (swap ob) (ob swap),
+    copy_swap_right: swap (ob copy) -> (copy ob) (ob swap) (swap ob),
 
-    attach Discard :: Monoidal_Node_1_to_1 along [
+    attach Discard :: Monoidal_Node_1_to_0 along [
         Dom => Monoidal_Wire,
-        Cod => Unit.Monoidal_Wire
     ],
     let discard = Discard.node,
 
     copy_left_discard: copy (discard ob) -> left_unitor_inv,
     copy_right_discard: copy (ob discard) -> right_unitor_inv,
 
-    (* discard_swap_left: (ob discard) right_unitor left_unitor_inv -> swap (discard ob),
-    discard_swap_right: (discard ob) left_unitor right_unitor_inv -> swap (ob discard) *)
+    discard_swap_left: swap (discard ob) -> (ob discard) right_unitor left_unitor_inv,
+    discard_swap_right: swap (ob discard) -> (discard ob) left_unitor right_unitor_inv
 },
 
-Sort_Pair <<= {
+Pair <<= {
     pt,
     attach Unit :: Unit along [ pt => pt ],
     attach Fst :: Sort along [ Unit => Unit ],
@@ -339,18 +385,18 @@ Sort_Pair <<= {
     ],
     let swap_inv = Swap_inv.node,
 
-    (* swap_swap_inv: swap swap_inv -> (Fst.ob Snd.left_unitor_inv) (Fst.right_unitor Snd.ob),
-    swap_inv_swap: swap_inv swap -> (Snd.ob Fst.left_unitor_inv) (Snd.right_unitor Fst.ob) *)
+    swap_swap_inv: swap swap_inv -> (Fst.ob Snd.left_unitor_inv) (Fst.right_unitor Snd.ob),
+    swap_inv_swap: swap_inv swap -> (Snd.ob Fst.left_unitor_inv) (Snd.right_unitor Fst.ob)
 },
 
 @Sort
-let total Pair :: Sort_Pair = [
+let total Pair :: Pair = [
     Fst => Sort,
     Snd => Sort,
     Swap => Swap,
     Swap_inv => Swap,
-    (* swap_swap_inv => swap_swap,
-    swap_inv_swap => swap_swap *)
+    swap_swap_inv => swap_swap,
+    swap_inv_swap => swap_swap
 ]
 
 @Type
@@ -359,11 +405,10 @@ Nullary <<= {
     attach Unit :: Unit along [ pt => pt ],
     attach Cod :: Sort along [ Unit => Unit ],
 
-    attach Node :: Monoidal_Node_1_to_1 along [
-        Dom => Unit.Monoidal_Wire,
+    attach Op :: Monoidal_Node_0_to_1 along [
         Cod => Cod.Monoidal_Wire
     ],
-    let node = Node.node,
+    let node = Op.node,
 
     node_copy:
         node Cod.copy -> Unit.split (node #0 node),
@@ -377,11 +422,11 @@ Unary <<= {
     attach Dom :: Sort along [ Unit => Unit ],
     attach Cod :: Sort along [ Unit => Unit ],
 
-    attach Node :: Monoidal_Node_1_to_1 along [
+    attach Op :: Monoidal_Node_1_to_1 along [
         Dom => Dom.Monoidal_Wire,
         Cod => Cod.Monoidal_Wire
     ],
-    let node = Node.node,
+    let node = Op.node,
 
     node_copy:
         node Cod.copy -> Dom.copy (node #0 node),
@@ -395,14 +440,14 @@ Binary <<= {
     attach Dom1 :: Sort along [ Unit => Unit ],
     attach Dom2 :: Sort along [ Unit => Unit ],
     attach Cod :: Sort along [ Unit => Unit ],
-    attach Dom1_Dom2 :: Sort_Pair along [ Fst => Dom1, Snd => Dom2 ],
+    attach Dom1_Dom2 :: Pair along [ Fst => Dom1, Snd => Dom2 ],
 
-    attach Node :: Monoidal_Node_2_to_1 along [
+    attach Op :: Monoidal_Node_2_to_1 along [
         Dom1 => Dom1.Monoidal_Wire,
         Dom2 => Dom2.Monoidal_Wire,
         Cod => Cod.Monoidal_Wire
     ],
-    let node = Node.node,
+    let node = Op.node,
 
     node_copy:
         node Cod.copy 
@@ -413,7 +458,7 @@ Binary <<= {
 
 Nullary_nat <<= Nullary {
     attach Other :: Sort along [ Unit => Unit ],
-    attach Cod_Other :: Sort_Pair along [ Fst => Cod, Snd => Other ],
+    attach Cod_Other :: Pair along [ Fst => Cod, Snd => Other ],
 
     node_swap_left: 
         (Other.ob node) Cod_Other.swap_inv
@@ -425,8 +470,8 @@ Nullary_nat <<= Nullary {
 
 Unary_nat <<= Unary { 
     attach Other :: Sort along [ Unit => Unit ],
-    attach Dom_Other :: Sort_Pair along [ Fst => Dom, Snd => Other ],
-    attach Cod_Other :: Sort_Pair along [ Fst => Cod, Snd => Other ],
+    attach Dom_Other :: Pair along [ Fst => Dom, Snd => Other ],
+    attach Cod_Other :: Pair along [ Fst => Cod, Snd => Other ],
 
     node_swap_left:
         (Other.ob node) Cod_Other.swap_inv -> Dom_Other.swap_inv (node Other.ob),
@@ -436,9 +481,9 @@ Unary_nat <<= Unary {
 
 Binary_nat <<= Binary {
     attach Other :: Sort along [ Unit => Unit ],
-    attach Dom1_Other :: Sort_Pair along [ Fst => Dom1, Snd => Other ],
-    attach Dom2_Other :: Sort_Pair along [ Fst => Dom2, Snd => Other ],
-    attach Cod_Other :: Sort_Pair along [ Fst => Cod, Snd => Other ],
+    attach Dom1_Other :: Pair along [ Fst => Dom1, Snd => Other ],
+    attach Dom2_Other :: Pair along [ Fst => Dom2, Snd => Other ],
+    attach Cod_Other :: Pair along [ Fst => Cod, Snd => Other ],
 
     node_swap_left:
         (Other.ob node) Cod_Other.swap_inv 
