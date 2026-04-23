@@ -1696,6 +1696,7 @@ function renderStrDiag(ctx, L, cw, ch) {
   });
 
   const wireColor = '#d4d4d8';
+  const thinColor = '#505058';
   const BORDER_W = 6;
   const WIRE_W = 2;
 
@@ -1722,12 +1723,10 @@ function renderStrDiag(ctx, L, cw, ch) {
 
   function drawWire(wi) {
     const wireThin = thinGenerators.has(L.verts[wi].label);
-    if (wireThin) ctx.globalAlpha = 0.3;
-    ctx.strokeStyle = wireColor;
+    ctx.strokeStyle = wireThin ? thinColor : wireColor;
     ctx.lineWidth = WIRE_W;
     ctx.lineCap = 'round';
     strokeWirePaths(wi);
-    if (wireThin) ctx.globalAlpha = 1.0;
     if (!wireThin) {
       ctx.beginPath();
       ctx.arc(px[wi].x, px[wi].y, WIRE_R, 0, Math.PI * 2);
@@ -1755,7 +1754,7 @@ function renderStrDiag(ctx, L, cw, ch) {
         ctx.globalCompositeOperation = 'destination-out';
         ctx.strokeStyle = 'rgba(255,255,255,1)';
         ctx.lineWidth = WIRE_W + BORDER_W;
-        ctx.lineCap = 'round';
+        ctx.lineCap = 'butt';
         for (const wi of levels[lv]) strokeWirePaths(wi);
         ctx.restore();
       }
@@ -1782,12 +1781,10 @@ function renderStrDiag(ctx, L, cw, ch) {
       ctx.fill();
       ctx.restore();
     } else if (nodeThin) {
-      ctx.globalAlpha = 0.3;
       ctx.beginPath();
       ctx.arc(np.x, np.y, WIRE_R, 0, Math.PI * 2);
       ctx.fillStyle = wireColor;
       ctx.fill();
-      ctx.globalAlpha = 1.0;
     } else if (highlighted) {
       ctx.save();
       ctx.shadowColor = '#ffffff';
@@ -1816,8 +1813,7 @@ function renderStrDiag(ctx, L, cw, ch) {
     if (!label) continue;
     const isNode = L.verts[i].kind === 'node';
     const labelThin = thinGenerators.has(label);
-    if (labelThin) ctx.globalAlpha = 0.5;
-    ctx.fillStyle = (isNode && !labelThin) ? '#f4f4f5' : '#a1a1aa';
+    ctx.fillStyle = labelThin ? thinColor : (isNode ? '#f4f4f5' : '#a1a1aa');
     const r = (isNode && !labelThin) ? NODE_R : WIRE_R;
     if (isNode) {
       if (isVert) {
@@ -1840,7 +1836,6 @@ function renderStrDiag(ctx, L, cw, ch) {
         ctx.fillText(label, p.x, p.y - r - 3);
       }
     }
-    if (labelThin) ctx.globalAlpha = 1.0;
   }
 }
 
