@@ -13,12 +13,15 @@ bash scripts/smoke.sh
 A polygraph (Burroni 1993) is a presentation of a higher category by
 generators in each dimension: 0-cells (objects), 1-cells (morphisms),
 2-cells (rewrite rules), 3-cells (rewrites between rewrites), and so on.
-Equivalently, it is a CW complex whose cells happen to come with direction.
-Every rewriting system therefore has a topology, and `alifib homology`
-computes the integer homology of that topology directly — via the chain
-complex of free abelian groups on the generators, reduced by Smith Normal
-Form. None of this is accessible to a rewriter that only sees 1-D terms
-and reduction sequences.
+Its underlying combinatorial skeleton is a **regular directed complex**
+in Hadzihasanovic's sense: each cell has a source and a target that
+together tile its boundary sphere. Forget the source/target distinction
+and you recover an ordinary CW complex, one `n`-cell per generator in
+dimension `n`. `alifib homology` computes the integer cellular homology
+of that CW complex — via the chain complex of free abelian groups on
+the generators, reduced by Smith Normal Form. None of this is
+accessible to a rewriter that only sees 1-D terms and reduction
+sequences.
 
 ## The four acts
 
@@ -119,12 +122,13 @@ what strategies? They are extraordinarily good at it — matching modulo
 AC, narrowing, LTL model checking, and so on. None of that machinery
 *sees* the underlying rewriting complex as a space.
 
-The polygraphic viewpoint sees rewriting as CW geometry. Two rewrites
-that share a generator are 2-cells that share a 1-cell face; two
-rewrite paths that reduce the same source to the same target are the
-boundary of a potential 3-cell. The Squier obstruction says: if the
-polygraph's `H_2` is not finitely generated, the rewriting system has
-*no* finite convergent presentation, full stop. That is a theorem
+The polygraphic viewpoint attaches geometry to rewriting. The
+underlying regular directed complex forgets to a CW complex in which
+two rewrites sharing a generator are 2-cells sharing a 1-cell face, and
+two rewrite paths reducing the same source to the same target bound a
+potential 3-cell. The Squier obstruction says: if the polygraph's
+`H_2` is not finitely generated, the rewriting system has *no* finite
+convergent presentation, full stop. That is a theorem
 about the existence of algorithms, proved by computing a homology
 group — and it is invisible to a 1-D rewriter because the obstruction
 lives in a dimension the 1-D rewriter cannot even represent.
@@ -141,10 +145,10 @@ a cubical complex whose `n`-cells are `n`-fold simultaneous transitions;
 Mazurkiewicz traces are the 1-skeleton quotiented by the independence
 relation, and the higher homology records genuinely concurrent
 invariants. Polygraphs generalise both — they are strictly more
-expressive, since they allow direction on every cell — and the homology
-of the polygraph is the homology of the concurrent-trace space. Acts I
-and III compute exactly that: the concurrent-trace space of two and
-three independent actions.
+expressive, since they allow direction on every cell — and the cellular
+homology computed from the underlying directed complex is the homology
+of the concurrent-trace space. Acts I and III compute exactly that: the
+concurrent-trace space of two and three independent actions.
 
 ## Files
 
@@ -161,6 +165,9 @@ three independent actions.
 - Guiraud–Malbos–Mimram, *A homotopical completion procedure with
   applications to coherence of monoids* (RTA 2013).
 - Mimram, *Towards 3-dimensional rewriting theory* (LMCS 2014).
+- Hadzihasanovic, *Combinatorics of higher-categorical diagrams* —
+  regular directed complexes and their geometric realisation as
+  regular CW complexes (the variant alifib implements).
 - Pratt, *Modelling concurrency with geometry* (POPL 1991).
 - van Glabbeek, *On the expressiveness of higher-dimensional automata*
   (TCS 2006).

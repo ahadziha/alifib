@@ -1,25 +1,29 @@
 # How `alifib homology` works
 
-`alifib homology T` prints the cellular homology of the polygraph that
-presents type `T`. This note explains, in one sitting, what is being
-computed and how the numbers come out.
+`alifib homology T` prints the integer cellular homology of the
+directed complex that presents type `T`. This note explains, in one
+sitting, what is being computed and how the numbers come out.
 
 ## The one-sentence version
 
-A polygraph is a CW complex. Its cellular chain complex has one free
-Z-generator per cell in each dimension, the differentials count faces
-with sign, and the homology — reduced to canonical form over the
-integers by Smith Normal Form — is what `alifib homology` prints.
+alifib builds, for each type, a **regular directed complex** (in
+Hadzihasanovic's sense): every cell carries a designated source and a
+designated target that together tile its boundary. Forgetting the
+source/target distinction — just remembering that the two halves glue
+to an `(n−1)`-sphere — gives an ordinary CW complex with one `n`-cell
+per generator in dimension `n`. Its cellular chain complex, with signs
+recovered from the directed structure, is what `alifib homology`
+reduces to Smith Normal Form and prints.
 
 ## The chain complex
 
-For a polygraph with generator set `G_n` at dimension `n`, put
+Write `G_n` for the set of generators (= cells) at dimension `n` and put
 
 ```
 C_n  =  Z^{|G_n|}       (free abelian group on the n-cells)
 ```
 
-and define the boundary `d_n : C_n → C_{n-1}` on each generator
+with boundary `d_n : C_n → C_{n-1}` defined on each generator
 `g ∈ G_n` by
 
 ```
@@ -111,12 +115,12 @@ amount of rank-only reasoning (working over Q) would have detected it.
 ```
 
 By the rank part of the calculation above, this also equals
-`Σ (−1)^n · rank(H_n)` — the torsion contributes nothing to `χ`. The
+`Σ (−1)^n · rank(H_n)` — torsion contributes nothing to `χ`. The
 Euler characteristic is cheap to eyeball and is a fast sanity check
-for missing top-dimensional cells: if a presentation "looks like" it
-should give the `k`-torus but `χ ≠ 0` for even `k` (or ≠ 0, full stop,
-for any torus `T^k`), something is missing upstairs. That is the
-signal Act II of the demo picks up on.
+for missing top-dimensional cells: every `k`-torus has `χ = 0`, so a
+presentation that "looks like" a `k`-torus but reports `χ ≠ 0` is
+missing cells upstairs. That is the signal Act II of the demo picks
+up on.
 
 ## References
 
@@ -127,4 +131,7 @@ signal Act II of the demo picks up on.
 - Lafont & Métayer, *Polygraphic resolutions and homology of monoids*
   (JPAA 213, 2009) — the direct ancestor of what alifib computes,
   specialised to monoids and their coherences.
+- Hadzihasanovic, *Combinatorics of higher-categorical diagrams* —
+  regular directed complexes and their geometric realisation as
+  regular CW complexes.
 - Implementation: [`src/core/homology.rs`](../src/core/homology.rs).

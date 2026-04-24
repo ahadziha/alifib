@@ -118,8 +118,10 @@ banner "The Shape of Concurrency" \
 
 cat <<EOF
 ${DIM}Polygraphs — Burroni's generalisation of term-rewriting systems to higher
-dimensions — are CW complexes. Every rewriting system has an underlying
-topology, and that topology records information no 1-D tool can see.
+dimensions — carry a regular directed complex on the nose. Forget which
+half of each cell's boundary is source and which is target and you have
+an ordinary CW complex; alifib computes its integer cellular homology.
+That invariant records information no 1-D tool can see.
 
 Tonight, alifib will compute the homology of four concurrent-rewriting
 presentations. Each one turns out to be the homology of a classical
@@ -240,11 +242,13 @@ ${BOLD}Summary.${RST}
   Torsion    → H_1 = Z/2 — Smith Normal Form detects torsion
 
 ${BOLD}Why this is beyond 1-D term rewriting.${RST}
-  Maude and friends see rewriting sequences. alifib sees the CW complex
-  whose 0-cells are objects, 1-cells are morphisms, 2-cells are rewrite
-  rules, and 3-cells are coherences. Its homology invariants pick up on
-  the Squier obstruction to finite convergent presentations — something
-  that is, definitionally, invisible to a 1-D engine.
+  Maude and friends see rewriting sequences. alifib sees the regular
+  directed complex whose 0-cells are objects, 1-cells are morphisms,
+  2-cells are rewrite rules, and 3-cells are coherences — a structure
+  that forgets to a CW complex with integer cellular homology. Those
+  homology invariants pick up on the Squier obstruction to finite
+  convergent presentations, something that is, definitionally,
+  invisible to a 1-D engine.
 
 ${BOLD}Try it yourself.${RST}
   alifib repl examples/ShapeOfConcurrency.ali

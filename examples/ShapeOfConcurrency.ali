@@ -1,15 +1,17 @@
 (* ======================================================================
    The Shape of Concurrency
    ----------------------------------------------------------------------
-   Four 2-polygraph presentations whose cellular homology — computed by
-   `alifib homology` — reproduces the integer homology of classical
-   topological spaces.
+   Four small polygraphic presentations whose cellular homology —
+   computed by `alifib homology` — reproduces the integer homology of
+   classical topological spaces.
 
-   The point is Squier / Lafont–Métayer: a polygraph is a CW complex, and
-   its homology is an invariant of the rewriting system as a space. For
-   concurrent-process presentations, that homology literally is the shape
-   of the space of equivalent execution traces (Mazurkiewicz + higher
-   dimensions).
+   The point is Squier / Lafont–Métayer: a polygraph's underlying
+   regular directed complex (Hadzihasanovic) forgets to a CW complex by
+   dropping the source/target distinction on each cell's boundary, and
+   alifib computes the integer cellular homology of that complex. For
+   concurrent-process presentations, that homology literally is the
+   shape of the space of equivalent execution traces (Mazurkiewicz +
+   higher-dimensional automata).
 
    Run end-to-end:
 
