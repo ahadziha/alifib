@@ -182,6 +182,13 @@ your local machine, and a dropdown listing every `.ali` file in the
 examples directory. Files there are also importable as modules — any
 `include <Name>` in the editor is resolved against the same directory.
 
+Subdirectories under `<examples-dir>` are allowed for organisation, but the
+module name is always the file's bare stem: `topics/braided/YangBaxter.ali`
+is `include YangBaxter`. Two files sharing a stem (case-insensitively)
+anywhere in the tree is a loud error — the server surfaces it on
+`/examples/index.json` and the deploy workflow fails the build, so you
+find out at scan time instead of via silent shadowing later.
+
 #### Local preview
 
 The frontend assets (`index.html`, `app.js`, `style.css`) are embedded into

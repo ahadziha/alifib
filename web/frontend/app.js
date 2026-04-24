@@ -1127,26 +1127,43 @@ Keyboard: ↑/↓ navigate history · Ctrl+Enter evaluate file`;
 // ── Examples, load/save, syntax highlighting ─────────────────────────────────
 //
 // Examples are served as plain HTTP files alongside the frontend:
-// - `examples/index.json` — array of example names (no `.ali` suffix)
-// - `examples/<Name>.ali` — file contents
+//   examples/index.json   —  { "Theory": "Theory.ali",
+//                              "YangBaxter": "topics/braided/YangBaxter.ali",
+//                              ... }  or  { "error": "<message>" }
+//   examples/<relpath>    —  file contents
 //
-// Under `alifib web [<dir>]`, the Rust server serves these from the chosen
-// directory.  Under a static WASM deployment (GitHub Pages etc.), the files
-// sit next to `index.html`.  Same URLs either way.
+// A file's **stem** (e.g. "Theory") is its language-level identity — that's
+// what `include <name>` sees.  Subdirectories are purely organisational; the
+// stem is globally unique across the tree, enforced by the server and the
+// deploy workflow (duplicate stems → loud error, not silent shadowing).
+//
+// Under `alifib web [<dir>]`, the Rust server generates the manifest
+// dynamically.  Under a static WASM deployment (GitHub Pages etc.), the
+// manifest is a committed artefact produced by the deploy workflow from the
+// same recursive scan.  Either way the frontend code is identical.
 
 const EXAMPLES_BASE = 'examples';
 
-// Cache of name → contents, filled lazily on selection and on evaluate so
-// `include <Name>` in the editor can be forwarded to the backend without
-// a round-trip per include.
+// Index: stem → relative path (e.g. "YangBaxter" → "topics/braided/YangBaxter.ali").
+// Populated once at boot by populateExamples().
+let EXAMPLES_INDEX = null;
+
+// Cache of stem → contents, filled lazily so `include <Name>` in the editor
+// can be forwarded to the backend without a round-trip per include.
 const EXAMPLE_CONTENTS = new Map();
 
 async function populateExamples() {
   try {
     const resp = await fetch(`${EXAMPLES_BASE}/index.json`, { cache: 'no-store' });
     if (!resp.ok) return;
-    const names = await resp.json();
-    if (!Array.isArray(names)) return;
+    const data = await resp.json();
+    if (data && typeof data === 'object' && typeof data.error === 'string') {
+      appendReplMsg('Examples unavailable: ' + data.error, 'repl-result err');
+      return;
+    }
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return;
+    EXAMPLES_INDEX = data;
+    const names = Object.keys(data).sort();
     selExamples.innerHTML = '<option value="">Examples…</option>';
     for (const name of names) {
       const opt = document.createElement('option');
@@ -1161,7 +1178,11 @@ async function populateExamples() {
 
 async function fetchExample(name) {
   if (EXAMPLE_CONTENTS.has(name)) return EXAMPLE_CONTENTS.get(name);
-  const resp = await fetch(`${EXAMPLES_BASE}/${encodeURIComponent(name)}.ali`, { cache: 'no-store' });
+  const relPath = EXAMPLES_INDEX && EXAMPLES_INDEX[name];
+  if (!relPath) return null;
+  // Each path segment is already identifier-only (server validates, deploy
+  // enforces), so no URL escaping is needed beyond `/` staying as-is.
+  const resp = await fetch(`${EXAMPLES_BASE}/${relPath}`, { cache: 'no-store' });
   if (!resp.ok) return null;
   const text = await resp.text();
   EXAMPLE_CONTENTS.set(name, text);
