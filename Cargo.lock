@@ -30,6 +30,7 @@ version = "0.1.0"
 dependencies = [
  "alifib",
  "alifib-web-server",
+ "alifib-web-shared",
 ]
 
 [[package]]

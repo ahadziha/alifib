@@ -39,12 +39,16 @@ impl WasmRepl {
     /// Interpret `.ali` source text and return a JSON response with structured
     /// type data (generators with boundaries, diagrams, maps).
     ///
-    /// Bundled example modules (`examples/*.ali`) are always made available as
-    /// virtual include targets, so user sources may `include Theory`,
-    /// `include Semigroup`, etc.
-    pub fn load_source(&mut self, source: &str) -> String {
-        self.inner
-            .load_source_with_modules(source, alifib_web_shared::virtual_module_files())
+    /// `modules_json` is an optional `{ "<Name>": "<contents>", ... }` object
+    /// serialised as JSON.  The frontend populates it from the `.ali` files
+    /// it has fetched over HTTP, so `include <Name>` resolves without any
+    /// server-side file access.  Pass `null` or an empty object when no
+    /// extra modules are needed.
+    pub fn load_source(&mut self, source: &str, modules_json: Option<String>) -> String {
+        let modules: std::collections::HashMap<String, String> = modules_json
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+        self.inner.load_source_with_modules(source, modules)
     }
 
     /// Start a rewrite session for the named type.
@@ -95,11 +99,6 @@ impl WasmRepl {
     /// Return the current type list for the accordion (same format as load_source).
     pub fn get_types(&self) -> String {
         self.inner.get_types()
-    }
-
-    /// Return the bundled `.ali` example files as a JSON payload.
-    pub fn get_examples(&self) -> String {
-        alifib_web_shared::examples_json()
     }
 
     /// Return the string diagram for the current session diagram.

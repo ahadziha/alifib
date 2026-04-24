@@ -152,7 +152,9 @@ fn run_bench(loader: &Loader, input: &str, n: usize) -> Result<(), ()> {
 
 #[allow(clippy::result_unit_err)]
 fn run_web_cmd(args: WebArgs) -> Result<(), ()> {
-    match alifib_web_server::run_web_server(&args.bind) {
+    let dir = args.examples_dir.unwrap_or_else(|| "examples".to_string());
+    let examples = alifib_web_shared::ExampleSet::new(&dir);
+    match alifib_web_server::run_web_server(&args.bind, examples) {
         Ok(()) => Ok(()),
         Err(err) => {
             eprintln!("error: {}", err);

@@ -157,11 +157,13 @@ A localhost-only browser GUI, intended for SSH-tunneled use in the style of a
 small notebook server.
 
 ```
-alifib web [--bind <addr>]
+alifib web [<examples-dir>] [--bind <addr>]
 ```
 
 This serves the files in `web/frontend` and runs a single long-lived Alifib
-session in the server process. By default it binds to `127.0.0.1:8000`.
+session in the server process. By default it binds to `127.0.0.1:8000` and
+scans `./examples/` for `.ali` files. The scan is re-done on every request,
+so editing or adding `.ali` files on disk shows up without restarting.
 
 Typical remote workflow:
 
@@ -176,30 +178,35 @@ ssh -L 8000:127.0.0.1:8000 user@remote-host
 Then open `http://127.0.0.1:8000` in your local browser.
 
 The editor supports live syntax highlighting, loading/saving `.ali` files from
-your local machine, and a dropdown listing every bundled example from
-`examples/`. All bundled examples are also importable as modules — a file you
-type into the editor can include `Theory`, `Semigroup`, `Category` etc. without
-needing them on disk.
+your local machine, and a dropdown listing every `.ali` file in the
+examples directory. Files there are also importable as modules — any
+`include <Name>` in the editor is resolved against the same directory.
 
 #### Local preview
 
-The frontend assets (`index.html`, `app.js`, `style.css`) and every `.ali`
-example are embedded into the binary at compile time, so there is no separate
-build step for the HTTP mode:
+The frontend assets (`index.html`, `app.js`, `style.css`) are embedded into
+the binary at compile time, so there is no separate build step for the HTTP
+mode:
 
 ```sh
-just web                         # runs `cargo run -- web`
+just web                         # scans ./examples/ by default
+just web docs/teaching-deck       # or any other directory
 just web --bind 127.0.0.1:8080   # pass-through args
 ```
 
-For the WASM-backed deployment (used when `web/frontend/` is hosted as static
-files — the `ALIFIB_CONFIG.backend = 'wasm'` path), build the bundle with
-`wasm-pack` and serve the directory:
+For the WASM-backed deployment (used when `web/frontend/` is hosted as
+static files — e.g. GitHub Pages), build the bundle and mirror the examples
+directory:
 
 ```sh
-just web-wasm                    # wasm-pack build → web/frontend/pkg/
+just web-wasm                    # wasm-pack + copy examples/ into web/frontend/
 just web-static [port]           # python3 -m http.server (default 8000)
 ```
+
+`just web-wasm` populates `web/frontend/examples/` with the repo's `.ali`
+files and writes an `examples/index.json` manifest.  Both the HTTP mode and
+the WASM deployment expose the same `examples/index.json` + `examples/Name.ali`
+URL scheme, so the frontend fetches them identically in either environment.
 
 ### Session workspace
 
@@ -218,10 +225,10 @@ src/           alifib library crate (language/, core/, interpreter/, output/)
 cli/           alifib-cli crate — produces the `alifib` binary
 web/
   frontend/    Browser frontend (index.html, app.js, style.css)
-  shared/      alifib-web-shared crate — bundled `.ali` examples for the web GUI
+  shared/      alifib-web-shared crate — runtime example-directory scanner
   server/      alifib-web-server crate — localhost HTTP server for `alifib web`
   wasm/        alifib-wasm crate — WebAssembly bindings (built via wasm-pack)
-examples/      Example .ali files (bundled into the web GUI at build time)
+examples/      Example .ali files (served by `alifib web` at runtime)
 docs/          Grammar, interpreter description, formal semantics (LaTeX)
 plugins/trs/   Plugin: convert term rewriting systems to alifib
 INTERACTIVE.md Full reference for the REPL, web GUI, daemon, and session workspace

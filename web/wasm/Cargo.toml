@@ -13,7 +13,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 alifib = { path = "../..", default-features = false }
-alifib-web-shared = { path = "../shared" }
 wasm-bindgen = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

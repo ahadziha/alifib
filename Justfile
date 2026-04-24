@@ -8,19 +8,27 @@ release:
     cargo run --release
 
 # ── Web preview ────────────────────────────────────────────────────────────
-# Run the localhost HTTP server + GUI.  All frontend assets (index.html,
-# app.js, style.css) and every bundled `.ali` example are embedded into the
-# binary at compile time, so `just web` is enough — no separate build step.
-# Pass extra args, e.g. `just web --bind 127.0.0.1:8080`.
+# Run the localhost HTTP server + GUI.  The server scans `examples/` for
+# `.ali` files at startup (rescanned on each request), so edits show up
+# without restarting.  Pass an alternate directory as a positional arg:
+#
+#     just web some/other/dir
+#     just web --bind 127.0.0.1:8080
 web *ARGS:
     cargo run -- web {{ARGS}}
 
-# Build the WebAssembly bundle for static deployment.  Output lands in
-# web/frontend/pkg/, which is what app.js imports when ALIFIB_CONFIG.backend
-# is 'wasm' (the default when the file is opened without a backing server).
-# Requires `wasm-pack` in PATH (cargo install wasm-pack).
+# Prepare a static WASM deployment under web/frontend/:
+#   - wasm-pack build into web/frontend/pkg/
+#   - mirror examples/ into web/frontend/examples/
+#   - write examples/index.json for the frontend's dropdown
+# The resulting directory can be served as-is (GitHub Pages, `python3 -m
+# http.server`, anything static).
 web-wasm:
     wasm-pack build --target web web/wasm --out-dir ../frontend/pkg
+    rm -rf web/frontend/examples
+    mkdir -p web/frontend/examples
+    cp examples/*.ali web/frontend/examples/
+    python3 -c "import json, os, sys; names = sorted(os.path.splitext(f)[0] for f in os.listdir('web/frontend/examples') if f.endswith('.ali')); open('web/frontend/examples/index.json','w').write(json.dumps(names))"
 
 # Serve web/frontend/ as static files on port 8000 so you can preview the
 # WASM-backed build end-to-end.  Run `just web-wasm` first.

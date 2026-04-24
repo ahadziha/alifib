@@ -245,6 +245,9 @@ pub struct ServeArgs {
 pub struct WebArgs {
     /// Address to bind the localhost HTTP server to.
     pub bind: String,
+    /// Directory of `.ali` files to expose as examples (and as
+    /// include targets) in place of the binary's compile-time bundle.
+    pub examples_dir: Option<String>,
 }
 
 // ── Parsers ───────────────────────────────────────────────────────────────────
@@ -268,7 +271,12 @@ Usage: alifib repl <file> [--type <t>] [--source <s>] [--target <t>] [--emacs]
 ";
 
 const WEB_USAGE: &str = "\
-Usage: alifib web [--bind <addr>]
+Usage: alifib web [<examples-dir>] [--bind <addr>]
+
+  <examples-dir>  Scan this directory for *.ali files and expose them as
+                  examples (and include targets) in place of the compile-
+                  time bundle.  Rescanned on every /api/load_source and
+                  /api/get_examples request, so edits show up live.
 ";
 
 /// Parse the arguments following `alifib repl`.
@@ -311,6 +319,7 @@ pub fn parse_repl_args(args: &[String]) -> Result<ReplArgs, String> {
 /// Parse the arguments following `alifib web`.
 pub fn parse_web_args(args: &[String]) -> Result<WebArgs, String> {
     let mut bind = "127.0.0.1:8000".to_string();
+    let mut examples_dir = None;
 
     let mut it = args.iter();
     while let Some(arg) = it.next() {
@@ -321,12 +330,15 @@ pub fn parse_web_args(args: &[String]) -> Result<WebArgs, String> {
                 return Err(format!("unknown option '{}' for web\n{}", s, WEB_USAGE));
             }
             s => {
-                return Err(format!("unexpected argument '{}' for web\n{}", s, WEB_USAGE));
+                if examples_dir.is_some() {
+                    return Err(format!("web: multiple positional arguments\n{}", WEB_USAGE));
+                }
+                examples_dir = Some(s.to_string());
             }
         }
     }
 
-    Ok(WebArgs { bind })
+    Ok(WebArgs { bind, examples_dir })
 }
 
 fn parse_init(args: &[String]) -> Result<RewriteCommand, String> {

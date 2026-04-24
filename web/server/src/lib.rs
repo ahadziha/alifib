@@ -9,7 +9,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 
 use alifib::interactive::web::WebRepl;
-use alifib_web_shared as shared;
+use alifib_web_shared::ExampleSet;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
@@ -20,19 +20,20 @@ const INDEX_SCRIPT_TAG: &str = r#"  <script type="module" src="app.js"></script>
 const HTTP_CONFIG_TAG: &str = r#"  <script>window.ALIFIB_CONFIG = { backend: 'http', apiBase: '' };</script>
   <script type="module" src="app.js"></script>"#;
 
-pub fn run_web_server(bind_addr: &str) -> Result<(), String> {
+pub fn run_web_server(bind_addr: &str, examples: ExampleSet) -> Result<(), String> {
     let listener =
         TcpListener::bind(bind_addr).map_err(|e| format!("could not bind {}: {}", bind_addr, e))?;
     let local_addr = listener
         .local_addr()
         .map_err(|e| format!("could not read local address: {}", e))?;
     eprintln!("alifib web listening on http://{}", local_addr);
+    eprintln!("alifib web serving examples from {}", examples.dir().display());
 
     let mut repl = WebRepl::new();
     for stream in listener.incoming() {
         match stream {
             Ok(mut stream) => {
-                if let Err(err) = handle_connection(&mut stream, &mut repl) {
+                if let Err(err) = handle_connection(&mut stream, &mut repl, &examples) {
                     let _ = write_text_response(
                         &mut stream,
                         500,
@@ -48,7 +49,11 @@ pub fn run_web_server(bind_addr: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn handle_connection(stream: &mut TcpStream, repl: &mut WebRepl) -> Result<(), String> {
+fn handle_connection(
+    stream: &mut TcpStream,
+    repl: &mut WebRepl,
+    examples: &ExampleSet,
+) -> Result<(), String> {
     let request = read_request(stream)?;
     let path = request.path.split('?').next().unwrap_or(&request.path);
 
@@ -68,10 +73,11 @@ fn handle_connection(stream: &mut TcpStream, repl: &mut WebRepl) -> Result<(), S
 
         ("POST", "/api/load_source") => {
             let body: LoadSourceBody = parse_json_body(&request.body)?;
+            let modules = body.modules.unwrap_or_default();
             write_json_response(
                 stream,
                 200,
-                repl.load_source_with_modules(&body.source, shared::virtual_module_files()),
+                repl.load_source_with_modules(&body.source, modules),
             )
         }
         ("POST", "/api/init_session") => {
@@ -87,9 +93,36 @@ fn handle_connection(stream: &mut TcpStream, repl: &mut WebRepl) -> Result<(), S
             write_json_response(stream, 200, repl.run_command(&body.command_json))
         }
         ("POST", "/api/get_types") => write_json_response(stream, 200, repl.get_types()),
-        ("POST", "/api/get_examples") => {
-            write_json_response(stream, 200, shared::examples_json())
+
+        ("GET", "/examples/index.json") => write_json_response(
+            stream,
+            200,
+            serde_json::to_string(&examples.names()).unwrap_or_else(|_| "[]".into()),
+        ),
+        ("GET", p) if p.starts_with("/examples/") && p.ends_with(".ali") => {
+            let name = &p["/examples/".len()..p.len() - ".ali".len()];
+            // Paths with slashes or `..` are rejected to avoid directory
+            // traversal — names are bare stems, no subdirectories.
+            if name.contains('/') || name.contains("..") || name.is_empty() {
+                write_text_response(stream, 400, "text/plain; charset=utf-8", "bad name")
+            } else {
+                match examples.read(name) {
+                    Some(content) => write_text_response(
+                        stream,
+                        200,
+                        "text/plain; charset=utf-8",
+                        &content,
+                    ),
+                    None => write_text_response(
+                        stream,
+                        404,
+                        "text/plain; charset=utf-8",
+                        "not found",
+                    ),
+                }
+            }
         }
+
         ("POST", "/api/get_strdiag") => {
             let body: GetStrdiagBody = parse_json_body(&request.body)?;
             write_json_response(
@@ -234,6 +267,12 @@ struct HttpRequest {
 #[derive(Deserialize)]
 struct LoadSourceBody {
     source: String,
+    /// Optional `<Name>.ali → contents` map: lets the frontend seed the virtual
+    /// loader with whatever examples it has fetched over HTTP, so `include`
+    /// statements in the user's source resolve without any server-side file
+    /// access.
+    #[serde(default)]
+    modules: Option<std::collections::HashMap<String, String>>,
 }
 
 #[derive(Deserialize)]

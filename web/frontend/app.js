@@ -75,8 +75,9 @@ class WasmBackend {
     this.inner.reset();
   }
 
-  async load_source(source) {
-    return this.inner.load_source(source);
+  async load_source(source, modules) {
+    const modulesJson = modules ? JSON.stringify(modules) : null;
+    return this.inner.load_source(source, modulesJson);
   }
 
   async init_session(typeName, sourceDiagram, targetDiagram) {
@@ -89,10 +90,6 @@ class WasmBackend {
 
   async get_types() {
     return this.inner.get_types();
-  }
-
-  async get_examples() {
-    return this.inner.get_examples();
   }
 
   async get_strdiag(typeName, itemName, boundaryDim, boundarySign) {
@@ -116,8 +113,8 @@ class HttpBackend {
 
   async reset() {}
 
-  async load_source(source) {
-    return this.post('/api/load_source', { source });
+  async load_source(source, modules) {
+    return this.post('/api/load_source', { source, modules: modules || {} });
   }
 
   async init_session(typeName, sourceDiagram, targetDiagram) {
@@ -134,10 +131,6 @@ class HttpBackend {
 
   async get_types() {
     return this.post('/api/get_types', {});
-  }
-
-  async get_examples() {
-    return this.post('/api/get_examples', {});
   }
 
   async get_strdiag(typeName, itemName, boundaryDim, boundarySign) {
@@ -616,7 +609,8 @@ async function evaluateSource() {
   const previousType = selType.value;
 
   await repl.reset();
-  const result = await parseReplResponse(repl.load_source(src));
+  const modules = await collectIncludeModules(src);
+  const result = await parseReplResponse(repl.load_source(src, modules));
 
   if (result.status === 'error') {
     fileOutput.innerHTML = '';
@@ -1131,21 +1125,33 @@ const HELP_TEXT = `Commands:
 Keyboard: ↑/↓ navigate history · Ctrl+Enter evaluate file`;
 
 // ── Examples, load/save, syntax highlighting ─────────────────────────────────
+//
+// Examples are served as plain HTTP files alongside the frontend:
+// - `examples/index.json` — array of example names (no `.ali` suffix)
+// - `examples/<Name>.ali` — file contents
+//
+// Under `alifib web [<dir>]`, the Rust server serves these from the chosen
+// directory.  Under a static WASM deployment (GitHub Pages etc.), the files
+// sit next to `index.html`.  Same URLs either way.
 
+const EXAMPLES_BASE = 'examples';
+
+// Cache of name → contents, filled lazily on selection and on evaluate so
+// `include <Name>` in the editor can be forwarded to the backend without
+// a round-trip per include.
 const EXAMPLE_CONTENTS = new Map();
 
 async function populateExamples() {
-  if (!repl) return;
   try {
-    const result = await parseReplResponse(repl.get_examples());
-    if (result.status !== 'ok' || !result.data || !result.data.examples) return;
-    const list = result.data.examples;
+    const resp = await fetch(`${EXAMPLES_BASE}/index.json`, { cache: 'no-store' });
+    if (!resp.ok) return;
+    const names = await resp.json();
+    if (!Array.isArray(names)) return;
     selExamples.innerHTML = '<option value="">Examples…</option>';
-    for (const ex of list) {
-      EXAMPLE_CONTENTS.set(ex.name, ex.content);
+    for (const name of names) {
       const opt = document.createElement('option');
-      opt.value = ex.name;
-      opt.textContent = ex.name;
+      opt.value = name;
+      opt.textContent = name;
       selExamples.appendChild(opt);
     }
   } catch (e) {
@@ -1153,13 +1159,54 @@ async function populateExamples() {
   }
 }
 
-selExamples.addEventListener('change', () => {
+async function fetchExample(name) {
+  if (EXAMPLE_CONTENTS.has(name)) return EXAMPLE_CONTENTS.get(name);
+  const resp = await fetch(`${EXAMPLES_BASE}/${encodeURIComponent(name)}.ali`, { cache: 'no-store' });
+  if (!resp.ok) return null;
+  const text = await resp.text();
+  EXAMPLE_CONTENTS.set(name, text);
+  return text;
+}
+
+// Collects `include <Name>` references in the given source, fetches the
+// matching examples (and their transitive includes), and returns a
+// `<Name>.ali → content` map ready for load_source_with_modules.
+async function collectIncludeModules(source) {
+  const map = {};
+  const pending = collectDirectIncludes(source);
+  const seen = new Set();
+  while (pending.length) {
+    const name = pending.pop();
+    if (seen.has(name)) continue;
+    seen.add(name);
+    const content = await fetchExample(name);
+    if (content === null) continue;
+    map[`${name}.ali`] = content;
+    for (const next of collectDirectIncludes(content)) {
+      if (!seen.has(next)) pending.push(next);
+    }
+  }
+  return map;
+}
+
+const INCLUDE_RE = /(^|[,\s])include\s+([A-Za-z_][A-Za-z0-9_]*)\b/g;
+function collectDirectIncludes(source) {
+  const names = [];
+  let m;
+  while ((m = INCLUDE_RE.exec(source)) !== null) names.push(m[2]);
+  return names;
+}
+
+selExamples.addEventListener('change', async () => {
   const name = selExamples.value;
   selExamples.value = '';
   if (!name) return;
-  const content = EXAMPLE_CONTENTS.get(name);
-  if (content === undefined) return;
   if (!confirmReplaceIfDirty()) return;
+  const content = await fetchExample(name);
+  if (content === null) {
+    appendReplMsg(`Failed to fetch example: ${name}`, 'repl-result err');
+    return;
+  }
   setEditorValue(content);
 });
 
