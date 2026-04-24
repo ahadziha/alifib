@@ -1252,37 +1252,87 @@ selExamples.addEventListener('change', async () => {
     appendReplMsg(`Failed to fetch example: ${name}`, 'repl-result err');
     return;
   }
+  currentFileHandle = null;
+  currentFile = name;
   setEditorValue(content);
 });
 
-btnLoad.addEventListener('click', () => { fileInput.click(); });
+const hasFsAccess = typeof window.showOpenFilePicker === 'function';
+const aliPickerTypes = [{
+  description: 'alifib source',
+  accept: { 'text/plain': ['.ali'] },
+}];
+let currentFileHandle = null;
+
+btnLoad.addEventListener('click', async () => {
+  if (!confirmReplaceIfDirty()) return;
+  if (hasFsAccess) {
+    try {
+      const [handle] = await window.showOpenFilePicker({ types: aliPickerTypes });
+      const file = await handle.getFile();
+      const text = await file.text();
+      currentFileHandle = handle;
+      currentFile = file.name;
+      setEditorValue(text);
+    } catch (e) {
+      if (e?.name === 'AbortError') return;
+      appendReplMsg('Failed to open file: ' + (e?.message || e), 'repl-result err');
+    }
+  } else {
+    fileInput.click();
+  }
+});
 fileInput.addEventListener('change', () => {
   const f = fileInput.files && fileInput.files[0];
   fileInput.value = '';
   if (!f) return;
-  if (!confirmReplaceIfDirty()) return;
   const reader = new FileReader();
-  reader.onload = () => { setEditorValue(String(reader.result || '')); };
+  reader.onload = () => {
+    currentFileHandle = null;
+    currentFile = f.name;
+    setEditorValue(String(reader.result || ''));
+  };
   reader.onerror = () => { appendReplMsg('Failed to read file: ' + reader.error, 'repl-result err'); };
   reader.readAsText(f);
 });
 
-btnSave.addEventListener('click', () => {
+btnSave.addEventListener('click', async () => {
   const content = editor.value;
-  const defaultName = currentFileName() || 'untitled.ali';
-  const name = window.prompt('Save as:', defaultName);
-  if (!name) return;
-  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name.endsWith('.ali') ? name : name + '.ali';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 0);
-  savedSnapshot = content;
-  currentFile = a.download;
+  if (hasFsAccess) {
+    try {
+      let handle = currentFileHandle;
+      if (!handle) {
+        handle = await window.showSaveFilePicker({
+          suggestedName: currentFileName() || 'untitled.ali',
+          types: aliPickerTypes,
+        });
+        currentFileHandle = handle;
+      }
+      const writable = await handle.createWritable();
+      await writable.write(content);
+      await writable.close();
+      currentFile = handle.name;
+      savedSnapshot = content;
+    } catch (e) {
+      if (e?.name === 'AbortError') return;
+      appendReplMsg('Failed to save file: ' + (e?.message || e), 'repl-result err');
+    }
+  } else {
+    const defaultName = currentFileName() || 'untitled.ali';
+    const name = window.prompt('Save as:', defaultName);
+    if (!name) return;
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name.endsWith('.ali') ? name : name + '.ali';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+    savedSnapshot = content;
+    currentFile = a.download;
+  }
 });
 
 let currentFile = null;
