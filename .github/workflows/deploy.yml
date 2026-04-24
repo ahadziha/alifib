@@ -39,10 +39,18 @@ jobs:
         run: wasm-pack build --target web --release web/wasm --out-dir ../frontend/pkg
 
       - name: Assemble dist/
-        # pkg/ is already inside frontend/ so a single copy is sufficient
+        # - web/frontend/pkg/ was produced above by wasm-pack
+        # - examples/ is mirrored into dist/examples/ and paired with an
+        #   index.json manifest; the frontend fetches these at runtime via
+        #   the same /examples/... URLs the HTTP server exposes locally
         run: |
           mkdir -p dist
           cp -r web/frontend/. dist/
+          mkdir -p dist/examples
+          cp examples/*.ali dist/examples/
+          python3 -c "import json, os; \
+            names = sorted(os.path.splitext(f)[0] for f in os.listdir('dist/examples') if f.endswith('.ali')); \
+            open('dist/examples/index.json','w').write(json.dumps(names))"
 
       - name: Upload Pages artefact
         uses: actions/upload-pages-artifact@v3
