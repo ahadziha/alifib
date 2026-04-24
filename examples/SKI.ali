@@ -1,0 +1,246 @@
+@Type
+(* Helper gadgets: wire with identity, and various nodes *)
+Wire <<= { 
+    pt,
+    ob: pt -> pt,
+
+    id: ob -> ob,
+
+    id_id: id id -> id
+},
+
+Node_1_to_1 <<= {
+    pt,
+    attach Dom :: Wire along [ pt => pt ],
+    attach Cod :: Wire along [ pt => pt ],
+
+    node: Dom.ob -> Cod.ob,
+
+    dom_id: Dom.id node -> node,
+    cod_id: node Cod.id -> node
+},
+
+Node_2_to_1 <<= {
+    pt,
+    attach Dom1 :: Wire along [ pt => pt ],
+    attach Dom2 :: Wire along [ pt => pt ],
+    attach Cod :: Wire along [ pt => pt ],
+
+    node: Dom1.ob Dom2.ob -> Cod.ob,
+
+    dom1_id: (Dom1.id Dom2.ob) node -> node,
+    dom2_id: (Dom1.ob Dom2.id) node -> node,
+    cod_id: node Cod.id -> node
+},
+
+Node_1_to_2 <<= {
+    pt,
+    attach Dom :: Wire along [ pt => pt ],
+    attach Cod1 :: Wire along [ pt => pt ],
+    attach Cod2 :: Wire along [ pt => pt ],
+
+    node: Dom.ob -> Cod1.ob Cod2.ob,
+
+    cod1_id: node (Cod1.id Cod2.ob) -> node,
+    cod2_id: node (Cod1.ob Cod2.id)  -> node,
+    dom_id: Dom.id node -> node
+},
+
+Node_2_to_2 <<= {
+    pt,
+    attach Dom1 :: Wire along [ pt => pt ],
+    attach Dom2 :: Wire along [ pt => pt ],
+    attach Cod1 :: Wire along [ pt => pt ],
+    attach Cod2 :: Wire along [ pt => pt ],
+
+    node: Dom1.ob Dom2.ob -> Cod1.ob Cod2.ob,
+
+    dom1_id: (Dom1.id Dom2.ob) node -> node,
+    dom2_id: (Dom1.ob Dom2.id) node -> node,
+    cod1_id: node (Cod1.id Cod2.ob) -> node,
+    cod2_id: node (Cod1.ob Cod2.id)  -> node
+},
+
+(* The unit wire *)
+Unit <<= Wire {
+    attach Merge :: Node_2_to_1 along [
+        Dom1 => Wire,
+        Dom2 => Wire,
+        Cod => Wire
+    ],
+    let merge = Merge.node,
+
+    attach Split :: Node_1_to_2 along [
+        Dom => Wire,
+        Cod1 => Wire,
+        Cod2 => Wire
+    ],
+    let split = Split.node,
+    let swap = merge split
+},
+
+(* The sort *)
+Sort <<= Wire {
+    attach Unit :: Unit along [ pt => pt ],
+    let unit = Unit.ob,
+
+    attach Left_unitor :: Node_2_to_1 along [
+        Dom1 => Unit.Wire,
+        Dom2 => Wire,
+        Cod => Wire
+    ],
+    let lunit = Left_unitor.node,
+    attach Right_unitor :: Node_2_to_1 along [
+        Dom1 => Wire,
+        Dom2 => Unit.Wire,
+        Cod => Wire
+    ],
+    let runit = Right_unitor.node,
+
+    attach Left_Unit_Swap :: Node_2_to_2 along [
+        Dom1 => Unit.Wire,
+        Dom2 => Wire,
+        Cod1 => Wire,
+        Cod2 => Unit.Wire
+    ],
+    let lswap = Left_Unit_Swap.node,
+    attach Right_Unit_Swap :: Node_2_to_2 along [
+        Dom1 => Wire,
+        Dom2 => Unit.Wire,
+        Cod1 => Unit.Wire,
+        Cod2 => Wire
+    ],
+    let rswap = Right_Unit_Swap.node,
+    attach Swap :: Node_2_to_2 along [
+        Dom1 => Wire,
+        Dom2 => Wire,
+        Cod1 => Wire,
+        Cod2 => Wire,
+    ],
+    let swap = Swap.node,
+
+    (* Swaps go below unitors *)
+    left_lunit_swap: (lunit ob) swap -> (unit swap) (lswap ob) (ob lunit),
+    left_runit_swap: (runit ob) swap -> (ob lswap) (swap unit) (ob runit),
+    
+    right_lunit_swap: (ob lunit) swap -> (rswap ob) (unit swap) (lunit ob),
+    right_runit_swap: (ob runit) swap -> (swap unit) (ob rswap) (runit ob),
+
+    attach Copy :: Node_1_to_2 along [
+        Dom => Wire,
+        Cod1 => Wire,
+        Cod2 => Wire
+    ],
+    let copy = Copy.node,
+    attach Discard :: Node_1_to_1 along [
+        Dom => Wire,
+        Cod => Unit.Wire
+    ],
+    let discard = Discard.node,
+
+    (* Copy and discard go below unitors *)
+    lunit_copy: lunit copy -> (unit copy) (lunit ob),
+    runit_copy: runit copy -> (copy unit) (ob runit),
+    lunit_discard: lunit discard -> (unit discard) Unit.merge,
+    runit_discard: runit discard -> (discard unit) Unit.merge,
+
+    (* Copy and discard go below swaps *)
+    left_swap_copy: swap (copy ob) -> (ob copy) (swap ob) (ob swap),
+    right_swap_copy: swap (ob copy) -> (copy ob) (ob swap) (swap ob),
+
+    left_unit_swap_copy: lswap (copy unit) -> (unit copy) (lswap ob) (ob lswap),
+    right_unit_swap_copy: rswap (unit copy) -> (copy unit) (ob rswap) (rswap ob),
+
+    left_swap_discard: swap (discard ob) -> (ob discard) rswap,
+    right_swap_discard: swap (ob discard) -> (discard ob) lswap,
+
+    left_unit_swap_discard: lswap (discard unit) -> (unit discard) Unit.swap,
+    right_unit_swap_discard: rswap (unit discard) -> (discard unit) Unit.swap,
+},
+
+Constant <<= Sort {
+    attach Op :: Node_1_to_1 along [
+        Dom => Unit.Wire,
+        Cod => Wire
+    ],
+    let op = Op.node,
+
+    (* Constants go above unitors *)
+    op_lunit: (unit op) lunit -> Unit.merge op,
+    op_runit: (op unit) runit -> Unit.merge op,
+
+    (* Constants go above swaps *)
+    left_op_swap: (op ob) swap -> lswap (ob op),
+    right_op_swap: (ob op) swap -> rswap (op ob),
+
+    left_op_swap_unit: (op unit) rswap -> Unit.swap (unit op),
+    right_op_swap_unit: (unit op) lswap -> Unit.swap (op unit),
+
+    (* Constants are copied *)
+    op_copy: op copy -> Unit.split (op #0 op),
+
+    (* Constants are discarded *)
+    op_discard: op discard -> Unit.id
+},
+
+Binary <<= Sort {
+    attach Op :: Node_2_to_1 along [
+        Dom1 => Wire,
+        Dom2 => Wire,
+        Cod => Wire
+    ],
+    let op = Op.node,
+
+    (* Binary operations go above unitors *)
+    op_lunit: (unit op) lunit -> (lunit ob) op,
+    op_runit: (op unit) runit -> (ob runit) op,
+
+    (* Binary operations go above swaps *)
+    left_op_swap: (op ob) swap -> (ob swap) (swap ob) (ob op),
+    right_op_swap: (ob op) swap -> (swap ob) (ob swap) (op ob),
+
+    left_op_swap_unit: (op unit) rswap -> (ob rswap) (rswap ob) (unit op),
+    right_op_swap_unit: (unit op) lswap -> (lswap ob) (ob lswap) (op unit),
+
+    (* Binary operations are copied *)
+    op_copy: op copy -> (copy #0 copy) (ob swap ob) (op #0 op),
+
+    (* Binary operations are discarded *)
+    op_discard: op discard -> (discard #0 discard) Unit.merge
+},
+
+SKI <<= Sort {
+    attach S :: Constant along [ 
+        Sort => Sort
+    ],
+    let s = S.op,
+    attach K :: Constant along [
+        Sort => Sort
+    ],
+    let k = K.op,
+    attach I :: Constant along [
+        Sort => Sort
+    ],
+    let i = I.op,
+    attach Apply :: Binary along [
+        Sort => Sort
+    ],
+    let apply = Apply.op,
+
+    S_rule: (s ob ob ob) (apply ob ob) (apply ob) apply
+        -> (lunit ob ob) (ob ob copy) (ob swap ob) (apply ob ob) (ob apply) apply,
+    K_rule: (k ob ob) (apply ob) apply
+        -> (lunit ob) (ob discard) runit,
+    I_rule: (i ob) apply -> lunit
+},
+
+@SKI
+let succ = Unit.split (Unit.split unit) (Unit.split unit unit) (Unit.split unit unit unit) 
+    (s #0 s #0 k #0 s #0 k) (ob ob apply ob) (ob apply ob) (ob apply) apply,
+let zero = Unit.split (k #0 i) apply,
+
+let one = Unit.split (succ #0 zero) apply,
+let two = Unit.split (succ #0 one) apply,
+let three = Unit.split (succ #0 two) apply,
+
+let threefx = (three ob ob) (apply ob) apply
