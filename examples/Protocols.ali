@@ -1,0 +1,148 @@
+(* ======================================================================
+   Protocols.ali
+   ----------------------------------------------------------------------
+   Distributed-protocol coherence as higher-dimensional rewriting, with
+   integer homology as the correctness oracle.
+
+   We encode a family of message-delivery protocols whose correctness
+   properties — reliability, atomic broadcast / total order — are
+   higher-dimensional coherence conditions. `alifib homology` reports,
+   as an invariant of the presentation, whether those coherences have
+   been discharged.
+
+   The pattern — pairwise Mazurkiewicz squares with or without a
+   Zamolodchikov-type 3-cell — is exactly the one used in
+   `ShapeOfConcurrency.ali` for commuting concurrent actions. What is
+   new here is the interpretation: the 2-cells are delivery-order
+   equivalences between nodes, and the 3-cell *is* atomic broadcast.
+   A protocol that lacks it will produce a non-zero Euler characteristic
+   and a missing top-dimensional generator — you literally see the
+   protocol bug in the shape of the presentation.
+
+   Run:
+
+       alifib repl examples/Protocols.ali
+       >> homology Raw
+       >> homology PairwiseReliable
+       >> homology AtomicBroadcast
+       >> homology DroppedCoherence
+
+   ====================================================================== *)
+
+@Type
+
+(* ------------------------------------------------------------------ *)
+(* Act I. Raw broadcast.                                               *)
+(*                                                                     *)
+(*   m1, m2, m3 : pt -> pt                                             *)
+(*                                                                     *)
+(* Three messages delivered across the system, with no claim about     *)
+(* the relationship between different delivery orders. The underlying  *)
+(* 1-complex is just a wedge of three circles.                         *)
+(*                                                                     *)
+(* Expected homology (wedge of 3 circles):                             *)
+(*   H_0 = Z,  H_1 = Z^3,  chi = -2                                    *)
+(* ------------------------------------------------------------------ *)
+Raw <<= {
+    pt,
+    m1 : pt -> pt,
+    m2 : pt -> pt,
+    m3 : pt -> pt
+},
+
+(* ------------------------------------------------------------------ *)
+(* Act II. Pairwise reliable broadcast.                                *)
+(*                                                                     *)
+(*   m_i : pt -> pt             (i = 1, 2, 3)                          *)
+(*   c_ij : m_i m_j -> m_j m_i  (for each pair i < j)                  *)
+(*                                                                     *)
+(* Interpretation: any two messages can be delivered in either order   *)
+(* and yield an observationally identical state — the usual reliable-  *)
+(* broadcast guarantee, promoted to a 2-cell.                          *)
+(*                                                                     *)
+(* But with *only* pairwise coherence, there is no claim that the two  *)
+(* 3-stage reorderings of (m1 m2 m3) -> (m3 m2 m1) agree. The          *)
+(* presentation has a 3-dimensional hole precisely where the "all      *)
+(* nodes agree on the order of any three messages" property should     *)
+(* have been. Cellular homology picks this up:                         *)
+(*                                                                     *)
+(*   H_0 = Z, H_1 = Z^3, H_2 = Z^3, H_3 = 0, chi = 1                   *)
+(*                                                                     *)
+(* Since H_1(T^3) = Z^3, H_2(T^3) = Z^3, H_3(T^3) = Z, chi(T^3) = 0,   *)
+(* the single-unit gap in chi *is* the protocol-violation witness.     *)
+(* A CS-literate reader can spot it without doing any homology: the    *)
+(* numbers "should have summed to zero".                               *)
+(* ------------------------------------------------------------------ *)
+PairwiseReliable <<= {
+    pt,
+    m1 : pt -> pt,
+    m2 : pt -> pt,
+    m3 : pt -> pt,
+    c12 : m1 m2 -> m2 m1,
+    c13 : m1 m3 -> m3 m1,
+    c23 : m2 m3 -> m3 m2
+},
+
+(* ------------------------------------------------------------------ *)
+(* Act III. Atomic broadcast (total-order broadcast).                  *)
+(*                                                                     *)
+(* Same presentation as PairwiseReliable, plus one 3-cell — the        *)
+(* Zamolodchikov tetrahedron, rewritten here as the total-order        *)
+(* axiom. Its two 2-cell compositions are the two possible strategies  *)
+(* for reordering (m1 m2 m3) to (m3 m2 m1):                            *)
+(*                                                                     *)
+(*   left path :  (c12 m3) (m2 c13) (c23 m1)                           *)
+(*   right path:  (m1 c23) (c13 m2) (m3 c12)                           *)
+(*                                                                     *)
+(* The 3-cell `total_order` asserts that these strategies produce      *)
+(* strictly-equal traces — i.e., all nodes agree on the delivery       *)
+(* order of any three messages, and (by induction) of any finite set.  *)
+(*                                                                     *)
+(* Expected homology (integer 3-torus):                                *)
+(*   H_0 = Z, H_1 = Z^3, H_2 = Z^3, H_3 = Z, chi = 0                   *)
+(*                                                                     *)
+(* chi = 0 is the "correctness certificate" — every required cell is   *)
+(* present.                                                            *)
+(* ------------------------------------------------------------------ *)
+AtomicBroadcast <<= {
+    pt,
+    m1 : pt -> pt,
+    m2 : pt -> pt,
+    m3 : pt -> pt,
+    c12 : m1 m2 -> m2 m1,
+    c13 : m1 m3 -> m3 m1,
+    c23 : m2 m3 -> m3 m2,
+
+    total_order : (c12 m3) (m2 c13) (c23 m1)
+                -> (m1 c23) (c13 m2) (m3 c12)
+},
+
+(* ------------------------------------------------------------------ *)
+(* Act IV. A Byzantine link breaks pairwise reliability.               *)
+(*                                                                     *)
+(*   m_i : pt -> pt             (i = 1, 2, 3)                          *)
+(*   c12, c13 : 2-cells         (c23 is missing)                       *)
+(*                                                                     *)
+(* Suppose the link between nodes delivering m2 and m3 is lossy or     *)
+(* adversarial: those two messages do *not* admit the commutativity    *)
+(* 2-cell. Pairwise reliability fails at rank 2 of the complex —       *)
+(* there is literally one fewer 2-cell than in PairwiseReliable.       *)
+(*                                                                     *)
+(* Expected homology:                                                  *)
+(*   H_0 = Z, H_1 = Z^3, H_2 = Z^2, H_3 = 0, chi = 0                   *)
+(*                                                                     *)
+(* Note: chi happens to land on 0 here — the "Euler sanity check"      *)
+(* misses this bug. You need to look at H_2 and compare its rank       *)
+(* against the number of node-pairs (3). Homology is strictly more     *)
+(* informative than the Euler characteristic alone: chi is a fast      *)
+(* filter that catches Act II's missing 3-cell, but only the group-    *)
+(* level structure catches Act IV's missing 2-cell.                    *)
+(* ------------------------------------------------------------------ *)
+DroppedCoherence <<= {
+    pt,
+    m1 : pt -> pt,
+    m2 : pt -> pt,
+    m3 : pt -> pt,
+    c12 : m1 m2 -> m2 m1,
+    c13 : m1 m3 -> m3 m1
+}

@@ -1,0 +1,199 @@
+(* ======================================================================
+   Treiber.ali
+   ----------------------------------------------------------------------
+   A concrete lock-free algorithm — the Treiber stack — encoded as a
+   polygraph at the linearization-event level. Different failure modes
+   of the algorithm show up as different shapes of the integer
+   cellular homology.
+
+   Treiber's stack is a classic single-word CAS-based lock-free stack.
+   The `push` operation loops:
+
+       loop {
+           old_top = head.load();
+           new.next = old_top;
+           if head.cas(old_top, new) { return; }
+       }
+
+   We do not model the retry loop itself. Instead, each *successful*
+   linearization event (a CAS that commits) becomes a 1-cell, and
+   coherences between the events — the ones the algorithm is supposed
+   to enforce — become 2-cells. A correct lock-free algorithm commits
+   exactly the 2-cells needed for linearizability and nothing more.
+   Bugs appear as extra 2-cells whose abelianization has nonzero image
+   in the chain complex — the homology picks them up as torsion.
+
+   Run:
+
+       alifib repl examples/Treiber.ali
+       >> homology Sequential
+       >> homology LinearizableCAS
+       >> homology TornOpBug
+       >> homology LostPushBug
+       >> homology ABAUnsafe
+       >> homology ABASafe
+
+   ====================================================================== *)
+
+@Type
+
+(* ------------------------------------------------------------------ *)
+(* Act I. Baseline.                                                    *)
+(*                                                                     *)
+(*   push : pt -> pt                                                   *)
+(*                                                                     *)
+(* One thread, one successful push. No concurrency, no 2-cells, no    *)
+(* claims. The 1-skeleton is a single loop — S^1.                     *)
+(*                                                                     *)
+(* Expected:                                                           *)
+(*   H_0 = Z, H_1 = Z, chi = 0                                         *)
+(* ------------------------------------------------------------------ *)
+Sequential <<= {
+    pt,
+    push : pt -> pt
+},
+
+(* ------------------------------------------------------------------ *)
+(* Act II. Two threads, each push linearizes correctly.                *)
+(*                                                                     *)
+(*   push : pt -> pt                                                   *)
+(*   linearize : push push -> push push                                *)
+(*                                                                     *)
+(* Two threads each call push; both CASes succeed (the losing thread   *)
+(* retries and eventually commits). The 2-cell `linearize` witnesses   *)
+(* the only coherence the algorithm owes: any two concurrent           *)
+(* successful pushes admit a linearization (either order), producing   *)
+(* the same multiset of stack contents. Source and target have equal   *)
+(* 1-cell content, so d_2 = 0 — no torsion, no rank loss.              *)
+(*                                                                     *)
+(* Expected (the torus T^2):                                           *)
+(*   H_0 = Z, H_1 = Z, H_2 = Z, chi = 1                                *)
+(*                                                                     *)
+(* H_1 is free on one generator — the single loop class — and          *)
+(* torsion-free. This is the fingerprint of a *correctly linearized*   *)
+(* lock-free primitive.                                                *)
+(* ------------------------------------------------------------------ *)
+LinearizableCAS <<= {
+    pt,
+    push : pt -> pt,
+    linearize : push push -> push push
+},
+
+(* ------------------------------------------------------------------ *)
+(* Act III. Torn-op bug: non-atomic RMW.                               *)
+(*                                                                     *)
+(*   push : pt -> pt                                                   *)
+(*   torn : push push -> push push push push                           *)
+(*                                                                     *)
+(* A "push" implemented *without* CAS — load, compute, store — is not  *)
+(* atomic. Under two-thread contention, each of the four (load_i,      *)
+(* store_j) interleavings can be observed as a distinct intermediate   *)
+(* state. The 2-cell sends the intended 2-operation trace to a         *)
+(* 4-observation trace.                                                *)
+(*                                                                     *)
+(* Abelianization:  d_2(torn) = 4·push - 2·push = 2·push.              *)
+(*                                                                     *)
+(* Expected:                                                           *)
+(*   H_0 = Z, H_1 = Z/2, H_2 = 0, chi = 1                              *)
+(*                                                                     *)
+(* The Z/2 is the race multiplicity. It is *integer* homology; a       *)
+(* rational-coefficient or Euler-only analysis loses this information  *)
+(* entirely.                                                           *)
+(* ------------------------------------------------------------------ *)
+TornOpBug <<= {
+    pt,
+    push : pt -> pt,
+    torn : push push -> push push push push
+},
+
+(* ------------------------------------------------------------------ *)
+(* Act IV. Lost-update bug: a CAS-check without retry.                 *)
+(*                                                                     *)
+(*   push : pt -> pt                                                   *)
+(*   lost : push push -> push                                          *)
+(*                                                                     *)
+(* A broken push where the losing thread's CAS-fail path silently      *)
+(* returns without retrying. Two concurrent pushes are observed as     *)
+(* one committed push — one transaction lost.                          *)
+(*                                                                     *)
+(* Abelianization:  d_2(lost) = push - 2·push = -push.                 *)
+(*                                                                     *)
+(* Expected:                                                           *)
+(*   H_0 = Z, H_1 = 0, H_2 = 0, chi = 1                                *)
+(*                                                                     *)
+(* Here the bug shows up as *rank loss*: the SNF of the differential   *)
+(* has invariant factor 1, so H_1 collapses to 0 — the single loop     *)
+(* class is killed. A different fingerprint from TornOpBug, and a      *)
+(* different bug: rank loss vs. torsion corresponds to "entire         *)
+(* operations vanish" vs. "operations multiply into extra states".     *)
+(* ------------------------------------------------------------------ *)
+LostPushBug <<= {
+    pt,
+    push : pt -> pt,
+    lost : push push -> push
+},
+
+(* ------------------------------------------------------------------ *)
+(* Act V. ABA bug: pointer-level indistinguishability.                 *)
+(*                                                                     *)
+(*   push, pop : pt -> pt                                              *)
+(*   aba : push pop push pop push pop -> push pop                      *)
+(*                                                                     *)
+(* The classical ABA scenario. Thread A reads head = p; gets           *)
+(* preempted. Other threads complete multiple push/pop pairs that      *)
+(* restore the head pointer to p (with different internal structure).  *)
+(* When thread A's CAS resumes, it observes "still p" and commits —    *)
+(* address-level identity was used as a proxy for state identity,      *)
+(* and the proxy was wrong.                                            *)
+(*                                                                     *)
+(* Polygraphically, the bug is a 2-cell asserting that three           *)
+(* consecutive push-pop pairs are observationally equivalent to one —  *)
+(* exactly the coherence a naive CAS presumes.                         *)
+(*                                                                     *)
+(* Abelianization:  d_2(aba) = (push + pop) - 3·(push + pop)           *)
+(*                           = -2·(push + pop).                        *)
+(*                                                                     *)
+(* The column matrix [-2, -2] has gcd 2; SNF gives a single invariant  *)
+(* factor 2. The integer homology picks up a Z/2 torsion summand:      *)
+(*                                                                     *)
+(* Expected:                                                           *)
+(*   H_0 = Z, H_1 = Z + Z/2, H_2 = 0, chi = 0                          *)
+(*                                                                     *)
+(* The free Z represents the one loop class the (push-pop) subgroup    *)
+(* doesn't kill; the Z/2 is the ABA bug signature. chi = 0 happens     *)
+(* to hold — another example where Euler characteristic is a coarser   *)
+(* detector than the full group structure.                             *)
+(* ------------------------------------------------------------------ *)
+ABAUnsafe <<= {
+    pt,
+    push : pt -> pt,
+    pop  : pt -> pt,
+    aba  : push pop push pop push pop -> push pop
+},
+
+(* ------------------------------------------------------------------ *)
+(* Act VI. ABA fix: tagged pointers.                                   *)
+(*                                                                     *)
+(*   push, pop : pt -> pt                                              *)
+(*                                                                     *)
+(* A tagged-pointer Treiber stack (e.g., Michael-Scott's technique)    *)
+(* pairs the head pointer with a version counter that monotonically    *)
+(* increases on every update. Address-level equality is no longer a    *)
+(* valid proxy for state equality — the aba coincidence 2-cell of      *)
+(* Act V is now invalid (every push or pop bumps the version, so no    *)
+(* six-op sequence can be observationally equivalent to two ops).      *)
+(*                                                                     *)
+(* Polygraphically, the fix is to *remove* the aba 2-cell. The         *)
+(* presentation is a bare wedge of two circles, the free homotopy      *)
+(* type of an unconstrained two-operation action.                      *)
+(*                                                                     *)
+(* Expected:                                                           *)
+(*   H_0 = Z, H_1 = Z^2, H_2 = 0, chi = -1                             *)
+(*                                                                     *)
+(* No torsion: the ABA signature is gone.                              *)
+(* ------------------------------------------------------------------ *)
+ABASafe <<= {
+    pt,
+    push : pt -> pt,
+    pop  : pt -> pt
+}
