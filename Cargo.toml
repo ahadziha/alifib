@@ -1,5 +1,9 @@
 [workspace]
-members = ["plugins/trs"]
+members = ["cli", "plugins/trs", "web/server", "web/shared"]
+# Running `cargo build` / `cargo run` / `cargo test` from the workspace root
+# defaults to the CLI binary + its transitive deps.  Plugins and web crates
+# still build on explicit request (e.g. `cargo build --workspace`).
+default-members = ["cli"]
 
 [workspace.dependencies]
 alifib = { path = "." }
@@ -9,8 +13,10 @@ name = "alifib"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+
 [features]
-default = ["cli"]
+default = []
 cli = ["dep:rustyline"]
 
 [dependencies]

@@ -1,20 +1,21 @@
 //! Localhost-only HTTP server for the Alifib web GUI.
 //!
-//! This serves the browser assets from `web/frontend` and exposes a small
-//! same-origin JSON API backed by a single long-lived [`super::web::WebRepl`]
-//! instance, in the spirit of a local notebook kernel.
+//! Serves the browser assets from `web/frontend/` and exposes a small
+//! same-origin JSON API backed by a single long-lived
+//! [`alifib::interactive::web::WebRepl`], in the spirit of a local notebook
+//! kernel.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 
+use alifib::interactive::web::WebRepl;
+use alifib_web_shared as shared;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
-use super::web::WebRepl;
-
-const INDEX_HTML: &str = include_str!("../../web/frontend/index.html");
-const APP_JS: &str = include_str!("../../web/frontend/app.js");
-const STYLE_CSS: &str = include_str!("../../web/frontend/style.css");
+const INDEX_HTML: &str = include_str!("../../frontend/index.html");
+const APP_JS: &str = include_str!("../../frontend/app.js");
+const STYLE_CSS: &str = include_str!("../../frontend/style.css");
 const INDEX_SCRIPT_TAG: &str = r#"  <script type="module" src="app.js"></script>"#;
 const HTTP_CONFIG_TAG: &str = r#"  <script>window.ALIFIB_CONFIG = { backend: 'http', apiBase: '' };</script>
   <script type="module" src="app.js"></script>"#;
@@ -67,7 +68,11 @@ fn handle_connection(stream: &mut TcpStream, repl: &mut WebRepl) -> Result<(), S
 
         ("POST", "/api/load_source") => {
             let body: LoadSourceBody = parse_json_body(&request.body)?;
-            write_json_response(stream, 200, repl.load_source(&body.source))
+            write_json_response(
+                stream,
+                200,
+                repl.load_source_with_modules(&body.source, shared::virtual_module_files()),
+            )
         }
         ("POST", "/api/init_session") => {
             let body: InitSessionBody = parse_json_body(&request.body)?;
@@ -82,6 +87,9 @@ fn handle_connection(stream: &mut TcpStream, repl: &mut WebRepl) -> Result<(), S
             write_json_response(stream, 200, repl.run_command(&body.command_json))
         }
         ("POST", "/api/get_types") => write_json_response(stream, 200, repl.get_types()),
+        ("POST", "/api/get_examples") => {
+            write_json_response(stream, 200, shared::examples_json())
+        }
         ("POST", "/api/get_strdiag") => {
             let body: GetStrdiagBody = parse_json_body(&request.body)?;
             write_json_response(

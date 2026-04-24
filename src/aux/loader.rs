@@ -261,6 +261,19 @@ impl ModuleStore {
 
 fn find_file(loader: &Loader, module_name: &str) -> Result<(String, String), LoadFileError> {
     let filename = format!("{}.ali", module_name);
+    if loader.is_virtual {
+        // Virtual loaders have no filesystem search paths; look up the module
+        // file directly in the in-memory map by `<Name>.ali`.
+        return match (loader.read_file)(&filename) {
+            Ok(contents) => Ok((filename, contents)),
+            Err(LoadError::NotFound) => Err(LoadFileError::ModuleNotFound {
+                module_name: module_name.to_owned(),
+            }),
+            Err(LoadError::IoError(reason)) => {
+                Err(LoadFileError::ModuleIoError { path: filename, reason })
+            }
+        };
+    }
     for dir in &loader.search_paths {
         let candidate = format!("{}/{}", dir, filename);
         // Canonicalize first: this confirms the file exists and resolves symlinks.

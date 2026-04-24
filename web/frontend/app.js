@@ -33,6 +33,11 @@ const resizerReplAnalysis = document.getElementById('resizer-repl-analysis');
 const analysisBody = document.getElementById('analysis-body');
 const analysisResizer = document.getElementById('analysis-resizer');
 const editor      = document.getElementById('editor');
+const editorHighlight = document.getElementById('editor-highlight');
+const selExamples = document.getElementById('sel-examples');
+const btnLoad     = document.getElementById('btn-load');
+const btnSave     = document.getElementById('btn-save');
+const fileInput   = document.getElementById('file-input');
 const btnEval     = document.getElementById('btn-evaluate');
 const fileOutput  = document.getElementById('file-output');
 const selType     = document.getElementById('sel-type');
@@ -86,6 +91,10 @@ class WasmBackend {
     return this.inner.get_types();
   }
 
+  async get_examples() {
+    return this.inner.get_examples();
+  }
+
   async get_strdiag(typeName, itemName, boundaryDim, boundarySign) {
     return this.inner.get_strdiag(typeName, itemName, boundaryDim, boundarySign);
   }
@@ -125,6 +134,10 @@ class HttpBackend {
 
   async get_types() {
     return this.post('/api/get_types', {});
+  }
+
+  async get_examples() {
+    return this.post('/api/get_examples', {});
   }
 
   async get_strdiag(typeName, itemName, boundaryDim, boundarySign) {
@@ -203,6 +216,7 @@ async function boot() {
     helpEl.className = 'repl-result';
     helpEl.textContent = HELP_TEXT;
     replOutput.appendChild(helpEl);
+    void populateExamples();
   } catch (e) {
     btnEval.textContent = 'Error';
     appendReplMsg('Failed to load backend: ' + e, 'repl-result err');
@@ -851,6 +865,7 @@ async function handleCommand(raw) {
       const s = result.data.stored;
       const code = `\n\n@${s.type_name}\nlet ${s.def_name} = ${s.expr}`;
       editor.value = editor.value.trimEnd() + code + '\n';
+      updateHighlight();
       await refreshAccordion();
     }
   }
@@ -1115,6 +1130,245 @@ const HELP_TEXT = `Commands:
 
 Keyboard: ↑/↓ navigate history · Ctrl+Enter evaluate file`;
 
+// ── Examples, load/save, syntax highlighting ─────────────────────────────────
+
+const EXAMPLE_CONTENTS = new Map();
+
+async function populateExamples() {
+  if (!repl) return;
+  try {
+    const result = await parseReplResponse(repl.get_examples());
+    if (result.status !== 'ok' || !result.data || !result.data.examples) return;
+    const list = result.data.examples;
+    selExamples.innerHTML = '<option value="">Examples…</option>';
+    for (const ex of list) {
+      EXAMPLE_CONTENTS.set(ex.name, ex.content);
+      const opt = document.createElement('option');
+      opt.value = ex.name;
+      opt.textContent = ex.name;
+      selExamples.appendChild(opt);
+    }
+  } catch (e) {
+    appendReplMsg('Failed to load examples: ' + e, 'repl-result err');
+  }
+}
+
+selExamples.addEventListener('change', () => {
+  const name = selExamples.value;
+  selExamples.value = '';
+  if (!name) return;
+  const content = EXAMPLE_CONTENTS.get(name);
+  if (content === undefined) return;
+  if (!confirmReplaceIfDirty()) return;
+  setEditorValue(content);
+});
+
+btnLoad.addEventListener('click', () => { fileInput.click(); });
+fileInput.addEventListener('change', () => {
+  const f = fileInput.files && fileInput.files[0];
+  fileInput.value = '';
+  if (!f) return;
+  if (!confirmReplaceIfDirty()) return;
+  const reader = new FileReader();
+  reader.onload = () => { setEditorValue(String(reader.result || '')); };
+  reader.onerror = () => { appendReplMsg('Failed to read file: ' + reader.error, 'repl-result err'); };
+  reader.readAsText(f);
+});
+
+btnSave.addEventListener('click', () => {
+  const content = editor.value;
+  const defaultName = currentFileName() || 'untitled.ali';
+  const name = window.prompt('Save as:', defaultName);
+  if (!name) return;
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name.endsWith('.ali') ? name : name + '.ali';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+  savedSnapshot = content;
+  currentFile = a.download;
+});
+
+let currentFile = null;
+let savedSnapshot = '';
+
+function currentFileName() { return currentFile; }
+
+function confirmReplaceIfDirty() {
+  if (editor.value === savedSnapshot) return true;
+  return window.confirm('Replace the editor contents? Unsaved changes will be lost.');
+}
+
+function setEditorValue(text) {
+  editor.value = text;
+  savedSnapshot = text;
+  updateHighlight();
+}
+
+// ── Syntax highlighting (overlay renderer) ───────────────────────────────────
+//
+// A hidden <pre> behind the textarea is repainted on every input.  Both
+// layers share every metric that affects glyph advance — font, padding,
+// line-height, tab-size, wrapping — so the rendered colours line up with the
+// caret.  Scroll is mirrored from the textarea (the source of truth).
+
+const ALI_KEYWORDS_CONTROL = new Set(['attach', 'along', 'include', 'assert']);
+const ALI_KEYWORDS_OTHER   = new Set(['let', 'def', 'as', 'total', 'map']);
+const ALI_KEYWORDS_BOUND   = new Set(['in', 'out']);
+
+function escapeHtmlChar(ch) {
+  switch (ch) {
+    case '&': return '&amp;';
+    case '<': return '&lt;';
+    case '>': return '&gt;';
+    default:  return ch;
+  }
+}
+
+function escapeHtml(s) {
+  let out = '';
+  for (const ch of s) out += escapeHtmlChar(ch);
+  return out;
+}
+
+// Returns an HTML string with <span class="tok-…"> wrappers.  The token set
+// mirrors the VSCode TextMate grammar at editors/vscode/syntaxes/ali.tmLanguage.json.
+function highlightAli(src) {
+  let out = '';
+  let i = 0;
+  const n = src.length;
+
+  const isIdentStart = c => /[A-Za-z_]/.test(c);
+  const isIdentPart  = c => /[A-Za-z0-9_]/.test(c);
+  const isDigit      = c => /[0-9]/.test(c);
+
+  while (i < n) {
+    const c = src[i];
+
+    // Block comment (* ... *), with balanced nesting.
+    if (c === '(' && src[i + 1] === '*') {
+      let depth = 1;
+      let j = i + 2;
+      while (j < n && depth > 0) {
+        if (src[j] === '(' && src[j + 1] === '*') { depth++; j += 2; }
+        else if (src[j] === '*' && src[j + 1] === ')') { depth--; j += 2; }
+        else { j++; }
+      }
+      out += `<span class="tok-comment">${escapeHtml(src.slice(i, j))}</span>`;
+      i = j;
+      continue;
+    }
+
+    // Decorators: @Type, @Name, @Name.Sub
+    if (c === '@') {
+      let j = i + 1;
+      while (j < n && (isIdentPart(src[j]) || src[j] === '.')) j++;
+      const rest = src.slice(i + 1, j);
+      if (rest === 'Type') {
+        out += `<span class="tok-deco">${escapeHtml(src.slice(i, j))}</span>`;
+      } else {
+        out += `<span class="tok-deco">@</span><span class="tok-decoId">${escapeHtml(rest)}</span>`;
+      }
+      i = j;
+      continue;
+    }
+
+    // Type-definition head:   Name <<=
+    if (isIdentStart(c)) {
+      let j = i + 1;
+      while (j < n && isIdentPart(src[j])) j++;
+      const word = src.slice(i, j);
+
+      // Lookahead, skipping horizontal whitespace, for `<<=`.
+      let k = j;
+      while (k < n && (src[k] === ' ' || src[k] === '\t')) k++;
+      const isTypeHead = src[k] === '<' && src[k + 1] === '<' && src[k + 2] === '=';
+
+      let cls = null;
+      if (ALI_KEYWORDS_CONTROL.has(word))      cls = 'tok-keyword';
+      else if (ALI_KEYWORDS_OTHER.has(word))   cls = 'tok-keyword';
+      else if (ALI_KEYWORDS_BOUND.has(word))   cls = 'tok-bound';
+      else if (isTypeHead)                     cls = 'tok-typehead';
+
+      out += cls ? `<span class="${cls}">${escapeHtml(word)}</span>` : escapeHtml(word);
+      i = j;
+      continue;
+    }
+
+    // Numbers
+    if (isDigit(c)) {
+      let j = i + 1;
+      while (j < n && isDigit(src[j])) j++;
+      out += `<span class="tok-num">${escapeHtml(src.slice(i, j))}</span>`;
+      i = j;
+      continue;
+    }
+
+    // Multi-char operators
+    if (c === '<' && src[i + 1] === '<' && src[i + 2] === '=') {
+      out += `<span class="tok-arrow">&lt;&lt;=</span>`;
+      i += 3;
+      continue;
+    }
+    if (c === '-' && src[i + 1] === '>') {
+      out += `<span class="tok-arrow">-&gt;</span>`;
+      i += 2;
+      continue;
+    }
+    if (c === '=' && src[i + 1] === '>') {
+      out += `<span class="tok-arrow">=&gt;</span>`;
+      i += 2;
+      continue;
+    }
+    if (c === ':' && src[i + 1] === ':') {
+      out += `<span class="tok-op">::</span>`;
+      i += 2;
+      continue;
+    }
+
+    // Single-char tokens
+    if (c === '?') { out += `<span class="tok-hole">?</span>`; i++; continue; }
+    if (c === '#') { out += `<span class="tok-arrow">#</span>`; i++; continue; }
+    if (c === '=') { out += `<span class="tok-arrow">=</span>`; i++; continue; }
+    if (c === '.' || c === ',' || c === ':' || c === ';') {
+      out += `<span class="tok-punct">${escapeHtmlChar(c)}</span>`;
+      i++;
+      continue;
+    }
+    if (c === '(' || c === ')' || c === '[' || c === ']' || c === '{' || c === '}') {
+      out += `<span class="tok-punct">${c}</span>`;
+      i++;
+      continue;
+    }
+
+    // Whitespace and everything else passes through.
+    out += escapeHtmlChar(c);
+    i++;
+  }
+
+  return out;
+}
+
+function updateHighlight() {
+  // Trailing newline keeps the highlight layer's last line visible so the
+  // textarea's caret at EOF still sits on a rendered glyph row.
+  const text = editor.value;
+  editorHighlight.innerHTML = highlightAli(text) + '\n';
+  syncScroll();
+}
+
+function syncScroll() {
+  editorHighlight.scrollTop = editor.scrollTop;
+  editorHighlight.scrollLeft = editor.scrollLeft;
+}
+
+editor.addEventListener('input', updateHighlight);
+editor.addEventListener('scroll', syncScroll);
+
 // ── Default example ───────────────────────────────────────────────────────────
 
 editor.value = `(*
@@ -1194,6 +1448,8 @@ TwoCells <<= Unit {
     attach B :: Cell along [ Unit => Unit ]
 }
 `;
+savedSnapshot = editor.value;
+updateHighlight();
 
 async function refreshAccordion() {
   if (!repl) return;

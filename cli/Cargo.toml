@@ -1,0 +1,15 @@
+[package]
+name = "alifib-cli"
+version = "0.1.0"
+edition = "2024"
+description = "Command-line frontend for the alifib interpreter."
+
+# The binary is named `alifib` (same as before) — the package is renamed to
+# `alifib-cli` because Cargo requires unique package names in a workspace.
+[[bin]]
+name = "alifib"
+path = "src/main.rs"
+
+[dependencies]
+alifib = { path = "..", features = ["cli"] }
+alifib-web-server = { path = "../web/server" }

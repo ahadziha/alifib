@@ -550,18 +550,6 @@ pub fn run_serve_cmd(args: ServeArgs) -> Result<(), ()> {
     run_daemon(initial)
 }
 
-/// Run the localhost web server with the given arguments.
-#[allow(clippy::result_unit_err)]
-pub fn run_web_cmd(args: WebArgs) -> Result<(), ()> {
-    match super::web_server::run_web_server(&args.bind) {
-        Ok(()) => Ok(()),
-        Err(err) => {
-            eprintln!("error: {}", err);
-            Err(())
-        }
-    }
-}
-
 /// Run the REPL with the given arguments.
 #[cfg(feature = "cli")]
 #[allow(clippy::result_unit_err)]

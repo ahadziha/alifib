@@ -25,6 +25,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "alifib-cli"
+version = "0.1.0"
+dependencies = [
+ "alifib",
+ "alifib-web-server",
+]
+
+[[package]]
+name = "alifib-web-server"
+version = "0.1.0"
+dependencies = [
+ "alifib",
+ "alifib-web-shared",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "alifib-web-shared"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"

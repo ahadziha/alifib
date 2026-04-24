@@ -1,0 +1,10 @@
+[package]
+name = "alifib-web-shared"
+version = "0.1.0"
+edition = "2024"
+description = "Data shared by the alifib web backends (bundled .ali examples)."
+
+[lib]
+
+[dependencies]
+serde_json = "1"

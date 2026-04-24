@@ -55,12 +55,25 @@ impl WebRepl {
     /// Interpret `.ali` source text and return a JSON response with structured
     /// type data (generators with boundaries, diagrams, maps).
     pub fn load_source(&mut self, source: &str) -> String {
+        self.load_source_with_modules(source, HashMap::new())
+    }
+
+    /// Like [`load_source`], but seeds additional virtual module files into the
+    /// loader.  `extra_modules` is a `<Name>.ali → contents` map — any
+    /// `include <Name>` in the root source resolves to the matching entry.
+    /// The frontend crates use this to bundle `examples/` as library modules,
+    /// keeping the main crate free of web-specific data.
+    pub fn load_source_with_modules(
+        &mut self,
+        source: &str,
+        extra_modules: HashMap<String, String>,
+    ) -> String {
         // Free old state before allocating the new store so that both don't
         // coexist — in WASM, linear memory pages from the peak are permanent.
         self.engine = None;
         self.store = None;
 
-        let mut files = HashMap::new();
+        let mut files = extra_modules;
         files.insert(WEB_SOURCE_PATH.to_string(), source.to_string());
         let loader = Loader::with_virtual_files(files);
 

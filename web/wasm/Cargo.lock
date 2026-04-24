@@ -27,9 +27,17 @@ name = "alifib-wasm"
 version = "0.1.0"
 dependencies = [
  "alifib",
+ "alifib-web-shared",
  "serde",
  "serde_json",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "alifib-web-shared"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]

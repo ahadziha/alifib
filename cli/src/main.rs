@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use alifib::aux::error::report_load_file_error;
 use alifib::aux::loader::Loader;
-use alifib::interactive::cli::{RewriteCommand, ReplArgs, ServeArgs, SessionArgs, WebArgs, parse_rewrite_args, parse_repl_args, parse_serve_args, parse_session_args, parse_web_args, run_rewrite, run_repl_cmd, run_serve_cmd, run_session_cmd, run_web_cmd};
+use alifib::interactive::cli::{RewriteCommand, ReplArgs, ServeArgs, SessionArgs, WebArgs, parse_rewrite_args, parse_repl_args, parse_serve_args, parse_session_args, parse_web_args, run_rewrite, run_repl_cmd, run_serve_cmd, run_session_cmd};
 use alifib::interpreter::InterpretedFile;
 use alifib::language;
 use alifib::output;
@@ -148,6 +148,17 @@ fn run_bench(loader: &Loader, input: &str, n: usize) -> Result<(), ()> {
     let elapsed = start.elapsed();
     println!("{:.3}", elapsed.as_secs_f64() * 1000.0 / n as f64);
     Ok(())
+}
+
+#[allow(clippy::result_unit_err)]
+fn run_web_cmd(args: WebArgs) -> Result<(), ()> {
+    match alifib_web_server::run_web_server(&args.bind) {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            eprintln!("error: {}", err);
+            Err(())
+        }
+    }
 }
 
 fn main() {

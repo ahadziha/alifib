@@ -65,5 +65,4 @@ pub mod session;
 #[cfg(feature = "cli")]
 pub mod session_repl;
 pub mod web;
-pub mod web_server;
 pub mod workspace;

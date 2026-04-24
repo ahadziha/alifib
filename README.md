@@ -51,9 +51,17 @@ See `examples/` for more, and `docs/grammar.md` for the full grammar.
 
 ## Building
 
+The repository is a Cargo workspace. The default target is the `alifib` CLI
+binary — everything else (web server, wasm bindings, plugins) is opt-in.
+
 ```
-cargo build --release
+cargo build --release              # builds the `alifib` CLI binary
+cargo test                         # runs the CLI + library tests
+cargo build --release --workspace  # also builds plugins and the web server
 ```
+
+The WebAssembly crate at `web/wasm/` is intentionally outside the workspace
+and builds separately through `wasm-pack` (see [Web GUI](#web-gui) below).
 
 ## Usage
 
@@ -167,6 +175,32 @@ ssh -L 8000:127.0.0.1:8000 user@remote-host
 
 Then open `http://127.0.0.1:8000` in your local browser.
 
+The editor supports live syntax highlighting, loading/saving `.ali` files from
+your local machine, and a dropdown listing every bundled example from
+`examples/`. All bundled examples are also importable as modules — a file you
+type into the editor can include `Theory`, `Semigroup`, `Category` etc. without
+needing them on disk.
+
+#### Local preview
+
+The frontend assets (`index.html`, `app.js`, `style.css`) and every `.ali`
+example are embedded into the binary at compile time, so there is no separate
+build step for the HTTP mode:
+
+```sh
+just web                         # runs `cargo run -- web`
+just web --bind 127.0.0.1:8080   # pass-through args
+```
+
+For the WASM-backed deployment (used when `web/frontend/` is hosted as static
+files — the `ALIFIB_CONFIG.backend = 'wasm'` path), build the bundle with
+`wasm-pack` and serve the directory:
+
+```sh
+just web-wasm                    # wasm-pack build → web/frontend/pkg/
+just web-static [port]           # python3 -m http.server (default 8000)
+```
+
 ### Session workspace
 
 ```
@@ -180,10 +214,15 @@ to enter a guided proof sub-loop, then `export` or `export <path>` to save resul
 ## Repository layout
 
 ```
-src/           Interpreter source (language/, core/, interpreter/, output/)
-web/           Browser frontend and WASM bindings
-examples/      Example .ali files
+src/           alifib library crate (language/, core/, interpreter/, output/)
+cli/           alifib-cli crate — produces the `alifib` binary
+web/
+  frontend/    Browser frontend (index.html, app.js, style.css)
+  shared/      alifib-web-shared crate — bundled `.ali` examples for the web GUI
+  server/      alifib-web-server crate — localhost HTTP server for `alifib web`
+  wasm/        alifib-wasm crate — WebAssembly bindings (built via wasm-pack)
+examples/      Example .ali files (bundled into the web GUI at build time)
 docs/          Grammar, interpreter description, formal semantics (LaTeX)
-trs/           Plugin: convert term rewriting systems to alifib (see trs/README.md)
+plugins/trs/   Plugin: convert term rewriting systems to alifib
 INTERACTIVE.md Full reference for the REPL, web GUI, daemon, and session workspace
 ```
