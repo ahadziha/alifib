@@ -1,0 +1,100 @@
+(*
+  𝔽₂-linear maps as a finite 2-polygraph.
+
+  Reference: Y. Lafont, "Towards an algebraic theory of Boolean circuits",
+  J. Pure Appl. Algebra 184 (2003), §3, Figure 13.
+
+  Three generators — swap, copy, xor — plus a constant `zero` for the
+  F₂-specific axiom.  Juxtaposition is sequential composition; `#0` is
+  parallel (tensor) composition.
+
+  Theorem (Lafont).  Any circuit built from these generators denotes a
+  𝔽₂-linear map 𝔽₂ⁿ → 𝔽₂ᵐ, and two circuits denote the same map iff they
+  are equal modulo the rewrites below.  So Gaussian elimination falls out
+  of string-diagram rewriting on a finite signature.
+*)
+
+@Type
+include Theory,
+let Eq = Theory.Equation,
+
+F2_Linear <<= {
+  pt,
+  attach Set :: Theory.Set along [ pt => pt ],
+  let set = Set.set,
+  let id = Set.id,
+
+  (* --- Generators --------------------------------------------------- *)
+
+  (* τ : 2 → 2   swap *)
+  swap : set set -> set set,
+
+  (* δ : 1 → 2   fanout / copy *)
+  copy : set -> set set,
+
+  (* μ : 2 → 1   XOR (addition in 𝔽₂) *)
+  xor : set set -> set,
+
+  (* ζ : 1 → 1   the constant-zero map.
+
+     Lafont's full signature has ε : 1 → 0 and η : 0 → 1, and this cell
+     corresponds to their composite ε;η.  alifib has no tensor unit, so
+     we take the composite as primitive — enough to state the F₂ axiom
+     below.                                                              *)
+  zero : set -> set,
+
+  (* --- Symmetric-group relations for swap --------------------------- *)
+
+  (* swap³ = swap, which combined with Yang-Baxter gives swap² = id     *)
+  attach Swap_cube :: Eq along [
+    lhs => swap swap swap,
+    rhs => swap
+  ],
+  attach Swap_yang_baxter :: Eq along [
+    lhs => (swap set)(set swap)(swap set),
+    rhs => (set swap)(swap set)(set swap)
+  ],
+
+  (* --- Copy is a cocommutative comonoid ----------------------------- *)
+
+  attach Copy_coassoc :: Eq along [
+    lhs => copy (copy set),
+    rhs => copy (set copy)
+  ],
+  attach Copy_cocomm :: Eq along [
+    lhs => copy swap,
+    rhs => copy
+  ],
+
+  (* --- XOR is a commutative monoid ---------------------------------- *)
+
+  attach Xor_assoc :: Eq along [
+    lhs => (xor set) xor,
+    rhs => (set xor) xor
+  ],
+  attach Xor_comm :: Eq along [
+    lhs => swap xor,
+    rhs => xor
+  ],
+
+  (* --- Bialgebra: xor then copy = copy-copy, swap middle, xor-xor --- *)
+
+  attach Bialgebra :: Eq along [
+    lhs => xor copy,
+    rhs => (copy #0 copy)(set swap set)(xor #0 xor)
+  ],
+
+  (* --- 𝔽₂-specific axiom: x + x = 0 -------------------------------- *)
+
+  attach Copy_then_xor :: Eq along [
+    lhs => copy xor,
+    rhs => zero
+  ],
+
+  (* --- zero absorbs ------------------------------------------------- *)
+
+  attach Zero_idempotent :: Eq along [
+    lhs => zero zero,
+    rhs => zero
+  ]
+}
