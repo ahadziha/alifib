@@ -4,14 +4,13 @@ use std::time::Instant;
 
 use alifib::aux::error::report_load_file_error;
 use alifib::aux::loader::Loader;
-use alifib::interactive::cli::{RewriteCommand, ReplArgs, ServeArgs, WebArgs, parse_rewrite_args, parse_repl_args, parse_serve_args, parse_web_args, run_rewrite, run_repl_cmd, run_serve_cmd};
+use alifib::interactive::cli::{ReplArgs, ServeArgs, WebArgs, parse_repl_args, parse_serve_args, parse_web_args, run_repl_cmd, run_serve_cmd};
 use alifib::interpreter::InterpretedFile;
 use alifib::language;
 use alifib::output;
 
 const USAGE: &str = "\
 Usage: alifib <input-file> [-o|--output <output-file>] [--ast] [--print] [--bench N]
-       alifib rewrite <subcommand> [options]  (run 'alifib rewrite --help' for details)
        alifib repl <file> [--type <t>] [--source <s>] [--target <t>] [--emacs]
        alifib web [<examples-dir>] [--bind <addr>]
        alifib serve [<file> --type <t> --source <s> [--target <t>]]";
@@ -21,7 +20,6 @@ enum RunMode {
     Ast,
     Print,
     Bench(usize),
-    Rewrite(RewriteCommand),
     Repl(ReplArgs),
     Web(WebArgs),
     Serve(ServeArgs),
@@ -41,10 +39,6 @@ fn parse_args() -> Result<Args, String> {
 
     // Check for top-level subcommands that consume all remaining args.
     match cli_args.first().map(|s| s.as_str()) {
-        Some("rewrite") => {
-            let cmd = parse_rewrite_args(&cli_args[1..])?;
-            return Ok(Args { input: String::new(), output: None, mode: RunMode::Rewrite(cmd) });
-        }
         Some("repl") => {
             let args = parse_repl_args(&cli_args[1..])?;
             return Ok(Args { input: String::new(), output: None, mode: RunMode::Repl(args) });
@@ -168,7 +162,6 @@ fn main() {
         RunMode::Print     => run_print(&loader, &args.input, args.output.as_deref()),
         RunMode::Interpret => run_interpreter(&loader, &args.input, args.output.as_deref()),
         RunMode::Bench(n)     => run_bench(&loader, &args.input, n),
-        RunMode::Rewrite(cmd)  => run_rewrite(cmd),
         RunMode::Repl(args)    => run_repl_cmd(args),
         RunMode::Web(args)     => run_web_cmd(args),
         RunMode::Serve(args)   => run_serve_cmd(args),

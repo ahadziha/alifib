@@ -197,7 +197,7 @@ array of `{dim, display}` objects, one per dimension that has generators.
 
 ## Session files
 
-The REPL, `alifib rewrite` and the daemon can save and load session files (JSON). A session file
+The REPL and the daemon can save and load session files (JSON). A session file
 records the source file path, type name, diagram names, and the ordered
 list of moves (choice index + rule name). It is sufficient to fully replay
 a session from scratch.
@@ -216,5 +216,4 @@ a session from scratch.
 ```
 
 REPL: `save <path>` / `load <path>`.  
-CLI: `alifib rewrite init/step/undo/show/done --session <path>`.  
 Daemon: `{"command":"save","path":"..."}` / `{"command":"resume","session_file":"..."}`.

@@ -17,7 +17,6 @@ modules, and verifies that partial maps are structure-preserving.
 | Command | What it is | See |
 |---------|------------|-----|
 | `alifib <file>` | One-shot interpret / `--ast` / `--print` / `--bench` | [Interpreter](#interpreter) |
-| `alifib rewrite <sub>` | Stateless log-driven rewrite CLI (scripting, editors) | `INTERACTIVE.md` |
 | `alifib repl <file>` | Interactive terminal REPL with readline, history, `store`/`save` | [REPL](#repl) |
 | `alifib serve` | JSON-lines daemon on stdin/stdout for editor plugins and agents | [Daemon](#daemon) |
 | `alifib web [<dir>]` | Localhost HTTP server + browser GUI (SSH-tunnel friendly) | [Web GUI](#web-gui) |
