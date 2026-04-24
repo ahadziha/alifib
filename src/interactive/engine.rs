@@ -569,6 +569,11 @@ impl RewriteEngine {
     /// The interpreter's global store, shared read-only across the session.
     pub fn store(&self) -> &GlobalStore { &self.store }
 
+    /// Clone the `Arc` to the interpreter's global store.  Used by callers
+    /// that need to keep an independent handle (e.g. the web adapter, which
+    /// resyncs its cached store after a successful `register_proof`).
+    pub fn store_arc(&self) -> Arc<GlobalStore> { Arc::clone(&self.store) }
+
     /// The type complex whose (n+1)-generators are the rewrite rules.
     pub fn type_complex(&self) -> &Complex { &self.type_complex }
 
@@ -712,5 +717,88 @@ impl RewriteEngine {
             target_diagram: self.target_diagram_name.clone(),
             moves: self.history.iter().map(|e| e.mov.clone()).collect(),
         }
+    }
+
+    /// Dispatch an engine-level [`Request`] to the matching method and return
+    /// the response data.
+    ///
+    /// Returns `None` for variants that don't belong to this layer — session
+    /// transitions (`Init`, `Resume`, `Save`, `Shutdown`) and store-level
+    /// queries (`Homology`).  Callers handle those themselves.
+    ///
+    /// Errors from the engine (bad choice index, nothing to undo, name
+    /// already in use, …) are returned as `Some(Err(msg))`.
+    pub fn handle(
+        &mut self,
+        req: &super::protocol::Request,
+    ) -> Option<Result<super::protocol::ResponseData, String>> {
+        use super::protocol::*;
+        // `self.step(...)` holds `&mut self`; `build_response(self, …)` also
+        // borrows.  We split into statements so the mutable borrow ends
+        // before the response builder starts.
+        let result: Result<ResponseData, String> = match req {
+            Request::Step { choice } => match self.step(*choice) {
+                Ok(_) => Ok(build_response(self, false)),
+                Err(e) => Err(e),
+            },
+            Request::Auto { max_steps } => match self.auto(*max_steps) {
+                Ok((applied, stop_reason)) => {
+                    let mut data = build_response(self, false);
+                    data.auto = Some(AutoInfo {
+                        applied,
+                        stop_reason: stop_reason.unwrap_or("").to_owned(),
+                    });
+                    Ok(data)
+                }
+                Err(msg) => Err(msg),
+            },
+            Request::Undo => self.undo().map(|_| build_response(self, false)),
+            Request::UndoTo { step } => {
+                self.undo_to(*step).map(|_| build_response(self, false))
+            }
+            Request::Show => Ok(build_response(self, false)),
+            Request::History => Ok(build_response(self, true)),
+            Request::ListRules => Ok(build_list_rules_response(self)),
+            Request::Types => Ok(build_types_response(self)),
+            Request::TypeInfo { name } => build_type_info_response(self, name),
+            Request::Cell { name } => build_cell_response(self, name),
+            Request::Store { name } => {
+                // Render the proof expression from the current steps *before*
+                // registering — registration rewrites `type_complex`, and the
+                // rendered form should reflect the shape at the time of store.
+                let stored_info = if self.steps().is_empty() {
+                    None
+                } else {
+                    let n = self.source_diagram().top_dim();
+                    let scope = self.type_complex();
+                    let mut steps = self.steps().iter();
+                    let first = crate::output::render_diagram(steps.next().unwrap(), scope);
+                    let rest: String = steps
+                        .map(|s| {
+                            format!("\n#{} {}", n, crate::output::render_diagram(s, scope))
+                        })
+                        .collect();
+                    Some(StoredInfo {
+                        type_name: self.type_name().to_owned(),
+                        def_name: name.clone(),
+                        expr: format!("{}{}", first, rest),
+                    })
+                };
+                match self.register_proof(name) {
+                    Ok(_) => {
+                        let mut data = build_response(self, false);
+                        data.stored = stored_info;
+                        Ok(data)
+                    }
+                    Err(msg) => Err(msg),
+                }
+            }
+            Request::Init { .. }
+            | Request::Resume { .. }
+            | Request::Save { .. }
+            | Request::Shutdown
+            | Request::Homology { .. } => return None,
+        };
+        Some(result)
     }
 }

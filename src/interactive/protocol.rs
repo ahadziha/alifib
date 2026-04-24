@@ -142,6 +142,31 @@ pub struct ResponseData {
     /// Cell detail; only populated by `cell`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cell_detail: Option<CellDetailInfo>,
+    /// Summary of an `auto` run; only populated by the `auto` command.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto: Option<AutoInfo>,
+    /// Summary of a `store` operation; only populated by the `store` command
+    /// when the session had at least one rewrite step.  Lets frontends
+    /// display or append the rendered proof expression back to the source.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stored: Option<StoredInfo>,
+}
+
+/// Populated for `auto` responses.
+#[derive(Debug, Serialize)]
+pub struct AutoInfo {
+    pub applied: usize,
+    pub stop_reason: String,
+}
+
+/// Populated for successful `store` responses that had at least one step.
+#[derive(Debug, Serialize)]
+pub struct StoredInfo {
+    pub type_name: String,
+    pub def_name: String,
+    /// The rendered proof diagram as an alifib expression suitable for
+    /// pasting into a `let` binding.
+    pub expr: String,
 }
 
 /// Summary of a single type, for the `types` response.
@@ -359,6 +384,8 @@ pub fn build_response(engine: &RewriteEngine, include_history: bool) -> Response
         types: vec![],
         type_detail: None,
         cell_detail: None,
+        auto: None,
+        stored: None,
     }
 }
 

@@ -1,8 +1,12 @@
 //! Shared browser-facing API for the web GUI.
 //!
-//! This mirrors the WASM surface used by `web/frontend/app.js`, but lives in
-//! the main crate so it can be reused by both the WASM bindings and a future
-//! localhost HTTP server.
+//! `WebRepl` is the stateful adapter used by both web backends — the HTTP
+//! server at `web/server/` and the WASM bindings at `web/wasm/`.  Command
+//! dispatch delegates to [`RewriteEngine::handle`], which is the same
+//! surface the stdio daemon uses at `super::daemon`; the only per-backend
+//! work is session setup (`init_session`/`reset`) and the commands that
+//! bypass the engine (currently just `homology`, which queries the
+//! interpreter's global store directly).
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -16,8 +20,7 @@ use crate::interpreter::{GlobalStore, InterpretedFile, LoadResult};
 
 use super::engine::{RewriteEngine, resolve_type};
 use super::protocol::{
-    Request, Response, build_cell_response, build_homology_response, build_list_rules_response,
-    build_response, build_strdiag_response, build_type_info_response, build_types_response,
+    Request, Response, build_homology_response, build_response, build_strdiag_response,
     step_target_strdiag_json, strdiag_json_from_diagram, tag_to_json,
 };
 
@@ -142,123 +145,59 @@ impl WebRepl {
 
     /// Send a daemon-protocol command and return a JSON response.
     ///
-    /// Supported commands: `show`, `step`, `undo`, `undo_to`, `list_rules`,
-    /// `history`, `types`, `type`, `cell`, `store`.
+    /// Engine-level commands (`step`, `auto`, `undo`, `undo_to`, `show`,
+    /// `history`, `list_rules`, `types`, `type`, `cell`, `store`) are
+    /// delegated to [`RewriteEngine::handle`], shared with the daemon.
     ///
-    /// Not supported (file-system commands): `init`, `resume`, `save`, `shutdown`.
+    /// `homology` goes through the stored `GlobalStore` directly because it
+    /// can be queried without an active session.
+    ///
+    /// Session-level commands (`init`, `resume`, `save`, `shutdown`) are
+    /// not applicable in web mode — creation/destruction of the engine is
+    /// driven by [`WebRepl::init_session`] + [`WebRepl::reset`].
     pub fn run_command(&mut self, command_json: &str) -> String {
         let request: Request = match serde_json::from_str(command_json) {
             Ok(r) => r,
             Err(e) => return err_json(&format!("invalid command JSON: {e}")),
         };
 
-        match request {
-            Request::Show => self.need_engine(|e| ok_json(build_response(e, false))),
-
-            Request::Step { choice } => self.need_engine_mut(|e| match e.step(choice) {
-                Ok(_) => ok_json(build_response(e, false)),
-                Err(msg) => response_err(msg),
-            }),
-
-            Request::Auto { max_steps } => self.need_engine_mut(|e| match e.auto(max_steps) {
-                Ok((applied, stop_reason)) => {
-                    let data = build_response(e, false);
-                    let mut val = serde_json::to_value(&data).unwrap();
-                    val.as_object_mut().unwrap().insert(
-                        "auto".to_string(),
-                        serde_json::json!({
-                            "applied": applied,
-                            "stop_reason": stop_reason,
-                        }),
-                    );
-                    ok_json(val)
-                }
-                Err(msg) => response_err(msg),
-            }),
-
-            Request::Undo => self.need_engine_mut(|e| match e.undo() {
-                Ok(()) => ok_json(build_response(e, false)),
-                Err(msg) => response_err(msg),
-            }),
-
-            Request::UndoTo { step } => self.need_engine_mut(|e| match e.undo_to(step) {
-                Ok(()) => ok_json(build_response(e, false)),
-                Err(msg) => response_err(msg),
-            }),
-
-            Request::ListRules => self.need_engine(|e| ok_json(build_list_rules_response(e))),
-
-            Request::History => self.need_engine(|e| ok_json(build_response(e, true))),
-
-            Request::Types => self.need_engine(|e| ok_json(build_types_response(e))),
-
-            Request::TypeInfo { name } => {
-                self.need_engine(|e| match build_type_info_response(e, &name) {
-                    Ok(data) => ok_json(data),
-                    Err(msg) => response_err(msg),
-                })
-            }
-
-            Request::Cell { name } => self.need_engine(|e| match build_cell_response(e, &name) {
-                Ok(data) => ok_json(data),
-                Err(msg) => response_err(msg),
-            }),
-
-            Request::Store { name } => {
-                let Some(e) = self.engine.as_mut() else {
-                    return err_json("no session active; call init_session first");
-                };
-                let proof_expr = if e.steps().is_empty() {
-                    None
-                } else {
-                    let n = e.source_diagram().top_dim();
-                    let scope = e.type_complex();
-                    let mut steps = e.steps().iter();
-                    let first = crate::output::render_diagram(steps.next().unwrap(), scope);
-                    let rest: String = steps
-                        .map(|s| format!("\n#{} {}", n, crate::output::render_diagram(s, scope)))
-                        .collect();
-                    Some(format!("{}{}", first, rest))
-                };
-                let type_name = e.type_name().to_owned();
-                match e.register_proof(&name) {
-                    Ok((new_store, _)) => {
-                        self.store = Some(new_store);
-                        let data = build_response(e, false);
-                        let store_info = proof_expr.map(|expr| {
-                            serde_json::json!({
-                                "type_name": type_name,
-                                "def_name": name,
-                                "expr": expr,
-                            })
-                        });
-                        let mut val = serde_json::to_value(&data).unwrap();
-                        if let Some(info) = store_info {
-                            val.as_object_mut()
-                                .unwrap()
-                                .insert("stored".to_string(), info);
-                        }
-                        ok_json(val)
-                    }
-                    Err(msg) => response_err(msg),
-                }
-            }
-
+        match &request {
+            Request::Init { .. }
+            | Request::Resume { .. }
+            | Request::Save { .. }
+            | Request::Shutdown => return err_json("command not supported in web mode"),
             Request::Homology { name } => {
+                let name = name.clone();
                 let store = match self.store.as_ref() {
                     Some(s) => s,
                     None => return err_json("no source loaded"),
                 };
-                match build_homology_response(store, WEB_SOURCE_PATH, &name) {
+                return match build_homology_response(store, WEB_SOURCE_PATH, &name) {
                     Ok(data) => ok_json(data),
                     Err(msg) => err_json(&msg),
-                }
+                };
             }
+            _ => {}
+        }
 
-            Request::Init { .. }
-            | Request::Resume { .. }
-            | Request::Save { .. }
-            | Request::Shutdown => err_json("command not supported in web mode"),
+        // Everything else is engine-level: delegate to the shared dispatcher.
+        let Some(engine) = self.engine.as_mut() else {
+            return err_json("no session active; call init_session first");
+        };
+        match engine.handle(&request) {
+            Some(Ok(data)) => {
+                // `store` updates the engine's store via `Arc::make_mut`; keep
+                // `self.store` in lockstep so subsequent `get_types` and friends
+                // see the new let-binding.
+                if matches!(request, Request::Store { .. }) {
+                    self.store = Some(engine.store_arc());
+                }
+                ok_json(data)
+            }
+            Some(Err(msg)) => response_err(msg),
+            // Unreachable: the variants `handle` returns `None` for are all
+            // matched explicitly above.
+            None => err_json("unhandled request"),
         }
     }
 
@@ -328,13 +267,6 @@ impl WebRepl {
 
     fn need_engine<F: FnOnce(&RewriteEngine) -> String>(&self, f: F) -> String {
         match self.engine.as_ref() {
-            Some(e) => f(e),
-            None => err_json("no session active; call init_session first"),
-        }
-    }
-
-    fn need_engine_mut<F: FnOnce(&mut RewriteEngine) -> String>(&mut self, f: F) -> String {
-        match self.engine.as_mut() {
             Some(e) => f(e),
             None => err_json("no session active; call init_session first"),
         }

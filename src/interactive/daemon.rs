@@ -44,11 +44,7 @@
 use std::io::{BufRead, Write};
 
 use super::engine::RewriteEngine;
-use super::protocol::{
-    Request, Response,
-    build_response, build_list_rules_response,
-    build_types_response, build_type_info_response, build_cell_response,
-};
+use super::protocol::{Request, Response, build_response};
 use super::session::SessionFile;
 
 /// Run the daemon loop: read requests from stdin, write responses to stdout.
@@ -107,9 +103,11 @@ enum DispatchResult {
 }
 
 fn dispatch(engine: &mut Option<RewriteEngine>, req: Request) -> DispatchResult {
-    use Request::*;
+    // Session transitions and Save are the daemon's own layer.  Everything
+    // else is an engine-level command — delegate to `engine.handle`, which
+    // is the shared surface used by `WebRepl` too.
     let resp = match req {
-        Init { source_file, type_name, source_diagram, target_diagram } => {
+        Request::Init { source_file, type_name, source_diagram, target_diagram } => {
             match RewriteEngine::init(
                 &source_file,
                 &type_name,
@@ -124,78 +122,32 @@ fn dispatch(engine: &mut Option<RewriteEngine>, req: Request) -> DispatchResult 
                 Err(e) => Response::error(e),
             }
         }
-        Resume { session_file } => {
-            match SessionFile::read(&session_file) {
+        Request::Resume { session_file } => match SessionFile::read(&session_file) {
+            Err(e) => Response::error(e),
+            Ok(sf) => match RewriteEngine::from_session(sf) {
                 Err(e) => Response::error(e),
-                Ok(sf) => match RewriteEngine::from_session(sf) {
-                    Err(e) => Response::error(e),
-                    Ok(e) => {
-                        let data = build_response(&e, true);
-                        *engine = Some(e);
-                        Response::Ok { data }
-                    }
-                },
-            }
-        }
-        Step { choice } => {
-            with_engine(engine, |e| {
-                e.step(choice)?;
-                Ok(build_response(e, false))
-            })
-        }
-        Auto { max_steps } => {
-            with_engine(engine, |e| {
-                e.auto(max_steps)?;
-                Ok(build_response(e, false))
-            })
-        }
-        Undo => {
-            with_engine(engine, |e| {
-                e.undo()?;
-                Ok(build_response(e, false))
-            })
-        }
-        UndoTo { step } => {
-            with_engine(engine, |e| {
-                e.undo_to(step)?;
-                Ok(build_response(e, false))
-            })
-        }
-        Show => {
-            with_engine(engine, |e| Ok(build_response(e, false)))
-        }
-        Save { path } => {
-            with_engine(engine, |e| {
-                e.to_session_file().write(&path)?;
-                Ok(build_response(e, false))
-            })
-        }
-        ListRules => {
-            with_engine(engine, |e| Ok(build_list_rules_response(e)))
-        }
-        History => {
-            with_engine(engine, |e| Ok(build_response(e, true)))
-        }
-        Store { name } => {
-            with_engine(engine, |e| {
-                let _ = e.register_proof(&name)?;
-                Ok(build_response(e, false))
-            })
-        }
-        Types => {
-            with_engine(engine, |e| Ok(build_types_response(e)))
-        }
-        TypeInfo { name } => {
-            with_engine(engine, |e| build_type_info_response(e, &name))
-        }
-        Cell { name } => {
-            with_engine(engine, |e| build_cell_response(e, &name))
-        }
-        Homology { .. } => {
-            // Homology is not supported in daemon mode (no store access without session).
+                Ok(e) => {
+                    let data = build_response(&e, true);
+                    *engine = Some(e);
+                    Response::Ok { data }
+                }
+            },
+        },
+        Request::Save { path } => with_engine(engine, |e| {
+            e.to_session_file().write(&path)?;
+            Ok(build_response(e, false))
+        }),
+        Request::Shutdown => return DispatchResult::Shutdown,
+        Request::Homology { .. } => {
+            // Homology queries bypass the engine — not wired into the daemon.
             Response::error("homology command not supported in daemon mode".to_string())
         }
-        Shutdown => return DispatchResult::Shutdown,
+        other => with_engine(engine, |e| match e.handle(&other) {
+            Some(result) => result,
+            // `handle` only returns `None` for the session-level variants that
+            // are matched above, so this branch is unreachable in practice.
+            None => Err("unhandled request".to_owned()),
+        }),
     };
     DispatchResult::Respond(resp)
 }
