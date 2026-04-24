@@ -464,6 +464,11 @@ fn dispatch_homology(store: &GlobalStore, canonical_path: &str, name: &str, disp
             } else {
                 for (dim, group) in &h.groups {
                     display.inspect(&format!("  H_{} = {}", dim, group));
+                    if let Some(witnesses) = h.torsion_witnesses.get(dim) {
+                        for w in witnesses {
+                            display.meta(&format!("    {}", w));
+                        }
+                    }
                 }
                 display.meta(&format!("  χ = {}", h.euler_characteristic));
             }

@@ -16,6 +16,41 @@ pub struct AbelianGroup {
     pub torsion: Vec<i64>,
 }
 
+/// A cycle in C_n witnessing a torsion class in H_n.
+///
+/// `order · cycle` lies in the image of d_{n+1}, but `cycle` itself does not.
+/// The cycle is given as a list of (generator name, coefficient) pairs in the
+/// original basis of C_n.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TorsionWitness {
+    pub order: i64,
+    pub cycle: Vec<(String, i64)>,
+}
+
+impl std::fmt::Display for TorsionWitness {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Z/{} cycle: {}", self.order, format_cycle(&self.cycle))
+    }
+}
+
+fn format_cycle(cycle: &[(String, i64)]) -> String {
+    if cycle.is_empty() { return "0".to_string(); }
+    let mut out = String::new();
+    for (i, (name, coeff)) in cycle.iter().enumerate() {
+        let abs = coeff.abs();
+        let sign = if *coeff < 0 { "-" } else if i == 0 { "" } else { "+" };
+        if i == 0 {
+            if abs == 1 { out.push_str(&format!("{}{}", sign, name)); }
+            else { out.push_str(&format!("{}{}·{}", sign, abs, name)); }
+        } else {
+            out.push(' ');
+            if abs == 1 { out.push_str(&format!("{} {}", sign, name)); }
+            else { out.push_str(&format!("{} {}·{}", sign, abs, name)); }
+        }
+    }
+    out
+}
+
 impl std::fmt::Display for AbelianGroup {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut parts = Vec::new();
@@ -44,6 +79,8 @@ pub struct Homology {
     pub groups: Vec<(usize, AbelianGroup)>,
     /// Euler characteristic: Σ (-1)^n |C_n|.
     pub euler_characteristic: i64,
+    /// For each dimension n, cycles in C_n witnessing the torsion classes of H_n.
+    pub torsion_witnesses: HashMap<usize, Vec<TorsionWitness>>,
 }
 
 impl Homology {
@@ -61,6 +98,11 @@ impl std::fmt::Display for Homology {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (dim, group) in &self.groups {
             writeln!(f, "H_{} = {}", dim, group)?;
+            if let Some(witnesses) = self.torsion_witnesses.get(dim) {
+                for w in witnesses {
+                    writeln!(f, "    {}", w)?;
+                }
+            }
         }
         writeln!(f, "χ = {}", self.euler_characteristic)?;
         Ok(())
@@ -85,7 +127,11 @@ pub fn compute_homology(complex: &Complex) -> Homology {
     }
 
     if gens_by_dim.is_empty() {
-        return Homology { groups: vec![], euler_characteristic: 0 };
+        return Homology {
+            groups: vec![],
+            euler_characteristic: 0,
+            torsion_witnesses: HashMap::new(),
+        };
     }
 
 
@@ -171,6 +217,7 @@ pub fn compute_homology(complex: &Complex) -> Homology {
 
     // Compute homology at each dimension.
     let mut groups = Vec::new();
+    let mut torsion_witnesses: HashMap<usize, Vec<TorsionWitness>> = HashMap::new();
     let mut dims: Vec<usize> = gens_by_dim.keys().copied().collect();
     dims.sort();
 
@@ -183,24 +230,59 @@ pub fn compute_homology(complex: &Complex) -> Homology {
             .unwrap_or(0);
 
         // d_{n+1}: C_{n+1} → C_n  (may not exist)
-        let smith_dn1 = differentials.get(&(n + 1))
-            .map(|m| {
-                smith_normal_form(m)
-            });
+        // We compute SNF with basis tracking so torsion diagonal entries carry
+        // a witness cycle in C_n (column of U^{-1}).
+        let snf_dn1 = differentials.get(&(n + 1))
+            .map(|m| smith_normal_form_with_basis(m));
 
-        let (rank_dn1, torsion) = match smith_dn1 {
-            Some(diag) => {
+        let (rank_dn1, torsion, witnesses) = match snf_dn1 {
+            Some((raw_diag, u_inv)) => {
+                // Torsion witnesses: column i of u_inv for each raw_diag[i] > 1.
+                // Row labels of u_inv are the n-generators (in gens_by_dim[&n] order).
+                let n_gens = &gens_by_dim[&n];
+                let ws: Vec<TorsionWitness> = raw_diag.iter().enumerate()
+                    .filter(|&(_, &d)| d > 1)
+                    .map(|(col, &d)| {
+                        let mut cycle: Vec<(String, i64)> = n_gens.iter().enumerate()
+                            .filter_map(|(row, name)| {
+                                let c = u_inv.get(row).and_then(|r| r.get(col)).copied().unwrap_or(0);
+                                if c != 0 { Some((name.clone(), c)) } else { None }
+                            })
+                            .collect();
+                        // Normalize sign: any ±z witnesses the same torsion class,
+                        // so flip if the leading coefficient is negative.
+                        if cycle.first().is_some_and(|(_, c)| *c < 0) {
+                            for (_, c) in cycle.iter_mut() { *c = -*c; }
+                        }
+                        TorsionWitness { order: d, cycle }
+                    })
+                    .collect();
+
+                // Canonicalize the diagonal for reporting torsion invariants
+                // (same normalization as the standalone `smith_normal_form`).
+                let mut diag = raw_diag;
+                enforce_divisibility(&mut diag);
+                diag.sort_by(|a, b| {
+                    match (a == &0, b == &0) {
+                        (true, false) => std::cmp::Ordering::Greater,
+                        (false, true) => std::cmp::Ordering::Less,
+                        _ => a.cmp(b),
+                    }
+                });
                 let rank = diag.iter().filter(|&&d| d != 0).count();
                 let torsion: Vec<i64> = diag.iter()
                     .filter(|&&d| d > 1)
                     .copied()
                     .collect();
-                (rank, torsion)
+                (rank, torsion, ws)
             }
-            None => (0, vec![]),
+            None => (0, vec![], vec![]),
         };
 
         let free_rank = num_gens - rank_dn - rank_dn1;
+        if !witnesses.is_empty() {
+            torsion_witnesses.insert(n, witnesses);
+        }
         groups.push((n, AbelianGroup { free_rank, torsion }));
     }
 
@@ -210,7 +292,7 @@ pub fn compute_homology(complex: &Complex) -> Homology {
         if n % 2 == 0 { count } else { -count }
     }).sum();
 
-    let result = Homology { groups, euler_characteristic };
+    let result = Homology { groups, euler_characteristic, torsion_witnesses };
     debug_assert_eq!(
         result.euler_characteristic, result.euler_from_homology(),
         "Euler characteristic mismatch: chain complex gives {}, homology gives {}",
@@ -320,6 +402,174 @@ fn smith_normal_form(matrix: &[Vec<i64>]) -> Vec<i64> {
 fn matrix_rank(matrix: &[Vec<i64>]) -> usize {
     // Use Smith form — rank = number of nonzero diagonal entries.
     smith_normal_form(matrix).iter().filter(|&&d| d != 0).count()
+}
+
+// ── SNF with change-of-basis tracking ────────────────────────────────────────
+
+/// Compute the Smith Normal Form diagonal, *and* a matrix `u_inv` such that
+/// column `i` of `u_inv` is the chain in the original row-basis whose
+/// `diag[i]`-multiple lies in the image of the input matrix.
+///
+/// The returned `diag` is in *raw* (pre-normalisation) order — divisibility is
+/// NOT enforced here — so it lines up with columns of `u_inv` positionally.
+///
+/// This is the key primitive for extracting torsion witnesses. If the input is
+/// the matrix of d_{n+1} with rows indexed by n-generators, then column `i`
+/// of `u_inv` for a `diag[i] > 1` is a cycle in C_n whose class in H_n
+/// generates a Z/diag[i] torsion summand.
+fn smith_normal_form_with_basis(matrix: &[Vec<i64>]) -> (Vec<i64>, Vec<Vec<i64>>) {
+    let num_rows = matrix.len();
+    if num_rows == 0 { return (vec![], vec![]); }
+    let num_cols = matrix[0].len();
+    if num_cols == 0 { return (vec![], identity(num_rows)); }
+
+    let mut m: Vec<Vec<i64>> = matrix.to_vec();
+    // u_inv starts as identity on the row-basis.
+    let mut u_inv: Vec<Vec<i64>> = identity(num_rows);
+
+    let min_dim = num_rows.min(num_cols);
+    let mut pivot = 0;
+
+    while pivot < min_dim {
+        if !find_and_move_pivot_tracked(&mut m, &mut u_inv, pivot, num_rows, num_cols) {
+            break;
+        }
+        loop {
+            loop {
+                eliminate_column_tracked(&mut m, &mut u_inv, pivot, num_rows);
+                eliminate_row(&mut m, pivot, num_cols); // column ops — do not affect u_inv
+                if is_pivot_clean(&m, pivot, num_rows, num_cols) { break; }
+            }
+            let pv = m[pivot][pivot];
+            if pv == 0 { break; }
+            let mut found_bad = false;
+            'search: for r in (pivot + 1)..num_rows {
+                for c in (pivot + 1)..num_cols {
+                    if m[r][c] % pv != 0 {
+                        // Row op: R_pivot += R_r.
+                        row_add_tracked(&mut m, &mut u_inv, pivot, r, 1);
+                        found_bad = true;
+                        break 'search;
+                    }
+                }
+            }
+            if !found_bad { break; }
+        }
+
+        if m[pivot][pivot] < 0 {
+            row_negate_tracked(&mut m, &mut u_inv, pivot);
+        }
+
+        pivot += 1;
+    }
+
+    let diag: Vec<i64> = (0..min_dim).map(|i| m[i][i]).collect();
+    (diag, u_inv)
+}
+
+fn identity(n: usize) -> Vec<Vec<i64>> {
+    (0..n).map(|i| (0..n).map(|j| if i == j { 1 } else { 0 }).collect()).collect()
+}
+
+/// Row swap on `m` with corresponding column swap on `u_inv`.
+///
+/// A row op E applied to M also acts on U (U := E·U). The corresponding action
+/// on U^{-1} (so that U·U^{-1} stays the identity) is right-multiplication by
+/// E^{-1}. For a row swap (self-inverse), that's a column swap on U_inv.
+fn row_swap_tracked(m: &mut [Vec<i64>], u_inv: &mut [Vec<i64>], p: usize, r: usize) {
+    m.swap(p, r);
+    for row in u_inv.iter_mut() {
+        row.swap(p, r);
+    }
+}
+
+/// `R_dest += q · R_src` on `m`, with the inverse column op `C_src -= q · C_dest` on `u_inv`.
+fn row_add_tracked(m: &mut [Vec<i64>], u_inv: &mut [Vec<i64>], dest: usize, src: usize, q: i64) {
+    let ncols = m[0].len();
+    for j in 0..ncols {
+        m[dest][j] += q * m[src][j];
+    }
+    for row in u_inv.iter_mut() {
+        let cd = row[dest];
+        row[src] -= q * cd;
+    }
+}
+
+/// Negate row `r` on `m`, with the corresponding column negation on `u_inv`.
+fn row_negate_tracked(m: &mut [Vec<i64>], u_inv: &mut [Vec<i64>], r: usize) {
+    let ncols = m[0].len();
+    for j in 0..ncols { m[r][j] = -m[r][j]; }
+    for row in u_inv.iter_mut() { row[r] = -row[r]; }
+}
+
+/// 2×2 GCD-style row op replacing `(R_p, R_r)` with `(s·R_p + t·R_r, -b·R_p + a·R_r)`.
+/// The inverse column op on `u_inv` is the 2×2 block `[[a, -t], [b, s]]` on cols `(p, r)`.
+fn row_gcd_tracked(
+    m: &mut [Vec<i64>], u_inv: &mut [Vec<i64>],
+    p: usize, r: usize,
+    s: i64, t: i64, a: i64, b: i64,
+) {
+    let ncols = m[0].len();
+    let old_p = m[p].clone();
+    let old_r = m[r].clone();
+    for j in 0..ncols {
+        m[p][j] = s * old_p[j] + t * old_r[j];
+        m[r][j] = -b * old_p[j] + a * old_r[j];
+    }
+    for row in u_inv.iter_mut() {
+        let cp = row[p];
+        let cr = row[r];
+        row[p] = a * cp + b * cr;
+        row[r] = -t * cp + s * cr;
+    }
+}
+
+/// Like `find_and_move_pivot` but mirrors the row swap onto `u_inv`.
+fn find_and_move_pivot_tracked(
+    m: &mut [Vec<i64>], u_inv: &mut [Vec<i64>],
+    pivot: usize, nrows: usize, ncols: usize,
+) -> bool {
+    let mut best: Option<(usize, usize, i64)> = None;
+    for r in pivot..nrows {
+        for c in pivot..ncols {
+            let v = m[r][c].abs();
+            if v > 0 {
+                if best.is_none() || v < best.unwrap().2 {
+                    best = Some((r, c, v));
+                }
+            }
+        }
+    }
+    let Some((br, bc, _)) = best else { return false; };
+    // Row swap: track on u_inv.
+    if br != pivot {
+        row_swap_tracked(m, u_inv, pivot, br);
+    }
+    // Column swap: affects V (not u_inv).
+    if bc != pivot {
+        for row in m.iter_mut() {
+            row.swap(pivot, bc);
+        }
+    }
+    true
+}
+
+/// Like `eliminate_column` but mirrors row ops onto `u_inv`.
+fn eliminate_column_tracked(m: &mut [Vec<i64>], u_inv: &mut [Vec<i64>], pivot: usize, nrows: usize) {
+    let pv = m[pivot][pivot];
+    for r in (pivot + 1)..nrows {
+        if m[r][pivot] == 0 { continue; }
+        if pv != 0 && m[r][pivot] % pv == 0 {
+            let q = m[r][pivot] / pv;
+            // R_r -= q · R_pivot, i.e. R_r += (-q) · R_pivot.
+            row_add_tracked(m, u_inv, r, pivot, -q);
+        } else {
+            let (g, s, t) = extended_gcd(pv, m[r][pivot]);
+            let a = pv / g;
+            let b = m[r][pivot] / g;
+            row_gcd_tracked(m, u_inv, pivot, r, s, t, a, b);
+        }
+    }
 }
 
 /// Find a nonzero entry in m[pivot..][pivot..] and swap it to (pivot, pivot).
@@ -719,5 +969,77 @@ mod tests {
     fn homology_rp3() {
         assert_homology(&example("Homology.ali"), "RP3",
             &[(0, 1, &[]), (1, 0, &[2]), (2, 0, &[]), (3, 1, &[])], 0);
+    }
+
+    // ── Torsion-witness tests ────────────────────────────────────────────
+
+    /// Check that torsion classes come with a cycle whose order-multiple is
+    /// actually a boundary, and that the cycle is in ker(d_n).
+    fn assert_witness_consistent(path: &str, type_name: &str, expected_dim: usize, expected_witnesses: &[(i64, &[(&str, i64)])]) {
+        let complex = load_type(path, type_name);
+        let h = compute_homology(&complex);
+        let witnesses = h.torsion_witnesses.get(&expected_dim)
+            .unwrap_or_else(|| panic!("no torsion witnesses at dim {} for {}", expected_dim, type_name));
+        assert_eq!(witnesses.len(), expected_witnesses.len(),
+            "{} dim {}: expected {} witnesses, got {}",
+            type_name, expected_dim, expected_witnesses.len(), witnesses.len());
+        for (w, (exp_order, exp_cycle)) in witnesses.iter().zip(expected_witnesses.iter()) {
+            assert_eq!(w.order, *exp_order,
+                "{} dim {}: witness order mismatch", type_name, expected_dim);
+            let got: Vec<(String, i64)> = w.cycle.clone();
+            let exp: Vec<(String, i64)> = exp_cycle.iter().map(|(s, c)| (s.to_string(), *c)).collect();
+            assert_eq!(got, exp,
+                "{} dim {}: cycle mismatch — got {:?}, expected {:?}",
+                type_name, expected_dim, got, exp);
+        }
+    }
+
+    #[test]
+    fn witness_torsion_example() {
+        // Torsion (a^2 → a^4) has H_1 = Z/2 generated by [a].
+        assert_witness_consistent(
+            &example("ShapeOfConcurrency.ali"), "Torsion", 1,
+            &[(2, &[("a", 1)])],
+        );
+    }
+
+    #[test]
+    fn witness_races_k_contention() {
+        // a^5 → a^10: d_2 = 5·a, so H_1 = Z/5 generated by [a].
+        assert_witness_consistent(
+            &example("Races.ali"), "KContention", 1,
+            &[(5, &[("a", 1)])],
+        );
+    }
+
+    #[test]
+    fn witness_aba_bug() {
+        // (push pop)^3 → (push pop): d_2 = -2·(push + pop), so H_1 = Z + Z/2
+        // with torsion cycle pop + push (alphabetical order, sign-normalised).
+        assert_witness_consistent(
+            &example("Treiber.ali"), "ABAUnsafe", 1,
+            &[(2, &[("pop", 1), ("push", 1)])],
+        );
+    }
+
+    #[test]
+    fn witness_none_when_torsion_free() {
+        // LinearizableCAS has no torsion, so no witnesses at any dimension.
+        let complex = load_type(&example("Treiber.ali"), "LinearizableCAS");
+        let h = compute_homology(&complex);
+        assert!(h.torsion_witnesses.is_empty(),
+            "expected no torsion witnesses for torsion-free type, got {:?}", h.torsion_witnesses);
+    }
+
+    #[test]
+    fn witness_rp2() {
+        // Classical RP²: H_1 = Z/2. The witness is some cycle of the 1-skeleton.
+        // We just check that a Z/2 witness exists at dim 1.
+        let complex = load_type(&example("Homology.ali"), "RP2");
+        let h = compute_homology(&complex);
+        let ws = h.torsion_witnesses.get(&1).expect("RP2 should have torsion at H_1");
+        assert_eq!(ws.len(), 1);
+        assert_eq!(ws[0].order, 2);
+        assert!(!ws[0].cycle.is_empty(), "witness cycle should be nonempty");
     }
 }
