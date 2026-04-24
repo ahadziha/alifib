@@ -40,17 +40,13 @@ jobs:
 
       - name: Assemble dist/
         # - web/frontend/pkg/ was produced above by wasm-pack
-        # - examples/ is mirrored into dist/examples/ and paired with an
-        #   index.json manifest; the frontend fetches these at runtime via
-        #   the same /examples/... URLs the HTTP server exposes locally
+        # - examples/ is mirrored recursively (preserving subdirectory
+        #   structure) via the shared build script, which also writes
+        #   index.json and fails the build on duplicate stems
         run: |
           mkdir -p dist
           cp -r web/frontend/. dist/
-          mkdir -p dist/examples
-          cp examples/*.ali dist/examples/
-          python3 -c "import json, os; \
-            names = sorted(os.path.splitext(f)[0] for f in os.listdir('dist/examples') if f.endswith('.ali')); \
-            open('dist/examples/index.json','w').write(json.dumps(names))"
+          python3 scripts/build_examples_manifest.py examples dist/examples
 
       - name: Upload Pages artefact
         uses: actions/upload-pages-artifact@v3

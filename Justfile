@@ -19,16 +19,14 @@ web *ARGS:
 
 # Prepare a static WASM deployment under web/frontend/:
 #   - wasm-pack build into web/frontend/pkg/
-#   - mirror examples/ into web/frontend/examples/
-#   - write examples/index.json for the frontend's dropdown
+#   - recursively mirror examples/ into web/frontend/examples/, preserving
+#     the directory tree and generating an index.json manifest via the
+#     shared script (same logic the GitHub Pages workflow uses)
 # The resulting directory can be served as-is (GitHub Pages, `python3 -m
-# http.server`, anything static).
+# http.server`, anything static).  Duplicate stems fail the build.
 web-wasm:
     wasm-pack build --target web web/wasm --out-dir ../frontend/pkg
-    rm -rf web/frontend/examples
-    mkdir -p web/frontend/examples
-    cp examples/*.ali web/frontend/examples/
-    python3 -c "import json, os, sys; names = sorted(os.path.splitext(f)[0] for f in os.listdir('web/frontend/examples') if f.endswith('.ali')); open('web/frontend/examples/index.json','w').write(json.dumps(names))"
+    python3 scripts/build_examples_manifest.py examples web/frontend/examples
 
 # Serve web/frontend/ as static files on port 8000 so you can preview the
 # WASM-backed build end-to-end.  Run `just web-wasm` first.

@@ -94,32 +94,19 @@ fn handle_connection(
         }
         ("POST", "/api/get_types") => write_json_response(stream, 200, repl.get_types()),
 
-        ("GET", "/examples/index.json") => write_json_response(
-            stream,
-            200,
-            serde_json::to_string(&examples.names()).unwrap_or_else(|_| "[]".into()),
-        ),
+        ("GET", "/examples/index.json") => {
+            write_json_response(stream, 200, examples.index_json())
+        }
         ("GET", p) if p.starts_with("/examples/") && p.ends_with(".ali") => {
-            let name = &p["/examples/".len()..p.len() - ".ali".len()];
-            // Paths with slashes or `..` are rejected to avoid directory
-            // traversal — names are bare stems, no subdirectories.
-            if name.contains('/') || name.contains("..") || name.is_empty() {
-                write_text_response(stream, 400, "text/plain; charset=utf-8", "bad name")
-            } else {
-                match examples.read(name) {
-                    Some(content) => write_text_response(
-                        stream,
-                        200,
-                        "text/plain; charset=utf-8",
-                        &content,
-                    ),
-                    None => write_text_response(
-                        stream,
-                        404,
-                        "text/plain; charset=utf-8",
-                        "not found",
-                    ),
+            let rel = &p["/examples/".len()..];
+            // `read_path` validates each segment against the identifier rule
+            // and canonicalises-in-root — anything dubious returns None and
+            // we hand back 404 rather than leaking the reason.
+            match examples.read_path(rel) {
+                Some(content) => {
+                    write_text_response(stream, 200, "text/plain; charset=utf-8", &content)
                 }
+                None => write_text_response(stream, 404, "text/plain; charset=utf-8", "not found"),
             }
         }
 
