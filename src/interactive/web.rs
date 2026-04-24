@@ -9,14 +9,16 @@ use std::sync::Arc;
 
 use serde::Serialize;
 
+use crate::aux::Tag;
 use crate::aux::loader::{LoadFileError, Loader};
+use crate::core::diagram::CellData;
 use crate::interpreter::{GlobalStore, InterpretedFile, LoadResult};
 
 use super::engine::{RewriteEngine, resolve_type};
 use super::protocol::{
     Request, Response, build_cell_response, build_homology_response, build_list_rules_response,
     build_response, build_strdiag_response, build_type_info_response, build_types_response,
-    step_target_strdiag_json, strdiag_json_from_diagram,
+    step_target_strdiag_json, strdiag_json_from_diagram, tag_to_json,
 };
 
 pub const WEB_SOURCE_PATH: &str = "source.ali";
@@ -339,23 +341,58 @@ impl WebRepl {
     }
 }
 
+fn face_tags_json(store: &GlobalStore, tc: &crate::core::complex::Complex, tag: &Tag) -> Vec<serde_json::Value> {
+    let Some(data) = store.cell_data_for_tag(tc, tag) else { return Vec::new() };
+    let CellData::Boundary { boundary_in, boundary_out } = &data else { return Vec::new() };
+    let mut face_tags = Vec::new();
+    for bd in [boundary_in, boundary_out] {
+        if let Some(labels) = bd.labels_at(bd.top_dim()) {
+            for t in labels {
+                face_tags.push(tag_to_json(t));
+            }
+        }
+    }
+    face_tags
+}
+
 fn type_summaries_json(store: &GlobalStore) -> Vec<serde_json::Value> {
     let norm = store.normalize();
+    let type_complexes: HashMap<&str, &crate::core::complex::Complex> = store
+        .modules_iter()
+        .flat_map(|(_, mc)| {
+            mc.generators_iter().filter_map(move |(_, gen_tag, _)| {
+                let Tag::Global(gid) = gen_tag else { return None };
+                let te = store.find_type(*gid)?;
+                let name = mc.find_generator_by_tag(gen_tag)?;
+                Some((name.as_str(), &*te.complex))
+            })
+        })
+        .collect();
     norm.modules
         .iter()
         .flat_map(|m| &m.types)
         .filter(|t| !t.name.is_empty())
         .map(|t| {
+            let tc = type_complexes.get(t.name.as_str());
             let generators: Vec<serde_json::Value> = t
                 .dims
                 .iter()
                 .flat_map(|d| {
+                    let tc = tc.copied();
                     d.cells.iter().map(move |c| {
+                        let (tag_json, faces_json) = tc
+                            .and_then(|tc| {
+                                let (tag, _) = tc.find_generator(&c.name)?;
+                                Some((tag_to_json(tag), face_tags_json(store, tc, tag)))
+                            })
+                            .unwrap_or((serde_json::Value::Null, Vec::new()));
                         serde_json::json!({
                             "name": c.name,
                             "dim": d.dim,
                             "src": c.src,
                             "tgt": c.tgt,
+                            "tag": tag_json,
+                            "face_tags": faces_json,
                         })
                     })
                 })

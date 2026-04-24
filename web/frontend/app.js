@@ -8,7 +8,19 @@ let currentLayout = null;
 let selectedEl = null;
 let dragState = null;
 let splitterDrag = null;
-const thinGenerators = new Set();
+const thinTags = new Set();
+const tagFaces = new Map();
+const fullyThinTags = new Set();
+
+function recomputeFullyThin() {
+  fullyThinTags.clear();
+  for (const tag of thinTags) {
+    const faces = tagFaces.get(tag);
+    if (faces && faces.every(f => thinTags.has(f))) {
+      fullyThinTags.add(tag);
+    }
+  }
+}
 
 const MIN_WORKSPACE_WIDTHS = [240, 260, 280];
 const MIN_ANALYSIS_HEIGHTS = [60, 180];
@@ -624,6 +636,15 @@ async function evaluateSource() {
 
   const types = result.types || [];
 
+  thinTags.clear();
+  tagFaces.clear();
+  fullyThinTags.clear();
+  for (const t of types) {
+    for (const g of t.generators) {
+      if (g.tag != null) tagFaces.set(g.tag, (g.face_tags || []).filter(ft => ft != null));
+    }
+  }
+
   // Build accordion in file output area
   fileOutput.innerHTML = '';
   fileOutput.hidden = types.length === 0;
@@ -714,7 +735,7 @@ function buildClickableRow(innerHTML, onClick) {
 function buildGeneratorRow(g, typeName) {
   const div = document.createElement('div');
   div.className = 'acc-leaf acc-leaf-gen';
-  if (thinGenerators.has(g.name)) div.classList.add('acc-leaf--thin');
+  if (g.tag != null && thinTags.has(g.tag)) div.classList.add('acc-leaf--thin');
 
   const text = document.createElement('span');
   text.className = 'acc-leaf-text';
@@ -722,22 +743,25 @@ function buildGeneratorRow(g, typeName) {
   div.appendChild(text);
 
   const toggle = document.createElement('span');
-  toggle.className = 'thin-toggle' + (thinGenerators.has(g.name) ? ' thin-toggle--active' : '');
+  toggle.className = 'thin-toggle' + (g.tag != null && thinTags.has(g.tag) ? ' thin-toggle--active' : '');
   toggle.title = 'Toggle thin';
   toggle.addEventListener('click', (e) => {
     e.stopPropagation();
-    const wasThin = thinGenerators.has(g.name);
-    if (wasThin) thinGenerators.delete(g.name);
-    else thinGenerators.add(g.name);
+    if (g.tag == null) return;
+    const wasThin = thinTags.has(g.tag);
+    if (wasThin) thinTags.delete(g.tag);
+    else thinTags.add(g.tag);
+    recomputeFullyThin();
     toggle.classList.toggle('thin-toggle--active', !wasThin);
     div.classList.toggle('acc-leaf--thin', !wasThin);
-    document.querySelectorAll(`.acc-leaf-gen[data-gen="${CSS.escape(g.name)}"]`).forEach(row => {
+    document.querySelectorAll(`.acc-leaf-gen[data-tag="${g.tag}"]`).forEach(row => {
       row.classList.toggle('acc-leaf--thin', !wasThin);
       row.querySelector('.thin-toggle')?.classList.toggle('thin-toggle--active', !wasThin);
     });
     resizeAndRender();
   });
   div.appendChild(toggle);
+  div.dataset.tag = g.tag != null ? g.tag : '';
   div.dataset.gen = g.name;
 
   div.addEventListener('click', () => {
@@ -1524,6 +1548,13 @@ async function refreshAccordion() {
   const result = await parseReplResponse(repl.get_types());
   if (result.status !== 'ok') return;
   const types = result.data.types || [];
+  tagFaces.clear();
+  for (const t of types) {
+    for (const g of t.generators) {
+      if (g.tag != null) tagFaces.set(g.tag, (g.face_tags || []).filter(ft => ft != null));
+    }
+  }
+  recomputeFullyThin();
   fileOutput.innerHTML = '';
   fileOutput.hidden = types.length === 0;
   types.forEach(t => fileOutput.appendChild(buildTypeAccordion(t)));
@@ -2046,7 +2077,7 @@ function renderStrDiag(ctx, L, cw, ch) {
   }
 
   function drawWire(wi) {
-    const wireThin = thinGenerators.has(L.verts[wi].label);
+    const wireThin = L.verts[wi].tag != null && thinTags.has(L.verts[wi].tag);
     ctx.strokeStyle = wireThin ? thinColor : wireColor;
     ctx.lineWidth = WIRE_W;
     ctx.lineCap = 'round';
@@ -2094,7 +2125,8 @@ function renderStrDiag(ctx, L, cw, ch) {
     const np = px[i];
     const nodePos = i - L.numWires;
     const highlighted = hlPositions && hlPositions.has(nodePos);
-    const nodeThin = thinGenerators.has(L.verts[i].label);
+    const nodeThin = L.verts[i].tag != null && thinTags.has(L.verts[i].tag);
+    const nodeFullyThin = L.verts[i].tag != null && fullyThinTags.has(L.verts[i].tag);
     if (nodeThin && highlighted) {
       ctx.save();
       ctx.shadowColor = '#ffffff';
@@ -2107,7 +2139,7 @@ function renderStrDiag(ctx, L, cw, ch) {
     } else if (nodeThin) {
       ctx.beginPath();
       ctx.arc(np.x, np.y, WIRE_R, 0, Math.PI * 2);
-      ctx.fillStyle = wireColor;
+      ctx.fillStyle = nodeFullyThin ? thinColor : wireColor;
       ctx.fill();
     } else if (highlighted) {
       ctx.save();
@@ -2136,7 +2168,7 @@ function renderStrDiag(ctx, L, cw, ch) {
     const label = L.verts[i].label;
     if (!label) continue;
     const isNode = L.verts[i].kind === 'node';
-    const labelThin = thinGenerators.has(label);
+    const labelThin = L.verts[i].tag != null && thinTags.has(L.verts[i].tag);
     ctx.fillStyle = labelThin ? thinColor : (isNode ? '#f4f4f5' : '#a1a1aa');
     const r = (isNode && !labelThin) ? NODE_R : WIRE_R;
     if (isNode) {

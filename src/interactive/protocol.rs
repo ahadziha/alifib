@@ -23,6 +23,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::aux::Tag;
 use crate::core::complex::Complex;
 use crate::core::diagram::{CellData, Diagram, Sign};
 use crate::core::matching::MatchResult;
@@ -577,6 +578,15 @@ pub fn build_list_rules_response(engine: &RewriteEngine) -> ResponseData {
     data
 }
 
+/// Serialize a [`Tag`] to a JSON value: [`Tag::Global`] becomes its integer ID,
+/// anything else becomes `null`.
+pub fn tag_to_json(tag: &Tag) -> serde_json::Value {
+    match tag {
+        Tag::Global(gid) => serde_json::Value::from(gid.as_usize()),
+        Tag::Local(_) => serde_json::Value::Null,
+    }
+}
+
 /// Serialize a [`StrDiag`] to a JSON value.
 pub fn strdiag_to_json(sd: &StrDiag) -> serde_json::Value {
     fn edges_json(graph: &crate::core::graph::DiGraph) -> Vec<[usize; 2]> {
@@ -591,10 +601,12 @@ pub fn strdiag_to_json(sd: &StrDiag) -> serde_json::Value {
 
     let vertices: Vec<serde_json::Value> = (0..sd.num_vertices())
         .map(|i| {
+            let tag_val = sd.tags[i].as_ref().map(tag_to_json).unwrap_or(serde_json::Value::Null);
             serde_json::json!({
                 "index": i,
                 "kind": match sd.kinds[i] { VertexKind::Wire => "wire", VertexKind::Node => "node" },
                 "label": sd.labels[i],
+                "tag": tag_val,
             })
         })
         .collect();

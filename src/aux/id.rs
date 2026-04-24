@@ -23,6 +23,11 @@ impl GlobalId {
     pub fn fresh() -> Self {
         Self(GLOBAL_COUNTER.fetch_add(1, Ordering::SeqCst))
     }
+
+    /// Returns the underlying integer value.
+    pub fn as_usize(self) -> usize {
+        self.0
+    }
 }
 
 impl std::fmt::Display for GlobalId {

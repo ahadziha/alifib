@@ -15,6 +15,7 @@
 //!
 //! The construction follows Hadzihasanovic's `rewalt` library.
 
+use crate::aux::Tag;
 use super::complex::Complex;
 use super::diagram::Diagram;
 use super::graph::DiGraph;
@@ -41,6 +42,8 @@ pub struct StrDiag {
     pub num_nodes: usize,
     /// Resolved generator name for each vertex.
     pub labels: Vec<String>,
+    /// Raw tag for each vertex (if resolvable).
+    pub tags: Vec<Option<Tag>>,
     /// Kind of each vertex.
     pub kinds: Vec<VertexKind>,
     /// Height constraint graph: "source is below target".
@@ -68,18 +71,21 @@ impl StrDiag {
         // ── Build vertex labels and kinds ────────────────────────────────
 
         let mut labels = Vec::with_capacity(total);
+        let mut tags = Vec::with_capacity(total);
         let mut kinds = Vec::with_capacity(total);
 
         // Wires first (dim-1 cells, indices 0..num_wires).
         if dim >= 1 {
             for pos in 0..num_wires {
                 labels.push(resolve_label(diagram, complex, dim - 1, pos));
+                tags.push(resolve_tag(diagram, dim - 1, pos));
                 kinds.push(VertexKind::Wire);
             }
         }
         // Then nodes (dim cells, indices num_wires..total).
         for pos in 0..num_nodes {
             labels.push(resolve_label(diagram, complex, dim, pos));
+            tags.push(resolve_tag(diagram, dim, pos));
             kinds.push(VertexKind::Node);
         }
 
@@ -172,7 +178,7 @@ impl StrDiag {
             remove_cycles(&mut depth);
         }
 
-        Self { num_wires, num_nodes, labels, kinds, height, width, depth }
+        Self { num_wires, num_nodes, labels, tags, kinds, height, width, depth }
     }
 
     /// Total number of vertices (wires + nodes).
@@ -198,6 +204,14 @@ fn resolve_label(diagram: &Diagram, complex: &Complex, dim: usize, pos: usize) -
         .and_then(|labels| labels.get(pos))
         .and_then(|tag| complex.find_generator_by_tag(tag).cloned())
         .unwrap_or_else(|| "?".to_string())
+}
+
+/// Get the raw tag of cell `(dim, pos)` in the diagram.
+fn resolve_tag(diagram: &Diagram, dim: usize, pos: usize) -> Option<Tag> {
+    diagram
+        .labels_at(dim)
+        .and_then(|labels| labels.get(pos))
+        .cloned()
 }
 
 /// Compute filtered faces for the width/depth graph construction.
