@@ -1,11 +1,11 @@
 # The Shape of Concurrency
 
-A four-act `alifib` demo that computes cellular homology of polygraphic
-rewriting systems and uses the results to make a point no 1-D term
-rewriter (Maude, ELAN, CafeOBJ, Stratego) can make.
+An `alifib` demo that computes cellular homology of four polygraphic
+rewriting systems and checks that each one matches the integer homology
+of a known topological space.
 
 ```
-bash scripts/smoke.sh
+bash scripts/demo.sh
 ```
 
 ## Setup in one paragraph
@@ -23,12 +23,12 @@ the generators, reduced by Smith Normal Form. None of this is
 accessible to a rewriter that only sees 1-D terms and reduction
 sequences.
 
-## The four acts
+## Examples
 
 The demo file is [`examples/ShapeOfConcurrency.ali`](../examples/ShapeOfConcurrency.ali).
-Each act declares a small polygraph, then `alifib` computes its homology.
+Each example declares a small polygraph and `alifib` computes its homology.
 
-### I. Two concurrent threads weave a torus
+### I. Pair — two concurrent threads
 
 ```
 Pair <<= {
@@ -54,7 +54,7 @@ the 2-torus **T²** — the classifying space of Z×Z — and from the
 concurrency angle it is the space of equivalent interleavings of two
 independent actions.
 
-### II. Three threads, naively
+### II. Triple — three threads, pairwise commuting
 
 ```
 Triple <<= {
@@ -64,13 +64,13 @@ Triple <<= {
 }
 ```
 
-Expected (if we had the 3-torus): `H_0=Z, H_1=Z³, H_2=Z³, H_3=Z, χ=0`.
-What `alifib` reports: `H_0=Z, H_1=Z³, H_2=Z³, χ=1`. **No `H_3`, and the
-Euler characteristic is off by one.** The presentation is complete at
-dimension 2 — every critical pair of 1-cells is joined — but the
-topology has a 3-dimensional hole.
+The 3-torus would give `H_0=Z, H_1=Z³, H_2=Z³, H_3=Z, χ=0`.
+What `alifib` reports: `H_0=Z, H_1=Z³, H_2=Z³, χ=1`. No `H_3`, and the
+Euler characteristic is 1, not 0. The presentation is complete at
+dimension 2 — every critical pair of 1-cells is joined — but there is
+a 3-dimensional gap in the homology.
 
-### III. The Zamolodchikov tetrahedron
+### III. TripleCoh — adding the Zamolodchikov tetrahedron
 
 ```
 TripleCoh <<= {
@@ -82,23 +82,20 @@ TripleCoh <<= {
 }
 ```
 
-There are two compositions of three 2-cells taking `a b c` to `c b a`
-(the two sides of the hexagon/tetrahedron). `zamo` is a 3-cell that
-identifies them. Adding this single 3-cell gives
+There are two compositions of three 2-cells taking `a b c` to `c b a`.
+`zamo` is a 3-cell that identifies them. Adding it gives
 
 ```
 H_0 = Z, H_1 = Z³, H_2 = Z³, H_3 = Z, χ = 0
 ```
 
-i.e. `H_*(T³)`. **The coherence cell was not an aesthetic choice.** It
-is forced by algebraic topology: any coherent extension must identify
-those two pastings, and the 3-cell is the extension witness. This is
-the concrete content of Squier's homological finiteness theorem
+i.e. `H_*(T³)`. The coherence cell is required: any coherent extension
+must identify those two pastings, and `zamo` is the extension witness.
+This is the concrete content of Squier's homological finiteness theorem
 (Squier–Otto–Kobayashi 1994; Lafont–Métayer 2009;
-Guiraud–Malbos–Mimram 2013) translated into mechanically checkable
-output.
+Guiraud–Malbos–Mimram 2013).
 
-### IV. Torsion
+### IV. Torsion — Smith Normal Form
 
 ```
 Torsion <<= {
@@ -110,36 +107,27 @@ Torsion <<= {
 
 The 2-cell sends the abelianised generator `a` to `4a − 2a = 2a`. The
 cokernel is `Z/2`. `alifib` reports `H_0=Z, H_1=Z/2, H_2=0`,
-demonstrating that its Smith Normal Form computation detects torsion,
-not just free ranks. A 1-D term rewriter would see `a²→a⁴` as
-"non-terminating modulo power"; a polygraphic tool sees a Moore space.
+The Smith Normal Form computation detects torsion, not just free ranks.
 
-## Why this is beyond 1-D term rewriting
+## Comparison with 1-D term rewriting
 
-Maude and its cousins are optimised around a different question: given
-a term rewriting system, what terms reach what other terms, and under
-what strategies? They are extraordinarily good at it — matching modulo
-AC, narrowing, LTL model checking, and so on. None of that machinery
-*sees* the underlying rewriting complex as a space.
+1-D rewriters (Maude, ELAN, CafeOBJ, Stratego) operate on rewriting
+sequences. They do not represent the underlying rewriting complex as a
+space and cannot compute its homology.
 
 The polygraphic viewpoint attaches geometry to rewriting. The
 underlying regular directed complex forgets to a CW complex in which
 two rewrites sharing a generator are 2-cells sharing a 1-cell face, and
 two rewrite paths reducing the same source to the same target bound a
 potential 3-cell. The Squier obstruction says: if the polygraph's
-`H_2` is not finitely generated, the rewriting system has *no* finite
-convergent presentation, full stop. That is a theorem
-about the existence of algorithms, proved by computing a homology
-group — and it is invisible to a 1-D rewriter because the obstruction
-lives in a dimension the 1-D rewriter cannot even represent.
+`H_2` is not finitely generated, the rewriting system has no finite
+convergent presentation. That conclusion is reached by computing a
+homology group — it is not accessible to a 1-D engine because the
+obstruction lives in a dimension that engine cannot represent.
 
-The demo shows `alifib` doing precisely this kind of computation on
-four tiny examples and getting the right answers, including two
-different classifying-space homologies and one torsion class.
+## Concurrency
 
-## Concurrency, in case the link to threads looks rhetorical
-
-The connection to concurrency is not a metaphor. Higher-dimensional
+Higher-dimensional
 automata (Pratt 1991; van Glabbeek 2006) present a concurrent system as
 a cubical complex whose `n`-cells are `n`-fold simultaneous transitions;
 Mazurkiewicz traces are the 1-skeleton quotiented by the independence
@@ -153,7 +141,7 @@ concurrent-trace space of two and three independent actions.
 ## Files
 
 - `examples/ShapeOfConcurrency.ali` — the four polygraphs.
-- `scripts/smoke.sh` — the narrated demo driver.
+- `scripts/demo.sh` — the demo script.
 - `docs/SMOKE.md` — this document.
 
 ## Further reading

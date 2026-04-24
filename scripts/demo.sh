@@ -1,15 +1,10 @@
 #!/usr/bin/env bash
 # ======================================================================
-#   The Shape of Concurrency — alifib smoke-and-mirrors demo
+#   The Shape of Concurrency — alifib demo
 # ----------------------------------------------------------------------
 #   Computes the cellular homology of four polygraphic rewriting systems
 #   and checks that each one matches the integer homology of a named
 #   topological space.
-#
-#   This is a feature no 1-D term rewriter (Maude, ELAN, Stratego, CafeOBJ)
-#   can reproduce: the homology *is* the topology of the rewriting
-#   complex, and it detects coherence obstructions that term rewriters
-#   cannot see.
 # ======================================================================
 
 set -euo pipefail
@@ -108,8 +103,6 @@ show_snippet() {
 }
 
 # ======================================================================
-#   The show
-# ======================================================================
 
 [[ -t 1 ]] && { clear 2>/dev/null || true; }
 
@@ -117,20 +110,17 @@ banner "The Shape of Concurrency" \
        "cellular homology of polygraphic rewriting systems"
 
 cat <<EOF
-${DIM}Polygraphs — Burroni's generalisation of term-rewriting systems to higher
-dimensions — carry a regular directed complex on the nose. Forget which
-half of each cell's boundary is source and which is target and you have
-an ordinary CW complex; alifib computes its integer cellular homology.
-That invariant records information no 1-D tool can see.
+${DIM}Polygraphs carry a regular directed complex on the nose. Forget the
+source/target distinction on each cell and you obtain an ordinary CW
+complex; alifib computes its integer cellular homology.
 
-Tonight, alifib will compute the homology of four concurrent-rewriting
-presentations. Each one turns out to be the homology of a classical
-topological space. The punchline: when a presentation is *missing* a
-coherence cell, the topology ${RST}${BOLD}${YLW}screams it${RST}${DIM}.${RST}
+The four examples below each produce the homology of a classical
+topological space. Where a coherence cell is absent the homology
+detects the gap.${RST}
 EOF
 
 # ----------------------------------------------------------------------
-act "I" "Two concurrent threads weave a torus"
+act "I" "Pair — two concurrent threads"
 
 show_snippet "Pair <<= {
     pt,
@@ -139,9 +129,10 @@ show_snippet "Pair <<= {
     comm : a b -> b a     (* Mazurkiewicz independence square *)
 }"
 
-say "Two threads doing one atomic action each. The 2-cell 'comm' says they"
-say "commute: abba is abab rearranged. Abelianising the chain complex, d_2"
-say "of comm is (b+a) - (a+b) = 0 — so H_2 inherits the whole 2-cell."
+say "Two threads, one atomic action each, with a 2-cell witnessing"
+say "commutativity. Abelianising, d_2(comm) = (b+a)-(a+b) = 0, so H_2"
+say "is free on comm. This is the concurrent-trace space of two independent"
+say "threads — a 2-torus."
 echo
 
 check Pair \
@@ -151,12 +142,8 @@ H_2 = Z
 χ = 0" \
 "T² (torus)"
 
-say "Two generators glued by one commuter = the torus. This is textbook"
-say "higher-dimensional-automata: the space of concurrent traces of"
-say "two independent threads IS a 2-torus."
-
 # ----------------------------------------------------------------------
-act "II" "Three threads, naively"
+act "II" "Triple — three threads, pairwise commuting"
 
 show_snippet "Triple <<= {
     pt,
@@ -166,20 +153,19 @@ show_snippet "Triple <<= {
     comm_bc : b c -> c b
 }"
 
-say "Three threads, pairwise commuting. If this were the 3-torus T³ we"
-say "would expect H_0=Z, H_1=Z³, H_2=Z³, H_3=Z, χ=0."
+say "Three threads, pairwise commuting. The 3-torus T³ would give"
+say "H_0=Z, H_1=Z³, H_2=Z³, H_3=Z, χ=0."
 echo
 
 printf "  ${DIM}alifib homology of ${BOLD}Triple${RST}${DIM}:${RST}\n"
 homology_of Triple | sed "s/^/    ${MAG}/;s/\$/${RST}/"
 echo
 
-say "${BOLD}${RED}No H_3 cell — and the Euler characteristic is 1, not 0.${RST}"
-say "This ${BOLD}isn't${RST} the 3-torus. The presentation is complete at dimension 2"
-say "but topologically broken at dimension 3. Something is missing."
+say "No H_3, and χ=1 instead of 0. The presentation is complete at"
+say "dimension 2 but has a 3-dimensional gap in its homology."
 
 # ----------------------------------------------------------------------
-act "III" "The Zamolodchikov tetrahedron"
+act "III" "TripleCoh — adding the Zamolodchikov tetrahedron"
 
 show_snippet "TripleCoh <<= {
     pt,
@@ -189,9 +175,9 @@ show_snippet "TripleCoh <<= {
          -> (a comm_bc)(comm_ac b)(c comm_ab)
 }"
 
-say "From abc to cba there are two 'reduction strategies' — two pastings"
-say "of three 2-cells apiece. Asserting they're equal is a 3-cell — the"
-say "Zamolodchikov tetrahedron. ${BOLD}${YLW}Adding this single 3-cell fills the hole.${RST}"
+say "From abc to cba there are two pastings of three 2-cells. The 3-cell"
+say "zamo identifies them — the Zamolodchikov tetrahedron. Adding it"
+say "closes the homological gap."
 echo
 
 check TripleCoh \
@@ -203,12 +189,12 @@ H_3 = Z
 "T³ (3-torus)"
 
 echo
-say "${BOLD}The coherence cell wasn't a stylistic choice.${RST} It's forced on us by"
-say "algebraic topology. Squier's homological finiteness theorem made this"
-say "rigorous in 1994; alifib computes it in milliseconds."
+say "The coherence cell is required: any coherent extension must identify"
+say "those two pastings. This is Squier's homological finiteness theorem"
+say "(Squier-Otto-Kobayashi 1994) in concrete form."
 
 # ----------------------------------------------------------------------
-act "IV" "A rewriting system with torsion"
+act "IV" "Torsion — Smith Normal Form"
 
 show_snippet "Torsion <<= {
     pt,
@@ -216,8 +202,8 @@ show_snippet "Torsion <<= {
     double : a a -> a a a a
 }"
 
-say "One generator, one 2-cell sending a² to a⁴. Abelianising, d_2(double)"
-say "= 4·a - 2·a = 2·a. The cokernel of 'multiplication by 2' is Z/2."
+say "One generator, one 2-cell: d_2(double) = 4a - 2a = 2a. The cokernel"
+say "is Z/2 — integer torsion detected via Smith Normal Form."
 echo
 
 check Torsion \
@@ -227,34 +213,20 @@ H_2 = 0
 χ = 1" \
 "a 2-torsion group"
 
-say "alifib computes integer homology with torsion via Smith Normal Form."
-say "A term rewriter would see a² ↦ a⁴ as 'non-terminating modulo power';"
-say "alifib sees it as a Moore space with Z/2 in H_1."
-
 # ----------------------------------------------------------------------
-banner "Recap" "alifib did what term rewriters cannot"
+banner "Summary"
 
 cat <<EOF
-${BOLD}Summary.${RST}
-  Pair       → H_*(T²) — two concurrent threads weave a torus
-  Triple     → missing H_3, χ = 1 — presentation is not coherent
-  TripleCoh  → H_*(T³) — the Zamolodchikov 3-cell fills the hole
-  Torsion    → H_1 = Z/2 — Smith Normal Form detects torsion
+  Pair       → H_*(T²)          two commuting threads
+  Triple     → no H_3, χ = 1   dimension-2 coherence gap
+  TripleCoh  → H_*(T³)          Zamolodchikov 3-cell closes it
+  Torsion    → H_1 = Z/2        Smith Normal Form detects torsion
 
-${BOLD}Why this is beyond 1-D term rewriting.${RST}
-  Maude and friends see rewriting sequences. alifib sees the regular
-  directed complex whose 0-cells are objects, 1-cells are morphisms,
-  2-cells are rewrite rules, and 3-cells are coherences — a structure
-  that forgets to a CW complex with integer cellular homology. Those
-  homology invariants pick up on the Squier obstruction to finite
-  convergent presentations, something that is, definitionally,
-  invisible to a 1-D engine.
-
-${BOLD}Try it yourself.${RST}
+${DIM}Try it yourself:${RST}
   alifib repl examples/ShapeOfConcurrency.ali
   >> homology Pair
-  >> homology Triple       ${DIM}(the one that's wrong)${RST}
-  >> homology TripleCoh    ${DIM}(the fix)${RST}
+  >> homology Triple
+  >> homology TripleCoh
   >> homology Torsion
 
 EOF
