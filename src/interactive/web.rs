@@ -34,8 +34,35 @@ pub const WEB_SOURCE_PATH: &str = "source.ali";
 /// 3. `init_session(type, src, tgt?)` — start a rewrite session on a type
 /// 4. `run_command(json)` — send daemon-protocol commands (step/undo/show/…)
 pub struct WebRepl {
-    store: Option<Arc<GlobalStore>>,
-    engine: Option<RewriteEngine>,
+    state: State,
+}
+
+/// Internal state machine.  Kept private so public callers still see a
+/// single `WebRepl` — the HTTP server and wasm-bindgen shim need one
+/// long-lived handle and dispatch on runtime state; exposing the states
+/// as separate types would only force them to rebuild the same enum
+/// around it (without gaining compile-time safety, since their request
+/// streams aren't statically ordered).  Encoding the invariants
+/// internally still prevents the "store=None, engine=Some(_)" shape
+/// from existing, which the previous two-`Option` version allowed by
+/// convention only.
+enum State {
+    Empty,
+    Loaded { store: Arc<GlobalStore> },
+    Active { store: Arc<GlobalStore>, engine: RewriteEngine },
+}
+
+impl State {
+    fn store(&self) -> Option<&Arc<GlobalStore>> {
+        match self {
+            State::Empty => None,
+            State::Loaded { store } | State::Active { store, .. } => Some(store),
+        }
+    }
+
+    fn engine(&self) -> Option<&RewriteEngine> {
+        if let State::Active { engine, .. } = self { Some(engine) } else { None }
+    }
 }
 
 impl Default for WebRepl {
@@ -46,15 +73,11 @@ impl Default for WebRepl {
 
 impl WebRepl {
     pub fn new() -> Self {
-        Self {
-            store: None,
-            engine: None,
-        }
+        Self { state: State::Empty }
     }
 
     pub fn reset(&mut self) {
-        self.engine = None;
-        self.store = None;
+        self.state = State::Empty;
     }
 
     /// Interpret `.ali` source text and return a JSON response with structured
@@ -75,8 +98,7 @@ impl WebRepl {
     ) -> String {
         // Free old state before allocating the new store so that both don't
         // coexist — in WASM, linear memory pages from the peak are permanent.
-        self.engine = None;
-        self.store = None;
+        self.state = State::Empty;
 
         let mut files = extra_modules;
         files.insert(WEB_SOURCE_PATH.to_string(), source.to_string());
@@ -84,15 +106,17 @@ impl WebRepl {
 
         match InterpretedFile::load(&loader, WEB_SOURCE_PATH) {
             LoadResult::Loaded(file) => {
-                self.store = Some(Arc::clone(&file.state));
+                let store = Arc::clone(&file.state);
                 // Preserve the original frontend contract for `load_source`,
                 // which returns `types` at the top level instead of under
                 // `data`.
-                serde_json::json!({
+                let json = serde_json::json!({
                     "status": "ok",
                     "types": type_summaries_json(&file.state),
                 })
-                .to_string()
+                .to_string();
+                self.state = State::Loaded { store };
+                json
             }
             LoadResult::LoadError(e) => err_json(&load_error_message(&e)),
             LoadResult::InterpError { errors, .. } => {
@@ -114,12 +138,13 @@ impl WebRepl {
         source_diagram: &str,
         target_diagram: Option<String>,
     ) -> String {
-        self.engine = None;
-
-        let store = match self.store.clone() {
-            Some(s) => s,
-            None => return err_json("no source loaded; call load_source first"),
+        // Collapse any existing session back to Loaded so a failed init
+        // leaves the caller with at least the store they already had.
+        let store = match std::mem::replace(&mut self.state, State::Empty) {
+            State::Empty => return err_json("no source loaded; call load_source first"),
+            State::Loaded { store } | State::Active { store, .. } => store,
         };
+        self.state = State::Loaded { store: Arc::clone(&store) };
 
         let type_complex = match resolve_type(&store, WEB_SOURCE_PATH, type_name) {
             Ok(tc) => tc,
@@ -127,7 +152,7 @@ impl WebRepl {
         };
 
         match RewriteEngine::from_store(
-            store,
+            Arc::clone(&store),
             type_complex,
             source_diagram,
             target_diagram.as_deref(),
@@ -136,7 +161,7 @@ impl WebRepl {
         ) {
             Ok(engine) => {
                 let data = build_response(&engine, false);
-                self.engine = Some(engine);
+                self.state = State::Active { store, engine };
                 ok_json(data)
             }
             Err(e) => err_json(&e),
@@ -168,9 +193,8 @@ impl WebRepl {
             | Request::Shutdown => return err_json("command not supported in web mode"),
             Request::Homology { name } => {
                 let name = name.clone();
-                let store = match self.store.as_ref() {
-                    Some(s) => s,
-                    None => return err_json("no source loaded"),
+                let Some(store) = self.state.store() else {
+                    return err_json("no source loaded");
                 };
                 return match build_homology_response(store, WEB_SOURCE_PATH, &name) {
                     Ok(data) => ok_json(data),
@@ -181,16 +205,16 @@ impl WebRepl {
         }
 
         // Everything else is engine-level: delegate to the shared dispatcher.
-        let Some(engine) = self.engine.as_mut() else {
+        let State::Active { store, engine } = &mut self.state else {
             return err_json("no session active; call init_session first");
         };
         match engine.handle(&request) {
             Some(Ok(data)) => {
                 // `store` updates the engine's store via `Arc::make_mut`; keep
-                // `self.store` in lockstep so subsequent `get_types` and friends
-                // see the new let-binding.
+                // the adapter's cached handle in lockstep so subsequent
+                // `get_types` and friends see the new let-binding.
                 if matches!(request, Request::Store { .. }) {
-                    self.store = Some(engine.store_arc());
+                    *store = engine.store_arc();
                 }
                 ok_json(data)
             }
@@ -214,9 +238,8 @@ impl WebRepl {
         boundary_dim: Option<usize>,
         boundary_sign: Option<String>,
     ) -> String {
-        let store = match self.store.as_ref() {
-            Some(s) => s,
-            None => return err_json("no source loaded; call load_source first"),
+        let Some(store) = self.state.store() else {
+            return err_json("no source loaded; call load_source first");
         };
         let boundary = boundary_dim.map(|d| {
             let sign = boundary_sign.as_deref().unwrap_or("input");
@@ -230,9 +253,8 @@ impl WebRepl {
 
     /// Return the current type list for the accordion (same format as load_source).
     pub fn get_types(&self) -> String {
-        let store = match self.store.as_ref() {
-            Some(s) => s,
-            None => return err_json("no source loaded"),
+        let Some(store) = self.state.store() else {
+            return err_json("no source loaded");
         };
         ok_json(serde_json::json!({
             "types": type_summaries_json(store.as_ref()),
@@ -266,7 +288,7 @@ impl WebRepl {
     }
 
     fn need_engine<F: FnOnce(&RewriteEngine) -> String>(&self, f: F) -> String {
-        match self.engine.as_ref() {
+        match self.state.engine() {
             Some(e) => f(e),
             None => err_json("no session active; call init_session first"),
         }
