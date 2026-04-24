@@ -18,7 +18,6 @@ use super::session::SessionFile;
 #[cfg(feature = "cli")]
 use super::repl::run_repl;
 #[cfg(feature = "cli")]
-use super::session_repl::run_session;
 
 const REWRITE_USAGE: &str = "\
 Usage: alifib rewrite <subcommand> [options]
@@ -211,16 +210,6 @@ pub struct ReplArgs {
     pub source: Option<String>,
     /// Pre-selected target diagram name.
     pub target: Option<String>,
-    /// Use Emacs keybindings instead of the default vi mode.
-    pub emacs: bool,
-}
-
-/// Arguments for the `alifib session` subcommand.
-pub struct SessionArgs {
-    /// Path to the `.ali` source file.
-    pub file: String,
-    /// Name of the type to work in (required).
-    pub type_name: String,
     /// Use Emacs keybindings instead of the default vi mode.
     pub emacs: bool,
 }
@@ -569,44 +558,3 @@ pub fn run_repl_cmd(args: ReplArgs) -> Result<(), ()> {
     run_repl(&args.file, args.type_name.as_deref(), args.source.as_deref(), args.target.as_deref(), args.emacs)
 }
 
-const SESSION_USAGE: &str = "\
-Usage: alifib session <file> --type <t> [--emacs]
-";
-
-/// Parse the arguments following `alifib session`.
-pub fn parse_session_args(args: &[String]) -> Result<SessionArgs, String> {
-    let mut file = None;
-    let mut type_name = None;
-    let mut emacs = false;
-
-    let mut it = args.iter();
-    while let Some(arg) = it.next() {
-        match arg.as_str() {
-            "--type"  => { type_name = Some(next_arg(&mut it, "--type")?); }
-            "--emacs" => { emacs = true; }
-            "-h" | "--help" => return Err(SESSION_USAGE.to_string()),
-            s if s.starts_with('-') => {
-                return Err(format!("unknown option '{}' for session\n{}", s, SESSION_USAGE));
-            }
-            s => {
-                if file.is_some() {
-                    return Err("session: multiple input files specified".to_string());
-                }
-                file = Some(s.to_string());
-            }
-        }
-    }
-
-    Ok(SessionArgs {
-        file:      file.ok_or("session: <file> argument is required")?,
-        type_name: type_name.ok_or("session: --type is required")?,
-        emacs,
-    })
-}
-
-/// Run the session REPL with the given arguments.
-#[cfg(feature = "cli")]
-#[allow(clippy::result_unit_err)]
-pub fn run_session_cmd(args: SessionArgs) -> Result<(), ()> {
-    run_session(&args.file, &args.type_name, args.emacs)
-}

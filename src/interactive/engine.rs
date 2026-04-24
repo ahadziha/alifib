@@ -104,7 +104,7 @@ pub fn resolve_type(
 /// without locating any diagrams.
 ///
 /// Convenience wrapper over [`load_file_context`] + [`resolve_type`].
-/// Used by session_repl, cli, and daemon which always know the type upfront.
+/// Used by the cli and the daemon which always know the type upfront.
 pub fn load_type_context(
     source_file: &str,
     type_name: &str,
@@ -243,7 +243,7 @@ impl RewriteEngine {
     /// `source_diagram_name` and `target_diagram_name` may be either plain diagram
     /// names (resolved against `type_complex` and the module at `source_file`) or
     /// full diagram expressions in the alifib language (e.g. `"f g"` or `"(f #0 g)"`).
-    /// This constructor is used by the workspace session REPL and the interactive REPL.
+    /// This constructor is used by the interactive REPL and the web backends.
     pub fn from_store(
         store: Arc<GlobalStore>,
         type_complex: Arc<Complex>,

@@ -12,6 +12,17 @@ diagram; a *molecule* is a shape built inductively by gluing atoms. The
 interpreter elaborates type definitions, checks boundaries, resolves included
 modules, and verifies that partial maps are structure-preserving.
 
+## Interfaces at a glance
+
+| Command | What it is | See |
+|---------|------------|-----|
+| `alifib <file>` | One-shot interpret / `--ast` / `--print` / `--bench` | [Interpreter](#interpreter) |
+| `alifib rewrite <sub>` | Stateless log-driven rewrite CLI (scripting, editors) | `INTERACTIVE.md` |
+| `alifib repl <file>` | Interactive terminal REPL with readline, history, `store`/`save` | [REPL](#repl) |
+| `alifib serve` | JSON-lines daemon on stdin/stdout for editor plugins and agents | [Daemon](#daemon) |
+| `alifib web [<dir>]` | Localhost HTTP server + browser GUI (SSH-tunnel friendly) | [Web GUI](#web-gui) |
+| Static WASM build | Same frontend, interpreter in the browser (GitHub Pages etc.) | [Local preview](#local-preview) |
+
 ## Language
 
 Source files use the `.ali` extension. The core constructs are:
@@ -215,16 +226,6 @@ files and writes an `examples/index.json` manifest.  Both the HTTP mode and
 the WASM deployment expose the same `examples/index.json` + `examples/Name.ali`
 URL scheme, so the frontend fetches them identically in either environment.
 
-### Session workspace
-
-```
-alifib session <file> --type <t>
-```
-
-An interactive session for building up definitions incrementally within a type.
-Unlike the REPL, no initial source diagram is required. Use `goal <name> : <src> -> <tgt>`
-to enter a guided proof sub-loop, then `export` or `export <path>` to save results.
-
 ## Repository layout
 
 ```
@@ -238,5 +239,5 @@ web/
 examples/      Example .ali files (served by `alifib web` at runtime)
 docs/          Grammar, interpreter description, formal semantics (LaTeX)
 plugins/trs/   Plugin: convert term rewriting systems to alifib
-INTERACTIVE.md Full reference for the REPL, web GUI, daemon, and session workspace
+INTERACTIVE.md Full reference for the REPL, web GUI, and daemon
 ```
