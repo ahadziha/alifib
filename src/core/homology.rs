@@ -612,4 +612,112 @@ mod tests {
         let h = compute_homology(&complex);
         eprintln!("Ob homology:\n{}", h);
     }
+
+    // ── Homology.ali gallery tests ───────────────────────────────────
+
+    fn assert_homology(path: &str, type_name: &str, expected: &[(usize, usize, &[i64])], chi: i64) {
+        let complex = load_type(path, type_name);
+        let h = compute_homology(&complex);
+        eprintln!("{} homology:\n{}", type_name, h);
+        for &(dim, free_rank, torsion) in expected {
+            let group = h.groups.iter().find(|(d, _)| *d == dim)
+                .unwrap_or_else(|| panic!("H_{} missing for {}", dim, type_name));
+            assert_eq!(group.1.free_rank, free_rank,
+                "H_{} free rank for {}: expected {}, got {}", dim, type_name, free_rank, group.1.free_rank);
+            assert_eq!(group.1.torsion, torsion,
+                "H_{} torsion for {}: expected {:?}, got {:?}", dim, type_name, torsion, group.1.torsion);
+        }
+        assert_eq!(h.euler_characteristic, chi,
+            "Euler characteristic for {}: expected {}, got {}", type_name, chi, h.euler_characteristic);
+    }
+
+    #[test]
+    fn homology_s1() {
+        assert_homology(&example("Homology.ali"), "S1",
+            &[(0, 1, &[]), (1, 1, &[])], 0);
+    }
+
+    #[test]
+    fn homology_bouquet3() {
+        assert_homology(&example("Homology.ali"), "Bouquet3",
+            &[(0, 1, &[]), (1, 3, &[])], -2);
+    }
+
+    #[test]
+    fn homology_s2() {
+        assert_homology(&example("Homology.ali"), "S2",
+            &[(0, 1, &[]), (1, 0, &[]), (2, 1, &[])], 2);
+    }
+
+    #[test]
+    fn homology_torus() {
+        assert_homology(&example("Homology.ali"), "Torus",
+            &[(0, 1, &[]), (1, 2, &[]), (2, 1, &[])], 0);
+    }
+
+    #[test]
+    fn homology_sigma2() {
+        assert_homology(&example("Homology.ali"), "Sigma2",
+            &[(0, 1, &[]), (1, 4, &[]), (2, 1, &[])], -2);
+    }
+
+    #[test]
+    fn homology_rp2() {
+        assert_homology(&example("Homology.ali"), "RP2",
+            &[(0, 1, &[]), (1, 0, &[2]), (2, 0, &[])], 1);
+    }
+
+    #[test]
+    fn homology_klein() {
+        assert_homology(&example("Homology.ali"), "Klein",
+            &[(0, 1, &[]), (1, 1, &[2]), (2, 0, &[])], 0);
+    }
+
+    #[test]
+    fn homology_n3() {
+        assert_homology(&example("Homology.ali"), "N3",
+            &[(0, 1, &[]), (1, 2, &[2]), (2, 0, &[])], -1);
+    }
+
+    #[test]
+    fn homology_lens5() {
+        assert_homology(&example("Homology.ali"), "Lens5",
+            &[(0, 1, &[]), (1, 0, &[5]), (2, 0, &[])], 1);
+    }
+
+    #[test]
+    fn homology_klein4() {
+        assert_homology(&example("Homology.ali"), "Klein4",
+            &[(0, 1, &[]), (1, 0, &[2, 2]), (2, 0, &[])], 1);
+    }
+
+    #[test]
+    fn homology_dunce() {
+        assert_homology(&example("Homology.ali"), "Dunce",
+            &[(0, 1, &[]), (1, 0, &[]), (2, 0, &[])], 1);
+    }
+
+    #[test]
+    fn homology_wedge_s2() {
+        assert_homology(&example("Homology.ali"), "Wedge_S2",
+            &[(0, 1, &[]), (1, 0, &[]), (2, 2, &[])], 3);
+    }
+
+    #[test]
+    fn homology_s3() {
+        assert_homology(&example("Homology.ali"), "S3",
+            &[(0, 1, &[]), (1, 0, &[]), (2, 0, &[]), (3, 1, &[])], 0);
+    }
+
+    #[test]
+    fn homology_t3() {
+        assert_homology(&example("Homology.ali"), "T3",
+            &[(0, 1, &[]), (1, 3, &[]), (2, 3, &[]), (3, 1, &[])], 0);
+    }
+
+    #[test]
+    fn homology_rp3() {
+        assert_homology(&example("Homology.ali"), "RP3",
+            &[(0, 1, &[]), (1, 0, &[2]), (2, 0, &[]), (3, 1, &[])], 0);
+    }
 }
