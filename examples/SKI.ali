@@ -76,7 +76,14 @@ Unit <<= Wire {
         Cod2 => Wire
     ],
     let split = Split.node,
-    let swap = merge split
+    
+    attach Swap :: Node_2_to_2 along [
+        Dom1 => Wire,
+        Dom2 => Wire,
+        Cod1 => Wire,
+        Cod2 => Wire
+    ],
+    let swap = Swap.node
 },
 
 (* The sort *)
@@ -120,11 +127,11 @@ Sort <<= Wire {
     let swap = Swap.node,
 
     (* Swaps go below unitors *)
-    left_lunit_swap: (lunit ob) swap -> (unit swap) (lswap ob) (ob lunit),
+    (* left_lunit_swap: (lunit ob) swap -> (unit swap) (lswap ob) (ob lunit),
     left_runit_swap: (runit ob) swap -> (ob lswap) (swap unit) (ob runit),
     
     right_lunit_swap: (ob lunit) swap -> (rswap ob) (unit swap) (lunit ob),
-    right_runit_swap: (ob runit) swap -> (swap unit) (ob rswap) (runit ob),
+    right_runit_swap: (ob runit) swap -> (swap unit) (ob rswap) (runit ob), *)
 
     attach Copy :: Node_1_to_2 along [
         Dom => Wire,
@@ -139,13 +146,13 @@ Sort <<= Wire {
     let discard = Discard.node,
 
     (* Copy and discard go below unitors *)
-    lunit_copy: lunit copy -> (unit copy) (lunit ob),
+    (* lunit_copy: lunit copy -> (unit copy) (lunit ob),
     runit_copy: runit copy -> (copy unit) (ob runit),
     lunit_discard: lunit discard -> (unit discard) Unit.merge,
-    runit_discard: runit discard -> (discard unit) Unit.merge,
+    runit_discard: runit discard -> (discard unit) Unit.merge, *)
 
     (* Copy and discard go below swaps *)
-    left_swap_copy: swap (copy ob) -> (ob copy) (swap ob) (ob swap),
+    (* left_swap_copy: swap (copy ob) -> (ob copy) (swap ob) (ob swap),
     right_swap_copy: swap (ob copy) -> (copy ob) (ob swap) (swap ob),
 
     left_unit_swap_copy: lswap (copy unit) -> (unit copy) (lswap ob) (ob lswap),
@@ -155,7 +162,7 @@ Sort <<= Wire {
     right_swap_discard: swap (ob discard) -> (discard ob) lswap,
 
     left_unit_swap_discard: lswap (discard unit) -> (unit discard) Unit.swap,
-    right_unit_swap_discard: rswap (unit discard) -> (discard unit) Unit.swap,
+    right_unit_swap_discard: rswap (unit discard) -> (discard unit) Unit.swap, *)
 },
 
 Constant <<= Sort {
