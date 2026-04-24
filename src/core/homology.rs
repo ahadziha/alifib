@@ -16,20 +16,26 @@ pub struct AbelianGroup {
     pub torsion: Vec<i64>,
 }
 
-/// A cycle in C_n witnessing a torsion class in H_n.
+/// A cycle in C_n witnessing a torsion class in H_n, along with the (n+1)-chain
+/// whose boundary is `order · cycle`.
 ///
-/// `order · cycle` lies in the image of d_{n+1}, but `cycle` itself does not.
-/// The cycle is given as a list of (generator name, coefficient) pairs in the
-/// original basis of C_n.
+/// Invariant: `order · cycle = d_{n+1}(preimage)`, and `cycle` itself is not
+/// in the image of `d_{n+1}`. Both chains are given in the original bases of
+/// `C_n` and `C_{n+1}` respectively.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TorsionWitness {
     pub order: i64,
     pub cycle: Vec<(String, i64)>,
+    pub preimage: Vec<(String, i64)>,
 }
 
 impl std::fmt::Display for TorsionWitness {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Z/{} cycle: {}", self.order, format_cycle(&self.cycle))
+        write!(f, "Z/{} cycle: {}", self.order, format_cycle(&self.cycle))?;
+        if !self.preimage.is_empty() {
+            write!(f, "  (preimage: {})", format_cycle(&self.preimage))?;
+        }
+        Ok(())
     }
 }
 
@@ -238,11 +244,14 @@ pub fn compute_homology(complex: &Complex) -> Homology {
             .map(|m| smith_normal_form_with_basis(m));
 
         let (rank_dn1, torsion, witnesses) = match snf_dn1 {
-            Some((mut diag, mut u_inv)) => {
-                enforce_divisibility_tracked(&mut diag, &mut u_inv);
-                sort_diag_tracked(&mut diag, &mut u_inv);
+            Some((mut diag, mut u_inv, mut v)) => {
+                enforce_divisibility_tracked(&mut diag, &mut u_inv, &mut v);
+                sort_diag_tracked(&mut diag, &mut u_inv, &mut v);
 
                 let n_gens = &gens_by_dim[&n];
+                let empty = Vec::new();
+                let n1_gens: &Vec<String> = gens_by_dim.get(&(n + 1)).unwrap_or(&empty);
+
                 let ws: Vec<TorsionWitness> = diag.iter().enumerate()
                     .filter(|&(_, &d)| d > 1)
                     .map(|(col, &d)| {
@@ -252,11 +261,18 @@ pub fn compute_homology(complex: &Complex) -> Homology {
                                 if c != 0 { Some((name.clone(), c)) } else { None }
                             })
                             .collect();
-                        // ±z both witness the same class — prefer leading positive.
+                        let mut preimage: Vec<(String, i64)> = n1_gens.iter().enumerate()
+                            .filter_map(|(row, name)| {
+                                let c = v.get(row).and_then(|r| r.get(col)).copied().unwrap_or(0);
+                                if c != 0 { Some((name.clone(), c)) } else { None }
+                            })
+                            .collect();
+                        // ±(z, p) both witness the same class — prefer cycle leading positive.
                         if cycle.first().is_some_and(|(_, c)| *c < 0) {
                             for (_, c) in cycle.iter_mut() { *c = -*c; }
+                            for (_, c) in preimage.iter_mut() { *c = -*c; }
                         }
-                        TorsionWitness { order: d, cycle }
+                        TorsionWitness { order: d, cycle, preimage }
                     })
                     .collect();
 
@@ -397,38 +413,40 @@ fn matrix_rank(matrix: &[Vec<i64>]) -> usize {
 
 // ── SNF with change-of-basis tracking ────────────────────────────────────────
 
-/// Compute the Smith Normal Form diagonal, *and* a matrix `u_inv` such that
-/// column `i` of `u_inv` is the chain in the original row-basis whose
-/// `diag[i]`-multiple lies in the image of the input matrix.
+/// Compute Smith Normal Form, along with change-of-basis matrices for both
+/// the row and column spaces.
 ///
-/// The returned `diag` is in *raw* (pre-normalisation) order — divisibility is
-/// NOT enforced here — so it lines up with columns of `u_inv` positionally.
+/// Returns `(diag, u_inv, v)` where, after SNF, `U · M · V = diag(…)`:
+/// - Column `i` of `u_inv` is the `i`-th new basis element of the row space
+///   (C_n) expressed in the original basis. If `diag[i] > 1`, it is a torsion
+///   witness cycle.
+/// - Column `i` of `v` is the `i`-th new basis element of the column space
+///   (C_{n+1}) expressed in the original basis. For a torsion diagonal entry
+///   `diag[i] = d`, `d_{n+1}(column_i(v)) = d · column_i(u_inv)`.
 ///
-/// This is the key primitive for extracting torsion witnesses. If the input is
-/// the matrix of d_{n+1} with rows indexed by n-generators, then column `i`
-/// of `u_inv` for a `diag[i] > 1` is a cycle in C_n whose class in H_n
-/// generates a Z/diag[i] torsion summand.
-fn smith_normal_form_with_basis(matrix: &[Vec<i64>]) -> (Vec<i64>, Vec<Vec<i64>>) {
+/// The returned `diag` is in *raw* (pre-normalisation) order, paired
+/// positionally with the columns of `u_inv` and `v`.
+fn smith_normal_form_with_basis(matrix: &[Vec<i64>]) -> (Vec<i64>, Vec<Vec<i64>>, Vec<Vec<i64>>) {
     let num_rows = matrix.len();
-    if num_rows == 0 { return (vec![], vec![]); }
+    if num_rows == 0 { return (vec![], vec![], vec![]); }
     let num_cols = matrix[0].len();
-    if num_cols == 0 { return (vec![], identity(num_rows)); }
+    if num_cols == 0 { return (vec![], identity(num_rows), vec![]); }
 
     let mut m: Vec<Vec<i64>> = matrix.to_vec();
-    // u_inv starts as identity on the row-basis.
     let mut u_inv: Vec<Vec<i64>> = identity(num_rows);
+    let mut v: Vec<Vec<i64>> = identity(num_cols);
 
     let min_dim = num_rows.min(num_cols);
     let mut pivot = 0;
 
     while pivot < min_dim {
-        if !find_and_move_pivot_tracked(&mut m, &mut u_inv, pivot, num_rows, num_cols) {
+        if !find_and_move_pivot_tracked(&mut m, &mut u_inv, &mut v, pivot, num_rows, num_cols) {
             break;
         }
         loop {
             loop {
                 eliminate_column_tracked(&mut m, &mut u_inv, pivot, num_rows);
-                eliminate_row(&mut m, pivot, num_cols); // column ops — do not affect u_inv
+                eliminate_row_tracked(&mut m, &mut v, pivot, num_cols);
                 if is_pivot_clean(&m, pivot, num_rows, num_cols) { break; }
             }
             let pv = m[pivot][pivot];
@@ -437,7 +455,6 @@ fn smith_normal_form_with_basis(matrix: &[Vec<i64>]) -> (Vec<i64>, Vec<Vec<i64>>
             'search: for r in (pivot + 1)..num_rows {
                 for c in (pivot + 1)..num_cols {
                     if m[r][c] % pv != 0 {
-                        // Row op: R_pivot += R_r.
                         row_add_tracked(&mut m, &mut u_inv, pivot, r, 1);
                         found_bad = true;
                         break 'search;
@@ -455,7 +472,7 @@ fn smith_normal_form_with_basis(matrix: &[Vec<i64>]) -> (Vec<i64>, Vec<Vec<i64>>
     }
 
     let diag: Vec<i64> = (0..min_dim).map(|i| m[i][i]).collect();
-    (diag, u_inv)
+    (diag, u_inv, v)
 }
 
 fn identity(n: usize) -> Vec<Vec<i64>> {
@@ -515,34 +532,65 @@ fn row_gcd_tracked(
     }
 }
 
-/// Like `find_and_move_pivot` but mirrors the row swap onto `u_inv`.
+/// Like `find_and_move_pivot` but mirrors the row swap onto `u_inv` and the
+/// column swap onto `v`.
 fn find_and_move_pivot_tracked(
-    m: &mut [Vec<i64>], u_inv: &mut [Vec<i64>],
+    m: &mut [Vec<i64>], u_inv: &mut [Vec<i64>], v: &mut [Vec<i64>],
     pivot: usize, nrows: usize, ncols: usize,
 ) -> bool {
     let mut best: Option<(usize, usize, i64)> = None;
     for r in pivot..nrows {
         for c in pivot..ncols {
-            let v = m[r][c].abs();
-            if v > 0 {
-                if best.is_none() || v < best.unwrap().2 {
-                    best = Some((r, c, v));
+            let val = m[r][c].abs();
+            if val > 0 {
+                if best.is_none() || val < best.unwrap().2 {
+                    best = Some((r, c, val));
                 }
             }
         }
     }
     let Some((br, bc, _)) = best else { return false; };
-    // Row swap: track on u_inv.
     if br != pivot {
         row_swap_tracked(m, u_inv, pivot, br);
     }
-    // Column swap: affects V (not u_inv).
     if bc != pivot {
-        for row in m.iter_mut() {
-            row.swap(pivot, bc);
-        }
+        for row in m.iter_mut() { row.swap(pivot, bc); }
+        for row in v.iter_mut() { row.swap(pivot, bc); }
     }
     true
+}
+
+/// Like `eliminate_row` but mirrors the column ops onto `v`.
+fn eliminate_row_tracked(m: &mut [Vec<i64>], v: &mut [Vec<i64>], pivot: usize, ncols: usize) {
+    let nrows = m.len();
+    let pv = m[pivot][pivot];
+    for c in (pivot + 1)..ncols {
+        if m[pivot][c] == 0 { continue; }
+        if pv != 0 && m[pivot][c] % pv == 0 {
+            let q = m[pivot][c] / pv;
+            // C_c -= q · C_pivot on both m and v.
+            for r in 0..nrows { m[r][c] -= q * m[r][pivot]; }
+            for row in v.iter_mut() { row[c] -= q * row[pivot]; }
+        } else {
+            let (g, s, t) = extended_gcd(pv, m[pivot][c]);
+            let a = pv / g;
+            let b = m[pivot][c] / g;
+            // 2×2 column op on cols (pivot, c): new_pivot = s·old_pivot + t·old_c,
+            // new_c = -b·old_pivot + a·old_c. Apply to m and to v.
+            for r in 0..nrows {
+                let o1 = m[r][pivot];
+                let o2 = m[r][c];
+                m[r][pivot] = s * o1 + t * o2;
+                m[r][c] = -b * o1 + a * o2;
+            }
+            for row in v.iter_mut() {
+                let o1 = row[pivot];
+                let o2 = row[c];
+                row[pivot] = s * o1 + t * o2;
+                row[c] = -b * o1 + a * o2;
+            }
+        }
+    }
 }
 
 /// Like `enforce_divisibility` but tracks `u_inv` so that, for every adjacent pair
@@ -556,7 +604,11 @@ fn find_and_move_pivot_tracked(
 ///   - one column op on the block (does not affect `u_inv`),
 ///   - row op `R_{i+1} -= (b·t/g)·R_i` where `t` is the Bézout coefficient of `b`
 ///     in `g = s·a + t·b` (→ on `u_inv`, `C_i += (b·t/g)·C_{i+1}`).
-fn enforce_divisibility_tracked(diag: &mut Vec<i64>, u_inv: &mut [Vec<i64>]) {
+fn enforce_divisibility_tracked(
+    diag: &mut Vec<i64>,
+    u_inv: &mut [Vec<i64>],
+    v: &mut [Vec<i64>],
+) {
     let n = diag.len();
     let mut changed = true;
     while changed {
@@ -567,14 +619,24 @@ fn enforce_divisibility_tracked(diag: &mut Vec<i64>, u_inv: &mut [Vec<i64>]) {
             let b = diag[i + 1];
             if b % a == 0 { continue; }
 
-            let (g, _s, t) = extended_gcd(a, b);
+            let (g, s, t) = extended_gcd(a, b);
             let l = a / g * b;
             let q = b * t / g;
+            let a_g = a / g;
+            let b_g = b / g;
 
             // Op 1 on u_inv: C_{i+1} -= C_i.
             for row in u_inv.iter_mut() {
                 let ci = row[i];
                 row[i + 1] -= ci;
+            }
+            // Op 2 is a column op on M with 2×2 block [[s, -b_g], [t, a_g]]
+            // on cols (i, i+1); mirror on v.
+            for row in v.iter_mut() {
+                let oi = row[i];
+                let oi1 = row[i + 1];
+                row[i] = s * oi + t * oi1;
+                row[i + 1] = -b_g * oi + a_g * oi1;
             }
             // Op 3 on u_inv: C_i += q · C_{i+1}  (uses the already-updated C_{i+1}).
             for row in u_inv.iter_mut() {
@@ -590,10 +652,14 @@ fn enforce_divisibility_tracked(diag: &mut Vec<i64>, u_inv: &mut [Vec<i64>]) {
 }
 
 /// Sort `diag` so zeros come last and nonzero entries are in increasing order,
-/// permuting the corresponding columns of `u_inv` in lockstep. Swapping diagonal
-/// positions `i, j` corresponds to row-and-column swaps on the SNF matrix; the
-/// row swap is a column swap on `u_inv`, and the column swap only affects `V`.
-fn sort_diag_tracked(diag: &mut Vec<i64>, u_inv: &mut [Vec<i64>]) {
+/// permuting the corresponding columns of `u_inv` and `v` in lockstep.
+/// Swapping diagonal positions `i, j` corresponds to both a row swap (→ col
+/// swap on `u_inv`) and a column swap (→ col swap on `v`) on the SNF matrix.
+fn sort_diag_tracked(
+    diag: &mut Vec<i64>,
+    u_inv: &mut [Vec<i64>],
+    v: &mut [Vec<i64>],
+) {
     let n = diag.len();
     if n == 0 { return; }
     let mut perm: Vec<usize> = (0..n).collect();
@@ -605,14 +671,19 @@ fn sort_diag_tracked(diag: &mut Vec<i64>, u_inv: &mut [Vec<i64>]) {
         }
     });
     let new_diag: Vec<i64> = perm.iter().map(|&i| diag[i]).collect();
-    for row in u_inv.iter_mut() {
+    permute_first_n_columns(u_inv, &perm, n);
+    permute_first_n_columns(v, &perm, n);
+    *diag = new_diag;
+}
+
+fn permute_first_n_columns(mat: &mut [Vec<i64>], perm: &[usize], n: usize) {
+    for row in mat.iter_mut() {
         let ncols = row.len();
         let new_row: Vec<i64> = (0..ncols)
             .map(|c| if c < n { row[perm[c]] } else { row[c] })
             .collect();
         *row = new_row;
     }
-    *diag = new_diag;
 }
 
 /// Like `eliminate_column` but mirrors row ops onto `u_inv`.
@@ -1114,7 +1185,8 @@ mod tests {
     fn tracked_enforce_divisibility_crt() {
         let mut diag = vec![3, 2];
         let mut u_inv = vec![vec![1, 0], vec![0, 1]];
-        enforce_divisibility_tracked(&mut diag, &mut u_inv);
+        let mut v = vec![vec![1, 0], vec![0, 1]];
+        enforce_divisibility_tracked(&mut diag, &mut u_inv, &mut v);
         assert_eq!(diag, vec![1, 6]);
 
         // After enforce, for M = diag(3, 2):
@@ -1130,17 +1202,29 @@ mod tests {
             assert_eq!(scaled[1] % m[1][1], 0,
                 "col {} of u_inv: {}·col not in im(M) (row 1)", col, d);
             if d > 1 {
-                // Strictly torsion: 1·z must not be in im(M).
                 assert!(
                     z[0] % m[0][0] != 0 || z[1] % m[1][1] != 0,
                     "col {} claims order {} but z itself is already a boundary", col, d
                 );
             }
         }
+
+        // Additionally: d(v column i) should equal diag[i] · u_inv column i.
+        // Here d = M = diag(3, 2) (matrix multiplication).
+        for col in 0..2 {
+            let p = [v[0][col], v[1][col]];
+            let d = diag[col];
+            let z = [u_inv[0][col], u_inv[1][col]];
+            let mp = [m[0][0] * p[0] + m[0][1] * p[1], m[1][0] * p[0] + m[1][1] * p[1]];
+            let dz = [d * z[0], d * z[1]];
+            assert_eq!(mp, dz,
+                "col {}: M·p = {:?}, d·z = {:?}", col, mp, dz);
+        }
     }
 
-    /// Apply `sort_diag_tracked` on a hand-built `(diag, u_inv)` and check both
-    /// the diag ordering and the column permutation are consistent.
+    /// Apply `sort_diag_tracked` on a hand-built `(diag, u_inv, v)` and check
+    /// both the diag ordering and that the paired column permutation is
+    /// applied to both change-of-basis matrices.
     #[test]
     fn tracked_sort_diag_permutes_witnesses() {
         let mut diag = vec![0, 3, 0, 2];
@@ -1150,16 +1234,24 @@ mod tests {
             vec![30, 31, 32, 33],
             vec![40, 41, 42, 43],
         ];
-        sort_diag_tracked(&mut diag, &mut u_inv);
-        // Nonzero ascending then zeros: 2, 3, 0, 0.
+        let mut v = vec![
+            vec![100, 101, 102, 103],
+            vec![200, 201, 202, 203],
+            vec![300, 301, 302, 303],
+            vec![400, 401, 402, 403],
+        ];
+        sort_diag_tracked(&mut diag, &mut u_inv, &mut v);
         assert_eq!(diag, vec![2, 3, 0, 0]);
-        // Columns moved with the diag entries: the col that was at index 3 (value 2)
-        // is now at index 0; the col at index 1 (value 3) is now at index 1; the
-        // zero cols end up at positions 2 and 3.
-        assert_eq!(u_inv[0][0], 13); // was column 3
-        assert_eq!(u_inv[0][1], 11); // was column 1
+        // u_inv: col 3 (value 2) → col 0; col 1 (value 3) → col 1.
+        assert_eq!(u_inv[0][0], 13);
+        assert_eq!(u_inv[0][1], 11);
         assert_eq!(u_inv[1][0], 23);
         assert_eq!(u_inv[1][1], 21);
+        // v: same permutation.
+        assert_eq!(v[0][0], 103);
+        assert_eq!(v[0][1], 101);
+        assert_eq!(v[1][0], 203);
+        assert_eq!(v[1][1], 201);
     }
 
     /// End-to-end: for every example with reported torsion, check that each
@@ -1201,12 +1293,24 @@ mod tests {
                         type_name, n, w, dn_z);
                 }
 
-                // We can't easily verify d_{n+1} without recomputing it here, but
-                // the existence of the witness with correct order is verified by
-                // the smaller tests. Here we just check the cycle is nontrivial
-                // (a genuine torsion witness is nonzero).
                 assert!(z.iter().any(|&c| c != 0),
                     "{} dim {}: witness is the zero chain", type_name, n);
+
+                // Check d_{n+1}(preimage) = order · cycle.
+                if let Some(row_gens_above) = gens_by_dim.get(&(n + 1)) {
+                    let mut p = vec![0i64; row_gens_above.len()];
+                    for (name, coeff) in &w.preimage {
+                        let idx = row_gens_above.iter().position(|g| g == name)
+                            .unwrap_or_else(|| panic!(
+                                "preimage names unknown (n+1)-generator {}", name));
+                        p[idx] = *coeff;
+                    }
+                    let dn1_p = apply_dn_to_chain(&complex, &p, n + 1, row_gens_above, row_gens_n);
+                    let order_z: Vec<i64> = z.iter().map(|c| c * w.order).collect();
+                    assert_eq!(dn1_p, order_z,
+                        "{} dim {}: d_{}(preimage) != {}·cycle\n  preimage = {:?}\n  cycle = {:?}\n  d·preimage = {:?}\n  order·cycle = {:?}",
+                        type_name, n, n + 1, w.order, w.preimage, w.cycle, dn1_p, order_z);
+                }
             }
         }
     }
