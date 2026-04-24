@@ -52,11 +52,7 @@ AnBn <<= TM {
     INIT_R: INIT R -> ACCEPT R,
 
     SEARCH_a: SEARCH a -> a_L SEARCH,
-        a_SEARCH_b: a_L SEARCH b -> BACK a match,
-        b_SEARCH_b: b_L SEARCH b -> BACK b match,
-        mark_SEARCH_b: mark_L SEARCH b -> BACK mark match,
-        match_SEARCH_b: match_L SEARCH b -> BACK match match,
-        L_SEARCH_b: L SEARCH b -> L BACK blank match,
+    SEARCH_b: SEARCH b -> BACK match,
     SEARCH_mark: SEARCH mark -> REJECT mark,
     SEARCH_match: SEARCH match -> match_L SEARCH,
     SEARCH_R: SEARCH R -> REJECT R,
