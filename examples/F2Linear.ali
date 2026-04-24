@@ -98,3 +98,74 @@ F2_Linear <<= {
     rhs => zero
   ]
 }
+
+(*
+  --------------------------------------------------------------------
+  Named circuits for the interactive REPL.
+
+    alifib repl examples/F2Linear.ali --type F2_Linear
+    >> source <name>     target <name>     rules     apply <n>
+
+  The dimensions in the comments are (inputs → outputs); each circuit
+  is a 2-cell and the REPL rewrites it via the 3-cell rules declared
+  above.
+  --------------------------------------------------------------------
+*)
+
+@F2_Linear
+
+(* --- One-step rewrites ---------------------------------------------- *)
+
+(* x + x.  Rewrites to `zero` in one step via Copy_then_xor.         1→1 *)
+let x_plus_x = copy xor,
+
+(* xor commutativity: swap;xor  →  xor.                              2→1 *)
+let xor_swapped = swap xor,
+
+(* Bialgebra.  Left and right are equivalent in one step.            2→2 *)
+let bialgebra_lhs = xor copy,
+let bialgebra_rhs = (copy #0 copy)(set swap set)(xor #0 xor),
+
+(* xor associativity.  One step.                                     3→1 *)
+let xor_assoc_left  = (xor set) xor,
+let xor_assoc_right = (set xor) xor,
+
+(* copy coassociativity.  One step.                                  1→3 *)
+let copy_coassoc_left  = copy (copy set),
+let copy_coassoc_right = copy (set copy),
+
+(* swap³ collapses to a single swap.                                 2→2 *)
+let swap_three = swap swap swap,
+
+(* Yang-Baxter (the braid relation).  One step.                      3→3 *)
+let yb_left  = (swap set)(set swap)(swap set),
+let yb_right = (set swap)(swap set)(set swap),
+
+(* --- Multi-step chains ---------------------------------------------- *)
+
+(* (x+x) + (x+x).  Three steps: Copy_then_xor twice, then Zero_idempotent.
+                                                                      1→1 *)
+let double_xx = copy xor copy xor,
+
+(* Six swaps reduce to two by applying Swap_cube twice.              2→2 *)
+let swap_six = swap swap swap swap swap swap,
+let swap_two = swap swap,
+
+(* Three (x+x) terms.  Five steps total: three Copy_then_xor, then
+   Zero_idempotent twice.                                            1→1 *)
+let triple_xx = copy xor copy xor copy xor,
+
+(* --- A longer playground ------------------------------------------- *)
+
+(*
+  copy;xor;copy — a 1→2 circuit with TWO distinct first moves:
+
+    • Copy_then_xor on the leading  `copy xor`   →   zero copy
+    • Bialgebra      on the trailing `xor copy`   →   copy (copy#0copy)(set swap set)(xor#0xor)
+
+  Both paths eventually reach `zero copy`; the bialgebra path is longer
+  but routes through the distributivity law.  A good target for comparing
+  rewriting strategies.                                               1→2
+*)
+let xor_sandwich = copy xor copy
+
