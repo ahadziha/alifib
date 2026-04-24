@@ -1,102 +1,422 @@
 (*
-  𝔽₂-linear maps as a finite 2-polygraph.
+  𝔽₂-linear maps as a 2-polygraph — idiomatic presentation.
 
   Reference: Y. Lafont, "Towards an algebraic theory of Boolean circuits",
   J. Pure Appl. Algebra 184 (2003), §3, Figure 13.
 
-  Three generators — swap, copy, xor — plus a constant `zero` for the
-  F₂-specific axiom.  Juxtaposition is sequential composition; `#0` is
-  parallel (tensor) composition.
+  Five generators:
+
+     τ  swap     : 2 → 2
+     δ  copy     : 1 → 2
+     μ  xor      : 2 → 1
+     η  zero     : 0 → 1       (the zero vector)
+     ε  discard  : 1 → 0       (the counit)
+
+  The file inlines the TRS-style infrastructure (Wire, Unit, Monoidal_Wire,
+  Node templates, Monoidal_Node templates, Sort) so that every generator
+  comes with proper identity-absorption rewrites and unitor-naturality
+  coherences — i.e. the 2-polygraph is what it claims to be, a genuine
+  strict monoidal category with a tensor unit, not a hand-waved one.
+
+  F2_Linear extends Sort (which supplies swap, copy, discard and their
+  rewrites) with xor and zero and the bialgebra + F₂-specific axioms.
 
   Theorem (Lafont).  Any circuit built from these generators denotes a
-  𝔽₂-linear map 𝔽₂ⁿ → 𝔽₂ᵐ, and two circuits denote the same map iff they
-  are equal modulo the rewrites below.  So Gaussian elimination falls out
-  of string-diagram rewriting on a finite signature.
+  𝔽₂-linear map 𝔽₂ⁿ → 𝔽₂ᵐ, and two circuits denote the same map iff
+  they are equal modulo the rewrites below.
 *)
 
 @Type
-include Theory,
-let Eq = Theory.Equation,
+Wire <<= {
+    pt,
+    ob: pt -> pt,
 
-F2_Linear <<= {
-  pt,
-  attach Set :: Theory.Set along [ pt => pt ],
-  let set = Set.set,
-  let id = Set.id,
+    id: ob -> ob,
 
-  (* --- Generators --------------------------------------------------- *)
+    id_id: id id -> id
+},
 
-  (* τ : 2 → 2   swap *)
-  swap : set set -> set set,
+Node_1_to_1 <<= {
+    pt,
+    attach Dom :: Wire along [ pt => pt ],
+    attach Cod :: Wire along [ pt => pt ],
 
-  (* δ : 1 → 2   fanout / copy *)
-  copy : set -> set set,
+    node: Dom.ob -> Cod.ob,
 
-  (* μ : 2 → 1   XOR (addition in 𝔽₂) *)
-  xor : set set -> set,
+    dom_id: Dom.id node -> node,
+    cod_id: node Cod.id -> node
+},
 
-  (* ζ : 1 → 1   the constant-zero map.
+Node_2_to_1 <<= {
+    pt,
+    attach Dom1 :: Wire along [ pt => pt ],
+    attach Dom2 :: Wire along [ pt => pt ],
+    attach Cod :: Wire along [ pt => pt ],
 
-     Lafont's full signature has ε : 1 → 0 and η : 0 → 1, and this cell
-     corresponds to their composite ε;η.  alifib has no tensor unit, so
-     we take the composite as primitive — enough to state the F₂ axiom
-     below.                                                              *)
-  zero : set -> set,
+    node: Dom1.ob Dom2.ob -> Cod.ob,
 
-  (* --- Symmetric-group relations for swap --------------------------- *)
+    dom1_id: (Dom1.id Dom2.ob) node -> node,
+    dom2_id: (Dom1.ob Dom2.id) node -> node,
+    cod_id: node Cod.id -> node
+},
 
-  (* swap³ = swap, which combined with Yang-Baxter gives swap² = id     *)
-  attach Swap_cube :: Eq along [
-    lhs => swap swap swap,
-    rhs => swap
-  ],
-  attach Swap_yang_baxter :: Eq along [
-    lhs => (swap set)(set swap)(swap set),
-    rhs => (set swap)(swap set)(set swap)
-  ],
+Node_1_to_2 <<= {
+    pt,
+    attach Dom :: Wire along [ pt => pt ],
+    attach Cod1 :: Wire along [ pt => pt ],
+    attach Cod2 :: Wire along [ pt => pt ],
 
-  (* --- Copy is a cocommutative comonoid ----------------------------- *)
+    node: Dom.ob -> Cod1.ob Cod2.ob,
 
-  attach Copy_coassoc :: Eq along [
-    lhs => copy (copy set),
-    rhs => copy (set copy)
-  ],
-  attach Copy_cocomm :: Eq along [
-    lhs => copy swap,
-    rhs => copy
-  ],
+    cod1_id: node (Cod1.id Cod2.ob) -> node,
+    cod2_id: node (Cod1.ob Cod2.id)  -> node,
+    dom_id: Dom.id node -> node
+},
 
-  (* --- XOR is a commutative monoid ---------------------------------- *)
+Node_2_to_2 <<= {
+    pt,
+    attach Dom1 :: Wire along [ pt => pt ],
+    attach Dom2 :: Wire along [ pt => pt ],
+    attach Cod1 :: Wire along [ pt => pt ],
+    attach Cod2 :: Wire along [ pt => pt ],
 
-  attach Xor_assoc :: Eq along [
-    lhs => (xor set) xor,
-    rhs => (set xor) xor
-  ],
-  attach Xor_comm :: Eq along [
-    lhs => swap xor,
-    rhs => xor
-  ],
+    node: Dom1.ob Dom2.ob -> Cod1.ob Cod2.ob,
 
-  (* --- Bialgebra: xor then copy = copy-copy, swap middle, xor-xor --- *)
+    dom1_id: (Dom1.id Dom2.ob) node -> node,
+    dom2_id: (Dom1.ob Dom2.id) node -> node,
+    cod1_id: node (Cod1.id Cod2.ob) -> node,
+    cod2_id: node (Cod1.ob Cod2.id)  -> node
+},
 
-  attach Bialgebra :: Eq along [
-    lhs => xor copy,
-    rhs => (copy #0 copy)(set swap set)(xor #0 xor)
-  ],
+Unit <<= Wire {
+    attach Merge :: Node_2_to_1 along [
+        Dom1 => Wire,
+        Dom2 => Wire,
+        Cod => Wire
+    ],
+    let merge = Merge.node,
 
-  (* --- 𝔽₂-specific axiom: x + x = 0 -------------------------------- *)
+    attach Split :: Node_1_to_2 along [
+        Dom => Wire,
+        Cod1 => Wire,
+        Cod2 => Wire
+    ],
+    let split = Split.node,
 
-  attach Copy_then_xor :: Eq along [
-    lhs => copy xor,
-    rhs => zero
-  ],
+    merge_assoc: (merge ob) merge -> (ob merge) merge,
+    split_assoc: split (split ob) -> split (ob split),
 
-  (* --- zero absorbs ------------------------------------------------- *)
+    split_merge: split merge -> id,
+    left_frobenius: (split ob) (ob merge) -> merge split,
+    right_frobenius: (ob split) (merge ob) -> merge split,
+    frobenius_flip: (split ob) (ob merge) -> (ob split) (merge ob)
+},
 
-  attach Zero_idempotent :: Eq along [
-    lhs => zero zero,
-    rhs => zero
-  ]
+Monoidal_Wire <<= Wire {
+    attach Unit :: Unit along [ pt => pt ],
+    let unit = Unit.ob,
+
+    attach Left_unitor :: Node_2_to_1 along [
+        Dom1 => Unit.Wire,
+        Dom2 => Wire,
+        Cod => Wire
+    ],
+    let left_unitor = Left_unitor.node,
+    attach Right_unitor :: Node_2_to_1 along [
+        Dom1 => Wire,
+        Dom2 => Unit.Wire,
+        Cod => Wire
+    ],
+    let right_unitor = Right_unitor.node,
+    attach Left_unitor_inv :: Node_1_to_2 along [
+        Cod1 => Unit.Wire,
+        Cod2 => Wire,
+        Dom => Wire
+    ],
+    let left_unitor_inv = Left_unitor_inv.node,
+    attach Right_unitor_inv :: Node_1_to_2 along [
+        Cod1 => Wire,
+        Cod2 => Unit.Wire,
+        Dom => Wire
+    ],
+    let right_unitor_inv = Right_unitor_inv.node,
+
+    left_unitor_inversion: left_unitor_inv left_unitor -> id,
+    right_unitor_inversion: right_unitor_inv right_unitor -> id,
+
+    left_unitor_assoc:
+        (Unit.merge ob) left_unitor -> (unit left_unitor) left_unitor,
+    right_unitor_assoc:
+        (right_unitor unit) right_unitor -> (ob Unit.merge) right_unitor,
+
+    left_unitor_inv_assoc:
+        left_unitor_inv (Unit.split ob) -> left_unitor_inv (unit left_unitor_inv),
+    right_unitor_inv_assoc:
+        right_unitor_inv (right_unitor_inv unit) -> right_unitor_inv (ob Unit.split),
+
+    left_right_unitor_assoc:
+        (left_unitor unit) right_unitor -> (unit right_unitor) left_unitor,
+    left_right_unitor_inv_assoc:
+        right_unitor_inv (left_unitor_inv unit) -> left_unitor_inv (unit right_unitor_inv),
+
+    left_frobenius_left_unitor:
+        (Unit.split ob) (unit left_unitor) -> left_unitor left_unitor_inv,
+    left_frobenius_right_unitor:
+        (right_unitor_inv unit) (ob Unit.merge) -> right_unitor right_unitor_inv,
+    right_frobenius_left_unitor:
+        (unit left_unitor_inv) (Unit.merge ob) -> left_unitor left_unitor_inv,
+    right_frobenius_right_unitor:
+        (ob Unit.split) (right_unitor unit) -> right_unitor right_unitor_inv,
+
+    left_frobenius_both_unitors:
+        (left_unitor_inv unit) (unit right_unitor) -> right_unitor left_unitor_inv,
+    right_frobenius_both_unitors:
+        (unit right_unitor_inv) (left_unitor unit) -> left_unitor right_unitor_inv,
+
+    frobenius_flip:
+        (right_unitor_inv ob) (ob left_unitor) -> (ob left_unitor_inv) (right_unitor ob)
+}
+
+@Unit
+let total Monoidal_Wire :: Monoidal_Wire = [
+    Wire => Wire,
+    Unit => Unit,
+    Left_unitor => Merge,
+    Right_unitor => Merge,
+    Left_unitor_inv => Split,
+    Right_unitor_inv => Split,
+    left_unitor_inversion => split_merge,
+    right_unitor_inversion => split_merge,
+    left_unitor_assoc => merge_assoc,
+    right_unitor_assoc => merge_assoc,
+    left_unitor_inv_assoc => split_assoc,
+    right_unitor_inv_assoc => split_assoc,
+    left_right_unitor_assoc => merge_assoc,
+    left_right_unitor_inv_assoc => split_assoc,
+    left_frobenius_left_unitor => left_frobenius,
+    left_frobenius_right_unitor => left_frobenius,
+    left_frobenius_both_unitors => left_frobenius,
+    right_frobenius_left_unitor => right_frobenius,
+    right_frobenius_right_unitor => right_frobenius,
+    right_frobenius_both_unitors => right_frobenius,
+    frobenius_flip => frobenius_flip
+]
+
+@Type
+Monoidal_Node_0_to_1 <<= {
+    pt,
+    attach Unit :: Unit along [ pt => pt ],
+    attach Cod :: Monoidal_Wire along [ Unit => Unit ],
+
+    attach Node :: Node_1_to_1 along [
+        Dom => Unit.Wire,
+        Cod => Cod.Wire
+    ],
+    let node = Node.node,
+
+    left_unitor_node: (Unit.ob node) Cod.left_unitor -> Unit.merge node,
+    right_unitor_node: (node Unit.ob) Cod.right_unitor -> Unit.merge node,
+
+    left_unitor_inv_node: node Cod.left_unitor_inv -> Unit.split (Unit.ob node),
+    right_unitor_inv_node: node Cod.right_unitor_inv -> Unit.split (node Unit.ob)
+},
+
+Monoidal_Node_1_to_0 <<= {
+    pt,
+    attach Unit :: Unit along [ pt => pt ],
+    attach Dom :: Monoidal_Wire along [ Unit => Unit ],
+
+    attach Node :: Node_1_to_1 along [
+        Dom => Dom.Wire,
+        Cod => Unit.Wire
+    ],
+    let node = Node.node,
+
+    left_unitor_node: Dom.left_unitor node -> (Unit.ob node) Unit.merge,
+    right_unitor_node: Dom.right_unitor node -> (node Unit.ob) Unit.merge,
+
+    left_unitor_inv_node: Dom.left_unitor_inv (Unit.ob node) -> node Unit.split,
+    right_unitor_inv_node: Dom.right_unitor_inv (node Unit.ob) -> node Unit.split,
+},
+
+Monoidal_Node_2_to_1 <<= {
+    pt,
+    attach Unit :: Unit along [ pt => pt ],
+    attach Dom1 :: Monoidal_Wire along [ Unit => Unit ],
+    attach Dom2 :: Monoidal_Wire along [ Unit => Unit ],
+    attach Cod :: Monoidal_Wire along [ Unit => Unit ],
+
+    attach Node :: Node_2_to_1 along [
+        Dom1 => Dom1.Wire,
+        Dom2 => Dom2.Wire,
+        Cod => Cod.Wire
+    ],
+    let node = Node.node,
+
+    left_unitor_node:
+        (Unit.ob node) Cod.left_unitor -> (Dom1.left_unitor Dom2.ob) node,
+    right_unitor_node:
+        (node Unit.ob) Cod.right_unitor -> (Dom1.ob Dom2.right_unitor) node,
+
+    left_unitor_inv_node:
+        node Cod.left_unitor_inv -> (Dom1.left_unitor_inv Dom2.ob) (Unit.ob node),
+    right_unitor_inv_node:
+        node Cod.right_unitor_inv -> (Dom1.ob Dom2.right_unitor_inv) (node Unit.ob),
+
+    domain_triangle:
+        (Dom1.right_unitor Dom2.ob) node -> (Dom1.ob Dom2.left_unitor) node,
+    domain_id:
+        (Dom1.right_unitor_inv Dom2.ob) (Dom1.ob Dom2.left_unitor) node -> node
+},
+
+Monoidal_Node_1_to_2 <<= {
+    pt,
+    attach Unit :: Unit along [ pt => pt ],
+    attach Cod1 :: Monoidal_Wire along [ Unit => Unit ],
+    attach Cod2 :: Monoidal_Wire along [ Unit => Unit ],
+    attach Dom :: Monoidal_Wire along [ Unit => Unit ],
+
+    attach Node :: Node_1_to_2 along [
+        Cod1 => Cod1.Wire,
+        Cod2 => Cod2.Wire,
+        Dom => Dom.Wire
+    ],
+    let node = Node.node,
+
+    left_unitor_inv_node:
+        Dom.left_unitor_inv (Unit.ob node) -> node (Cod1.left_unitor_inv Cod2.ob),
+    right_unitor_inv_node:
+        Dom.right_unitor_inv (node Unit.ob) -> node (Cod1.ob Cod2.right_unitor_inv),
+
+    left_unitor_node:
+        Dom.left_unitor node -> (Unit.ob node) (Cod1.left_unitor Cod2.ob),
+    right_unitor_node:
+        Dom.right_unitor node -> (node Unit.ob) (Cod1.ob Cod2.right_unitor),
+
+    codomain_triangle:
+        node (Cod1.right_unitor_inv Cod2.ob) -> node (Cod1.ob Cod2.left_unitor_inv),
+    codomain_id:
+        node (Cod1.ob Cod2.left_unitor_inv) (Cod1.right_unitor Cod2.ob) -> node
+},
+
+Monoidal_Node_2_to_2 <<= {
+    pt,
+    attach Unit :: Unit along [ pt => pt ],
+    attach Dom1 :: Monoidal_Wire along [ Unit => Unit ],
+    attach Dom2 :: Monoidal_Wire along [ Unit => Unit ],
+    attach Cod1 :: Monoidal_Wire along [ Unit => Unit ],
+    attach Cod2 :: Monoidal_Wire along [ Unit => Unit ],
+
+    attach Node :: Node_2_to_2 along [
+        Dom1 => Dom1.Wire,
+        Dom2 => Dom2.Wire,
+        Cod1 => Cod1.Wire,
+        Cod2 => Cod2.Wire
+    ],
+    let node = Node.node,
+
+    left_unitor_node:
+        (Dom1.left_unitor Dom2.ob) node -> (Unit.ob node) (Cod1.left_unitor Cod2.ob),
+    right_unitor_node:
+        (Dom1.ob Dom2.right_unitor) node -> (node Unit.ob) (Cod1.ob Cod2.right_unitor),
+
+    left_unitor_inv_node:
+        (Dom1.left_unitor_inv Dom2.ob) (Unit.ob node) -> node (Cod1.left_unitor_inv Cod2.ob),
+    right_unitor_inv_node:
+        (Dom1.ob Dom2.right_unitor_inv) (node Unit.ob) -> node (Cod1.ob Cod2.right_unitor_inv),
+
+    domain_triangle:
+        (Dom1.right_unitor Dom2.ob) node -> (Dom1.ob Dom2.left_unitor) node,
+    codomain_triangle:
+        node (Cod1.right_unitor_inv Cod2.ob) -> node (Cod1.ob Cod2.left_unitor_inv),
+    domain_id:
+        (Dom1.right_unitor_inv Dom2.ob) (Dom1.ob Dom2.left_unitor) node -> node,
+    codomain_id:
+        node (Cod1.ob Cod2.left_unitor_inv) (Cod1.right_unitor Cod2.ob) -> node
+},
+
+Sort <<= Monoidal_Wire {
+    attach Swap :: Monoidal_Node_2_to_2 along [
+        Dom1 => Monoidal_Wire,
+        Dom2 => Monoidal_Wire,
+        Cod1 => Monoidal_Wire,
+        Cod2 => Monoidal_Wire
+    ],
+    let swap = Swap.node,
+
+    swap_swap: swap swap -> (ob left_unitor_inv) (right_unitor ob),
+
+    attach Copy :: Monoidal_Node_1_to_2 along [
+        Dom => Monoidal_Wire,
+        Cod1 => Monoidal_Wire,
+        Cod2 => Monoidal_Wire
+    ],
+    let copy = Copy.node,
+
+    copy_assoc: copy (copy ob) -> copy (ob copy),
+    copy_commutative: copy swap -> copy,
+    copy_swap_left: swap (copy ob) -> (ob copy) (swap ob) (ob swap),
+    copy_swap_right: swap (ob copy) -> (copy ob) (ob swap) (swap ob),
+
+    attach Discard :: Monoidal_Node_1_to_0 along [
+        Dom => Monoidal_Wire,
+    ],
+    let discard = Discard.node,
+
+    copy_left_discard: copy (discard ob) -> left_unitor_inv,
+    copy_right_discard: copy (ob discard) -> right_unitor_inv,
+
+    discard_swap_left: swap (discard ob) -> (ob discard) right_unitor left_unitor_inv,
+    discard_swap_right: swap (ob discard) -> (discard ob) left_unitor right_unitor_inv
+},
+
+(* ======================================================================
+   F2_Linear — extends Sort with xor (μ) and zero (η), plus the bialgebra
+   and F₂-specific axioms.
+   ====================================================================== *)
+
+F2_Linear <<= Sort {
+
+    (* μ : 2 → 1   XOR *)
+    attach Xor :: Monoidal_Node_2_to_1 along [
+        Dom1 => Monoidal_Wire,
+        Dom2 => Monoidal_Wire,
+        Cod => Monoidal_Wire
+    ],
+    let xor = Xor.node,
+
+    (* η : 0 → 1   constant zero *)
+    attach Eta :: Monoidal_Node_0_to_1 along [
+        Cod => Monoidal_Wire
+    ],
+    let zero = Eta.node,
+
+    (* --- XOR is a commutative monoid --------------------------------- *)
+
+    xor_assoc:       (xor ob) xor -> (ob xor) xor,
+    xor_commutative: swap xor     -> xor,
+
+    (* --- Zero is the unit for XOR ------------------------------------ *)
+
+    zero_left_xor:  (zero ob) xor -> left_unitor,
+    zero_right_xor: (ob zero) xor -> right_unitor,
+
+    (* --- Bialgebra: xor;copy = copy-copy, swap middle, xor-xor ------- *)
+
+    bialgebra:
+        xor copy -> (copy #0 copy) (ob swap ob) (xor #0 xor),
+
+    (* --- Compatibility between (xor, zero) and (copy, discard) -------
+       δ∘η = η|η     zero-copy splits                                    *)
+    zero_copy:    zero copy    -> Unit.split (zero #0 zero),
+    (* ε∘μ = ε|ε     xor-discard merges                                  *)
+    xor_discard:  xor discard  -> (discard #0 discard) Unit.merge,
+    (* ε∘η = id₀    zero-then-discard is the unit identity               *)
+    zero_discard: zero discard -> Unit.id,
+
+    (* --- 𝔽₂-specific axiom: x + x = 0 ------------------------------- *)
+    (*    μ∘δ = η∘ε     copy-then-xor is the constant-zero map           *)
+    copy_xor:     copy xor     -> discard zero
 }
 
 (*
@@ -105,67 +425,31 @@ F2_Linear <<= {
 
     alifib repl examples/F2Linear.ali --type F2_Linear
     >> source <name>     target <name>     rules     apply <n>
-
-  The dimensions in the comments are (inputs → outputs); each circuit
-  is a 2-cell and the REPL rewrites it via the 3-cell rules declared
-  above.
   --------------------------------------------------------------------
 *)
 
 @F2_Linear
 
-(* --- One-step rewrites ---------------------------------------------- *)
-
-(* x + x.  Rewrites to `zero` in one step via Copy_then_xor.         1→1 *)
+(* x + x.  Rewrites to `discard zero` in one step via copy_xor.      1→1 *)
 let x_plus_x = copy xor,
 
-(* xor commutativity: swap;xor  →  xor.                              2→1 *)
+(* Bialgebra left and right sides.                                   2→2 *)
+let bialgebra_lhs = xor copy,
+let bialgebra_rhs = (copy #0 copy) (ob swap ob) (xor #0 xor),
+
+(* XOR commutativity: swap;xor  →  xor.                              2→1 *)
 let xor_swapped = swap xor,
 
-(* Bialgebra.  Left and right are equivalent in one step.            2→2 *)
-let bialgebra_lhs = xor copy,
-let bialgebra_rhs = (copy #0 copy)(set swap set)(xor #0 xor),
+(* XOR associativity.                                                3→1 *)
+let xor_assoc_left  = (xor ob) xor,
+let xor_assoc_right = (ob xor) xor,
 
-(* xor associativity.  One step.                                     3→1 *)
-let xor_assoc_left  = (xor set) xor,
-let xor_assoc_right = (set xor) xor,
+(* Zero is a left/right unit of xor.                               1+1→1 *)
+let zero_left  = (zero ob) xor,
+let zero_right = (ob zero) xor,
 
-(* copy coassociativity.  One step.                                  1→3 *)
-let copy_coassoc_left  = copy (copy set),
-let copy_coassoc_right = copy (set copy),
+(* The constant-zero endomap.                                        1→1 *)
+let zero_endo = discard zero,
 
-(* swap³ collapses to a single swap.                                 2→2 *)
-let swap_three = swap swap swap,
-
-(* Yang-Baxter (the braid relation).  One step.                      3→3 *)
-let yb_left  = (swap set)(set swap)(swap set),
-let yb_right = (set swap)(swap set)(set swap),
-
-(* --- Multi-step chains ---------------------------------------------- *)
-
-(* (x+x) + (x+x).  Three steps: Copy_then_xor twice, then Zero_idempotent.
-                                                                      1→1 *)
-let double_xx = copy xor copy xor,
-
-(* Six swaps reduce to two by applying Swap_cube twice.              2→2 *)
-let swap_six = swap swap swap swap swap swap,
-let swap_two = swap swap,
-
-(* Three (x+x) terms.  Five steps total: three Copy_then_xor, then
-   Zero_idempotent twice.                                            1→1 *)
-let triple_xx = copy xor copy xor copy xor,
-
-(* --- A longer playground ------------------------------------------- *)
-
-(*
-  copy;xor;copy — a 1→2 circuit with TWO distinct first moves:
-
-    • Copy_then_xor on the leading  `copy xor`   →   zero copy
-    • Bialgebra      on the trailing `xor copy`   →   copy (copy#0copy)(set swap set)(xor#0xor)
-
-  Both paths eventually reach `zero copy`; the bialgebra path is longer
-  but routes through the distributivity law.  A good target for comparing
-  rewriting strategies.                                               1→2
-*)
-let xor_sandwich = copy xor copy
-
+(* (x + x) + (x + x).  Multi-step reduction to `discard zero`.       1→1 *)
+let double_xx = copy xor copy xor
