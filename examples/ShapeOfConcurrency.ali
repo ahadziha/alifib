@@ -1,0 +1,116 @@
+(* ======================================================================
+   The Shape of Concurrency
+   ----------------------------------------------------------------------
+   Four 2-polygraph presentations whose cellular homology — computed by
+   `alifib homology` — reproduces the integer homology of classical
+   topological spaces.
+
+   The point is Squier / Lafont–Métayer: a polygraph is a CW complex, and
+   its homology is an invariant of the rewriting system as a space. For
+   concurrent-process presentations, that homology literally is the shape
+   of the space of equivalent execution traces (Mazurkiewicz + higher
+   dimensions).
+
+   Run end-to-end:
+
+       alifib repl examples/ShapeOfConcurrency.ali
+       >> homology Pair
+       >> homology Triple
+       >> homology TripleCoh
+       >> homology Torsion
+
+   ====================================================================== *)
+
+@Type
+
+(* ------------------------------------------------------------------ *)
+(* Act I. Two concurrent actions that commute.                         *)
+(*                                                                     *)
+(*   generators:  a, b : pt → pt                                       *)
+(*   relation:    comm : a b → b a                                     *)
+(*                                                                     *)
+(* Interpretation: two independent threads, each doing one atomic      *)
+(* action. The 2-cell `comm` is the Mazurkiewicz independence square   *)
+(* witnessing that their actions commute.                              *)
+(*                                                                     *)
+(* Expected homology (the torus T²):                                   *)
+(*   H_0 = Z                                                           *)
+(*   H_1 = Z²                                                          *)
+(*   H_2 = Z                                                           *)
+(* ------------------------------------------------------------------ *)
+Pair <<= {
+    pt,
+    a : pt -> pt,
+    b : pt -> pt,
+    comm : a b -> b a
+},
+
+(* ------------------------------------------------------------------ *)
+(* Act II. Three pairwise-concurrent actions — no higher coherence.    *)
+(*                                                                     *)
+(*   generators:  a, b, c : pt → pt                                    *)
+(*   relations :  each pair commutes                                   *)
+(*                                                                     *)
+(* Naive guess: "three independent threads, so it should be a 3-torus."*)
+(* But the 2-polygraph has no 3-cells, so H_3 is zero and the Euler    *)
+(* characteristic is 1, not the 0 of T³. The presentation is flagging  *)
+(* an obstruction at dimension 3.                                      *)
+(* ------------------------------------------------------------------ *)
+Triple <<= {
+    pt,
+    a : pt -> pt,
+    b : pt -> pt,
+    c : pt -> pt,
+    comm_ab : a b -> b a,
+    comm_ac : a c -> c a,
+    comm_bc : b c -> c b
+},
+
+(* ------------------------------------------------------------------ *)
+(* Act III. The Zamolodchikov tetrahedron.                             *)
+(*                                                                     *)
+(* From a b c to c b a there are two "reduction strategies":           *)
+(*                                                                     *)
+(*   path₁ :  (a b) c  →  (b a) c  →  b (a c)  →  b (c a)              *)
+(*             →  (b c) a  →  (c b) a                                  *)
+(*   path₂ :  a (b c)  →  a (c b)  →  (a c) b  →  (c a) b              *)
+(*             →  c (a b)  →  c (b a)                                  *)
+(*                                                                     *)
+(* Both are compositions of three 2-cells. Strict equality between     *)
+(* them is the "Zamolodchikov tetrahedron", a 3-cell that fills the    *)
+(* 3-dimensional hole left by Act II.                                  *)
+(*                                                                     *)
+(* Expected homology (the 3-torus T³):                                 *)
+(*   H_0 = Z                                                           *)
+(*   H_1 = Z³                                                          *)
+(*   H_2 = Z³                                                          *)
+(*   H_3 = Z                                                           *)
+(* ------------------------------------------------------------------ *)
+TripleCoh <<= {
+    pt,
+    a : pt -> pt,
+    b : pt -> pt,
+    c : pt -> pt,
+    comm_ab : a b -> b a,
+    comm_ac : a c -> c a,
+    comm_bc : b c -> c b,
+
+    zamo : (comm_ab c) (b comm_ac) (comm_bc a)
+         -> (a comm_bc) (comm_ac b) (c comm_ab)
+},
+
+(* ------------------------------------------------------------------ *)
+(* Act IV. A rewriting system with 2-torsion.                          *)
+(*                                                                     *)
+(*   generator:  a : pt → pt                                           *)
+(*   relation :  a² → a⁴                                               *)
+(*                                                                     *)
+(* The boundary sends the 2-cell to "2·a" in the abelianized chain     *)
+(* complex (four a's minus two a's). Over Z, the cokernel picks up     *)
+(* torsion: H_1 = Z/2.                                                 *)
+(* ------------------------------------------------------------------ *)
+Torsion <<= {
+    pt,
+    a : pt -> pt,
+    double : a a -> a a a a
+}
