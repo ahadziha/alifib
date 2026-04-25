@@ -615,8 +615,8 @@ editor.addEventListener('keydown', e => {
 
 async function evaluateSource() {
   if (!repl) return;
-  const src = editor.value.trim();
-  if (!src) return;
+  const src = editor.value;
+  if (!src.trim()) return;
 
   const previousType = selType.value;
 
@@ -627,7 +627,7 @@ async function evaluateSource() {
   if (result.status === 'error') {
     fileOutput.innerHTML = '';
     fileOutput.hidden = true;
-    appendReplEntry('(evaluate)', formatError(result.message));
+    appendReplEntry('(evaluate)', formatError(result));
     sessionSetup.hidden = true;
     resetSession();
     syncAnalysisLayout();
@@ -811,7 +811,7 @@ async function startSession() {
 
   const result = await parseReplResponse(repl.init_session(typeName, src, tgt));
   if (result.status === 'error') {
-    appendReplEntry('(start session)', formatError(result.message));
+    appendReplEntry('(start session)', formatError(result));
     return;
   }
   sessionActive = true;
@@ -869,7 +869,7 @@ async function handleCommand(raw) {
   const result = await parseReplResponse(repl.run_command(json));
 
   if (result.status === 'error') {
-    appendReplEntry(raw, formatError(result.message));
+    appendReplEntry(raw, formatError(result));
   } else {
     const rendered = renderCommandResult(cmd, result.data);
     appendReplEntry(raw, rendered);
@@ -1087,7 +1087,42 @@ function tgt(s) { return `<span class="repl-tgt">${esc(s)}</span>`; }
 
 // Plain-text messages (errors, status) — no HTML, use textContent.
 function formatOk(msg)    { return { cls: 'repl-result ok',  text: msg }; }
-function formatError(msg) { return { cls: 'repl-result err', text: msg }; }
+
+// Errors come in two shapes:
+//   - a plain string (call-site emitted message, e.g. "usage: apply <n>")
+//   - a parsed REPL response `{message, diagnostics?}` from the engine
+// When `diagnostics` is present we render a structured block with line:col
+// and a source snippet; otherwise we fall back to the flat text path.
+function formatError(messageOrResult) {
+  if (typeof messageOrResult === 'string') {
+    return { cls: 'repl-result err', text: messageOrResult };
+  }
+  const { message, diagnostics } = messageOrResult || {};
+  if (!Array.isArray(diagnostics) || diagnostics.length === 0) {
+    return { cls: 'repl-result err', text: message || 'unknown error' };
+  }
+  const html = diagnostics.map(renderDiagnostic).join('');
+  return { cls: 'repl-result err', html };
+}
+
+function renderDiagnostic(d) {
+  const kindLabel = `${d.kind} error`;
+  const path = d.path ? ` in ${esc(d.path)}` : '';
+  const loc = `line ${d.start.line}:${d.start.col}`;
+  const header =
+    `<div class="err-header">` +
+      `<span class="err-kind">${esc(kindLabel)}</span>` +
+      `<span class="err-loc">${esc(path)} at ${esc(loc)}</span>` +
+      `<span class="err-msg"> — ${esc(d.message)}</span>` +
+    `</div>`;
+  const snippet = d.snippet
+    ? `<pre class="err-snippet">${esc(d.snippet)}</pre>`
+    : '';
+  const notes = (d.notes || [])
+    .map(n => `<div class="err-note">note: ${esc(n)}</div>`)
+    .join('');
+  return `<div class="err-block">${header}${snippet}${notes}</div>`;
+}
 
 function appendReplMsg(text, cls = 'repl-dim') {
   const el = document.createElement('div');
@@ -1112,6 +1147,10 @@ function appendReplEntry(cmdText, result) {
       // result is an HTML string from the render functions (hi/dim/sec/ok spans)
       resEl.className = 'repl-result';
       resEl.innerHTML = result;
+    } else if (typeof result.html === 'string') {
+      // structured-error object — pre-rendered HTML (escaped at build time)
+      resEl.className = result.cls;
+      resEl.innerHTML = result.html;
     } else {
       // plain-text object from formatOk/formatError
       resEl.className = result.cls;

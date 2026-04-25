@@ -608,6 +608,30 @@ header {
 .repl-result.ok  { color: var(--text); }
 .repl-result.err { color: var(--err); }
 
+.err-block { margin-top: 2px; }
+.err-block + .err-block { margin-top: 6px; }
+.err-header { white-space: pre-wrap; }
+.err-kind { font-weight: 600; }
+.err-loc { color: var(--text-dim); }
+.err-msg { color: var(--err); }
+.err-snippet {
+  margin: 4px 0 0 0;
+  padding: 4px 8px;
+  background: rgba(248, 113, 113, 0.08);
+  border-left: 2px solid var(--err);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre;
+  overflow-x: auto;
+}
+.err-note {
+  color: var(--text-dim);
+  margin-top: 2px;
+  padding-left: 8px;
+}
+
 .repl-section-title {
   color: var(--accent2);
   font-weight: 600;

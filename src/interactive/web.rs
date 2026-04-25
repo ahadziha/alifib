@@ -17,6 +17,7 @@ use crate::aux::Tag;
 use crate::aux::loader::{LoadFileError, Loader};
 use crate::core::diagram::CellData;
 use crate::interpreter::{GlobalStore, InterpretedFile, LoadResult};
+use crate::language::error::Diagnostic;
 
 use super::engine::{RewriteEngine, resolve_type};
 use super::protocol::{
@@ -118,10 +119,13 @@ impl WebRepl {
                 self.state = State::Loaded { store };
                 json
             }
-            LoadResult::LoadError(e) => err_json(&load_error_message(&e)),
-            LoadResult::InterpError { errors, .. } => {
-                let msgs: Vec<String> = errors.iter().map(|e| format!("{e}")).collect();
-                err_json(&msgs.join("\n"))
+            LoadResult::LoadError(e) => load_error_json(&e),
+            LoadResult::InterpError { errors, source, path } => {
+                let diagnostics: Vec<Diagnostic> = errors
+                    .iter()
+                    .map(|e| e.to_diagnostic(&source, Some(path.clone())))
+                    .collect();
+                diagnostics_err_json(&diagnostics)
             }
         }
     }
@@ -386,7 +390,7 @@ fn load_error_message(error: &LoadFileError) -> String {
     match error {
         LoadFileError::Load { path, cause } => format!("could not load '{}': {:?}", path, cause),
         LoadFileError::Parse { path, errors, .. } => {
-            let msgs: Vec<String> = errors.iter().map(|e| format!("{e}")).collect();
+            let msgs: Vec<String> = errors.iter().map(|e| e.message().to_string()).collect();
             format!("parse error in '{}': {}", path, msgs.join("; "))
         }
         LoadFileError::ModuleNotFound { module_name } => {
@@ -397,6 +401,41 @@ fn load_error_message(error: &LoadFileError) -> String {
         }
         LoadFileError::Cycle { path } => format!("cyclic dependency involving '{}'", path),
     }
+}
+
+fn load_error_json(error: &LoadFileError) -> String {
+    let message = load_error_message(error);
+    if let LoadFileError::Parse { path, source, errors } = error {
+        let diagnostics: Vec<Diagnostic> = errors
+            .iter()
+            .map(|e| e.to_diagnostic(source, Some(path.clone())))
+            .collect();
+        return serde_json::json!({
+            "status": "error",
+            "message": message,
+            "diagnostics": diagnostics,
+        })
+        .to_string();
+    }
+    err_json(&message)
+}
+
+fn diagnostics_err_json(diagnostics: &[Diagnostic]) -> String {
+    let summary: Vec<String> = diagnostics
+        .iter()
+        .map(|d| {
+            format!(
+                "{} error at line {}:{} — {}",
+                d.kind, d.start.line, d.start.col, d.message
+            )
+        })
+        .collect();
+    serde_json::json!({
+        "status": "error",
+        "message": summary.join("\n"),
+        "diagnostics": diagnostics,
+    })
+    .to_string()
 }
 
 fn err_json(msg: &str) -> String {
