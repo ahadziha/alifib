@@ -26,11 +26,11 @@ use serde::{Deserialize, Serialize};
 use crate::aux::Tag;
 use crate::core::complex::Complex;
 use crate::core::diagram::{CellData, Diagram, Sign};
-use crate::core::matching::{MatchResult, ParallelMatchResult};
+use crate::core::matching::MatchResult;
 use crate::core::strdiag::{StrDiag, VertexKind};
 use crate::output::render_diagram;
 use super::engine::RewriteEngine;
-use super::render::render_match_from_step;
+use super::render::render_step;
 
 // ── Requests ─────────────────────────────────────────────────────────────────
 
@@ -351,19 +351,12 @@ pub fn build_response(engine: &RewriteEngine, include_history: bool) -> Response
     let scope = engine.type_complex();
     let current = engine.current_diagram();
 
-    let parallel_offset = engine.parallel_rewrites().len();
-    let mut rewrites: Vec<RewriteInfo> = engine
-        .parallel_rewrites()
+    let rewrites: Vec<RewriteInfo> = engine
+        .rewrites()
         .iter()
         .enumerate()
-        .map(|(i, pr)| build_parallel_rewrite_info(i, pr, engine.available_rewrites(), scope))
+        .map(|(i, pr)| build_rewrite_info_from_family(i, pr, scope))
         .collect();
-    rewrites.extend(
-        engine.available_rewrites()
-            .iter()
-            .enumerate()
-            .map(|(i, m)| build_rewrite_info(parallel_offset + i, m, scope)),
-    );
 
     // The proof's source/target boundaries are the session's source diagram
     // and the current diagram respectively — no need to assemble the full
@@ -768,57 +761,17 @@ pub fn build_homology_response(
     }))
 }
 
-fn build_rewrite_info(
+fn build_rewrite_info_from_family(
     index: usize,
-    m: &MatchResult,
+    pr: &MatchResult,
     scope: &Complex,
 ) -> RewriteInfo {
-    let match_display = render_match_from_step(&m.step, scope);
-    let n_plus_1 = m.step.top_dim();
-    let n = n_plus_1.saturating_sub(1);
-    let rule_tag = m.step.labels_at(n_plus_1).and_then(|ls| ls.first());
-    let classifier = rule_tag
-        .and_then(|tag| scope.find_generator_by_tag(tag))
-        .and_then(|name| scope.classifier(name));
-    let placeholder = || DiagramInfo { label: "?".into(), dim: 0, cell_count: 0, cells_by_dim: vec![] };
-    let (source, target) = match classifier {
-        Some(cl) => match (
-            Diagram::boundary(Sign::Source, n, cl),
-            Diagram::boundary(Sign::Target, n, cl),
-        ) {
-            (Ok(src), Ok(tgt)) => (diagram_info(&src, scope), diagram_info(&tgt, scope)),
-            _ => (placeholder(), placeholder()),
-        },
-        None => (placeholder(), placeholder()),
-    };
-    RewriteInfo {
-        index,
-        rule_name: m.rule_name.clone(),
-        source,
-        target,
-        match_positions: m.image_positions.clone(),
-        match_display,
-        family: vec![],
-    }
-}
+    let is_single = pr.members.len() == 1;
 
-fn build_parallel_rewrite_info(
-    index: usize,
-    pr: &ParallelMatchResult,
-    matches: &[MatchResult],
-    scope: &Complex,
-) -> RewriteInfo {
-    let match_display = super::render::render_parallel_match_from_step(&pr.step, scope);
+    let match_display = render_step(&pr.step, scope);
 
-    let family: Vec<FamilyMember> = pr.family.iter().map(|&i| {
-        FamilyMember {
-            rule_name: matches[i].rule_name.clone(),
-            match_positions: matches[i].image_positions.clone(),
-        }
-    }).collect();
-
-    let rule_names: Vec<&str> = pr.family.iter()
-        .map(|&i| matches[i].rule_name.as_str())
+    let rule_names: Vec<&str> = pr.members.iter()
+        .map(|m| m.rule_name.as_str())
         .collect();
     let rule_name = rule_names.join(", ");
 
@@ -826,12 +779,41 @@ fn build_parallel_rewrite_info(
     let n = n_plus_1.saturating_sub(1);
 
     let placeholder = || DiagramInfo { label: "?".into(), dim: 0, cell_count: 0, cells_by_dim: vec![] };
-    let source = Diagram::boundary(Sign::Source, n, &pr.step)
-        .map(|d| diagram_info(&d, scope))
-        .unwrap_or_else(|_| placeholder());
-    let target = Diagram::boundary(Sign::Target, n, &pr.step)
-        .map(|d| diagram_info(&d, scope))
-        .unwrap_or_else(|_| placeholder());
+
+    let (source, target) = if is_single {
+        let rule_tag = pr.step.labels_at(n_plus_1).and_then(|ls| ls.first());
+        let classifier = rule_tag
+            .and_then(|tag| scope.find_generator_by_tag(tag))
+            .and_then(|name| scope.classifier(name));
+        match classifier {
+            Some(cl) => match (
+                Diagram::boundary(Sign::Source, n, cl),
+                Diagram::boundary(Sign::Target, n, cl),
+            ) {
+                (Ok(src), Ok(tgt)) => (diagram_info(&src, scope), diagram_info(&tgt, scope)),
+                _ => (placeholder(), placeholder()),
+            },
+            None => (placeholder(), placeholder()),
+        }
+    } else {
+        (
+            Diagram::boundary(Sign::Source, n, &pr.step)
+                .map(|d| diagram_info(&d, scope))
+                .unwrap_or_else(|_| placeholder()),
+            Diagram::boundary(Sign::Target, n, &pr.step)
+                .map(|d| diagram_info(&d, scope))
+                .unwrap_or_else(|_| placeholder()),
+        )
+    };
+
+    let family: Vec<FamilyMember> = if is_single {
+        vec![]
+    } else {
+        pr.members.iter().map(|m| FamilyMember {
+            rule_name: m.rule_name.clone(),
+            match_positions: m.match_positions.clone(),
+        }).collect()
+    };
 
     RewriteInfo {
         index,

@@ -582,8 +582,7 @@ fn show_state(engine: &RewriteEngine, display: &Display) {
         display,
         engine.current_diagram(),
         engine.target_diagram(),
-        engine.available_rewrites(),
-        engine.parallel_rewrites(),
+        engine.rewrites(),
         engine.type_complex(),
         proof,
     );
