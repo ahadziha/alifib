@@ -818,7 +818,7 @@ fn build_parallel_rewrite_info(
     let rule_names: Vec<&str> = pr.family.iter()
         .map(|&i| matches[i].rule_name.as_str())
         .collect();
-    let rule_name = rule_names.join(",");
+    let rule_name = rule_names.join(", ");
 
     let n_plus_1 = pr.step.top_dim();
     let n = n_plus_1.saturating_sub(1);
