@@ -29,8 +29,19 @@ name = "alifib-cli"
 version = "0.1.0"
 dependencies = [
  "alifib",
+ "alifib-web-mcp",
  "alifib-web-server",
  "alifib-web-shared",
+]
+
+[[package]]
+name = "alifib-web-mcp"
+version = "0.1.0"
+dependencies = [
+ "alifib",
+ "alifib-web-shared",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

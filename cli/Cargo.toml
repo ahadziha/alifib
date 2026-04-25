@@ -12,5 +12,6 @@ path = "src/main.rs"
 
 [dependencies]
 alifib = { path = "..", features = ["cli"] }
+alifib-web-mcp = { path = "../web/mcp" }
 alifib-web-server = { path = "../web/server" }
 alifib-web-shared = { path = "../web/shared" }

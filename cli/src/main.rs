@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use alifib::aux::error::report_load_file_error;
 use alifib::aux::loader::Loader;
-use alifib::interactive::cli::{ReplArgs, ServeArgs, WebArgs, parse_repl_args, parse_serve_args, parse_web_args, run_repl_cmd, run_serve_cmd};
+use alifib::interactive::cli::{McpArgs, ReplArgs, ServeArgs, WebArgs, parse_mcp_args, parse_repl_args, parse_serve_args, parse_web_args, run_repl_cmd, run_serve_cmd};
 use alifib::interpreter::InterpretedFile;
 use alifib::language;
 use alifib::output;
@@ -13,6 +13,7 @@ const USAGE: &str = "\
 Usage: alifib <input-file> [-o|--output <output-file>] [--ast] [--print] [--bench N]
        alifib repl <file> [--type <t>] [--source <s>] [--target <t>] [--emacs]
        alifib web [<examples-dir>] [--bind <addr>]
+       alifib mcp [<examples-dir>]
        alifib serve [<file> --type <t> --source <s> [--target <t>]]";
 
 enum RunMode {
@@ -22,6 +23,7 @@ enum RunMode {
     Bench(usize),
     Repl(ReplArgs),
     Web(WebArgs),
+    Mcp(McpArgs),
     Serve(ServeArgs),
 }
 
@@ -46,6 +48,10 @@ fn parse_args() -> Result<Args, String> {
         Some("web") => {
             let args = parse_web_args(&cli_args[1..])?;
             return Ok(Args { input: String::new(), output: None, mode: RunMode::Web(args) });
+        }
+        Some("mcp") => {
+            let args = parse_mcp_args(&cli_args[1..])?;
+            return Ok(Args { input: String::new(), output: None, mode: RunMode::Mcp(args) });
         }
         Some("serve") => {
             let args = parse_serve_args(&cli_args[1..])?;
@@ -151,6 +157,19 @@ fn run_web_cmd(args: WebArgs) -> Result<(), ()> {
     }
 }
 
+#[allow(clippy::result_unit_err)]
+fn run_mcp_cmd(args: McpArgs) -> Result<(), ()> {
+    let dir = args.examples_dir.unwrap_or_else(|| "examples".to_string());
+    let examples = alifib_web_shared::ExampleSet::new(&dir);
+    match alifib_web_mcp::run_mcp_server(examples) {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            eprintln!("error: {}", err);
+            Err(())
+        }
+    }
+}
+
 fn main() {
     let args = match parse_args() {
         Ok(args) => args,
@@ -164,6 +183,7 @@ fn main() {
         RunMode::Bench(n)     => run_bench(&loader, &args.input, n),
         RunMode::Repl(args)    => run_repl_cmd(args),
         RunMode::Web(args)     => run_web_cmd(args),
+        RunMode::Mcp(args)     => run_mcp_cmd(args),
         RunMode::Serve(args)   => run_serve_cmd(args),
     };
     if result.is_err() {

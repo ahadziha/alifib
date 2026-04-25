@@ -6,6 +6,7 @@
 //! alifib repl <file>    [--type <t>] [--source <s>] [--target <t>] [--emacs]
 //! alifib serve          [<file> --type <t> --source <s> [--target <t>]]
 //! alifib web            [<examples-dir>] [--bind <addr>]
+//! alifib mcp            [<examples-dir>]
 //! ```
 
 use super::engine::RewriteEngine;
@@ -53,6 +54,14 @@ pub struct WebArgs {
     pub examples_dir: Option<String>,
 }
 
+/// Arguments for the `alifib mcp` subcommand.
+pub struct McpArgs {
+    /// Directory of `.ali` files auto-seeded as virtual modules so
+    /// `include <Name>` resolves without the agent shipping content.
+    /// Defaults to `./examples` when absent.
+    pub examples_dir: Option<String>,
+}
+
 // ── Parsers ───────────────────────────────────────────────────────────────────
 
 const REPL_USAGE: &str = "\
@@ -66,6 +75,18 @@ Usage: alifib web [<examples-dir>] [--bind <addr>]
                   examples (and include targets).  Rescanned on every
                   /api/load_source and /examples/index.json request, so
                   edits show up live.  Defaults to ./examples.
+";
+
+const MCP_USAGE: &str = "\
+Usage: alifib mcp [<examples-dir>]
+
+  <examples-dir>  Scan this directory for *.ali files and auto-seed them as
+                  virtual modules for the MCP `load_source` tool, so an agent
+                  can `include <Name>` without shipping the file content.
+                  Defaults to ./examples.
+
+  The server speaks newline-delimited JSON-RPC 2.0 (Model Context Protocol)
+  on stdin/stdout.  Logs go to stderr.
 ";
 
 /// Parse the arguments following `alifib repl`.
@@ -128,6 +149,29 @@ pub fn parse_web_args(args: &[String]) -> Result<WebArgs, String> {
     }
 
     Ok(WebArgs { bind, examples_dir })
+}
+
+/// Parse the arguments following `alifib mcp`.
+pub fn parse_mcp_args(args: &[String]) -> Result<McpArgs, String> {
+    let mut examples_dir = None;
+
+    let mut it = args.iter();
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "-h" | "--help" => return Err(MCP_USAGE.to_string()),
+            s if s.starts_with('-') => {
+                return Err(format!("unknown option '{}' for mcp\n{}", s, MCP_USAGE));
+            }
+            s => {
+                if examples_dir.is_some() {
+                    return Err(format!("mcp: multiple positional arguments\n{}", MCP_USAGE));
+                }
+                examples_dir = Some(s.to_string());
+            }
+        }
+    }
+
+    Ok(McpArgs { examples_dir })
 }
 
 /// Parse the arguments following `alifib serve`.
