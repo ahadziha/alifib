@@ -715,11 +715,13 @@ pub fn build_strdiag_response(
         (String::new(), String::new())
     };
 
+    let label = crate::output::render_diagram(&target_diagram, &type_complex);
     let sd = StrDiag::from_diagram(&target_diagram, &type_complex);
 
     Ok(serde_json::json!({
         "strdiag": strdiag_to_json(&sd),
         "dim": dim,
+        "label": label,
         "src": src,
         "tgt": tgt,
     }))

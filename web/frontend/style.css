@@ -429,6 +429,9 @@ header {
 }
 .infobox-text { position: relative; }
 
+.infobox-label {
+  margin-top: 2px;
+}
 .infobox-boundary {
   color: var(--text-dim);
   margin-top: 2px;

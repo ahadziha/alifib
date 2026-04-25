@@ -1925,6 +1925,9 @@ async function refreshInfobox() {
   }
 
   const data = result.data;
+  if (data.label) {
+    html += `<div class="infobox-label">${esc(data.label)}</div>`;
+  }
   if (data.src || data.tgt) {
     html += `<div class="infobox-boundary">${esc(data.src)} → ${esc(data.tgt)}</div>`;
   }
