@@ -52,6 +52,10 @@ impl DiGraph {
     pub(crate) fn indegree(&self, v: usize) -> usize {
         self.predecessors[v].len()
     }
+
+    pub(crate) fn has_any_edge(&self) -> bool {
+        self.successors.iter().any(|s| !s.is_empty())
+    }
 }
 
 // ---- Flow graph construction ----

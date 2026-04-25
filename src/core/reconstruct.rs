@@ -4,9 +4,10 @@
 //! generators, [`reconstruct`] tries to find a paste tree that, when realised,
 //! produces a diagram isomorphic to the pre-diagram.
 //!
-//! The algorithm works by computing the *layering dimension* of the ogposet,
-//! building a topological sort of the maximal flow graph at that dimension,
-//! decomposing into layers, and recursing on each layer.
+//! The algorithm works by computing a decomposition dimension — the *frame
+//! dimension* for ogposets of dimension ≤ 3, or the *layering dimension*
+//! otherwise — building a topological sort of the maximal flow graph at that
+//! dimension, decomposing into layers, and recursing on each layer.
 
 use std::sync::Arc;
 
@@ -63,22 +64,51 @@ fn build_paste_tree(
     pd: &PreDiagram,
     complex: &Complex,
 ) -> Result<PasteTree, Error> {
-    let k = pd.shape.layering_dimension();
-
     // Base case: layering dimension -1 means a single top element.
-    if k == -1 {
+    if pd.shape.layering_dimension() == -1 {
         return leaf_for_top_element(pd);
     }
 
-    let k = k as usize;
-    let (mf_graph, node_map) = graph::maximal_flow_graph(&pd.shape, k);
+    let d = pd.shape.dim as usize;
 
-    if pd.shape.dim > 3 {
+    // Determine decomposition dimension k.
+    // For dim <= 3, use the frame dimension: the greatest k such that the
+    // maximal k-flow graph has at least one edge, falling back to 0.
+    // For dim > 3, use the layering dimension.
+    let (k, mf_graph, node_map) = if d == 1 {
+        let (g, nm) = graph::maximal_flow_graph(&pd.shape, 0);
+        (0, g, nm)
+    } else if d > 3 {
+        let k = pd.shape.layering_dimension() as usize;
+        let (g, nm) = graph::maximal_flow_graph(&pd.shape, k);
+        (k, g, nm)
+    } else {
+        // dim 2 or 3: try descending k values, pick the first whose
+        // maximal flow graph has at least one edge; fall back to 0.
+        let (g, nm) = graph::maximal_flow_graph(&pd.shape, d - 1);
+        if g.has_any_edge() {
+            (d - 1, g, nm)
+        } else if d == 2 {
+            let (g0, nm0) = graph::maximal_flow_graph(&pd.shape, 0);
+            (0, g0, nm0)
+        } else {
+            // d == 3
+            let (g1, nm1) = graph::maximal_flow_graph(&pd.shape, d - 2);
+            if g1.has_any_edge() {
+                (d - 2, g1, nm1)
+            } else {
+                let (g0, nm0) = graph::maximal_flow_graph(&pd.shape, 0);
+                (0, g0, nm0)
+            }
+        }
+    };
+
+    if d > 3 {
         // dim > 3: try topological sorts lazily; stop at the first that works.
         graph::try_topological_sorts(&mf_graph, 10_000, |sort| {
             let tree = try_sort(pd, complex, &node_map, sort, k).ok()?;
-            let d = Diagram::realise_tree(&tree, complex).ok()?;
-            check_sizes(pd, &d).ok()?;
+            let diag = Diagram::realise_tree(&tree, complex).ok()?;
+            check_sizes(pd, &diag).ok()?;
             Some(tree)
         }).map_err(|msg| Error::new(format!("reconstruction failed: {}", msg)))
     } else {
