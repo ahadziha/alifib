@@ -6,8 +6,9 @@ use crate::aux::Tag;
 use crate::core::complex::Complex;
 use crate::core::diagram::{Diagram, Sign};
 use crate::core::matching::{
-    MatchResult, ParallelMatchResult, RulePattern,
+    MatchResult, ParallelMatchResult, RulePattern, CandidateMatch,
     find_matches, find_matches_impl, find_compatible_families,
+    find_candidate_matches,
 };
 use crate::interpreter::{GlobalStore, InterpretedFile};
 use super::session::{Move, SessionFile};
@@ -240,6 +241,25 @@ fn compute_first_rewrite(
     }
 
     Ok(None)
+}
+
+fn compute_candidate_rewrites(
+    type_complex: &Complex,
+    rule_patterns: &HashMap<String, RulePattern>,
+    current: &Diagram,
+) -> Result<Vec<CandidateMatch>, String> {
+    let n = current.top_dim();
+    let mut all = Vec::new();
+    for (name, _tag, dim) in type_complex.generators_iter() {
+        if dim != n + 1 { continue; }
+        let Some(rewrite) = type_complex.classifier(name) else { continue; };
+        let Some(rp) = rule_patterns.get(name) else { continue; };
+        match find_candidate_matches(rewrite, rp, current, name) {
+            Ok(candidates) => all.extend(candidates),
+            Err(e) => return Err(format!("failed to match rule '{}': {}", name, e)),
+        }
+    }
+    Ok(all)
 }
 
 // ── Constructor impls ─────────────────────────────────────────────────────────
@@ -522,14 +542,14 @@ impl RewriteEngine {
             }
 
             let (step, rule_name, is_parallel) = if self.parallel {
-                // Try parallel family first.
-                let all_matches = compute_rewrites(
+                // Lightweight candidate matching (iso check only).
+                let candidates = compute_candidate_rewrites(
                     &self.type_complex,
                     &self.rule_patterns,
                     &self.current_diagram,
                 )?;
                 let families = find_compatible_families(
-                    &all_matches,
+                    &candidates,
                     &self.type_complex,
                     &self.current_diagram,
                     &self.rule_patterns,
@@ -537,14 +557,21 @@ impl RewriteEngine {
                 );
                 if let Some(pr) = families.into_iter().next() {
                     let names: Vec<&str> = pr.family.iter()
-                        .map(|&i| all_matches[i].rule_name.as_str())
+                        .map(|&i| candidates[i].rule_name.as_str())
                         .collect();
                     (pr.step, names.join(","), true)
-                } else if let Some(m) = all_matches.into_iter().next() {
-                    (m.step, m.rule_name, false)
                 } else {
-                    stop_reason = Some("no rewrites available");
-                    break;
+                    // No parallel family; fall back to full single match.
+                    let first = compute_first_rewrite(
+                        &self.type_complex,
+                        &self.rule_patterns,
+                        &self.current_diagram,
+                    )?;
+                    let Some(m) = first else {
+                        stop_reason = Some("no rewrites available");
+                        break;
+                    };
+                    (m.step, m.rule_name, false)
                 }
             } else {
                 let first = compute_first_rewrite(

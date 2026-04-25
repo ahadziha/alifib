@@ -16,6 +16,13 @@ use super::ogposet::{self, Sign};
 use super::pushout;
 use super::reconstruct;
 
+/// Common interface for match-like types (full matches and lightweight candidates).
+pub(crate) trait MatchLike {
+    fn rule_name(&self) -> &str;
+    fn image_positions(&self) -> &[usize];
+    fn iso_emb(&self) -> &Embedding;
+}
+
 /// A confirmed match: a rewrite application producing a step diagram.
 pub struct MatchResult {
     /// The (n+1)-dimensional step diagram (the "whiskered" rewrite).
@@ -27,6 +34,25 @@ pub struct MatchResult {
     /// The embedding `pattern → target` from the isomorphism check, retained
     /// so that parallel rewrite composition can reuse it for iterated pushouts.
     pub(crate) iso_emb: Embedding,
+}
+
+impl MatchLike for MatchResult {
+    fn rule_name(&self) -> &str { &self.rule_name }
+    fn image_positions(&self) -> &[usize] { &self.image_positions }
+    fn iso_emb(&self) -> &Embedding { &self.iso_emb }
+}
+
+/// A lightweight candidate match: isomorphism confirmed but no step constructed.
+pub(crate) struct CandidateMatch {
+    pub(crate) rule_name: String,
+    pub(crate) image_positions: Vec<usize>,
+    pub(crate) iso_emb: Embedding,
+}
+
+impl MatchLike for CandidateMatch {
+    fn rule_name(&self) -> &str { &self.rule_name }
+    fn image_positions(&self) -> &[usize] { &self.image_positions }
+    fn iso_emb(&self) -> &Embedding { &self.iso_emb }
 }
 
 /// A confirmed parallel rewrite: a compatible family of matches applied simultaneously.
@@ -106,6 +132,56 @@ pub(crate) fn find_matches_impl(
     rule_name: &str,
     limit: Option<usize>,
 ) -> Result<Vec<MatchResult>, Error> {
+    let mut results = Vec::new();
+    for_each_candidate(rewrite, rule, target, rule_name, |cand| {
+        let pushout::Pushout { tip, inl, inr } = pushout::pushout(
+            &cand.iso_emb, &rule.pattern_to_rewrite,
+        );
+        let tip_sizes = tip.sizes();
+        let pre_labels = merge_pushout_labels(
+            &tip_sizes, &inl, &inr, &target.labels, &rewrite.labels,
+        );
+        if let Ok(diagram) = reconstruct::reconstruct(&tip, &pre_labels, complex) {
+            results.push(MatchResult {
+                step: diagram,
+                rule_name: cand.rule_name,
+                image_positions: cand.image_positions,
+                iso_emb: cand.iso_emb,
+            });
+            if limit.is_some_and(|l| results.len() >= l) { return true; }
+        }
+        false
+    })?;
+    Ok(results)
+}
+
+/// Find all candidate matches (isomorphism only, no pushout/reconstruct).
+pub(crate) fn find_candidate_matches(
+    rewrite: &Diagram,
+    rule: &RulePattern,
+    target: &Diagram,
+    rule_name: &str,
+) -> Result<Vec<CandidateMatch>, Error> {
+    let mut results = Vec::new();
+    for_each_candidate(rewrite, rule, target, rule_name, |cand| {
+        results.push(cand);
+        false
+    })?;
+    Ok(results)
+}
+
+/// Iterate over candidate matches, calling `f` for each. Stops early if `f`
+/// returns `true`.  Shared implementation for both full and candidate matching.
+fn for_each_candidate<F>(
+    rewrite: &Diagram,
+    rule: &RulePattern,
+    target: &Diagram,
+    rule_name: &str,
+    mut f: F,
+) -> Result<(), Error>
+where
+    F: FnMut(CandidateMatch) -> bool,
+{
     let n = target.top_dim();
     if rewrite.top_dim() != n + 1 {
         return Err(Error::new(format!(
@@ -120,7 +196,9 @@ pub(crate) fn find_matches_impl(
         return Err(Error::new("find_matches: pattern dimension mismatch"));
     }
 
-    if n == 0 { return find_matches_dim0(complex, rewrite, rule, target, rule_name, limit); }
+    if n == 0 {
+        return for_each_candidate_dim0(rule, target, rule_name, &mut f);
+    }
 
     // Step 1: (n-1)-flow graphs.
     let k = n - 1;
@@ -136,8 +214,6 @@ pub(crate) fn find_matches_impl(
 
     // Step 2: Find all path-induced labelled subgraph matches P → T.
     let flow_matches = find_path_induced_matches(&p_flow, &t_flow, &p_labels, &t_labels);
-
-    let mut results = Vec::new();
 
     for vertex_match in &flow_matches {
         // Step 3: Restrict target to closure of matched top-cells; check isomorphism.
@@ -156,52 +232,35 @@ pub(crate) fn find_matches_impl(
             None => continue,
         };
 
-        // Step 4: Pushout to build the pre-rewrite.
-        let pushout::Pushout { tip, inl, inr } = pushout::pushout(
-            &iso_emb,
-            &rule.pattern_to_rewrite,
-        );
-
-        let tip_sizes = tip.sizes();
-        let pre_labels = merge_pushout_labels(
-            &tip_sizes, &inl, &inr, &target.labels, &rewrite.labels,
-        );
-
-        // Step 5: Reconstruct.
-        match reconstruct::reconstruct(&tip, &pre_labels, complex) {
-            Ok(diagram) => {
-                results.push(MatchResult {
-                    step: diagram,
-                    rule_name: rule_name.to_owned(),
-                    image_positions,
-                    iso_emb,
-                });
-                if limit.is_some_and(|l| results.len() >= l) { return Ok(results); }
-            }
-            Err(_) => continue,
+        if f(CandidateMatch {
+            rule_name: rule_name.to_owned(),
+            image_positions,
+            iso_emb,
+        }) {
+            return Ok(());
         }
     }
 
-    Ok(results)
+    Ok(())
 }
 
-/// Special case for dim-0 targets (points): pattern matching is trivial.
-fn find_matches_dim0(
-    complex: &Complex,
-    rewrite: &Diagram,
+/// Dim-0 candidate iteration: label matching only.
+fn for_each_candidate_dim0<F>(
     rule: &RulePattern,
     target: &Diagram,
     rule_name: &str,
-    limit: Option<usize>,
-) -> Result<Vec<MatchResult>, Error> {
+    f: &mut F,
+) -> Result<(), Error>
+where
+    F: FnMut(CandidateMatch) -> bool,
+{
     let pattern = &rule.pattern;
     let pat_sizes = pattern.shape.sizes();
     let tgt_sizes = target.shape.sizes();
     if pat_sizes.is_empty() || pat_sizes[0] != 1 {
-        return Ok(vec![]);
+        return Ok(());
     }
     let pat_tag = &pattern.labels[0][0];
-    let mut results = Vec::new();
     for pos in 0..tgt_sizes[0] {
         if &target.labels[0][pos] != pat_tag { continue; }
         let map = vec![vec![pos]];
@@ -210,22 +269,15 @@ fn find_matches_dim0(
         let emb = Embedding::make(
             Arc::clone(&pattern.shape), Arc::clone(&target.shape), map, inv,
         );
-        let pushout::Pushout { tip, inl, inr } = pushout::pushout(&emb, &rule.pattern_to_rewrite);
-        let tip_sizes = tip.sizes();
-        let pre_labels = merge_pushout_labels(
-            &tip_sizes, &inl, &inr, &target.labels, &rewrite.labels,
-        );
-        if let Ok(diagram) = reconstruct::reconstruct(&tip, &pre_labels, complex) {
-            results.push(MatchResult {
-                step: diagram,
-                rule_name: rule_name.to_owned(),
-                image_positions: vec![pos],
-                iso_emb: emb,
-            });
-            if limit.is_some_and(|l| results.len() >= l) { return Ok(results); }
+        if f(CandidateMatch {
+            rule_name: rule_name.to_owned(),
+            image_positions: vec![pos],
+            iso_emb: emb,
+        }) {
+            return Ok(());
         }
     }
-    Ok(results)
+    Ok(())
 }
 
 // ---- Path-induced labelled subgraph matching ----
@@ -412,14 +464,13 @@ fn check_match_isomorphism(
 /// injection; fall back to the right (rewrite) injection.
 fn merge_pushout_labels(
     tip_sizes: &[usize],
-    inl: &Embedding,     // target → tip
-    inr: &Embedding,     // rewrite → tip
-    left_labels: &[Vec<crate::aux::Tag>],   // target labels
-    right_labels: &[Vec<crate::aux::Tag>],  // rewrite labels
+    inl: &Embedding,
+    inr: &Embedding,
+    left_labels: &[Vec<crate::aux::Tag>],
+    right_labels: &[Vec<crate::aux::Tag>],
 ) -> Vec<Vec<crate::aux::Tag>> {
     tip_sizes.iter().enumerate().map(|(d, &n)| {
         (0..n).map(|tip_pos| {
-            // Try left (target) first.
             if d < inl.inv.len() && tip_pos < inl.inv[d].len() {
                 let left_pos = inl.inv[d][tip_pos];
                 if left_pos != NO_PREIMAGE {
@@ -428,7 +479,6 @@ fn merge_pushout_labels(
                     }
                 }
             }
-            // Fall back to right (rewrite).
             if d < inr.inv.len() && tip_pos < inr.inv[d].len() {
                 let right_pos = inr.inv[d][tip_pos];
                 if right_pos != NO_PREIMAGE {
@@ -444,58 +494,61 @@ fn merge_pushout_labels(
 
 // ---- Parallel rewrite matching ----
 
-/// Extend an embedding `A → B` to `A → B'` where B is a prefix of B'
-/// (i.e. B' has the same cells as B plus additional cells at every dimension).
-/// The forward map is unchanged; the inverse map is padded with NO_PREIMAGE.
-fn rebase_embedding(emb: &Embedding, new_cod: &Arc<ogposet::Ogposet>) -> Embedding {
-    let new_sizes = new_cod.sizes();
-    let inv: Vec<Vec<usize>> = new_sizes.iter().enumerate().map(|(d, &n)| {
-        let mut row = vec![NO_PREIMAGE; n];
-        if let Some(old_row) = emb.inv.get(d) {
-            for (j, &val) in old_row.iter().enumerate() {
-                if j < n { row[j] = val; }
-            }
-        }
-        row
-    }).collect();
-    Embedding::make(Arc::clone(&emb.dom), Arc::clone(new_cod), emb.map.clone(), inv)
-}
-
 /// Construct the parallel rewrite step for a compatible family of matches.
 ///
-/// Takes the individual matches (indexed by `family`) and iteratively computes
-/// the colimit of the wide span formed by their embeddings into the target.
-pub(crate) fn construct_parallel_step(
+/// Delegates the ogposet-level colimit to [`pushout::multi_pushout`], then
+/// merges labels from the target and rewrite diagrams.
+pub(crate) fn construct_parallel_step<M: MatchLike>(
     complex: &Complex,
     target: &Diagram,
-    matches: &[MatchResult],
+    matches: &[M],
     family: &[usize],
     rule_patterns: &HashMap<String, RulePattern>,
 ) -> Result<Diagram, Error> {
-    let mut current_tip = Arc::clone(&target.shape);
-    let mut current_labels = target.labels.clone();
-
+    let mut rewrites: Vec<&Diagram> = Vec::with_capacity(family.len());
+    let mut spans: Vec<pushout::Span> = Vec::with_capacity(family.len());
     for &idx in family {
         let m = &matches[idx];
-        let rp = rule_patterns.get(&m.rule_name).ok_or_else(|| {
-            Error::new(format!("rule pattern for '{}' not found", m.rule_name))
+        let rp = rule_patterns.get(m.rule_name()).ok_or_else(|| {
+            Error::new(format!("rule pattern for '{}' not found", m.rule_name()))
         })?;
-        let rewrite = complex.classifier(&m.rule_name).ok_or_else(|| {
-            Error::new(format!("classifier for '{}' not found", m.rule_name))
+        let rewrite = complex.classifier(m.rule_name()).ok_or_else(|| {
+            Error::new(format!("classifier for '{}' not found", m.rule_name()))
         })?;
-
-        let rebased = rebase_embedding(&m.iso_emb, &current_tip);
-        let pushout::Pushout { tip, inl, inr } =
-            pushout::pushout(&rebased, &rp.pattern_to_rewrite);
-
-        let tip_sizes = tip.sizes();
-        current_labels = merge_pushout_labels(
-            &tip_sizes, &inl, &inr, &current_labels, &rewrite.labels,
-        );
-        current_tip = tip;
+        spans.push(pushout::Span {
+            into_base: m.iso_emb(),
+            into_ext: &rp.pattern_to_rewrite,
+        });
+        rewrites.push(rewrite);
     }
 
-    reconstruct::reconstruct(&current_tip, &current_labels, complex)
+    let mp = pushout::multi_pushout(&target.shape, &spans);
+    let tip_sizes = mp.tip.sizes();
+    let base_sizes = target.shape.sizes();
+
+    let labels: Vec<Vec<crate::aux::Tag>> = tip_sizes.iter().enumerate().map(|(d, &n)| {
+        (0..n).map(|pos| {
+            if pos < base_sizes.get(d).copied().unwrap_or(0) {
+                return target.labels.get(d)
+                    .and_then(|r| r.get(pos))
+                    .cloned()
+                    .unwrap_or_else(|| crate::aux::Tag::Local("?".into()));
+            }
+            for (i, inr) in mp.inrs.iter().enumerate() {
+                if d < inr.inv.len() && pos < inr.inv[d].len() {
+                    let ext_pos = inr.inv[d][pos];
+                    if ext_pos != NO_PREIMAGE {
+                        if let Some(tag) = rewrites[i].labels.get(d).and_then(|r| r.get(ext_pos)) {
+                            return tag.clone();
+                        }
+                    }
+                }
+            }
+            crate::aux::Tag::Local("?".into())
+        }).collect()
+    }).collect();
+
+    reconstruct::reconstruct(&mp.tip, &labels, complex)
 }
 
 /// Find all compatible families of matches (parallel rewrite candidates).
@@ -505,10 +558,11 @@ pub(crate) fn construct_parallel_step(
 /// Families are ordered by size descending, then lexicographically on indices.
 ///
 /// Each candidate is verified by constructing the iterated pushout and running
-/// reconstruction. If `first_only` is set, returns as soon as the first
-/// compatible family (of size ≥ 2) is found.
-pub(crate) fn find_compatible_families(
-    matches: &[MatchResult],
+/// reconstruction. If `first_only` is set, enumerates lazily in size-descending
+/// order and returns as soon as the first compatible family (of size ≥ 2) is
+/// verified, avoiding the exponential cost of materialising all families.
+pub(crate) fn find_compatible_families<M: MatchLike>(
+    matches: &[M],
     complex: &Complex,
     target: &Diagram,
     rule_patterns: &HashMap<String, RulePattern>,
@@ -521,11 +575,34 @@ pub(crate) fn find_compatible_families(
     let conflicts: Vec<Vec<bool>> = (0..n).map(|i| {
         (0..n).map(|j| {
             if i == j { return false; }
-            !intset::is_disjoint(&matches[i].image_positions, &matches[j].image_positions)
+            !intset::is_disjoint(matches[i].image_positions(), matches[j].image_positions())
         }).collect()
     }).collect();
 
-    // Enumerate all independent sets of size >= 2 by backtracking.
+    if first_only {
+        let k_max = max_independent_set_size(&conflicts, n);
+        if k_max < 2 { return vec![]; }
+
+        for k in (2..=k_max).rev() {
+            let mut prefix: Vec<usize> = Vec::new();
+            let mut result: Option<ParallelMatchResult> = None;
+            enumerate_independent_sets_of_size(
+                &conflicts, n, &mut prefix, 0, k,
+                &mut |family| {
+                    match try_family(matches, complex, target, rule_patterns, family) {
+                        Some(r) => { result = Some(r); true }
+                        None => false,
+                    }
+                },
+            );
+            if let Some(r) = result {
+                return vec![r];
+            }
+        }
+        return vec![];
+    }
+
+    // Full enumeration for interactive mode.
     let mut candidates: Vec<Vec<usize>> = Vec::new();
     let mut prefix: Vec<usize> = Vec::new();
     enumerate_independent_sets(&conflicts, n, &mut prefix, 0, &mut candidates);
@@ -535,29 +612,94 @@ pub(crate) fn find_compatible_families(
 
     let mut results = Vec::new();
     for family in &candidates {
-        let image_positions = {
-            let mut all: Vec<usize> = family.iter()
-                .flat_map(|&i| matches[i].image_positions.iter().copied())
-                .collect();
-            all.sort_unstable();
-            all.dedup();
-            all
-        };
-
-        match construct_parallel_step(complex, target, matches, family, rule_patterns) {
-            Ok(step) => {
-                results.push(ParallelMatchResult {
-                    step,
-                    family: family.clone(),
-                    image_positions,
-                });
-                if first_only { return results; }
-            }
-            Err(_) => continue,
+        match try_family(matches, complex, target, rule_patterns, family) {
+            Some(r) => results.push(r),
+            None => continue,
         }
     }
 
     results
+}
+
+fn try_family<M: MatchLike>(
+    matches: &[M],
+    complex: &Complex,
+    target: &Diagram,
+    rule_patterns: &HashMap<String, RulePattern>,
+    family: &[usize],
+) -> Option<ParallelMatchResult> {
+    let image_positions = {
+        let mut all: Vec<usize> = family.iter()
+            .flat_map(|&i| matches[i].image_positions().iter().copied())
+            .collect();
+        all.sort_unstable();
+        all.dedup();
+        all
+    };
+    match construct_parallel_step(complex, target, matches, family, rule_patterns) {
+        Ok(step) => Some(ParallelMatchResult {
+            step,
+            family: family.to_vec(),
+            image_positions,
+        }),
+        Err(_) => None,
+    }
+}
+
+/// Find the size of the maximum independent set in the conflict graph.
+fn max_independent_set_size(conflicts: &[Vec<bool>], n: usize) -> usize {
+    let mut max_size = 0;
+    let mut prefix: Vec<usize> = Vec::new();
+    max_is_dfs(conflicts, n, &mut prefix, 0, &mut max_size);
+    max_size
+}
+
+fn max_is_dfs(
+    conflicts: &[Vec<bool>],
+    n: usize,
+    prefix: &mut Vec<usize>,
+    start: usize,
+    max_size: &mut usize,
+) {
+    if prefix.len() > *max_size {
+        *max_size = prefix.len();
+    }
+    let remaining = (start..n)
+        .filter(|&i| !prefix.iter().any(|&j| conflicts[i][j]))
+        .count();
+    if prefix.len() + remaining <= *max_size { return; }
+    for i in start..n {
+        if prefix.iter().any(|&j| conflicts[i][j]) { continue; }
+        prefix.push(i);
+        max_is_dfs(conflicts, n, prefix, i + 1, max_size);
+        prefix.pop();
+    }
+}
+
+/// Enumerate independent sets of exactly `target_size` in lex order, calling
+/// `callback` for each. Stops early if `callback` returns `true`.
+fn enumerate_independent_sets_of_size(
+    conflicts: &[Vec<bool>],
+    n: usize,
+    prefix: &mut Vec<usize>,
+    start: usize,
+    target_size: usize,
+    callback: &mut impl FnMut(&[usize]) -> bool,
+) -> bool {
+    if prefix.len() == target_size {
+        return callback(prefix);
+    }
+    let remaining_needed = target_size - prefix.len();
+    for i in start..n {
+        if n - i < remaining_needed { break; }
+        if prefix.iter().any(|&j| conflicts[i][j]) { continue; }
+        prefix.push(i);
+        if enumerate_independent_sets_of_size(conflicts, n, prefix, i + 1, target_size, callback) {
+            return true;
+        }
+        prefix.pop();
+    }
+    false
 }
 
 /// Recursively enumerate independent sets of size >= 2 in the conflict graph.

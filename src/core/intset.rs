@@ -54,7 +54,7 @@ pub fn difference(a: &IntSet, b: &IntSet) -> IntSet {
 }
 
 /// True iff the two sorted Vecs share no element.
-pub fn is_disjoint(a: &IntSet, b: &IntSet) -> bool {
+pub fn is_disjoint(a: &[usize], b: &[usize]) -> bool {
     use std::cmp::Ordering::*;
     let (mut i, mut j) = (0, 0);
     while i < a.len() && j < b.len() {
