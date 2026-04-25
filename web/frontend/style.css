@@ -495,12 +495,6 @@ header {
 .rewrite-row--selected { background: rgba(124, 106, 242, 0.15) !important; }
 .rewrite-row .rw-index { color: var(--accent); font-weight: 600; min-width: 24px; }
 .rewrite-row .rw-name { color: var(--text-em); }
-.rewrite-row .rw-src { color: var(--warn); font-weight: 600; }
-.rewrite-row .rw-arrow { color: var(--text-dim); }
-.rewrite-row .rw-tgt { color: var(--accent2); font-weight: 600; }
-.rewrite-row .rw-match-sep { color: var(--text-dim); }
-.rewrite-row .rw-match { color: var(--text-dim); }
-.rewrite-row .rw-match-hi { color: var(--warn); font-weight: 600; }
 .rw-parallel-badge {
   font-size: 0.8em;
   color: var(--accent2);
