@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 use crate::aux::Tag;
 use crate::core::complex::Complex;
 use crate::core::diagram::{CellData, Diagram, Sign};
-use crate::core::matching::MatchResult;
+use crate::core::matching::{MatchResult, ParallelMatchResult};
 use crate::core::strdiag::{StrDiag, VertexKind};
 use crate::output::render_diagram;
 use super::engine::RewriteEngine;
@@ -91,6 +91,10 @@ pub enum Request {
     Cell {
         name: String,
     },
+    /// Toggle parallel rewrite mode.
+    Parallel {
+        on: bool,
+    },
     /// Compute cellular homology of a named type.
     Homology {
         name: String,
@@ -125,6 +129,7 @@ pub struct ResponseData {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target: Option<DiagramInfo>,
     pub target_reached: bool,
+    pub parallel: bool,
     pub rewrites: Vec<RewriteInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub proof: Option<ProofInfo>,
@@ -257,7 +262,7 @@ pub struct DimSlice {
     pub cells: Vec<String>,
 }
 
-/// Rich information about a single candidate rewrite.
+/// Rich information about a single candidate rewrite or a parallel family.
 #[derive(Debug, Serialize)]
 pub struct RewriteInfo {
     pub index: usize,
@@ -268,6 +273,16 @@ pub struct RewriteInfo {
     pub match_positions: Vec<usize>,
     /// Current diagram with matched cells bracketed, e.g. `"[id id] id"`.
     pub match_display: String,
+    /// Non-empty for parallel families: the constituent matches.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub family: Vec<FamilyMember>,
+}
+
+/// A member of a parallel rewrite family.
+#[derive(Debug, Serialize)]
+pub struct FamilyMember {
+    pub rule_name: String,
+    pub match_positions: Vec<usize>,
 }
 
 /// A rewrite rule (n+1-generator) in the type, independent of the current diagram.
@@ -336,12 +351,19 @@ pub fn build_response(engine: &RewriteEngine, include_history: bool) -> Response
     let scope = engine.type_complex();
     let current = engine.current_diagram();
 
-    let rewrites: Vec<RewriteInfo> = engine
-        .available_rewrites()
+    let parallel_offset = engine.parallel_rewrites().len();
+    let mut rewrites: Vec<RewriteInfo> = engine
+        .parallel_rewrites()
         .iter()
         .enumerate()
-        .map(|(i, m)| build_rewrite_info(i, m, scope))
+        .map(|(i, pr)| build_parallel_rewrite_info(i, pr, engine.available_rewrites(), scope))
         .collect();
+    rewrites.extend(
+        engine.available_rewrites()
+            .iter()
+            .enumerate()
+            .map(|(i, m)| build_rewrite_info(parallel_offset + i, m, scope)),
+    );
 
     // The proof's source/target boundaries are the session's source diagram
     // and the current diagram respectively — no need to assemble the full
@@ -377,6 +399,7 @@ pub fn build_response(engine: &RewriteEngine, include_history: bool) -> Response
         source: diagram_info(engine.source_diagram(), scope),
         target: engine.target_diagram().map(|t| diagram_info(t, scope)),
         target_reached: engine.target_reached(),
+        parallel: engine.parallel(),
         rewrites,
         proof,
         history,
@@ -751,30 +774,20 @@ fn build_rewrite_info(
     let match_display = render_match_from_step(&m.step, scope);
     let n_plus_1 = m.step.top_dim();
     let n = n_plus_1.saturating_sub(1);
-    // Get the rule's own input/output boundaries from its classifier.
     let rule_tag = m.step.labels_at(n_plus_1).and_then(|ls| ls.first());
     let classifier = rule_tag
         .and_then(|tag| scope.find_generator_by_tag(tag))
         .and_then(|name| scope.classifier(name));
+    let placeholder = || DiagramInfo { label: "?".into(), dim: 0, cell_count: 0, cells_by_dim: vec![] };
     let (source, target) = match classifier {
         Some(cl) => match (
             Diagram::boundary(Sign::Source, n, cl),
             Diagram::boundary(Sign::Target, n, cl),
         ) {
             (Ok(src), Ok(tgt)) => (diagram_info(&src, scope), diagram_info(&tgt, scope)),
-            _ => return RewriteInfo {
-                index, rule_name: m.rule_name.clone(), match_display,
-                source: DiagramInfo { label: "?".into(), dim: 0, cell_count: 0, cells_by_dim: vec![] },
-                target: DiagramInfo { label: "?".into(), dim: 0, cell_count: 0, cells_by_dim: vec![] },
-                match_positions: m.image_positions.clone(),
-            },
+            _ => (placeholder(), placeholder()),
         },
-        None => return RewriteInfo {
-            index, rule_name: m.rule_name.clone(), match_display,
-            source: DiagramInfo { label: "?".into(), dim: 0, cell_count: 0, cells_by_dim: vec![] },
-            target: DiagramInfo { label: "?".into(), dim: 0, cell_count: 0, cells_by_dim: vec![] },
-            match_positions: m.image_positions.clone(),
-        },
+        None => (placeholder(), placeholder()),
     };
     RewriteInfo {
         index,
@@ -783,5 +796,48 @@ fn build_rewrite_info(
         target,
         match_positions: m.image_positions.clone(),
         match_display,
+        family: vec![],
+    }
+}
+
+fn build_parallel_rewrite_info(
+    index: usize,
+    pr: &ParallelMatchResult,
+    matches: &[MatchResult],
+    scope: &Complex,
+) -> RewriteInfo {
+    let match_display = super::render::render_parallel_match_from_step(&pr.step, scope);
+
+    let family: Vec<FamilyMember> = pr.family.iter().map(|&i| {
+        FamilyMember {
+            rule_name: matches[i].rule_name.clone(),
+            match_positions: matches[i].image_positions.clone(),
+        }
+    }).collect();
+
+    let rule_names: Vec<&str> = pr.family.iter()
+        .map(|&i| matches[i].rule_name.as_str())
+        .collect();
+    let rule_name = rule_names.join(",");
+
+    let n_plus_1 = pr.step.top_dim();
+    let n = n_plus_1.saturating_sub(1);
+
+    let placeholder = || DiagramInfo { label: "?".into(), dim: 0, cell_count: 0, cells_by_dim: vec![] };
+    let source = Diagram::boundary(Sign::Source, n, &pr.step)
+        .map(|d| diagram_info(&d, scope))
+        .unwrap_or_else(|_| placeholder());
+    let target = Diagram::boundary(Sign::Target, n, &pr.step)
+        .map(|d| diagram_info(&d, scope))
+        .unwrap_or_else(|_| placeholder());
+
+    RewriteInfo {
+        index,
+        rule_name,
+        source,
+        target,
+        match_positions: pr.image_positions.clone(),
+        match_display,
+        family,
     }
 }

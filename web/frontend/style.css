@@ -501,6 +501,14 @@ header {
 .rewrite-row .rw-match-sep { color: var(--text-dim); }
 .rewrite-row .rw-match { color: var(--text-dim); }
 .rewrite-row .rw-match-hi { color: var(--warn); font-weight: 600; }
+.rw-parallel-badge {
+  font-size: 0.8em;
+  color: var(--accent2);
+  border: 1px solid var(--accent2);
+  border-radius: 3px;
+  padding: 0 4px;
+  margin-left: 4px;
+}
 .rewrite-actions {
   display: inline-flex;
   gap: 4px;

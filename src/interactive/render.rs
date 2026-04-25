@@ -7,7 +7,7 @@
 use crate::aux::Tag;
 use crate::core::complex::Complex;
 use crate::core::diagram::{Diagram, PasteTree, Sign};
-use crate::core::matching::MatchResult;
+use crate::core::matching::{MatchResult, ParallelMatchResult};
 use crate::output::render_diagram;
 use super::display::Display;
 
@@ -47,20 +47,51 @@ pub fn render_match_from_step(
         .map(|src| render_diagram(&src, scope))
         .unwrap_or_else(|| "?".to_string());
 
-    render_tree_with_substitution(tree, scope, rule_tag, &source_render)
+    let subs = std::collections::HashMap::from([(rule_tag.clone(), source_render)]);
+    render_tree_with_substitutions(tree, scope, &subs)
 }
 
-/// Render a paste tree, substituting one specific leaf tag with a bracketed string.
+/// Render a parallel match by taking the step diagram's paste tree and replacing
+/// every rewrite rule leaf with a bracketed rendering of that rule's source boundary.
+pub fn render_parallel_match_from_step(
+    step: &Diagram,
+    scope: &Complex,
+) -> String {
+    let n_plus_1 = step.top_dim();
+    let tree = match step.tree(Sign::Source, n_plus_1) {
+        Some(t) => t,
+        None => return "?".to_string(),
+    };
+
+    let Some(labels) = step.labels_at(n_plus_1) else {
+        return "?".to_string();
+    };
+
+    let n = n_plus_1.saturating_sub(1);
+    let mut subs = std::collections::HashMap::new();
+    for tag in labels {
+        if subs.contains_key(tag) { continue; }
+        let source_render = scope.find_generator_by_tag(tag)
+            .and_then(|name| scope.classifier(name))
+            .and_then(|classifier| Diagram::boundary(Sign::Source, n, classifier).ok())
+            .map(|src| render_diagram(&src, scope))
+            .unwrap_or_else(|| "?".to_string());
+        subs.insert(tag.clone(), source_render);
+    }
+
+    render_tree_with_substitutions(tree, scope, &subs)
+}
+
+/// Render a paste tree, substituting specific leaf tags with bracketed strings.
 /// Chains at the same dimension are flattened.
-fn render_tree_with_substitution(
+fn render_tree_with_substitutions(
     tree: &PasteTree,
     scope: &Complex,
-    replace_tag: &Tag,
-    replacement: &str,
+    subs: &std::collections::HashMap<Tag, String>,
 ) -> String {
     match tree {
         PasteTree::Leaf(tag) => {
-            if tag == replace_tag {
+            if let Some(replacement) = subs.get(tag) {
                 format!("[{}]", replacement)
             } else {
                 scope.find_generator_by_tag(tag)
@@ -72,26 +103,25 @@ fn render_tree_with_substitution(
         PasteTree::Node { dim, .. } => {
             let k = *dim;
             let mut parts = Vec::new();
-            collect_chain_with_sub(tree, k, scope, replace_tag, replacement, &mut parts);
+            collect_chain_with_subs(tree, k, scope, subs, &mut parts);
             format!("({})", parts.join(&format!(" #{} ", k)))
         }
     }
 }
 
-fn collect_chain_with_sub(
+fn collect_chain_with_subs(
     tree: &PasteTree,
     k: usize,
     scope: &Complex,
-    replace_tag: &Tag,
-    replacement: &str,
+    subs: &std::collections::HashMap<Tag, String>,
     parts: &mut Vec<String>,
 ) {
     match tree {
         PasteTree::Node { dim, left, right } if *dim == k => {
-            collect_chain_with_sub(left, k, scope, replace_tag, replacement, parts);
-            collect_chain_with_sub(right, k, scope, replace_tag, replacement, parts);
+            collect_chain_with_subs(left, k, scope, subs, parts);
+            collect_chain_with_subs(right, k, scope, subs, parts);
         }
-        _ => parts.push(render_tree_with_substitution(tree, scope, replace_tag, replacement)),
+        _ => parts.push(render_tree_with_substitutions(tree, scope, subs)),
     }
 }
 
@@ -117,8 +147,8 @@ pub fn print_state(
     current: &Diagram,
     target: Option<&Diagram>,
     rewrites: &[MatchResult],
+    parallel_rewrites: &[ParallelMatchResult],
     scope: &Complex,
-    // Running proof for completion display (source label, target label, proof label).
     proof: Option<(&str, &str, &str)>,
 ) {
     display.meta(&format!("{:<18}  {}", "[REMAINING SOURCE]", render_diagram(current, scope)));
@@ -127,7 +157,6 @@ pub fn print_state(
     }
     display.blank();
 
-    // `proof` is Some only when target_reached() is true (steps taken + diagrams match).
     if let Some((src_label, tgt_label, proof_label)) = proof {
         display.meta("Rewrite complete.");
         display.blank();
@@ -136,15 +165,31 @@ pub fn print_state(
         return;
     }
 
-    if rewrites.is_empty() {
+    let total = parallel_rewrites.len() + rewrites.len();
+    if total == 0 {
         display.meta("no rewrites available");
         return;
     }
 
     display.meta("rewrites:");
-    for (i, m) in rewrites.iter().enumerate() {
+    let mut idx = 0usize;
+
+    // Parallel families first.
+    for pr in parallel_rewrites {
+        let highlight = render_parallel_match_from_step(&pr.step, scope);
+        let rule_names: Vec<&str> = pr.family.iter()
+            .map(|&i| rewrites[i].rule_name.as_str())
+            .collect();
+        let colored_highlight = display.colorize_match_display(&highlight);
+        display.blank();
+        display.inspect_rich(&format!("  ({idx}) {colored_highlight}"));
+        display.inspect_rich(&format!("      parallel: {}", rule_names.join(", ")));
+        idx += 1;
+    }
+
+    // Individual matches.
+    for m in rewrites {
         let highlight = render_match_from_step(&m.step, scope);
-        // Get the rule's own input/output boundaries from its classifier.
         let n_plus_1 = m.step.top_dim();
         let n = n_plus_1.saturating_sub(1);
         let rule_tag = m.step.labels_at(n_plus_1).and_then(|ls| ls.first());
@@ -161,8 +206,9 @@ pub fn print_state(
         let colored_src = display.paint_source(&rule_src);
         let colored_tgt = display.paint_target(&rule_tgt);
         display.blank();
-        display.inspect_rich(&format!("  ({i}) {colored_highlight}"));
+        display.inspect_rich(&format!("  ({idx}) {colored_highlight}"));
         display.inspect_rich(&format!("      by {} : {} -> {}", m.rule_name, colored_src, colored_tgt));
+        idx += 1;
     }
 }
 

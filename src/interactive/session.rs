@@ -27,7 +27,11 @@ pub struct Move {
     /// This is what is used during replay; `rule_name` is informational only.
     pub choice: usize,
     /// The name of the rule that was applied (for human readability and sanity checking).
+    /// For parallel families, this is a comma-separated list of rule names.
     pub rule_name: String,
+    /// Whether this move was made with parallel mode enabled.
+    #[serde(default)]
+    pub parallel: bool,
 }
 
 impl SessionFile {
@@ -76,8 +80,8 @@ mod tests {
             source_diagram: "d".into(),
             target_diagram: None,
             moves: vec![
-                Move { choice: 0, rule_name: "assoc".into() },
-                Move { choice: 1, rule_name: "unit".into() },
+                Move { choice: 0, rule_name: "assoc".into(), parallel: false },
+                Move { choice: 1, rule_name: "unit".into(), parallel: false },
             ],
         };
         let json = serde_json::to_string_pretty(&s).unwrap();

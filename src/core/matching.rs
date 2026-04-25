@@ -4,12 +4,14 @@
 //! cell, and a target diagram, and returns a list of [`MatchResult`]s — each
 //! containing the step diagram, rule name, and match positions.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use crate::aux::Error;
 use super::complex::Complex;
 use super::diagram::Diagram;
 use super::embeddings::{Embedding, NO_PREIMAGE};
 use super::graph::{self, DiGraph};
+use super::intset;
 use super::ogposet::{self, Sign};
 use super::pushout;
 use super::reconstruct;
@@ -21,6 +23,19 @@ pub struct MatchResult {
     /// Name of the rewrite rule (generator name).
     pub rule_name: String,
     /// Positions of the matched top-dim cells within the target diagram.
+    pub image_positions: Vec<usize>,
+    /// The embedding `pattern → target` from the isomorphism check, retained
+    /// so that parallel rewrite composition can reuse it for iterated pushouts.
+    pub(crate) iso_emb: Embedding,
+}
+
+/// A confirmed parallel rewrite: a compatible family of matches applied simultaneously.
+pub struct ParallelMatchResult {
+    /// The (n+1)-dimensional parallel step diagram (multiple rewrites composed).
+    pub step: Diagram,
+    /// Indices into the individual match list that form this family.
+    pub family: Vec<usize>,
+    /// Union of all family members' matched top-dim positions.
     pub image_positions: Vec<usize>,
 }
 
@@ -159,6 +174,7 @@ pub(crate) fn find_matches_impl(
                     step: diagram,
                     rule_name: rule_name.to_owned(),
                     image_positions,
+                    iso_emb,
                 });
                 if limit.is_some_and(|l| results.len() >= l) { return Ok(results); }
             }
@@ -204,6 +220,7 @@ fn find_matches_dim0(
                 step: diagram,
                 rule_name: rule_name.to_owned(),
                 image_positions: vec![pos],
+                iso_emb: emb,
             });
             if limit.is_some_and(|l| results.len() >= l) { return Ok(results); }
         }
@@ -425,6 +442,143 @@ fn merge_pushout_labels(
     }).collect()
 }
 
+// ---- Parallel rewrite matching ----
+
+/// Extend an embedding `A → B` to `A → B'` where B is a prefix of B'
+/// (i.e. B' has the same cells as B plus additional cells at every dimension).
+/// The forward map is unchanged; the inverse map is padded with NO_PREIMAGE.
+fn rebase_embedding(emb: &Embedding, new_cod: &Arc<ogposet::Ogposet>) -> Embedding {
+    let new_sizes = new_cod.sizes();
+    let inv: Vec<Vec<usize>> = new_sizes.iter().enumerate().map(|(d, &n)| {
+        let mut row = vec![NO_PREIMAGE; n];
+        if let Some(old_row) = emb.inv.get(d) {
+            for (j, &val) in old_row.iter().enumerate() {
+                if j < n { row[j] = val; }
+            }
+        }
+        row
+    }).collect();
+    Embedding::make(Arc::clone(&emb.dom), Arc::clone(new_cod), emb.map.clone(), inv)
+}
+
+/// Construct the parallel rewrite step for a compatible family of matches.
+///
+/// Takes the individual matches (indexed by `family`) and iteratively computes
+/// the colimit of the wide span formed by their embeddings into the target.
+pub(crate) fn construct_parallel_step(
+    complex: &Complex,
+    target: &Diagram,
+    matches: &[MatchResult],
+    family: &[usize],
+    rule_patterns: &HashMap<String, RulePattern>,
+) -> Result<Diagram, Error> {
+    let mut current_tip = Arc::clone(&target.shape);
+    let mut current_labels = target.labels.clone();
+
+    for &idx in family {
+        let m = &matches[idx];
+        let rp = rule_patterns.get(&m.rule_name).ok_or_else(|| {
+            Error::new(format!("rule pattern for '{}' not found", m.rule_name))
+        })?;
+        let rewrite = complex.classifier(&m.rule_name).ok_or_else(|| {
+            Error::new(format!("classifier for '{}' not found", m.rule_name))
+        })?;
+
+        let rebased = rebase_embedding(&m.iso_emb, &current_tip);
+        let pushout::Pushout { tip, inl, inr } =
+            pushout::pushout(&rebased, &rp.pattern_to_rewrite);
+
+        let tip_sizes = tip.sizes();
+        current_labels = merge_pushout_labels(
+            &tip_sizes, &inl, &inr, &current_labels, &rewrite.labels,
+        );
+        current_tip = tip;
+    }
+
+    reconstruct::reconstruct(&current_tip, &current_labels, complex)
+}
+
+/// Find all compatible families of matches (parallel rewrite candidates).
+///
+/// A candidate compatible family is a subset of matches whose `image_positions`
+/// are pairwise disjoint (top-dim cells only; lower-dim boundaries may overlap).
+/// Families are ordered by size descending, then lexicographically on indices.
+///
+/// Each candidate is verified by constructing the iterated pushout and running
+/// reconstruction. If `first_only` is set, returns as soon as the first
+/// compatible family (of size ≥ 2) is found.
+pub(crate) fn find_compatible_families(
+    matches: &[MatchResult],
+    complex: &Complex,
+    target: &Diagram,
+    rule_patterns: &HashMap<String, RulePattern>,
+    first_only: bool,
+) -> Vec<ParallelMatchResult> {
+    let n = matches.len();
+    if n < 2 { return vec![]; }
+
+    // Build conflict relation: matches i,j conflict iff image_positions overlap.
+    let conflicts: Vec<Vec<bool>> = (0..n).map(|i| {
+        (0..n).map(|j| {
+            if i == j { return false; }
+            !intset::is_disjoint(&matches[i].image_positions, &matches[j].image_positions)
+        }).collect()
+    }).collect();
+
+    // Enumerate all independent sets of size >= 2 by backtracking.
+    let mut candidates: Vec<Vec<usize>> = Vec::new();
+    let mut prefix: Vec<usize> = Vec::new();
+    enumerate_independent_sets(&conflicts, n, &mut prefix, 0, &mut candidates);
+
+    // Order: size descending, then lexicographic.
+    candidates.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
+
+    let mut results = Vec::new();
+    for family in &candidates {
+        let image_positions = {
+            let mut all: Vec<usize> = family.iter()
+                .flat_map(|&i| matches[i].image_positions.iter().copied())
+                .collect();
+            all.sort_unstable();
+            all.dedup();
+            all
+        };
+
+        match construct_parallel_step(complex, target, matches, family, rule_patterns) {
+            Ok(step) => {
+                results.push(ParallelMatchResult {
+                    step,
+                    family: family.clone(),
+                    image_positions,
+                });
+                if first_only { return results; }
+            }
+            Err(_) => continue,
+        }
+    }
+
+    results
+}
+
+/// Recursively enumerate independent sets of size >= 2 in the conflict graph.
+fn enumerate_independent_sets(
+    conflicts: &[Vec<bool>],
+    n: usize,
+    prefix: &mut Vec<usize>,
+    start: usize,
+    results: &mut Vec<Vec<usize>>,
+) {
+    for i in start..n {
+        if prefix.iter().any(|&j| conflicts[i][j]) { continue; }
+        prefix.push(i);
+        if prefix.len() >= 2 {
+            results.push(prefix.clone());
+        }
+        enumerate_independent_sets(conflicts, n, prefix, i + 1, results);
+        prefix.pop();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     mod find_matches_tests {
@@ -555,6 +709,85 @@ mod tests {
             assert!(Diagram::isomorphic(&after2, &rhs), "after two rewrites, should reach rhs");
         }
 
+        #[test]
+        fn idem_parallel_in_four_chain() {
+            // idem : id id -> id. In "id id id id" (4 cells), there are 3 matches:
+            //   m0 = [0,1], m1 = [1,2], m2 = [2,3].
+            // Disjoint pairs: {m0, m2} = {[0,1], [2,3]}.
+            // So there should be exactly one compatible family of size 2.
+            use std::collections::HashMap;
+            let (_store, complex) = load_type(&fixture("Idem.ali"), "Idem");
+            let (rewrite, rname) = get_rewrite(&complex, "idem");
+            let rp = super::super::RulePattern::new(&rewrite).unwrap();
+
+            // Build "id id id id" by pasting lhs (id id id) with one more id.
+            let lhs = get_diagram(&complex, "lhs"); // id id id
+            let id_diag = get_diagram(&complex, "id"); // classifier of id: single id cell
+            let target = Diagram::paste(0, &lhs, &id_diag).unwrap(); // id id id id
+
+            let matches = find_matches(&complex, &rewrite, &rp, &target, &rname).unwrap();
+            assert_eq!(matches.len(), 3, "expected 3 individual matches of idem in id id id id");
+
+            // Check the image positions.
+            let positions: Vec<&Vec<usize>> = matches.iter()
+                .map(|m| &m.image_positions)
+                .collect();
+            assert!(positions.contains(&&vec![0, 1]));
+            assert!(positions.contains(&&vec![1, 2]));
+            assert!(positions.contains(&&vec![2, 3]));
+
+            let mut rule_patterns = HashMap::new();
+            rule_patterns.insert(rname.clone(), rp);
+
+            let families = super::super::find_compatible_families(
+                &matches, &complex, &target, &rule_patterns, false,
+            );
+            assert_eq!(families.len(), 1, "expected exactly one compatible family of size 2");
+            let fam = &families[0];
+            assert_eq!(fam.family.len(), 2);
+
+            // The family should be {m0, m2} (positions [0,1] and [2,3]).
+            let fam_positions: Vec<Vec<usize>> = fam.family.iter()
+                .map(|&i| matches[i].image_positions.clone())
+                .collect();
+            assert!(fam_positions.contains(&vec![0, 1]));
+            assert!(fam_positions.contains(&vec![2, 3]));
+
+            // Union of positions should be [0,1,2,3].
+            assert_eq!(fam.image_positions, vec![0, 1, 2, 3]);
+
+            // The parallel step should be (n+1)-dimensional.
+            assert_eq!(fam.step.top_dim(), target.top_dim() + 1);
+
+            // Its target boundary should be "id id" (two applications of idem in parallel).
+            let n = target.top_dim();
+            let after = Diagram::boundary(Sign::Target, n, &fam.step).unwrap();
+            let id_id = Diagram::paste(0, &id_diag, &id_diag).unwrap();
+            assert!(Diagram::isomorphic(&after, &id_id),
+                "parallel application of two idem to id id id id should yield id id");
+        }
+
+        #[test]
+        fn idem_no_parallel_in_three_chain() {
+            // In "id id id" (3 cells), matches are at [0,1] and [1,2].
+            // These overlap, so no compatible family of size >= 2.
+            use std::collections::HashMap;
+            let (_store, complex) = load_type(&fixture("Idem.ali"), "Idem");
+            let (rewrite, rname) = get_rewrite(&complex, "idem");
+            let rp = super::super::RulePattern::new(&rewrite).unwrap();
+            let target = get_diagram(&complex, "lhs"); // id id id
+
+            let matches = find_matches(&complex, &rewrite, &rp, &target, &rname).unwrap();
+            assert_eq!(matches.len(), 2);
+
+            let mut rule_patterns = HashMap::new();
+            rule_patterns.insert(rname.clone(), rp);
+
+            let families = super::super::find_compatible_families(
+                &matches, &complex, &target, &rule_patterns, false,
+            );
+            assert!(families.is_empty(), "no compatible families when matches overlap");
+        }
 
     }
 }

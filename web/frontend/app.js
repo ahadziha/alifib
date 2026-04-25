@@ -874,7 +874,7 @@ async function handleCommand(raw) {
     const rendered = renderCommandResult(cmd, result.data);
     appendReplEntry(raw, rendered);
     // Only update the session diagram display for state-changing commands.
-    const stateCommands = ['apply', 'a', 'auto', 'undo', 'u', 'restart', 'show', 'status', 'store'];
+    const stateCommands = ['apply', 'a', 'auto', 'undo', 'u', 'restart', 'show', 'status', 'store', 'parallel'];
     if (stateCommands.includes(cmd)) {
       await updateVisInfo(result.data);
     }
@@ -924,6 +924,11 @@ function buildCommand(cmd, arg, raw) {
     case 'store':
       if (!arg) { appendReplEntry(raw, formatError('usage: store <name>')); return null; }
       return JSON.stringify({ command: 'store', name: arg });
+    case 'parallel':
+      if (arg === 'on')  return JSON.stringify({ command: 'parallel', on: true });
+      if (arg === 'off') return JSON.stringify({ command: 'parallel', on: false });
+      appendReplEntry(raw, formatError('usage: parallel on|off'));
+      return null;
     default:
       appendReplEntry(raw, formatError(`unknown command '${cmd}' — type help for commands`));
       return null;
@@ -971,11 +976,17 @@ function renderState(data) {
       (reached ? ' ' + ok('✓ reached') : ''));
   }
 
+  if (data.parallel) out.push(dim('parallel mode: on'));
+
   if (data.rewrites && data.rewrites.length > 0) {
     out.push('');
     out.push(sec('available rewrites:'));
     data.rewrites.forEach(r => {
-      out.push(`  [${hi(r.index)}] ${hi(r.rule_name)}  ${src(r.source.label)} → ${tgt(r.target.label)}`);
+      const isFamily = r.family && r.family.length > 0;
+      const label = isFamily
+        ? `${hi(r.rule_name)}  (parallel ×${r.family.length})`
+        : `${hi(r.rule_name)}  ${src(r.source.label)} → ${tgt(r.target.label)}`;
+      out.push(`  [${hi(r.index)}] ${label}`);
       if (r.match_display) {
         const highlighted = esc(r.match_display).replace(/\[([^\]]*)\]/g,
           '<span class="repl-src">$1</span>');
@@ -1183,6 +1194,7 @@ const HELP_TEXT = `Commands:
   type <name>      inspect a type
   homology <name>  compute cellular homology of a type
   store <name>     store the current proof as a named diagram
+  parallel on/off  toggle parallel rewrite matching
   help / ?         show this message
 
 Keyboard: ↑/↓ navigate history · Ctrl+Enter evaluate file`;
@@ -1731,13 +1743,16 @@ function buildRewriteList(rewrites) {
 
     const matchHtml = formatRewriteMatch(r.match_display);
 
+    const isFamily = r.family && r.family.length > 0;
     const content = document.createElement('span');
     content.className = 'rw-content';
     content.innerHTML = `<span class="rw-index">${r.index}</span>`
-      + `<span class="rw-name">${esc(r.rule_name)}</span> `
-      + `<span class="rw-src">${esc(r.source.label)}</span>`
-      + `<span class="rw-arrow"> → </span>`
-      + `<span class="rw-tgt">${esc(r.target.label)}</span>`
+      + (isFamily
+        ? `<span class="rw-name">${esc(r.rule_name)}</span> <span class="rw-parallel-badge">parallel ×${r.family.length}</span>`
+        : `<span class="rw-name">${esc(r.rule_name)}</span> `
+          + `<span class="rw-src">${esc(r.source.label)}</span>`
+          + `<span class="rw-arrow"> → </span>`
+          + `<span class="rw-tgt">${esc(r.target.label)}</span>`)
       + `<span class="rw-match-sep"> &nbsp; </span>`
       + `<span class="rw-match">${matchHtml}</span>`;
     row.appendChild(content);

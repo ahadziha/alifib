@@ -278,13 +278,22 @@ impl WebRepl {
     /// Return the string diagram for the target of rewrite `choice`.
     ///
     /// This is the diagram that would result from applying the given rewrite.
+    /// `choice` indexes into the combined list: parallel families first, then
+    /// individual matches.
     pub fn get_rewrite_preview_strdiag(&self, choice: usize) -> String {
         self.need_engine(|e| {
-            let rewrites = e.available_rewrites();
-            let Some(m) = rewrites.get(choice) else {
+            let par = e.parallel_rewrites();
+            let ind = e.available_rewrites();
+            let total = par.len() + ind.len();
+            if choice >= total {
                 return err_json(&format!("choice {} out of range", choice));
+            }
+            let step = if choice < par.len() {
+                &par[choice].step
+            } else {
+                &ind[choice - par.len()].step
             };
-            match step_target_strdiag_json(&m.step, e.type_complex()) {
+            match step_target_strdiag_json(step, e.type_complex()) {
                 Ok(data) => ok_json(data),
                 Err(msg) => err_json(&msg),
             }

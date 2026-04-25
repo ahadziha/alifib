@@ -583,6 +583,7 @@ fn show_state(engine: &RewriteEngine, display: &Display) {
         engine.current_diagram(),
         engine.target_diagram(),
         engine.available_rewrites(),
+        engine.parallel_rewrites(),
         engine.type_complex(),
         proof,
     );
@@ -906,6 +907,15 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
                 }
             }
         }
+        Cmd::Parallel(on) => {
+            match engine.set_parallel(on) {
+                Ok(()) => {
+                    display.meta(&format!("Parallel mode {}.", if on { "on" } else { "off" }));
+                    show_state(engine, display);
+                }
+                Err(e) => display.error(&e),
+            }
+        }
         Cmd::Help => print_help(display),
         Cmd::Quit => {}   // handled by caller
         // These are all handled before dispatch_engine_cmd is reached
@@ -934,6 +944,7 @@ fn print_help(display: &Display) {
          Rewriting commands (require active session):\n\
          \x20 apply <n>        Apply rewrite at index <n>            (alias: a)\n\
          \x20 auto <n>         Apply up to <n> rewrites, always picking index 0\n\
+         \x20 parallel on/off  Toggle parallel rewrite mode\n\
          \x20 undo             Undo the last step                    (alias: u)\n\
          \x20 undo <n>         Undo back to step <n>\n\
          \x20 undo all         Reset to source diagram               (= restart)\n\
@@ -991,6 +1002,8 @@ enum Cmd {
     Load(String),
     /// `homology <name>` — compute cellular homology of a type.
     Homology(String),
+    /// `parallel on` / `parallel off` — toggle parallel rewrite mode.
+    Parallel(bool),
     Help,
     Quit,
     /// Unrecognised command word.
@@ -1075,6 +1088,13 @@ fn parse_command(line: &str) -> Cmd {
         "load" | "l" => {
             if rest.is_empty() { Cmd::UsageError("load <path>".to_owned()) }
             else { Cmd::Load(rest.to_owned()) }
+        }
+        "parallel" => {
+            match rest {
+                "on" => Cmd::Parallel(true),
+                "off" => Cmd::Parallel(false),
+                _ => Cmd::UsageError("parallel on  |  parallel off".to_owned()),
+            }
         }
         "help" | "?" => Cmd::Help,
         "quit" | "exit" | "q" => Cmd::Quit,
