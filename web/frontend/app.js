@@ -927,7 +927,8 @@ function buildCommand(cmd, arg, raw) {
     case 'parallel':
       if (arg === 'on')  return JSON.stringify({ command: 'parallel', on: true });
       if (arg === 'off') return JSON.stringify({ command: 'parallel', on: false });
-      appendReplEntry(raw, formatError('usage: parallel on|off'));
+      if (!arg)          return JSON.stringify({ command: 'show' });
+      appendReplEntry(raw, formatError('usage: parallel [on|off]'));
       return null;
     default:
       appendReplEntry(raw, formatError(`unknown command '${cmd}' — type help for commands`));
@@ -948,6 +949,7 @@ function renderCommandResult(cmd, data) {
     case 'store':          return renderStore(data);
     case 'homology':       return renderHomology(data);
     case 'auto':           return renderAuto(data);
+    case 'parallel':       return dim('parallel mode: ' + (data.parallel ? 'on' : 'off'));
     default:               return renderState(data);
   }
 }
@@ -1192,7 +1194,7 @@ const HELP_TEXT = `Commands:
   type <name>      inspect a type
   homology <name>  compute cellular homology of a type
   store <name>     store the current proof as a named diagram
-  parallel on/off  toggle parallel rewrite matching
+  parallel [on|off] show or toggle parallel rewrite mode  (default: on)
   help / ?         show this message
 
 Keyboard: ↑/↓ navigate history · Ctrl+Enter evaluate file`;
