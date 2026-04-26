@@ -435,26 +435,30 @@ fn check_match_isomorphism(
 
 /// Construct the rewrite step for a compatible family of matches.
 ///
+/// Each element of `match_data` is a `(rule_name, iso_emb)` pair — borrowed
+/// from either `CandidateMatch` or `FamilyMember`, so no cloning is needed
+/// in the hot path.
+///
 /// Delegates the ogposet-level colimit to [`pushout::multi_pushout`], then
 /// merges labels from the target and rewrite diagrams. For singleton families,
 /// this is equivalent to a single pushout.
 fn construct_parallel_step(
     complex: &Complex,
     target: &Diagram,
-    members: &[FamilyMember],
+    match_data: &[(&str, &Embedding)],
     rule_patterns: &HashMap<String, RulePattern>,
 ) -> Result<Diagram, Error> {
-    let mut rewrites: Vec<&Diagram> = Vec::with_capacity(members.len());
-    let mut spans: Vec<pushout::Span> = Vec::with_capacity(members.len());
-    for m in members {
-        let rp = rule_patterns.get(&m.rule_name).ok_or_else(|| {
-            Error::new(format!("rule pattern for '{}' not found", m.rule_name))
+    let mut rewrites: Vec<&Diagram> = Vec::with_capacity(match_data.len());
+    let mut spans: Vec<pushout::Span> = Vec::with_capacity(match_data.len());
+    for &(rule_name, iso_emb) in match_data {
+        let rp = rule_patterns.get(rule_name).ok_or_else(|| {
+            Error::new(format!("rule pattern for '{}' not found", rule_name))
         })?;
-        let rewrite = complex.classifier(&m.rule_name).ok_or_else(|| {
-            Error::new(format!("classifier for '{}' not found", m.rule_name))
+        let rewrite = complex.classifier(rule_name).ok_or_else(|| {
+            Error::new(format!("classifier for '{}' not found", rule_name))
         })?;
         spans.push(pushout::Span {
-            into_base: &m.iso_emb,
+            into_base: iso_emb,
             into_ext: &rp.pattern_to_rewrite,
         });
         rewrites.push(rewrite);
@@ -555,12 +559,27 @@ fn try_family(
     rule_patterns: &HashMap<String, RulePattern>,
     family: &[usize],
 ) -> Option<MatchResult> {
+    let match_data: Vec<(&str, &Embedding)> = family.iter()
+        .map(|&i| (matches[i].rule_name.as_str(), &matches[i].iso_emb))
+        .collect();
+    let step = match construct_parallel_step(complex, target, &match_data, rule_patterns) {
+        Ok(s) => s,
+        Err(_) => return None,
+    };
     let members: Vec<FamilyMember> = family.iter().map(|&i| FamilyMember {
         rule_name: matches[i].rule_name.clone(),
         match_positions: matches[i].image_positions.clone(),
         iso_emb: matches[i].iso_emb.clone(),
     }).collect();
-    try_family_from_members(members, complex, target, rule_patterns)
+    let image_positions = {
+        let mut all: Vec<usize> = members.iter()
+            .flat_map(|m| m.match_positions.iter().copied())
+            .collect();
+        all.sort_unstable();
+        all.dedup();
+        all
+    };
+    Some(MatchResult { step, members, image_positions })
 }
 
 /// Try to construct a parallel rewrite step from pre-built family members.
@@ -570,6 +589,13 @@ pub(crate) fn try_family_from_members(
     target: &Diagram,
     rule_patterns: &HashMap<String, RulePattern>,
 ) -> Option<MatchResult> {
+    let match_data: Vec<(&str, &Embedding)> = members.iter()
+        .map(|m| (m.rule_name.as_str(), &m.iso_emb))
+        .collect();
+    let step = match construct_parallel_step(complex, target, &match_data, rule_patterns) {
+        Ok(s) => s,
+        Err(_) => return None,
+    };
     let image_positions = {
         let mut all: Vec<usize> = members.iter()
             .flat_map(|m| m.match_positions.iter().copied())
@@ -578,14 +604,7 @@ pub(crate) fn try_family_from_members(
         all.dedup();
         all
     };
-    match construct_parallel_step(complex, target, &members, rule_patterns) {
-        Ok(step) => Some(MatchResult {
-            step,
-            members,
-            image_positions,
-        }),
-        Err(_) => None,
-    }
+    Some(MatchResult { step, members, image_positions })
 }
 
 /// Iterate over all rules and their candidates (no position filter).
