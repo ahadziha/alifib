@@ -1,9 +1,11 @@
 //! Subdiagram matching: find rewrite applications of rules inside a target.
 //!
-//! The shared primitive is [`for_each_candidate`], which lazily iterates
-//! candidate matches for a single rule.  Candidates are confirmed (pushout +
-//! reconstruct) via [`confirm_candidate`], or grouped into maximal compatible
-//! families via [`find_compatible_families`].
+//! Target-side flow data ([`TargetFlowData`]) is computed once per diagram and
+//! reused across all rules.  The shared per-rule primitive is
+//! [`for_each_candidate_in_rule`], which lazily iterates candidate matches.
+//! Candidates are confirmed (pushout + reconstruct) via [`confirm_candidate`],
+//! or grouped into compatible families via [`find_compatible_families`] /
+//! [`build_greedy_family`].
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -83,6 +85,29 @@ impl RulePattern {
     }
 }
 
+/// Precomputed target-side flow graph data.
+///
+/// Building the flow graph is the most expensive per-step overhead in matching.
+/// This struct is computed once per target diagram and reused across all rules,
+/// eliminating redundant recomputation.
+struct TargetFlowData<'a> {
+    flow: DiGraph,
+    node_map: Vec<(usize, usize)>,
+    labels: Vec<&'a crate::aux::Tag>,
+}
+
+impl<'a> TargetFlowData<'a> {
+    fn new(target: &'a Diagram) -> Option<Self> {
+        let n = target.top_dim();
+        if n == 0 { return None; }
+        let (flow, node_map) = graph::flow_graph(&target.shape, n - 1);
+        let labels = node_map.iter()
+            .map(|&(dim, pos)| &target.labels[dim][pos])
+            .collect();
+        Some(Self { flow, node_map, labels })
+    }
+}
+
 /// Find and confirm all rewrite applications of `rewrite` inside `target`.
 ///
 /// Goes through the production confirmation path (`confirm_candidate` →
@@ -124,56 +149,44 @@ pub(crate) fn confirm_candidate(
     try_family(std::slice::from_ref(cand), complex, target, rule_patterns, &[0])
 }
 
-/// Iterate over candidate matches for a single rule, calling `f` for each.
-/// Stops early if `f` returns `true`. Returns whether the callback stopped early.
+/// Iterate candidate matches for a single rule, using precomputed target flow data.
 ///
-/// Only flow matches whose `image_positions` are disjoint from `occupied` get
-/// their (expensive) isomorphism check.  Others are silently skipped.
-fn for_each_candidate_disjoint<F>(
-    rewrite: &Diagram,
+/// Only candidates whose `image_positions` are disjoint from `occupied` get
+/// their (expensive) isomorphism check.  Stops early if `f` returns `true`.
+fn for_each_candidate_in_rule<F>(
     rule: &RulePattern,
-    target: &Diagram,
     rule_name: &str,
+    target: &Diagram,
+    target_flow: Option<&TargetFlowData>,
     occupied: &intset::IntSet,
-    mut f: F,
+    f: &mut F,
 ) -> Result<bool, Error>
 where
     F: FnMut(CandidateMatch) -> bool,
 {
     let n = target.top_dim();
-    if rewrite.top_dim() != n + 1 {
-        return Err(Error::new(format!(
-            "find_matches: rewrite dim {} != target dim {} + 1",
-            rewrite.top_dim(), n,
-        )));
-    }
-
     let pattern = &rule.pattern;
+
+    if n == 0 {
+        return for_each_candidate_dim0(rule, target, rule_name, occupied, f);
+    }
 
     if pattern.top_dim() != n {
         return Err(Error::new("find_matches: pattern dimension mismatch"));
     }
 
-    if n == 0 {
-        return for_each_candidate_dim0(rule, target, rule_name, occupied, &mut f);
-    }
+    let tfd = target_flow.expect("TargetFlowData required for n > 0");
 
-    let k = n - 1;
-    let (p_flow, p_node_map) = graph::flow_graph(&pattern.shape, k);
-    let (t_flow, t_node_map) = graph::flow_graph(&target.shape, k);
-
+    let (p_flow, p_node_map) = graph::flow_graph(&pattern.shape, n - 1);
     let p_labels: Vec<&crate::aux::Tag> = p_node_map.iter()
         .map(|&(dim, pos)| &pattern.labels[dim][pos])
         .collect();
-    let t_labels: Vec<&crate::aux::Tag> = t_node_map.iter()
-        .map(|&(dim, pos)| &target.labels[dim][pos])
-        .collect();
 
-    let flow_matches = find_path_induced_matches(&p_flow, &t_flow, &p_labels, &t_labels);
+    let flow_matches = find_path_induced_matches(&p_flow, &tfd.flow, &p_labels, &tfd.labels);
 
     for vertex_match in &flow_matches {
         let matched_cells: Vec<(usize, usize)> = vertex_match.iter()
-            .map(|&ti| t_node_map[ti])
+            .map(|&ti| tfd.node_map[ti])
             .collect();
 
         let mut image_positions: Vec<usize> = matched_cells.iter()
@@ -210,12 +223,20 @@ pub(crate) fn for_each_candidate<F>(
     rule: &RulePattern,
     target: &Diagram,
     rule_name: &str,
-    f: F,
+    mut f: F,
 ) -> Result<bool, Error>
 where
     F: FnMut(CandidateMatch) -> bool,
 {
-    for_each_candidate_disjoint(rewrite, rule, target, rule_name, &Vec::new(), f)
+    let n = target.top_dim();
+    if rewrite.top_dim() != n + 1 {
+        return Err(Error::new(format!(
+            "find_matches: rewrite dim {} != target dim {} + 1",
+            rewrite.top_dim(), n,
+        )));
+    }
+    let target_flow = TargetFlowData::new(target);
+    for_each_candidate_in_rule(rule, rule_name, target, target_flow.as_ref(), &Vec::new(), &mut f)
 }
 
 fn for_each_candidate_dim0<F>(
@@ -607,36 +628,24 @@ pub(crate) fn try_family_from_members(
     Some(MatchResult { step, members, image_positions })
 }
 
-/// Iterate over all rules and their candidates (no position filter).
+/// Iterate over all rules' candidates, computing target flow data once.
 pub(crate) fn for_each_rule_candidate<F>(
     type_complex: &Complex,
     rule_patterns: &HashMap<String, RulePattern>,
     current: &Diagram,
-    f: F,
-) -> Result<bool, String>
-where
-    F: FnMut(CandidateMatch) -> bool,
-{
-    for_each_rule_candidate_disjoint(type_complex, rule_patterns, current, &Vec::new(), f)
-}
-
-/// Iterate over all rules' candidates whose positions are disjoint from `occupied`.
-fn for_each_rule_candidate_disjoint<F>(
-    type_complex: &Complex,
-    rule_patterns: &HashMap<String, RulePattern>,
-    current: &Diagram,
-    occupied: &intset::IntSet,
     mut f: F,
 ) -> Result<bool, String>
 where
     F: FnMut(CandidateMatch) -> bool,
 {
+    let target_flow = TargetFlowData::new(current);
     let n = current.top_dim();
+    let empty = Vec::new();
     for (name, _tag, dim) in type_complex.generators_iter() {
         if dim != n + 1 { continue; }
-        let Some(rewrite) = type_complex.classifier(name) else { continue; };
+        if type_complex.classifier(name).is_none() { continue; }
         let Some(rp) = rule_patterns.get(name) else { continue; };
-        if for_each_candidate_disjoint(rewrite, rp, current, name, occupied, &mut f)
+        if for_each_candidate_in_rule(rp, name, current, target_flow.as_ref(), &empty, &mut f)
             .map_err(|e| format!("failed to match rule '{}': {}", name, e))?
         {
             return Ok(true);
@@ -649,10 +658,10 @@ where
 
 /// Build a greedy candidate family in a single pass over all rules.
 ///
-/// Iterates every rule once, computing each flow graph once.  Within each
-/// rule's flow matches, candidates whose `image_positions` are disjoint from
-/// the (growing) `positions` set get an isomorphism check; accepted candidates
-/// are added to the family and their positions merged into the set.
+/// Uses [`for_each_candidate_in_rule`] with the same precomputed target flow
+/// data as the non-greedy path.  After each rule's candidates are enumerated,
+/// a greedy pass selects mutually disjoint ones and merges their positions into
+/// the occupied set before moving to the next rule.
 fn build_greedy_family(
     type_complex: &Complex,
     rule_patterns: &HashMap<String, RulePattern>,
@@ -661,84 +670,27 @@ fn build_greedy_family(
 ) -> Result<(Vec<CandidateMatch>, intset::IntSet), String> {
     let mut family: Vec<CandidateMatch> = Vec::new();
     let mut positions = occupied.clone();
+    let target_flow = TargetFlowData::new(current);
     let n = current.top_dim();
-
-    if n == 0 {
-        let tgt_sizes = current.shape.sizes();
-        if tgt_sizes.is_empty() { return Ok((family, positions)); }
-        for (name, _tag, dim) in type_complex.generators_iter() {
-            if dim != 1 { continue; }
-            let Some(rp) = rule_patterns.get(name) else { continue; };
-            let pattern = &rp.pattern;
-            let pat_sizes = pattern.shape.sizes();
-            if pat_sizes.is_empty() || pat_sizes[0] != 1 { continue; }
-            let pat_tag = &pattern.labels[0][0];
-            for pos in 0..tgt_sizes[0] {
-                if &current.labels[0][pos] != pat_tag { continue; }
-                if !intset::is_disjoint(&[pos], &positions) { continue; }
-                let map = vec![vec![pos]];
-                let mut inv = vec![vec![NO_PREIMAGE; tgt_sizes[0]]];
-                inv[0][pos] = 0;
-                let emb = Embedding::make(
-                    Arc::clone(&pattern.shape), Arc::clone(&current.shape), map, inv,
-                );
-                positions = intset::union(&positions, &vec![pos]);
-                family.push(CandidateMatch {
-                    rule_name: name.to_owned(),
-                    image_positions: vec![pos],
-                    iso_emb: emb,
-                });
-            }
-        }
-        return Ok((family, positions));
-    }
-
-    let k = n - 1;
-    let (t_flow, t_node_map) = graph::flow_graph(&current.shape, k);
-    let t_labels: Vec<&crate::aux::Tag> = t_node_map.iter()
-        .map(|&(dim, pos)| &current.labels[dim][pos])
-        .collect();
 
     for (name, _tag, dim) in type_complex.generators_iter() {
         if dim != n + 1 { continue; }
         if type_complex.classifier(name).is_none() { continue; }
         let Some(rp) = rule_patterns.get(name) else { continue; };
-        let pattern = &rp.pattern;
-        if pattern.top_dim() != n { continue; }
 
-        let (p_flow, p_node_map) = graph::flow_graph(&pattern.shape, k);
-        let p_labels: Vec<&crate::aux::Tag> = p_node_map.iter()
-            .map(|&(dim, pos)| &pattern.labels[dim][pos])
-            .collect();
+        let mut rule_candidates = Vec::new();
+        for_each_candidate_in_rule(
+            rp, name, current, target_flow.as_ref(), &positions, &mut |cand| {
+                rule_candidates.push(cand);
+                false
+            },
+        ).map_err(|e| format!("failed to match rule '{}': {}", name, e))?;
 
-        let flow_matches = find_path_induced_matches(&p_flow, &t_flow, &p_labels, &t_labels);
-
-        for vertex_match in &flow_matches {
-            let matched_cells: Vec<(usize, usize)> = vertex_match.iter()
-                .map(|&ti| t_node_map[ti])
-                .collect();
-
-            let mut image_positions: Vec<usize> = matched_cells.iter()
-                .filter(|(d, _)| *d == n)
-                .map(|(_, pos)| *pos)
-                .collect();
-            image_positions.sort_unstable();
-
-            if !intset::is_disjoint(&image_positions, &positions) {
-                continue;
+        for cand in rule_candidates {
+            if intset::is_disjoint(&cand.image_positions, &positions) {
+                positions = intset::union(&positions, &cand.image_positions);
+                family.push(cand);
             }
-
-            let iso_emb = match check_match_isomorphism(pattern, current, &matched_cells) {
-                Some(e) => e,
-                None => continue,
-            };
-
-            positions = intset::union(&positions, &image_positions);
-            family.push(CandidateMatch {
-                rule_name: name.to_owned(),
-                image_positions,
-                iso_emb,
-            });
         }
     }
 
