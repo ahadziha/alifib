@@ -1702,6 +1702,9 @@ async function showSessionDiagram(data) {
   resizeAndRender();
 
   // Build rewrite list.
+  bunchedIndices = [];
+  bunchPositions = new Set();
+  lastParallelMode = !!data.parallel;
   buildRewriteList(data.rewrites || []);
   syncAnalysisLayout();
 }
@@ -1715,7 +1718,67 @@ function buildRewriteList(rewrites) {
   }
   rewriteList.hidden = false;
 
+  const inBunchMode = bunchedIndices.length > 0;
+
+  // Bunch card at top when bunching is active.
+  if (inBunchMode) {
+    const bunchCard = document.createElement('div');
+    bunchCard.className = 'rewrite-row rewrite-row--bunch';
+
+    const content = document.createElement('span');
+    content.className = 'rw-content';
+    const names = bunchedIndices.map(idx => {
+      const r = rewrites.find(rw => rw.index === idx);
+      return r ? esc(r.rule_name) : String(idx);
+    });
+    content.innerHTML = `<span class="rw-bunch-label">parallel</span>`
+      + `<span class="rw-name">${names.join(', ')}</span>`;
+    bunchCard.appendChild(content);
+
+    const actions = document.createElement('span');
+    actions.className = 'rewrite-actions rewrite-actions--bunch';
+    const btnUnbunch = document.createElement('button');
+    btnUnbunch.className = 'rw-btn-unbunch';
+    btnUnbunch.textContent = 'Unbunch';
+    btnUnbunch.addEventListener('click', (e) => {
+      e.stopPropagation();
+      bunchedIndices = [];
+      bunchPositions = new Set();
+      buildRewriteList(lastRewriteData);
+    });
+    actions.appendChild(btnUnbunch);
+    bunchCard.appendChild(actions);
+
+    bunchCard.addEventListener('click', () => { void applyBunch(); });
+
+    // Hover: highlight union of all bunched positions.
+    bunchCard.addEventListener('mouseenter', () => {
+      if (previewActive) return;
+      selectedRewrite = -1;
+      if (currentLayout) {
+        currentLayout._highlightPositions = [...bunchPositions];
+        resizeAndRender();
+      }
+    });
+    bunchCard.addEventListener('mouseleave', () => {
+      if (previewActive) return;
+      selectedRewrite = null;
+      if (currentLayout) {
+        currentLayout._highlightPositions = null;
+        resizeAndRender();
+      }
+    });
+
+    rewriteList.appendChild(bunchCard);
+  }
+
   rewrites.forEach((r, i) => {
+    // In bunch mode, hide overlapping and already-bunched rewrites.
+    if (inBunchMode) {
+      if (bunchedIndices.includes(r.index)) return;
+      if (r.match_positions && r.match_positions.some(p => bunchPositions.has(p))) return;
+    }
+
     const row = document.createElement('div');
     row.className = 'rewrite-row';
 
@@ -1730,6 +1793,21 @@ function buildRewriteList(rewrites) {
     // Build action buttons (always present, shown on hover via CSS).
     const actions = document.createElement('span');
     actions.className = 'rewrite-actions';
+
+    // Bunch button (only when parallel mode is on and not already in bunch mode
+    // where clicking adds automatically).
+    if (lastParallelMode && !inBunchMode) {
+      const btnBunch = document.createElement('button');
+      btnBunch.className = 'rw-btn-bunch';
+      btnBunch.textContent = 'Bunch';
+      btnBunch.addEventListener('click', (e) => {
+        e.stopPropagation();
+        bunchedIndices = [r.index];
+        bunchPositions = new Set(r.match_positions || []);
+        buildRewriteList(lastRewriteData);
+      });
+      actions.appendChild(btnBunch);
+    }
 
     const btnPreview = document.createElement('button');
     btnPreview.className = 'rw-btn-preview';
@@ -1751,8 +1829,16 @@ function buildRewriteList(rewrites) {
     actions.appendChild(btnPreview);
     row.appendChild(actions);
 
-    // Click anywhere on row (except Preview) applies the rewrite.
-    row.addEventListener('click', () => { void applyRewrite(i); });
+    // Click: in bunch mode, add to bunch. Otherwise apply.
+    if (inBunchMode) {
+      row.addEventListener('click', () => {
+        bunchedIndices.push(r.index);
+        for (const p of (r.match_positions || [])) bunchPositions.add(p);
+        buildRewriteList(lastRewriteData);
+      });
+    } else {
+      row.addEventListener('click', () => { void applyRewrite(i); });
+    }
 
     // Hover: highlight match positions.
     row.addEventListener('mouseenter', () => {
@@ -1829,8 +1915,29 @@ async function applyRewrite(choice) {
   await showSessionDiagram(result.data);
 }
 
+async function applyBunch() {
+  if (!bunchedIndices.length) return;
+  const json = JSON.stringify({ command: 'step_multi', choices: bunchedIndices });
+  const result = await parseReplResponse(repl.run_command(json));
+  if (result.status === 'error') {
+    appendReplMsg('Parallel apply error: ' + result.message, 'repl-result err');
+    return;
+  }
+  appendReplEntry(`apply ${bunchedIndices.join(' ')}`, renderState(result.data));
+  bunchedIndices = [];
+  bunchPositions = new Set();
+  selectedRewrite = null;
+  previewActive = false;
+  await showSessionDiagram(result.data);
+}
+
 // Store last rewrite data for re-highlighting after preview ends.
 let lastRewriteData = null;
+let lastParallelMode = false;
+
+// Bunch state: indices into the rewrites list that have been bunched.
+let bunchedIndices = [];
+let bunchPositions = new Set();
 
 // ── String diagram visualisation ─────────────────────────────────────────────
 

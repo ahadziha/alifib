@@ -530,12 +530,33 @@ header {
   font-family: var(--font-ui);
   cursor: pointer;
 }
-.rw-btn-preview {
+.rw-btn-preview, .rw-btn-bunch {
   background: var(--border);
   color: var(--text);
 }
-.rw-btn-preview:hover { background: var(--accent); color: #fff; }
-.rw-btn-preview:active { background: var(--accent); color: #fff; }
+.rw-btn-preview:hover, .rw-btn-bunch:hover { background: var(--accent); color: #fff; }
+.rw-btn-preview:active, .rw-btn-bunch:active { background: var(--accent); color: #fff; }
+
+/* Bunch card */
+.rewrite-row--bunch {
+  background: rgba(124, 106, 242, 0.12);
+  border-left: 3px solid var(--accent);
+  padding-left: 9px;
+  margin-bottom: 4px;
+}
+.rewrite-row--bunch:hover { background: rgba(124, 106, 242, 0.20); }
+.rewrite-actions--bunch { visibility: visible; }
+.rw-bunch-label {
+  color: var(--accent);
+  font-weight: 600;
+  min-width: 24px;
+}
+.rw-btn-unbunch {
+  background: var(--border);
+  color: var(--text);
+}
+.rw-btn-unbunch:hover { background: #c44; color: #fff; }
+.rw-btn-unbunch:active { background: #c44; color: #fff; }
 
 /* ── Selected accordion item ── */
 .acc-leaf--selected {
