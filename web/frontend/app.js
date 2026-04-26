@@ -976,8 +976,6 @@ function renderState(data) {
       (reached ? ' ' + ok('✓ reached') : ''));
   }
 
-  if (data.parallel) out.push(dim('parallel mode: on'));
-
   if (data.rewrites && data.rewrites.length > 0) {
     out.push('');
     out.push(sec('available rewrites:'));
