@@ -31,6 +31,10 @@ pub struct Move {
     /// The name of the rule that was applied (for human readability and sanity checking).
     /// For parallel families, this is a comma-separated list of rule names.
     pub rule_name: String,
+    /// Indices into the rewrites list for manual parallel apply.
+    /// `None` for single apply (use `choice`) and auto parallel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub choices: Option<Vec<usize>>,
     /// Whether this move was made with parallel mode enabled.
     #[serde(default)]
     pub parallel: bool,
@@ -82,8 +86,8 @@ mod tests {
             source_diagram: "d".into(),
             target_diagram: None,
             moves: vec![
-                Move { choice: Some(0), rule_name: "assoc".into(), parallel: false },
-                Move { choice: Some(1), rule_name: "unit".into(), parallel: false },
+                Move { choice: Some(0), choices: None, rule_name: "assoc".into(), parallel: false },
+                Move { choice: Some(1), choices: None, rule_name: "unit".into(), parallel: false },
             ],
         };
         let json = serde_json::to_string_pretty(&s).unwrap();

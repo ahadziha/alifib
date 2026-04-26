@@ -900,9 +900,13 @@ function buildCommand(cmd, arg, raw) {
       return '{"command":"undo"}';
     case 'apply':
     case 'a': {
-      const n = parseInt(arg, 10);
-      if (isNaN(n)) { appendReplEntry(raw, formatError('usage: apply <n>')); return null; }
-      return JSON.stringify({ command: 'step', choice: n });
+      const nums = arg.trim().split(/\s+/).map(s => parseInt(s, 10));
+      if (nums.length === 0 || nums.some(isNaN)) {
+        appendReplEntry(raw, formatError('usage: apply <n> [<n2> ...]'));
+        return null;
+      }
+      if (nums.length === 1) return JSON.stringify({ command: 'step', choice: nums[0] });
+      return JSON.stringify({ command: 'step_multi', choices: nums });
     }
     case 'auto': {
       const n = parseInt(arg, 10);
@@ -1065,7 +1069,7 @@ function renderHomology(data) {
 function renderHistory(hist) {
   if (!hist || !hist.length) return dim('(no moves yet)');
   return hist.map(h =>
-    `  ${dim(h.step + '.')} ${hi(h.rule_name)} ${dim(h.choice == null ? '[parallel]' : '[choice ' + h.choice + ']')}`
+    `  ${dim(h.step + '.')} ${hi(h.rule_name)} ${dim(h.choice == null ? '[parallel]' : '[choice ' + h.choice.join(', ') + ']')}`
   ).join('\n');
 }
 
@@ -1181,21 +1185,21 @@ btnClear.addEventListener('click', () => {
 });
 
 const HELP_TEXT = `Commands:
-  apply <n> (a)    apply rewrite choice n
-  auto <n>         apply up to n rewrites, always picking choice 0
-  undo (u)         undo last step
-  undo <n>         undo back to step n
-  undo all         undo all steps
-  restart          same as undo all
-  show / status    show current state
-  rules (r)        list all rewrite rules
-  history (h)      show move history
-  types            list all types in the file
-  type <name>      inspect a type
-  homology <name>  compute cellular homology of a type
-  store <name>     store the current proof as a named diagram
-  parallel [on|off] show or toggle parallel rewrite mode  (default: on)
-  help / ?         show this message
+  apply <n> [<n2>..]  apply rewrite(s) at given indices     (alias: a)
+  auto <n>            apply up to n rewrites automatically
+  parallel [on|off]   show or toggle parallel rewrite mode  (default: on)
+  undo (u)            undo last step
+  undo <n>            undo back to step n
+  undo all            undo all steps
+  restart             same as undo all
+  show / status       show current state
+  rules (r)           list all rewrite rules
+  history (h)         show move history
+  types               list all types in the file
+  type <name>         inspect a type
+  homology <name>     compute cellular homology of a type
+  store <name>        store the current proof as a named diagram
+  help / ?            show this message
 
 Keyboard: ↑/↓ navigate history · Ctrl+Enter evaluate file`;
 

@@ -6,10 +6,11 @@ use crate::aux::Tag;
 use crate::core::complex::Complex;
 use crate::core::diagram::{Diagram, Sign};
 use crate::core::matching::{
-    MatchResult, RulePattern,
+    FamilyMember, MatchResult, RulePattern,
     confirm_candidate,
     for_each_rule_candidate,
     greedy_parallel_auto_step,
+    try_family_from_members,
 };
 use crate::interpreter::{GlobalStore, InterpretedFile};
 use super::session::{Move, SessionFile};
@@ -329,7 +330,21 @@ impl RewriteEngine {
         let mut history: Vec<HistoryEntry> = Vec::with_capacity(session.moves.len());
 
         for (step_idx, mov) in session.moves.iter().enumerate() {
-            let step = if mov.parallel {
+            let step = if let Some(ref choices) = mov.choices {
+                let rewrites = collect_confirmed_matches(&type_complex, &rule_patterns, &current)
+                    .map_err(|e| format!("replay failed at step {}: {}", step_idx + 1, e))?;
+                let members: Vec<FamilyMember> = choices.iter().map(|&c| {
+                    rewrites.get(c).ok_or_else(|| format!(
+                        "replay failed at step {}: choice {} out of range ({} rewrite(s) available)",
+                        step_idx + 1, c, rewrites.len(),
+                    )).map(|r| r.members[0].clone())
+                }).collect::<Result<_, _>>()?;
+                try_family_from_members(
+                    members, &type_complex, &current, &rule_patterns,
+                ).ok_or_else(|| format!(
+                    "replay failed at step {}: parallel rewrite construction failed", step_idx + 1,
+                ))?.step
+            } else if mov.parallel {
                 greedy_parallel_auto_step(&type_complex, &rule_patterns, &current)
                     .map_err(|e| format!("replay failed at step {}: {}", step_idx + 1, e))?
                     .ok_or_else(|| format!(
@@ -425,7 +440,73 @@ impl RewriteEngine {
         self.steps.push(step);
 
         self.history.push(HistoryEntry {
-            mov: Move { choice: Some(choice), rule_name: rule_name.clone(), parallel: false },
+            mov: Move { choice: Some(choice), choices: None, rule_name: rule_name.clone(), parallel: false },
+            prev_diagram,
+        });
+
+        self.refresh_rewrites()?;
+
+        Ok(&self.history.last().unwrap().mov.rule_name)
+    }
+
+    /// Apply multiple rewrites in parallel by their indices.
+    ///
+    /// Checks that the selected matches are pairwise disjoint, then builds a
+    /// combined parallel step via multi-pushout.
+    pub fn step_multi(&mut self, choices: &[usize]) -> Result<&str, String> {
+        let total = self.total_choices();
+        for &c in choices {
+            if c >= total {
+                return Err(format!(
+                    "choice {} out of range ({} rewrite(s) available)", c, total,
+                ));
+            }
+        }
+        let mut sorted = choices.to_vec();
+        sorted.sort_unstable();
+        if sorted.windows(2).any(|w| w[0] == w[1]) {
+            return Err("duplicate choice index".to_string());
+        }
+
+        for i in 0..choices.len() {
+            for j in (i + 1)..choices.len() {
+                let a = &self.rewrites[choices[i]].image_positions;
+                let b = &self.rewrites[choices[j]].image_positions;
+                if a.iter().any(|x| b.contains(x)) {
+                    return Err(format!(
+                        "rewrites {} and {} overlap", choices[i], choices[j],
+                    ));
+                }
+            }
+        }
+
+        let members: Vec<FamilyMember> = choices.iter().map(|&c| {
+            let pr = &self.rewrites[c];
+            pr.members[0].clone()
+        }).collect();
+
+        let names: Vec<&str> = members.iter().map(|m| m.rule_name.as_str()).collect();
+        let rule_name = names.join(", ");
+
+        let pr = try_family_from_members(
+            members, &self.type_complex, &self.current_diagram, &self.rule_patterns,
+        ).ok_or("parallel rewrite construction failed")?;
+
+        let n = self.current_diagram.top_dim();
+        let prev_diagram = self.current_diagram.clone();
+
+        let new_current = Diagram::boundary(Sign::Target, n, &pr.step)
+            .map_err(|e| format!("target boundary failed: {}", e))?;
+
+        self.current_diagram = new_current;
+        self.steps.push(pr.step);
+        self.history.push(HistoryEntry {
+            mov: Move {
+                choice: None,
+                choices: Some(choices.to_vec()),
+                rule_name,
+                parallel: true,
+            },
             prev_diagram,
         });
 
@@ -501,6 +582,7 @@ impl RewriteEngine {
             self.history.push(HistoryEntry {
                 mov: Move {
                     choice: if is_parallel { None } else { Some(0) },
+                    choices: None,
                     rule_name,
                     parallel: is_parallel,
                 },
@@ -763,6 +845,16 @@ impl RewriteEngine {
                 Ok(_) => Ok(build_response(self, false)),
                 Err(e) => Err(e),
             },
+            Request::StepMulti { choices } => {
+                if !self.parallel {
+                    Err("multi-apply requires parallel mode".to_string())
+                } else {
+                    match self.step_multi(choices) {
+                        Ok(_) => Ok(build_response(self, false)),
+                        Err(e) => Err(e),
+                    }
+                }
+            }
             Request::Auto { max_steps } => match self.auto(*max_steps) {
                 Ok((applied, stop_reason)) => {
                     let mut data = build_response(self, false);

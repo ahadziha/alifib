@@ -54,6 +54,10 @@ pub enum Request {
     Step {
         choice: usize,
     },
+    /// Apply multiple rewrites in parallel by their indices.
+    StepMulti {
+        choices: Vec<usize>,
+    },
     /// Apply up to `max_steps` rewrites automatically, always picking index 0.
     ///
     /// Stops early when the target is reached or no rewrites remain.
@@ -307,7 +311,7 @@ pub struct ProofInfo {
 pub struct HistoryEntry {
     pub step: usize,
     pub rule_name: String,
-    pub choice: Option<usize>,
+    pub choice: Option<Vec<usize>>,
 }
 
 // ── Builders ──────────────────────────────────────────────────────────────────
@@ -379,7 +383,11 @@ pub fn build_response(engine: &RewriteEngine, include_history: bool) -> Response
             .map(|(i, m)| HistoryEntry {
                 step: i + 1,
                 rule_name: m.rule_name.clone(),
-                choice: m.choice,
+                choice: if let Some(ref v) = m.choices {
+                    Some(v.clone())
+                } else {
+                    m.choice.map(|c| vec![c])
+                },
             })
             .collect()
     } else {

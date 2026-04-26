@@ -156,13 +156,14 @@ pub fn print_state(
 pub fn print_history(
     display: &Display,
     source: &Diagram,
-    history_entries: &[(Option<usize>, &str)],
+    history_entries: &[(Option<Vec<usize>>, &str)],
     scope: &Complex,
 ) {
     display.inspect(&format!("step 0 (source): {}", render_diagram(source, scope)));
     for (i, (choice, rule)) in history_entries.iter().enumerate() {
         let tag = match choice {
-            Some(c) => format!("choice {}", c),
+            Some(v) if v.len() == 1 => format!("choice {}", v[0]),
+            Some(v) => format!("choice {}", v.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(", ")),
             None => "parallel".into(),
         };
         display.inspect(&format!("step {} — {} ({})", i + 1, rule, tag));

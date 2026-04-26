@@ -818,8 +818,17 @@ fn print_diagram_with_boundary(diag: &crate::core::diagram::Diagram, complex: &C
 /// Dispatch all commands that require an active engine.
 fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) {
     match cmd {
-        Cmd::Apply(n) => {
-            match engine.step(n) {
+        Cmd::Apply(ref choices) => {
+            let result = if choices.len() == 1 {
+                engine.step(choices[0])
+            } else {
+                if !engine.parallel() {
+                    Err("multi-apply requires parallel mode".to_string())
+                } else {
+                    engine.step_multi(choices)
+                }
+            };
+            match result {
                 Ok(rule) => {
                     display.meta(&format!("Applied {}.", rule));
                     show_state(engine, display);
@@ -867,8 +876,15 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
         }
         Cmd::History => {
             let sf = engine.to_session_file();
-            let entries: Vec<(Option<usize>, &str)> = sf.moves.iter()
-                .map(|m| (m.choice, m.rule_name.as_str()))
+            let entries: Vec<(Option<Vec<usize>>, &str)> = sf.moves.iter()
+                .map(|m| {
+                    let choice = if let Some(ref v) = m.choices {
+                        Some(v.clone())
+                    } else {
+                        m.choice.map(|c| vec![c])
+                    };
+                    (choice, m.rule_name.as_str())
+                })
                 .collect();
             print_history(display, engine.source_diagram(), &entries, engine.type_complex());
         }
@@ -939,18 +955,18 @@ fn print_help(display: &Display) {
          \x20 quit / exit / q  Exit\n\
          \n\
          Rewriting commands (require active session):\n\
-         \x20 apply <n>        Apply rewrite at index <n>            (alias: a)\n\
-         \x20 auto <n>         Apply up to <n> rewrites, always picking index 0\n\
-         \x20 parallel [on|off] Show or toggle parallel rewrite mode  (default: on)\n\
-         \x20 undo             Undo the last step                    (alias: u)\n\
-         \x20 undo <n>         Undo back to step <n>\n\
-         \x20 undo all         Reset to source diagram               (= restart)\n\
-         \x20 rules            List rewrite rules at current dimension  (alias: r)\n\
-         \x20 history          Show the move history                 (alias: h)\n\
-         \x20 proof            Show the running proof diagram        (alias: p)\n\
-         \x20 store <name>     Store the current proof as a named diagram\n\
-         \x20 save <path>      Write source file with stored definitions appended\n\
-         \x20 load <path>      Load and replay a session file        (alias: l)"
+         \x20 apply <n> [<n2>..]  Apply rewrite(s) at given indices    (alias: a)\n\
+         \x20 auto <n>           Apply up to <n> rewrites automatically\n\
+         \x20 parallel [on|off]  Show or toggle parallel rewrite mode  (default: on)\n\
+         \x20 undo               Undo the last step                    (alias: u)\n\
+         \x20 undo <n>           Undo back to step <n>\n\
+         \x20 undo all           Reset to source diagram               (= restart)\n\
+         \x20 rules              List rewrite rules at current dimension  (alias: r)\n\
+         \x20 history            Show the move history                 (alias: h)\n\
+         \x20 proof              Show the running proof diagram        (alias: p)\n\
+         \x20 store <name>       Store the current proof as a named diagram\n\
+         \x20 save <path>        Write source file with stored definitions appended\n\
+         \x20 load <path>        Load and replay a session file        (alias: l)"
     );
 }
 
@@ -972,8 +988,8 @@ enum Cmd {
     Source(String),
     /// `target <name>` — set the target (goal) diagram.
     Target(String),
-    /// `apply <n>` — apply the nth candidate rewrite.
-    Apply(usize),
+    /// `apply <n> [<n2> ...]` — apply one or more candidate rewrites.
+    Apply(Vec<usize>),
     /// `auto <n>` — apply up to `n` rewrites automatically, always picking the
     /// first available candidate each step.
     Auto(usize),
@@ -1046,9 +1062,12 @@ fn parse_command(line: &str) -> Cmd {
             else { Cmd::Target(rest.to_owned()) }
         }
         "apply" | "a" => {
-            match rest.parse::<usize>() {
-                Ok(n) => Cmd::Apply(n),
-                Err(_) => Cmd::UsageError("apply <n>".to_owned()),
+            let nums: Result<Vec<usize>, _> = rest.split_whitespace()
+                .map(|s| s.parse::<usize>())
+                .collect();
+            match nums {
+                Ok(v) if !v.is_empty() => Cmd::Apply(v),
+                _ => Cmd::UsageError("apply <n> [<n2> ...]".to_owned()),
             }
         }
         "auto" => {

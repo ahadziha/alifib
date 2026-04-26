@@ -37,9 +37,11 @@ pub struct MatchResult {
 }
 
 /// One constituent match in a rewrite family.
+#[derive(Clone)]
 pub struct FamilyMember {
     pub rule_name: String,
     pub match_positions: Vec<usize>,
+    pub(crate) iso_emb: Embedding,
 }
 
 /// Precomputed, reusable data about a rewrite rule's pattern side.
@@ -431,7 +433,7 @@ fn check_match_isomorphism(
 
 // ---- Rewrite step construction ----
 
-/// Construct the rewrite step for a compatible family of candidate matches.
+/// Construct the rewrite step for a compatible family of matches.
 ///
 /// Delegates the ogposet-level colimit to [`pushout::multi_pushout`], then
 /// merges labels from the target and rewrite diagrams. For singleton families,
@@ -439,14 +441,12 @@ fn check_match_isomorphism(
 fn construct_parallel_step(
     complex: &Complex,
     target: &Diagram,
-    matches: &[CandidateMatch],
-    family: &[usize],
+    members: &[FamilyMember],
     rule_patterns: &HashMap<String, RulePattern>,
 ) -> Result<Diagram, Error> {
-    let mut rewrites: Vec<&Diagram> = Vec::with_capacity(family.len());
-    let mut spans: Vec<pushout::Span> = Vec::with_capacity(family.len());
-    for &idx in family {
-        let m = &matches[idx];
+    let mut rewrites: Vec<&Diagram> = Vec::with_capacity(members.len());
+    let mut spans: Vec<pushout::Span> = Vec::with_capacity(members.len());
+    for m in members {
         let rp = rule_patterns.get(&m.rule_name).ok_or_else(|| {
             Error::new(format!("rule pattern for '{}' not found", m.rule_name))
         })?;
@@ -558,7 +558,18 @@ fn try_family(
     let members: Vec<FamilyMember> = family.iter().map(|&i| FamilyMember {
         rule_name: matches[i].rule_name.clone(),
         match_positions: matches[i].image_positions.clone(),
+        iso_emb: matches[i].iso_emb.clone(),
     }).collect();
+    try_family_from_members(members, complex, target, rule_patterns)
+}
+
+/// Try to construct a parallel rewrite step from pre-built family members.
+pub(crate) fn try_family_from_members(
+    members: Vec<FamilyMember>,
+    complex: &Complex,
+    target: &Diagram,
+    rule_patterns: &HashMap<String, RulePattern>,
+) -> Option<MatchResult> {
     let image_positions = {
         let mut all: Vec<usize> = members.iter()
             .flat_map(|m| m.match_positions.iter().copied())
@@ -567,7 +578,7 @@ fn try_family(
         all.dedup();
         all
     };
-    match construct_parallel_step(complex, target, matches, family, rule_patterns) {
+    match construct_parallel_step(complex, target, &members, rule_patterns) {
         Ok(step) => Some(MatchResult {
             step,
             members,
