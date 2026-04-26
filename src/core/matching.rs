@@ -18,6 +18,7 @@ use super::pushout;
 use super::reconstruct;
 
 /// A lightweight candidate match: isomorphism confirmed but no step constructed.
+#[derive(Clone)]
 pub(crate) struct CandidateMatch {
     pub(crate) rule_name: String,
     pub(crate) image_positions: Vec<usize>,
@@ -124,13 +125,14 @@ pub(crate) fn confirm_candidate(
 /// Iterate over candidate matches for a single rule, calling `f` for each.
 /// Stops early if `f` returns `true`. Returns whether the callback stopped early.
 ///
-/// This is the shared candidate-iteration primitive: all matching modes
-/// (individual, parallel, auto) build on it with different callbacks.
-pub(crate) fn for_each_candidate<F>(
+/// Only flow matches whose `image_positions` are disjoint from `occupied` get
+/// their (expensive) isomorphism check.  Others are silently skipped.
+fn for_each_candidate_disjoint<F>(
     rewrite: &Diagram,
     rule: &RulePattern,
     target: &Diagram,
     rule_name: &str,
+    occupied: &intset::IntSet,
     mut f: F,
 ) -> Result<bool, Error>
 where
@@ -151,10 +153,9 @@ where
     }
 
     if n == 0 {
-        return for_each_candidate_dim0(rule, target, rule_name, &mut f);
+        return for_each_candidate_dim0(rule, target, rule_name, occupied, &mut f);
     }
 
-    // Step 1: (n-1)-flow graphs.
     let k = n - 1;
     let (p_flow, p_node_map) = graph::flow_graph(&pattern.shape, k);
     let (t_flow, t_node_map) = graph::flow_graph(&target.shape, k);
@@ -166,11 +167,9 @@ where
         .map(|&(dim, pos)| &target.labels[dim][pos])
         .collect();
 
-    // Step 2: Find all path-induced labelled subgraph matches P → T.
     let flow_matches = find_path_induced_matches(&p_flow, &t_flow, &p_labels, &t_labels);
 
     for vertex_match in &flow_matches {
-        // Step 3: Restrict target to closure of matched top-cells; check isomorphism.
         let matched_cells: Vec<(usize, usize)> = vertex_match.iter()
             .map(|&ti| t_node_map[ti])
             .collect();
@@ -180,6 +179,10 @@ where
             .map(|(_, pos)| *pos)
             .collect();
         image_positions.sort_unstable();
+
+        if !intset::is_disjoint(&image_positions, occupied) {
+            continue;
+        }
 
         let iso_emb = match check_match_isomorphism(pattern, target, &matched_cells) {
             Some(e) => e,
@@ -198,11 +201,26 @@ where
     Ok(false)
 }
 
-/// Dim-0 candidate iteration: label matching only.
+/// Iterate over candidate matches for a single rule (no position filter).
+#[cfg(test)]
+pub(crate) fn for_each_candidate<F>(
+    rewrite: &Diagram,
+    rule: &RulePattern,
+    target: &Diagram,
+    rule_name: &str,
+    f: F,
+) -> Result<bool, Error>
+where
+    F: FnMut(CandidateMatch) -> bool,
+{
+    for_each_candidate_disjoint(rewrite, rule, target, rule_name, &Vec::new(), f)
+}
+
 fn for_each_candidate_dim0<F>(
     rule: &RulePattern,
     target: &Diagram,
     rule_name: &str,
+    occupied: &intset::IntSet,
     f: &mut F,
 ) -> Result<bool, Error>
 where
@@ -217,6 +235,7 @@ where
     let pat_tag = &pattern.labels[0][0];
     for pos in 0..tgt_sizes[0] {
         if &target.labels[0][pos] != pat_tag { continue; }
+        if !intset::is_disjoint(&[pos], occupied) { continue; }
         let map = vec![vec![pos]];
         let mut inv = vec![vec![NO_PREIMAGE; tgt_sizes[0]]];
         inv[0][pos] = 0;
@@ -479,6 +498,7 @@ fn construct_parallel_step(
 ///
 /// If `first_only` is set, returns as soon as the first family is verified.
 /// Otherwise, returns all maximal verified families.
+#[allow(dead_code)]
 pub(crate) fn find_compatible_families(
     matches: &[CandidateMatch],
     complex: &Complex,
@@ -557,7 +577,202 @@ fn try_family(
     }
 }
 
+/// Iterate over all rules and their candidates (no position filter).
+pub(crate) fn for_each_rule_candidate<F>(
+    type_complex: &Complex,
+    rule_patterns: &HashMap<String, RulePattern>,
+    current: &Diagram,
+    f: F,
+) -> Result<bool, String>
+where
+    F: FnMut(CandidateMatch) -> bool,
+{
+    for_each_rule_candidate_disjoint(type_complex, rule_patterns, current, &Vec::new(), f)
+}
+
+/// Iterate over all rules' candidates whose positions are disjoint from `occupied`.
+fn for_each_rule_candidate_disjoint<F>(
+    type_complex: &Complex,
+    rule_patterns: &HashMap<String, RulePattern>,
+    current: &Diagram,
+    occupied: &intset::IntSet,
+    mut f: F,
+) -> Result<bool, String>
+where
+    F: FnMut(CandidateMatch) -> bool,
+{
+    let n = current.top_dim();
+    for (name, _tag, dim) in type_complex.generators_iter() {
+        if dim != n + 1 { continue; }
+        let Some(rewrite) = type_complex.classifier(name) else { continue; };
+        let Some(rp) = rule_patterns.get(name) else { continue; };
+        if for_each_candidate_disjoint(rewrite, rp, current, name, occupied, &mut f)
+            .map_err(|e| format!("failed to match rule '{}': {}", name, e))?
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+// ---- Greedy parallel auto step ----
+
+/// Build a greedy candidate family in a single pass over all rules.
+///
+/// Iterates every rule once, computing each flow graph once.  Within each
+/// rule's flow matches, candidates whose `image_positions` are disjoint from
+/// the (growing) `positions` set get an isomorphism check; accepted candidates
+/// are added to the family and their positions merged into the set.
+fn build_greedy_family(
+    type_complex: &Complex,
+    rule_patterns: &HashMap<String, RulePattern>,
+    current: &Diagram,
+    occupied: &intset::IntSet,
+) -> Result<(Vec<CandidateMatch>, intset::IntSet), String> {
+    let mut family: Vec<CandidateMatch> = Vec::new();
+    let mut positions = occupied.clone();
+    let n = current.top_dim();
+
+    if n == 0 {
+        let tgt_sizes = current.shape.sizes();
+        if tgt_sizes.is_empty() { return Ok((family, positions)); }
+        for (name, _tag, dim) in type_complex.generators_iter() {
+            if dim != 1 { continue; }
+            let Some(rp) = rule_patterns.get(name) else { continue; };
+            let pattern = &rp.pattern;
+            let pat_sizes = pattern.shape.sizes();
+            if pat_sizes.is_empty() || pat_sizes[0] != 1 { continue; }
+            let pat_tag = &pattern.labels[0][0];
+            for pos in 0..tgt_sizes[0] {
+                if &current.labels[0][pos] != pat_tag { continue; }
+                if !intset::is_disjoint(&[pos], &positions) { continue; }
+                let map = vec![vec![pos]];
+                let mut inv = vec![vec![NO_PREIMAGE; tgt_sizes[0]]];
+                inv[0][pos] = 0;
+                let emb = Embedding::make(
+                    Arc::clone(&pattern.shape), Arc::clone(&current.shape), map, inv,
+                );
+                positions = intset::union(&positions, &vec![pos]);
+                family.push(CandidateMatch {
+                    rule_name: name.to_owned(),
+                    image_positions: vec![pos],
+                    iso_emb: emb,
+                });
+            }
+        }
+        return Ok((family, positions));
+    }
+
+    let k = n - 1;
+    let (t_flow, t_node_map) = graph::flow_graph(&current.shape, k);
+    let t_labels: Vec<&crate::aux::Tag> = t_node_map.iter()
+        .map(|&(dim, pos)| &current.labels[dim][pos])
+        .collect();
+
+    for (name, _tag, dim) in type_complex.generators_iter() {
+        if dim != n + 1 { continue; }
+        if type_complex.classifier(name).is_none() { continue; }
+        let Some(rp) = rule_patterns.get(name) else { continue; };
+        let pattern = &rp.pattern;
+        if pattern.top_dim() != n { continue; }
+
+        let (p_flow, p_node_map) = graph::flow_graph(&pattern.shape, k);
+        let p_labels: Vec<&crate::aux::Tag> = p_node_map.iter()
+            .map(|&(dim, pos)| &pattern.labels[dim][pos])
+            .collect();
+
+        let flow_matches = find_path_induced_matches(&p_flow, &t_flow, &p_labels, &t_labels);
+
+        for vertex_match in &flow_matches {
+            let matched_cells: Vec<(usize, usize)> = vertex_match.iter()
+                .map(|&ti| t_node_map[ti])
+                .collect();
+
+            let mut image_positions: Vec<usize> = matched_cells.iter()
+                .filter(|(d, _)| *d == n)
+                .map(|(_, pos)| *pos)
+                .collect();
+            image_positions.sort_unstable();
+
+            if !intset::is_disjoint(&image_positions, &positions) {
+                continue;
+            }
+
+            let iso_emb = match check_match_isomorphism(pattern, current, &matched_cells) {
+                Some(e) => e,
+                None => continue,
+            };
+
+            positions = intset::union(&positions, &image_positions);
+            family.push(CandidateMatch {
+                rule_name: name.to_owned(),
+                image_positions,
+                iso_emb,
+            });
+        }
+    }
+
+    Ok((family, positions))
+}
+
+/// Find a verified parallel rewrite family using a greedy-with-peel-back strategy.
+///
+/// For each rewrite rule in order, finds the first candidate match, then again
+/// for each rule in order finds the first candidate disjoint from the previous,
+/// and so on until no more disjoint matches remain.  Isomorphism checks are only
+/// performed on candidates that pass the disjointness filter.  The resulting
+/// family is verified (pushout + reconstruct); on failure, the last member is
+/// dropped and the process repeats with the shorter prefix.
+pub(crate) fn greedy_parallel_auto_step(
+    type_complex: &Complex,
+    rule_patterns: &HashMap<String, RulePattern>,
+    current: &Diagram,
+) -> Result<Option<MatchResult>, String> {
+    let (family, _) = build_greedy_family(type_complex, rule_patterns, current, &Vec::new())?;
+    if family.is_empty() { return Ok(None); }
+    try_or_shrink(type_complex, rule_patterns, current, family)
+}
+
+/// Try `family`, then peel back one member at a time.
+/// Returns `None` when even the singleton fails (not a real match).
+fn try_or_shrink(
+    type_complex: &Complex,
+    rule_patterns: &HashMap<String, RulePattern>,
+    target: &Diagram,
+    family: Vec<CandidateMatch>,
+) -> Result<Option<MatchResult>, String> {
+    let indices: Vec<usize> = (0..family.len()).collect();
+    if let Some(r) = try_family(&family, type_complex, target, rule_patterns, &indices) {
+        return Ok(Some(r));
+    }
+    if family.len() <= 1 {
+        return Ok(None);
+    }
+
+    // Drop the last member and rebuild from the prefix.
+    let mut prefix = family;
+    prefix.pop();
+    let prefix_positions: intset::IntSet = prefix.iter()
+        .fold(Vec::new(), |acc, c| intset::union(&acc, &c.image_positions));
+
+    // Extend the prefix with fresh disjoint matches.
+    let (mut extended, _) = build_greedy_family(
+        type_complex, rule_patterns, target, &prefix_positions,
+    )?;
+    if !extended.is_empty() {
+        let mut full = prefix.clone();
+        full.append(&mut extended);
+        let indices: Vec<usize> = (0..full.len()).collect();
+        if let Some(r) = try_family(&full, type_complex, target, rule_patterns, &indices) {
+            return Ok(Some(r));
+        }
+    }
+
+    try_or_shrink(type_complex, rule_patterns, target, prefix)
+}
+
 /// Find the size of the maximum independent set in the conflict graph.
+#[allow(dead_code)]
 fn max_independent_set_size(conflicts: &[Vec<bool>], n: usize) -> usize {
     let mut max_size = 0;
     let mut prefix: Vec<usize> = Vec::new();
@@ -565,6 +780,7 @@ fn max_independent_set_size(conflicts: &[Vec<bool>], n: usize) -> usize {
     max_size
 }
 
+#[allow(dead_code)]
 fn max_is_dfs(
     conflicts: &[Vec<bool>],
     n: usize,
@@ -589,6 +805,7 @@ fn max_is_dfs(
 
 /// Enumerate independent sets of exactly `target_size` in lex order, calling
 /// `callback` for each. Stops early if `callback` returns `true`.
+#[allow(dead_code)]
 fn enumerate_independent_sets_of_size(
     conflicts: &[Vec<bool>],
     n: usize,
@@ -822,6 +1039,40 @@ mod tests {
             );
             assert_eq!(families.len(), 2, "two maximal families of size 1");
             assert!(families.iter().all(|f| f.members.len() == 1));
+        }
+
+        #[test]
+        fn greedy_parallel_in_four_chain() {
+            // Same setup as idem_parallel_in_four_chain: "id id id id" with
+            // 3 candidate matches m0=[0,1], m1=[1,2], m2=[2,3].
+            // The greedy algorithm should find {m0, m2} as the first family.
+            let (_store, complex) = load_type(&fixture("Idem.ali"), "Idem");
+            let (rewrite, rname) = get_rewrite(&complex, "idem");
+            let lhs = get_diagram(&complex, "lhs");
+            let id_diag = get_diagram(&complex, "id");
+            let target = Diagram::paste(0, &lhs, &id_diag).unwrap();
+
+            let mut rule_patterns = std::collections::HashMap::new();
+            rule_patterns.insert(rname.clone(), super::super::RulePattern::new(&rewrite).unwrap());
+
+            let result = super::super::greedy_parallel_auto_step(
+                &complex, &rule_patterns, &target,
+            ).unwrap();
+            let result = result.expect("should find a parallel family");
+
+            assert_eq!(result.members.len(), 2, "greedy family should have 2 members");
+            let positions: Vec<Vec<usize>> = result.members.iter()
+                .map(|m| m.match_positions.clone())
+                .collect();
+            assert!(positions.contains(&vec![0, 1]));
+            assert!(positions.contains(&vec![2, 3]));
+            assert_eq!(result.image_positions, vec![0, 1, 2, 3]);
+
+            let n = target.top_dim();
+            let after = Diagram::boundary(Sign::Target, n, &result.step).unwrap();
+            let id_id = Diagram::paste(0, &id_diag, &id_diag).unwrap();
+            assert!(Diagram::isomorphic(&after, &id_id),
+                "parallel idem on id id id id should yield id id");
         }
 
     }

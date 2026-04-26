@@ -6,8 +6,10 @@ use crate::aux::Tag;
 use crate::core::complex::Complex;
 use crate::core::diagram::{Diagram, Sign};
 use crate::core::matching::{
-    MatchResult, RulePattern, CandidateMatch,
-    find_compatible_families, for_each_candidate, confirm_candidate,
+    MatchResult, RulePattern,
+    confirm_candidate,
+    for_each_rule_candidate,
+    greedy_parallel_auto_step,
 };
 use crate::interpreter::{GlobalStore, InterpretedFile};
 use super::session::{Move, SessionFile};
@@ -196,48 +198,6 @@ fn build_rule_patterns(
     Ok(out)
 }
 
-/// Iterate over all rules and their candidates, calling `f` for each.
-/// Stops early (and returns `Ok(true)`) if `f` returns `true`.
-///
-/// This is the shared outer loop: every matching mode (individual, parallel,
-/// auto) builds on it with a different callback.
-fn for_each_rule_candidate<F>(
-    type_complex: &Complex,
-    rule_patterns: &HashMap<String, RulePattern>,
-    current: &Diagram,
-    mut f: F,
-) -> Result<bool, String>
-where
-    F: FnMut(CandidateMatch) -> bool,
-{
-    let n = current.top_dim();
-    for (name, _tag, dim) in type_complex.generators_iter() {
-        if dim != n + 1 { continue; }
-        let Some(rewrite) = type_complex.classifier(name) else { continue; };
-        let Some(rp) = rule_patterns.get(name) else { continue; };
-        if for_each_candidate(rewrite, rp, current, name, &mut f)
-            .map_err(|e| format!("failed to match rule '{}': {}", name, e))?
-        {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
-/// Collect all lightweight candidates (for parallel mode).
-fn collect_all_candidates(
-    type_complex: &Complex,
-    rule_patterns: &HashMap<String, RulePattern>,
-    current: &Diagram,
-) -> Result<Vec<CandidateMatch>, String> {
-    let mut all = Vec::new();
-    for_each_rule_candidate(type_complex, rule_patterns, current, |cand| {
-        all.push(cand);
-        false
-    })?;
-    Ok(all)
-}
-
 /// Confirm each candidate individually and collect all successes (non-parallel).
 fn collect_confirmed_matches(
     type_complex: &Complex,
@@ -369,22 +329,23 @@ impl RewriteEngine {
         let mut history: Vec<HistoryEntry> = Vec::with_capacity(session.moves.len());
 
         for (step_idx, mov) in session.moves.iter().enumerate() {
-            let rewrites: Vec<MatchResult> = if mov.parallel {
-                let candidates = collect_all_candidates(&type_complex, &rule_patterns, &current)
-                    .map_err(|e| format!("replay failed at step {}: {}", step_idx + 1, e))?;
-                find_compatible_families(
-                    &candidates, &type_complex, &current, &rule_patterns, false,
-                )
-            } else {
-                collect_confirmed_matches(&type_complex, &rule_patterns, &current)
+            let step = if mov.parallel {
+                greedy_parallel_auto_step(&type_complex, &rule_patterns, &current)
                     .map_err(|e| format!("replay failed at step {}: {}", step_idx + 1, e))?
+                    .ok_or_else(|| format!(
+                        "replay failed at step {}: no parallel rewrite available", step_idx + 1,
+                    ))?.step
+            } else {
+                let choice = mov.choice.unwrap_or(0);
+                let rewrites = collect_confirmed_matches(&type_complex, &rule_patterns, &current)
+                    .map_err(|e| format!("replay failed at step {}: {}", step_idx + 1, e))?;
+                rewrites.get(choice).ok_or_else(|| {
+                    format!(
+                        "replay failed at step {}: choice {} out of range ({} rewrite(s) available)",
+                        step_idx + 1, choice, rewrites.len(),
+                    )
+                })?.step.clone()
             };
-            let step = rewrites.get(mov.choice).ok_or_else(|| {
-                format!(
-                    "replay failed at step {}: choice {} out of range ({} rewrite(s) available)",
-                    step_idx + 1, mov.choice, rewrites.len(),
-                )
-            })?.step.clone();
 
             // Save snapshot before advancing.
             history.push(HistoryEntry {
@@ -423,25 +384,12 @@ impl RewriteEngine {
 // ── Mutating operations ───────────────────────────────────────────────────────
 
 impl RewriteEngine {
-    /// Recompute available rewrites.
-    ///
-    /// In non-parallel mode, computes individual matches. In parallel mode,
-    /// computes maximal compatible families (including size 1) from lightweight
-    /// candidates.
+    /// Recompute available rewrites (individual matches for manual selection).
+    /// Parallel mode only affects `auto()`, not the manual rewrites list.
     fn refresh_rewrites(&mut self) -> Result<(), String> {
-        self.rewrites = if self.parallel {
-            let candidates = collect_all_candidates(
-                &self.type_complex, &self.rule_patterns, &self.current_diagram,
-            )?;
-            find_compatible_families(
-                &candidates, &self.type_complex,
-                &self.current_diagram, &self.rule_patterns, false,
-            )
-        } else {
-            collect_confirmed_matches(
-                &self.type_complex, &self.rule_patterns, &self.current_diagram,
-            )?
-        };
+        self.rewrites = collect_confirmed_matches(
+            &self.type_complex, &self.rule_patterns, &self.current_diagram,
+        )?;
         Ok(())
     }
 
@@ -477,7 +425,7 @@ impl RewriteEngine {
         self.steps.push(step);
 
         self.history.push(HistoryEntry {
-            mov: Move { choice, rule_name: rule_name.clone(), parallel: self.parallel },
+            mov: Move { choice: Some(choice), rule_name: rule_name.clone(), parallel: false },
             prev_diagram,
         });
 
@@ -505,9 +453,9 @@ impl RewriteEngine {
     /// Apply up to `max_steps` rewrites automatically, always picking the
     /// first available candidate.
     ///
-    /// In parallel mode, prefers the first compatible family (largest, then
-    /// lexicographically first) at each step; falls back to a single match
-    /// if no family of size ≥ 2 exists.
+    /// In parallel mode, uses a greedy algorithm to find a compatible family
+    /// and apply it in one step.  In non-parallel mode, applies the first
+    /// confirmed individual match.
     pub fn auto(&mut self, max_steps: usize) -> Result<(usize, Option<&'static str>), String> {
         let mut applied = 0usize;
         let stop_reason: Option<&'static str>;
@@ -523,13 +471,9 @@ impl RewriteEngine {
             }
 
             let pr = if self.parallel {
-                let candidates = collect_all_candidates(
+                greedy_parallel_auto_step(
                     &self.type_complex, &self.rule_patterns, &self.current_diagram,
-                )?;
-                find_compatible_families(
-                    &candidates, &self.type_complex,
-                    &self.current_diagram, &self.rule_patterns, true,
-                ).into_iter().next()
+                )?
             } else {
                 find_first_match(
                     &self.type_complex, &self.rule_patterns, &self.current_diagram,
@@ -544,6 +488,7 @@ impl RewriteEngine {
                 .map(|m| m.rule_name.as_str())
                 .collect();
             let rule_name = names.join(",");
+            let is_parallel = self.parallel && pr.members.len() > 1;
 
             let n = self.current_diagram.top_dim();
             let prev_diagram = self.current_diagram.clone();
@@ -554,7 +499,11 @@ impl RewriteEngine {
             self.current_diagram = new_current;
             self.steps.push(pr.step);
             self.history.push(HistoryEntry {
-                mov: Move { choice: 0, rule_name, parallel: self.parallel },
+                mov: Move {
+                    choice: if is_parallel { None } else { Some(0) },
+                    rule_name,
+                    parallel: is_parallel,
+                },
                 prev_diagram,
             });
             applied += 1;
@@ -586,10 +535,9 @@ impl RewriteEngine {
         Ok(())
     }
 
-    /// Toggle parallel rewrite mode on or off. Recomputes available rewrites.
-    pub fn set_parallel(&mut self, on: bool) -> Result<(), String> {
+    /// Toggle parallel rewrite mode on or off. Only affects `auto()`.
+    pub fn set_parallel(&mut self, on: bool) {
         self.parallel = on;
-        self.refresh_rewrites()
     }
 }
 
@@ -868,7 +816,8 @@ impl RewriteEngine {
                 }
             }
             Request::Parallel { on } => {
-                self.set_parallel(*on).map(|_| build_response(self, false))
+                self.set_parallel(*on);
+                Ok(build_response(self, false))
             }
             Request::Init { .. }
             | Request::Resume { .. }

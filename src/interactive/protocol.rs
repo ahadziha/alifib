@@ -307,7 +307,7 @@ pub struct ProofInfo {
 pub struct HistoryEntry {
     pub step: usize,
     pub rule_name: String,
-    pub choice: usize,
+    pub choice: Option<usize>,
 }
 
 // ── Builders ──────────────────────────────────────────────────────────────────

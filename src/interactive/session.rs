@@ -23,9 +23,11 @@ pub struct SessionFile {
 /// A single rewrite move in the session history.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Move {
-    /// Index into the full sorted candidate list at the time of this move.
-    /// This is what is used during replay; `rule_name` is informational only.
-    pub choice: usize,
+    /// Index into the rewrites list at the time of this move (manual steps).
+    /// `None` for parallel auto steps, which are replayed by re-running the
+    /// greedy algorithm rather than indexing into a list.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub choice: Option<usize>,
     /// The name of the rule that was applied (for human readability and sanity checking).
     /// For parallel families, this is a comma-separated list of rule names.
     pub rule_name: String,
@@ -80,15 +82,15 @@ mod tests {
             source_diagram: "d".into(),
             target_diagram: None,
             moves: vec![
-                Move { choice: 0, rule_name: "assoc".into(), parallel: false },
-                Move { choice: 1, rule_name: "unit".into(), parallel: false },
+                Move { choice: Some(0), rule_name: "assoc".into(), parallel: false },
+                Move { choice: Some(1), rule_name: "unit".into(), parallel: false },
             ],
         };
         let json = serde_json::to_string_pretty(&s).unwrap();
         let s2: SessionFile = serde_json::from_str(&json).unwrap();
         assert_eq!(s2.moves.len(), 2);
         assert_eq!(s2.moves[0].rule_name, "assoc");
-        assert_eq!(s2.moves[1].choice, 1);
+        assert_eq!(s2.moves[1].choice, Some(1));
         assert!(s2.target_diagram.is_none());
     }
 }

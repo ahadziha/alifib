@@ -156,11 +156,15 @@ pub fn print_state(
 pub fn print_history(
     display: &Display,
     source: &Diagram,
-    history_entries: &[(usize, &str)],
+    history_entries: &[(Option<usize>, &str)],
     scope: &Complex,
 ) {
     display.inspect(&format!("step 0 (source): {}", render_diagram(source, scope)));
     for (i, (choice, rule)) in history_entries.iter().enumerate() {
-        display.inspect(&format!("step {} — {} (choice {})", i + 1, rule, choice));
+        let tag = match choice {
+            Some(c) => format!("choice {}", c),
+            None => "parallel".into(),
+        };
+        display.inspect(&format!("step {} — {} ({})", i + 1, rule, tag));
     }
 }

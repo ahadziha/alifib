@@ -867,7 +867,7 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
         }
         Cmd::History => {
             let sf = engine.to_session_file();
-            let entries: Vec<(usize, &str)> = sf.moves.iter()
+            let entries: Vec<(Option<usize>, &str)> = sf.moves.iter()
                 .map(|m| (m.choice, m.rule_name.as_str()))
                 .collect();
             print_history(display, engine.source_diagram(), &entries, engine.type_complex());
@@ -907,13 +907,8 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
             }
         }
         Cmd::Parallel(on) => {
-            match engine.set_parallel(on) {
-                Ok(()) => {
-                    display.meta(&format!("Parallel mode {}.", if on { "on" } else { "off" }));
-                    show_state(engine, display);
-                }
-                Err(e) => display.error(&e),
-            }
+            engine.set_parallel(on);
+            display.meta(&format!("Parallel mode {}.", if on { "on" } else { "off" }));
         }
         Cmd::Help => print_help(display),
         Cmd::Quit => {}   // handled by caller
