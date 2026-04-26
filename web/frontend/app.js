@@ -1065,7 +1065,7 @@ function renderHomology(data) {
 function renderHistory(hist) {
   if (!hist || !hist.length) return dim('(no moves yet)');
   return hist.map(h =>
-    `  ${dim(h.step + '.')} ${hi(h.rule_name)} ${dim('[choice ' + h.choice + ']')}`
+    `  ${dim(h.step + '.')} ${hi(h.rule_name)} ${dim(h.choice == null ? '[parallel]' : '[choice ' + h.choice + ']')}`
   ).join('\n');
 }
 

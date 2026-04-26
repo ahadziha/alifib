@@ -412,7 +412,7 @@ impl RewriteEngine {
         let names: Vec<&str> = pr.members.iter()
             .map(|m| m.rule_name.as_str())
             .collect();
-        let rule_name = names.join(",");
+        let rule_name = names.join(", ");
         let step = pr.step.clone();
 
         let n = self.current_diagram.top_dim();
@@ -487,7 +487,7 @@ impl RewriteEngine {
             let names: Vec<&str> = pr.members.iter()
                 .map(|m| m.rule_name.as_str())
                 .collect();
-            let rule_name = names.join(",");
+            let rule_name = names.join(", ");
             let is_parallel = self.parallel && pr.members.len() > 1;
 
             let n = self.current_diagram.top_dim();
