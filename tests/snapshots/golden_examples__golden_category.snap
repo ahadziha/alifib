@@ -104,6 +104,72 @@ Store {
                     ],
                 },
                 Type {
+                    name: "Ob",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "ob",
+                                    src: "",
+                                    tgt: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "id",
+                                    src: "ob",
+                                    tgt: "ob",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 2,
+                            cells: [
+                                Cell {
+                                    name: "Id_id.dir",
+                                    src: "(id #0 id)",
+                                    tgt: "id",
+                                },
+                                Cell {
+                                    name: "Id_id.inv",
+                                    src: "id",
+                                    tgt: "(id #0 id)",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [
+                        Cell {
+                            name: "id",
+                            src: "ob",
+                            tgt: "ob",
+                        },
+                        Cell {
+                            name: "ob",
+                            src: "",
+                            tgt: "",
+                        },
+                    ],
+                    maps: [
+                        Map {
+                            name: "Id",
+                            domain: "Mor",
+                        },
+                        Map {
+                            name: "Id_id",
+                            domain: "Eq",
+                        },
+                        Map {
+                            name: "Ob",
+                            domain: "Ob",
+                        },
+                    ],
+                },
+                Type {
                     name: "Mor",
                     dims: [
                         Dim {
@@ -214,72 +280,6 @@ Store {
                         Map {
                             name: "Right_id",
                             domain: "Eq",
-                        },
-                    ],
-                },
-                Type {
-                    name: "Ob",
-                    dims: [
-                        Dim {
-                            dim: 0,
-                            cells: [
-                                Cell {
-                                    name: "ob",
-                                    src: "",
-                                    tgt: "",
-                                },
-                            ],
-                        },
-                        Dim {
-                            dim: 1,
-                            cells: [
-                                Cell {
-                                    name: "id",
-                                    src: "ob",
-                                    tgt: "ob",
-                                },
-                            ],
-                        },
-                        Dim {
-                            dim: 2,
-                            cells: [
-                                Cell {
-                                    name: "Id_id.dir",
-                                    src: "(id #0 id)",
-                                    tgt: "id",
-                                },
-                                Cell {
-                                    name: "Id_id.inv",
-                                    src: "id",
-                                    tgt: "(id #0 id)",
-                                },
-                            ],
-                        },
-                    ],
-                    diagrams: [
-                        Cell {
-                            name: "id",
-                            src: "ob",
-                            tgt: "ob",
-                        },
-                        Cell {
-                            name: "ob",
-                            src: "",
-                            tgt: "",
-                        },
-                    ],
-                    maps: [
-                        Map {
-                            name: "Id",
-                            domain: "Mor",
-                        },
-                        Map {
-                            name: "Id_id",
-                            domain: "Eq",
-                        },
-                        Map {
-                            name: "Ob",
-                            domain: "Ob",
                         },
                     ],
                 },

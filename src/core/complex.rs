@@ -21,6 +21,7 @@ pub enum MapDomain {
 struct GeneratorEntry {
     tag: Tag,
     dim: usize,
+    insertion_order: usize,
 }
 
 /// A named partial map together with the complex it maps from.
@@ -48,6 +49,8 @@ struct Generators {
     by_dim: HashMap<usize, HashSet<LocalId>>,
     /// Classifier diagram for each generator name.
     classifiers: HashMap<LocalId, Diagram>,
+    /// Counter for assigning insertion order to generators.
+    next_order: usize,
 }
 
 /// Cells scoped to this type body: tagged with a local name rather than a global ID,
@@ -91,10 +94,13 @@ impl Complex {
         let dim = classifier.top_dim();
         debug_assert_eq!(classifier.top_label(), Some(&tag));
 
+        let order = self.generators.next_order;
+        self.generators.next_order += 1;
+
         self.generators.by_tag.insert(tag.clone(), name.clone());
         self.generators.by_dim.entry(dim).or_default().insert(name.clone());
         self.generators.classifiers.insert(name.clone(), classifier);
-        self.generators.by_name.insert(name, GeneratorEntry { tag, dim });
+        self.generators.by_name.insert(name, GeneratorEntry { tag, dim, insertion_order: order });
 
         self.assert_invariants();
     }
@@ -112,6 +118,11 @@ impl Complex {
     /// Return the classifier diagram for the named generator, if it exists.
     pub fn classifier(&self, name: &str) -> Option<&Diagram> {
         self.generators.classifiers.get(name)
+    }
+
+    /// Return the insertion order of the named generator, if it exists.
+    pub fn generator_order(&self, name: &str) -> Option<usize> {
+        self.generators.by_name.get(name).map(|e| e.insertion_order)
     }
 
     /// Iterate over all generators as `(name, tag, dim)` triples.

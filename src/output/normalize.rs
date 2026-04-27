@@ -39,13 +39,13 @@ impl GlobalStore {
     }
 }
 
-/// Collect all named generators of `mc` into a [`Module`], sorted by name.
+/// Collect all named generators of `mc` into a [`Module`], in insertion order.
 fn normalize_module(store: &GlobalStore, path: &str, mc: &Complex) -> Module {
     let mut gen_entries: Vec<(&str, &Tag)> = mc
         .generators_iter()
         .map(|(name, tag, _)| (name.as_str(), tag))
         .collect();
-    gen_entries.sort_by_key(|(name, _)| *name);
+    gen_entries.sort_by_key(|(name, _)| mc.generator_order(name));
 
     let types = gen_entries
         .iter()

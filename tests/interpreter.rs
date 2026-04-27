@@ -43,6 +43,29 @@ fn magma_interpretation() {
             types: vec![
                 Type { name: String::new(), dims: vec![], diagrams: vec![], maps: vec![] },
                 Type {
+                    name: "Ob".into(),
+                    dims: vec![
+                        Dim { dim: 0, cells: vec![pt()] },
+                        Dim { dim: 1, cells: vec![ob()] },
+                    ],
+                    diagrams: vec![ob(), pt()],
+                    maps: vec![Map { name: "Ob".into(), domain: "Ob".into() }],
+                },
+                Type {
+                    name: "Magma".into(),
+                    dims: vec![
+                        Dim { dim: 0, cells: vec![obpt()] },
+                        Dim { dim: 1, cells: vec![obob()] },
+                        Dim { dim: 2, cells: vec![
+                            Cell { name: "m".into(), src: "(Ob.ob #0 Ob.ob)".into(), tgt: "Ob.ob".into() },
+                        ]},
+                    ],
+                    diagrams: vec![
+                        Cell { name: "m".into(), src: "(Ob.ob #0 Ob.ob)".into(), tgt: "Ob.ob".into() },
+                    ],
+                    maps: vec![Map { name: "Magma".into(), domain: "Magma".into() }, Map { name: "Ob".into(), domain: "Ob".into() }],
+                },
+                Type {
                     name: "Comagma".into(),
                     dims: vec![
                         Dim { dim: 0, cells: vec![obpt()] },
@@ -73,29 +96,6 @@ fn magma_interpretation() {
                         Map { name: "Magma".into(),         domain: "Magma".into() },
                         Map { name: "Ob".into(),            domain: "Ob".into() },
                     ],
-                },
-                Type {
-                    name: "Magma".into(),
-                    dims: vec![
-                        Dim { dim: 0, cells: vec![obpt()] },
-                        Dim { dim: 1, cells: vec![obob()] },
-                        Dim { dim: 2, cells: vec![
-                            Cell { name: "m".into(), src: "(Ob.ob #0 Ob.ob)".into(), tgt: "Ob.ob".into() },
-                        ]},
-                    ],
-                    diagrams: vec![
-                        Cell { name: "m".into(), src: "(Ob.ob #0 Ob.ob)".into(), tgt: "Ob.ob".into() },
-                    ],
-                    maps: vec![Map { name: "Magma".into(), domain: "Magma".into() }, Map { name: "Ob".into(), domain: "Ob".into() }],
-                },
-                Type {
-                    name: "Ob".into(),
-                    dims: vec![
-                        Dim { dim: 0, cells: vec![pt()] },
-                        Dim { dim: 1, cells: vec![ob()] },
-                    ],
-                    diagrams: vec![ob(), pt()],
-                    maps: vec![Map { name: "Ob".into(), domain: "Ob".into() }],
                 },
             ],
         }],

@@ -104,6 +104,868 @@ Store {
                     ],
                 },
                 Type {
+                    name: "Ob",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "ob",
+                                    src: "",
+                                    tgt: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "loose_id",
+                                    src: "ob",
+                                    tgt: "ob",
+                                },
+                                Cell {
+                                    name: "tight_id",
+                                    src: "ob",
+                                    tgt: "ob",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 2,
+                            cells: [
+                                Cell {
+                                    name: "Tight_id_id.dir",
+                                    src: "(tight_id #0 tight_id)",
+                                    tgt: "tight_id",
+                                },
+                                Cell {
+                                    name: "Tight_id_id.inv",
+                                    src: "tight_id",
+                                    tgt: "(tight_id #0 tight_id)",
+                                },
+                                Cell {
+                                    name: "id_square",
+                                    src: "(loose_id #0 tight_id)",
+                                    tgt: "(tight_id #0 loose_id)",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [
+                        Cell {
+                            name: "id_square",
+                            src: "(loose_id #0 tight_id)",
+                            tgt: "(tight_id #0 loose_id)",
+                        },
+                        Cell {
+                            name: "loose_id",
+                            src: "ob",
+                            tgt: "ob",
+                        },
+                        Cell {
+                            name: "ob",
+                            src: "",
+                            tgt: "",
+                        },
+                        Cell {
+                            name: "tight_id",
+                            src: "ob",
+                            tgt: "ob",
+                        },
+                    ],
+                    maps: [
+                        Map {
+                            name: "Id_square",
+                            domain: "Square",
+                        },
+                        Map {
+                            name: "Loose_id",
+                            domain: "Loose",
+                        },
+                        Map {
+                            name: "Ob",
+                            domain: "Ob",
+                        },
+                        Map {
+                            name: "Tight_id",
+                            domain: "Tight",
+                        },
+                        Map {
+                            name: "Tight_id_id",
+                            domain: "Eq",
+                        },
+                    ],
+                },
+                Type {
+                    name: "Tight",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "Cod.ob",
+                                    src: "",
+                                    tgt: "",
+                                },
+                                Cell {
+                                    name: "Dom.ob",
+                                    src: "",
+                                    tgt: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "Cod.loose_id",
+                                    src: "Cod.ob",
+                                    tgt: "Cod.ob",
+                                },
+                                Cell {
+                                    name: "Cod.tight_id",
+                                    src: "Cod.ob",
+                                    tgt: "Cod.ob",
+                                },
+                                Cell {
+                                    name: "Dom.loose_id",
+                                    src: "Dom.ob",
+                                    tgt: "Dom.ob",
+                                },
+                                Cell {
+                                    name: "Dom.tight_id",
+                                    src: "Dom.ob",
+                                    tgt: "Dom.ob",
+                                },
+                                Cell {
+                                    name: "arrow",
+                                    src: "Dom.ob",
+                                    tgt: "Cod.ob",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 2,
+                            cells: [
+                                Cell {
+                                    name: "Cod.Tight_id_id.dir",
+                                    src: "(Cod.tight_id #0 Cod.tight_id)",
+                                    tgt: "Cod.tight_id",
+                                },
+                                Cell {
+                                    name: "Cod.Tight_id_id.inv",
+                                    src: "Cod.tight_id",
+                                    tgt: "(Cod.tight_id #0 Cod.tight_id)",
+                                },
+                                Cell {
+                                    name: "Cod.id_square",
+                                    src: "(Cod.loose_id #0 Cod.tight_id)",
+                                    tgt: "(Cod.tight_id #0 Cod.loose_id)",
+                                },
+                                Cell {
+                                    name: "Dom.Tight_id_id.dir",
+                                    src: "(Dom.tight_id #0 Dom.tight_id)",
+                                    tgt: "Dom.tight_id",
+                                },
+                                Cell {
+                                    name: "Dom.Tight_id_id.inv",
+                                    src: "Dom.tight_id",
+                                    tgt: "(Dom.tight_id #0 Dom.tight_id)",
+                                },
+                                Cell {
+                                    name: "Dom.id_square",
+                                    src: "(Dom.loose_id #0 Dom.tight_id)",
+                                    tgt: "(Dom.tight_id #0 Dom.loose_id)",
+                                },
+                                Cell {
+                                    name: "id",
+                                    src: "(Dom.loose_id #0 arrow)",
+                                    tgt: "(arrow #0 Cod.loose_id)",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [
+                        Cell {
+                            name: "arrow",
+                            src: "Dom.ob",
+                            tgt: "Cod.ob",
+                        },
+                        Cell {
+                            name: "id",
+                            src: "(Dom.loose_id #0 arrow)",
+                            tgt: "(arrow #0 Cod.loose_id)",
+                        },
+                    ],
+                    maps: [
+                        Map {
+                            name: "Cod",
+                            domain: "Ob",
+                        },
+                        Map {
+                            name: "Dom",
+                            domain: "Ob",
+                        },
+                        Map {
+                            name: "Id",
+                            domain: "Square",
+                        },
+                        Map {
+                            name: "Tight",
+                            domain: "Tight",
+                        },
+                    ],
+                },
+                Type {
+                    name: "Loose",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "Cod.ob",
+                                    src: "",
+                                    tgt: "",
+                                },
+                                Cell {
+                                    name: "Dom.ob",
+                                    src: "",
+                                    tgt: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "Cod.loose_id",
+                                    src: "Cod.ob",
+                                    tgt: "Cod.ob",
+                                },
+                                Cell {
+                                    name: "Cod.tight_id",
+                                    src: "Cod.ob",
+                                    tgt: "Cod.ob",
+                                },
+                                Cell {
+                                    name: "Dom.loose_id",
+                                    src: "Dom.ob",
+                                    tgt: "Dom.ob",
+                                },
+                                Cell {
+                                    name: "Dom.tight_id",
+                                    src: "Dom.ob",
+                                    tgt: "Dom.ob",
+                                },
+                                Cell {
+                                    name: "arrow",
+                                    src: "Dom.ob",
+                                    tgt: "Cod.ob",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 2,
+                            cells: [
+                                Cell {
+                                    name: "Cod.Tight_id_id.dir",
+                                    src: "(Cod.tight_id #0 Cod.tight_id)",
+                                    tgt: "Cod.tight_id",
+                                },
+                                Cell {
+                                    name: "Cod.Tight_id_id.inv",
+                                    src: "Cod.tight_id",
+                                    tgt: "(Cod.tight_id #0 Cod.tight_id)",
+                                },
+                                Cell {
+                                    name: "Cod.id_square",
+                                    src: "(Cod.loose_id #0 Cod.tight_id)",
+                                    tgt: "(Cod.tight_id #0 Cod.loose_id)",
+                                },
+                                Cell {
+                                    name: "Dom.Tight_id_id.dir",
+                                    src: "(Dom.tight_id #0 Dom.tight_id)",
+                                    tgt: "Dom.tight_id",
+                                },
+                                Cell {
+                                    name: "Dom.Tight_id_id.inv",
+                                    src: "Dom.tight_id",
+                                    tgt: "(Dom.tight_id #0 Dom.tight_id)",
+                                },
+                                Cell {
+                                    name: "Dom.id_square",
+                                    src: "(Dom.loose_id #0 Dom.tight_id)",
+                                    tgt: "(Dom.tight_id #0 Dom.loose_id)",
+                                },
+                                Cell {
+                                    name: "id",
+                                    src: "(arrow #0 Cod.tight_id)",
+                                    tgt: "(Dom.tight_id #0 arrow)",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [
+                        Cell {
+                            name: "arrow",
+                            src: "Dom.ob",
+                            tgt: "Cod.ob",
+                        },
+                        Cell {
+                            name: "id",
+                            src: "(arrow #0 Cod.tight_id)",
+                            tgt: "(Dom.tight_id #0 arrow)",
+                        },
+                    ],
+                    maps: [
+                        Map {
+                            name: "Cod",
+                            domain: "Ob",
+                        },
+                        Map {
+                            name: "Dom",
+                            domain: "Ob",
+                        },
+                        Map {
+                            name: "Id",
+                            domain: "Square",
+                        },
+                        Map {
+                            name: "Loose",
+                            domain: "Loose",
+                        },
+                    ],
+                },
+                Type {
+                    name: "Square",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "BL.ob",
+                                    src: "",
+                                    tgt: "",
+                                },
+                                Cell {
+                                    name: "BR.ob",
+                                    src: "",
+                                    tgt: "",
+                                },
+                                Cell {
+                                    name: "TL.ob",
+                                    src: "",
+                                    tgt: "",
+                                },
+                                Cell {
+                                    name: "TR.ob",
+                                    src: "",
+                                    tgt: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "BL.loose_id",
+                                    src: "BL.ob",
+                                    tgt: "BL.ob",
+                                },
+                                Cell {
+                                    name: "BL.tight_id",
+                                    src: "BL.ob",
+                                    tgt: "BL.ob",
+                                },
+                                Cell {
+                                    name: "BR.loose_id",
+                                    src: "BR.ob",
+                                    tgt: "BR.ob",
+                                },
+                                Cell {
+                                    name: "BR.tight_id",
+                                    src: "BR.ob",
+                                    tgt: "BR.ob",
+                                },
+                                Cell {
+                                    name: "Bottom.arrow",
+                                    src: "BL.ob",
+                                    tgt: "BR.ob",
+                                },
+                                Cell {
+                                    name: "Left.arrow",
+                                    src: "TL.ob",
+                                    tgt: "BL.ob",
+                                },
+                                Cell {
+                                    name: "Right.arrow",
+                                    src: "TR.ob",
+                                    tgt: "BR.ob",
+                                },
+                                Cell {
+                                    name: "TL.loose_id",
+                                    src: "TL.ob",
+                                    tgt: "TL.ob",
+                                },
+                                Cell {
+                                    name: "TL.tight_id",
+                                    src: "TL.ob",
+                                    tgt: "TL.ob",
+                                },
+                                Cell {
+                                    name: "TR.loose_id",
+                                    src: "TR.ob",
+                                    tgt: "TR.ob",
+                                },
+                                Cell {
+                                    name: "TR.tight_id",
+                                    src: "TR.ob",
+                                    tgt: "TR.ob",
+                                },
+                                Cell {
+                                    name: "Top.arrow",
+                                    src: "TL.ob",
+                                    tgt: "TR.ob",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 2,
+                            cells: [
+                                Cell {
+                                    name: "BL.Tight_id_id.dir",
+                                    src: "(BL.tight_id #0 BL.tight_id)",
+                                    tgt: "BL.tight_id",
+                                },
+                                Cell {
+                                    name: "BL.Tight_id_id.inv",
+                                    src: "BL.tight_id",
+                                    tgt: "(BL.tight_id #0 BL.tight_id)",
+                                },
+                                Cell {
+                                    name: "BL.id_square",
+                                    src: "(BL.loose_id #0 BL.tight_id)",
+                                    tgt: "(BL.tight_id #0 BL.loose_id)",
+                                },
+                                Cell {
+                                    name: "BR.Tight_id_id.dir",
+                                    src: "(BR.tight_id #0 BR.tight_id)",
+                                    tgt: "BR.tight_id",
+                                },
+                                Cell {
+                                    name: "BR.Tight_id_id.inv",
+                                    src: "BR.tight_id",
+                                    tgt: "(BR.tight_id #0 BR.tight_id)",
+                                },
+                                Cell {
+                                    name: "BR.id_square",
+                                    src: "(BR.loose_id #0 BR.tight_id)",
+                                    tgt: "(BR.tight_id #0 BR.loose_id)",
+                                },
+                                Cell {
+                                    name: "Bottom.id",
+                                    src: "(Bottom.arrow #0 BR.tight_id)",
+                                    tgt: "(BL.tight_id #0 Bottom.arrow)",
+                                },
+                                Cell {
+                                    name: "Left.id",
+                                    src: "(TL.loose_id #0 Left.arrow)",
+                                    tgt: "(Left.arrow #0 BL.loose_id)",
+                                },
+                                Cell {
+                                    name: "Right.id",
+                                    src: "(TR.loose_id #0 Right.arrow)",
+                                    tgt: "(Right.arrow #0 BR.loose_id)",
+                                },
+                                Cell {
+                                    name: "TL.Tight_id_id.dir",
+                                    src: "(TL.tight_id #0 TL.tight_id)",
+                                    tgt: "TL.tight_id",
+                                },
+                                Cell {
+                                    name: "TL.Tight_id_id.inv",
+                                    src: "TL.tight_id",
+                                    tgt: "(TL.tight_id #0 TL.tight_id)",
+                                },
+                                Cell {
+                                    name: "TL.id_square",
+                                    src: "(TL.loose_id #0 TL.tight_id)",
+                                    tgt: "(TL.tight_id #0 TL.loose_id)",
+                                },
+                                Cell {
+                                    name: "TR.Tight_id_id.dir",
+                                    src: "(TR.tight_id #0 TR.tight_id)",
+                                    tgt: "TR.tight_id",
+                                },
+                                Cell {
+                                    name: "TR.Tight_id_id.inv",
+                                    src: "TR.tight_id",
+                                    tgt: "(TR.tight_id #0 TR.tight_id)",
+                                },
+                                Cell {
+                                    name: "TR.id_square",
+                                    src: "(TR.loose_id #0 TR.tight_id)",
+                                    tgt: "(TR.tight_id #0 TR.loose_id)",
+                                },
+                                Cell {
+                                    name: "Top.id",
+                                    src: "(Top.arrow #0 TR.tight_id)",
+                                    tgt: "(TL.tight_id #0 Top.arrow)",
+                                },
+                                Cell {
+                                    name: "square",
+                                    src: "(Top.arrow #0 Right.arrow)",
+                                    tgt: "(Left.arrow #0 Bottom.arrow)",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [
+                        Cell {
+                            name: "square",
+                            src: "(Top.arrow #0 Right.arrow)",
+                            tgt: "(Left.arrow #0 Bottom.arrow)",
+                        },
+                    ],
+                    maps: [
+                        Map {
+                            name: "BL",
+                            domain: "Ob",
+                        },
+                        Map {
+                            name: "BR",
+                            domain: "Ob",
+                        },
+                        Map {
+                            name: "Bottom",
+                            domain: "Loose",
+                        },
+                        Map {
+                            name: "Left",
+                            domain: "Tight",
+                        },
+                        Map {
+                            name: "Right",
+                            domain: "Tight",
+                        },
+                        Map {
+                            name: "Square",
+                            domain: "Square",
+                        },
+                        Map {
+                            name: "TL",
+                            domain: "Ob",
+                        },
+                        Map {
+                            name: "TR",
+                            domain: "Ob",
+                        },
+                        Map {
+                            name: "Top",
+                            domain: "Loose",
+                        },
+                    ],
+                },
+                Type {
+                    name: "Tight_pair",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "Fst.Cod.ob",
+                                    src: "",
+                                    tgt: "",
+                                },
+                                Cell {
+                                    name: "Fst.Dom.ob",
+                                    src: "",
+                                    tgt: "",
+                                },
+                                Cell {
+                                    name: "Snd.Cod.ob",
+                                    src: "",
+                                    tgt: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "Fst.Cod.loose_id",
+                                    src: "Fst.Cod.ob",
+                                    tgt: "Fst.Cod.ob",
+                                },
+                                Cell {
+                                    name: "Fst.Cod.tight_id",
+                                    src: "Fst.Cod.ob",
+                                    tgt: "Fst.Cod.ob",
+                                },
+                                Cell {
+                                    name: "Fst.Dom.loose_id",
+                                    src: "Fst.Dom.ob",
+                                    tgt: "Fst.Dom.ob",
+                                },
+                                Cell {
+                                    name: "Fst.Dom.tight_id",
+                                    src: "Fst.Dom.ob",
+                                    tgt: "Fst.Dom.ob",
+                                },
+                                Cell {
+                                    name: "Fst.arrow",
+                                    src: "Fst.Dom.ob",
+                                    tgt: "Fst.Cod.ob",
+                                },
+                                Cell {
+                                    name: "Snd.Cod.loose_id",
+                                    src: "Snd.Cod.ob",
+                                    tgt: "Snd.Cod.ob",
+                                },
+                                Cell {
+                                    name: "Snd.Cod.tight_id",
+                                    src: "Snd.Cod.ob",
+                                    tgt: "Snd.Cod.ob",
+                                },
+                                Cell {
+                                    name: "Snd.arrow",
+                                    src: "Fst.Cod.ob",
+                                    tgt: "Snd.Cod.ob",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 2,
+                            cells: [
+                                Cell {
+                                    name: "Fst.Cod.Tight_id_id.dir",
+                                    src: "(Fst.Cod.tight_id #0 Fst.Cod.tight_id)",
+                                    tgt: "Fst.Cod.tight_id",
+                                },
+                                Cell {
+                                    name: "Fst.Cod.Tight_id_id.inv",
+                                    src: "Fst.Cod.tight_id",
+                                    tgt: "(Fst.Cod.tight_id #0 Fst.Cod.tight_id)",
+                                },
+                                Cell {
+                                    name: "Fst.Cod.id_square",
+                                    src: "(Fst.Cod.loose_id #0 Fst.Cod.tight_id)",
+                                    tgt: "(Fst.Cod.tight_id #0 Fst.Cod.loose_id)",
+                                },
+                                Cell {
+                                    name: "Fst.Dom.Tight_id_id.dir",
+                                    src: "(Fst.Dom.tight_id #0 Fst.Dom.tight_id)",
+                                    tgt: "Fst.Dom.tight_id",
+                                },
+                                Cell {
+                                    name: "Fst.Dom.Tight_id_id.inv",
+                                    src: "Fst.Dom.tight_id",
+                                    tgt: "(Fst.Dom.tight_id #0 Fst.Dom.tight_id)",
+                                },
+                                Cell {
+                                    name: "Fst.Dom.id_square",
+                                    src: "(Fst.Dom.loose_id #0 Fst.Dom.tight_id)",
+                                    tgt: "(Fst.Dom.tight_id #0 Fst.Dom.loose_id)",
+                                },
+                                Cell {
+                                    name: "Fst.id",
+                                    src: "(Fst.Dom.loose_id #0 Fst.arrow)",
+                                    tgt: "(Fst.arrow #0 Fst.Cod.loose_id)",
+                                },
+                                Cell {
+                                    name: "Snd.Cod.Tight_id_id.dir",
+                                    src: "(Snd.Cod.tight_id #0 Snd.Cod.tight_id)",
+                                    tgt: "Snd.Cod.tight_id",
+                                },
+                                Cell {
+                                    name: "Snd.Cod.Tight_id_id.inv",
+                                    src: "Snd.Cod.tight_id",
+                                    tgt: "(Snd.Cod.tight_id #0 Snd.Cod.tight_id)",
+                                },
+                                Cell {
+                                    name: "Snd.Cod.id_square",
+                                    src: "(Snd.Cod.loose_id #0 Snd.Cod.tight_id)",
+                                    tgt: "(Snd.Cod.tight_id #0 Snd.Cod.loose_id)",
+                                },
+                                Cell {
+                                    name: "Snd.id",
+                                    src: "(Fst.Cod.loose_id #0 Snd.arrow)",
+                                    tgt: "(Snd.arrow #0 Snd.Cod.loose_id)",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [],
+                    maps: [
+                        Map {
+                            name: "Compose",
+                            domain: "Tight",
+                        },
+                        Map {
+                            name: "Fst",
+                            domain: "Tight",
+                        },
+                        Map {
+                            name: "Snd",
+                            domain: "Tight",
+                        },
+                        Map {
+                            name: "Tight_pair",
+                            domain: "Tight_pair",
+                        },
+                    ],
+                },
+                Type {
+                    name: "Loose_pair",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "Fst.Cod.ob",
+                                    src: "",
+                                    tgt: "",
+                                },
+                                Cell {
+                                    name: "Fst.Dom.ob",
+                                    src: "",
+                                    tgt: "",
+                                },
+                                Cell {
+                                    name: "Snd.Cod.ob",
+                                    src: "",
+                                    tgt: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "Fst.Cod.loose_id",
+                                    src: "Fst.Cod.ob",
+                                    tgt: "Fst.Cod.ob",
+                                },
+                                Cell {
+                                    name: "Fst.Cod.tight_id",
+                                    src: "Fst.Cod.ob",
+                                    tgt: "Fst.Cod.ob",
+                                },
+                                Cell {
+                                    name: "Fst.Dom.loose_id",
+                                    src: "Fst.Dom.ob",
+                                    tgt: "Fst.Dom.ob",
+                                },
+                                Cell {
+                                    name: "Fst.Dom.tight_id",
+                                    src: "Fst.Dom.ob",
+                                    tgt: "Fst.Dom.ob",
+                                },
+                                Cell {
+                                    name: "Fst.arrow",
+                                    src: "Fst.Dom.ob",
+                                    tgt: "Fst.Cod.ob",
+                                },
+                                Cell {
+                                    name: "Snd.Cod.loose_id",
+                                    src: "Snd.Cod.ob",
+                                    tgt: "Snd.Cod.ob",
+                                },
+                                Cell {
+                                    name: "Snd.Cod.tight_id",
+                                    src: "Snd.Cod.ob",
+                                    tgt: "Snd.Cod.ob",
+                                },
+                                Cell {
+                                    name: "Snd.arrow",
+                                    src: "Fst.Cod.ob",
+                                    tgt: "Snd.Cod.ob",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 2,
+                            cells: [
+                                Cell {
+                                    name: "Fst.Cod.Tight_id_id.dir",
+                                    src: "(Fst.Cod.tight_id #0 Fst.Cod.tight_id)",
+                                    tgt: "Fst.Cod.tight_id",
+                                },
+                                Cell {
+                                    name: "Fst.Cod.Tight_id_id.inv",
+                                    src: "Fst.Cod.tight_id",
+                                    tgt: "(Fst.Cod.tight_id #0 Fst.Cod.tight_id)",
+                                },
+                                Cell {
+                                    name: "Fst.Cod.id_square",
+                                    src: "(Fst.Cod.loose_id #0 Fst.Cod.tight_id)",
+                                    tgt: "(Fst.Cod.tight_id #0 Fst.Cod.loose_id)",
+                                },
+                                Cell {
+                                    name: "Fst.Dom.Tight_id_id.dir",
+                                    src: "(Fst.Dom.tight_id #0 Fst.Dom.tight_id)",
+                                    tgt: "Fst.Dom.tight_id",
+                                },
+                                Cell {
+                                    name: "Fst.Dom.Tight_id_id.inv",
+                                    src: "Fst.Dom.tight_id",
+                                    tgt: "(Fst.Dom.tight_id #0 Fst.Dom.tight_id)",
+                                },
+                                Cell {
+                                    name: "Fst.Dom.id_square",
+                                    src: "(Fst.Dom.loose_id #0 Fst.Dom.tight_id)",
+                                    tgt: "(Fst.Dom.tight_id #0 Fst.Dom.loose_id)",
+                                },
+                                Cell {
+                                    name: "Fst.id",
+                                    src: "(Fst.arrow #0 Fst.Cod.tight_id)",
+                                    tgt: "(Fst.Dom.tight_id #0 Fst.arrow)",
+                                },
+                                Cell {
+                                    name: "Snd.Cod.Tight_id_id.dir",
+                                    src: "(Snd.Cod.tight_id #0 Snd.Cod.tight_id)",
+                                    tgt: "Snd.Cod.tight_id",
+                                },
+                                Cell {
+                                    name: "Snd.Cod.Tight_id_id.inv",
+                                    src: "Snd.Cod.tight_id",
+                                    tgt: "(Snd.Cod.tight_id #0 Snd.Cod.tight_id)",
+                                },
+                                Cell {
+                                    name: "Snd.Cod.id_square",
+                                    src: "(Snd.Cod.loose_id #0 Snd.Cod.tight_id)",
+                                    tgt: "(Snd.Cod.tight_id #0 Snd.Cod.loose_id)",
+                                },
+                                Cell {
+                                    name: "Snd.id",
+                                    src: "(Snd.arrow #0 Snd.Cod.tight_id)",
+                                    tgt: "(Fst.Cod.tight_id #0 Snd.arrow)",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [],
+                    maps: [
+                        Map {
+                            name: "Compose",
+                            domain: "Loose",
+                        },
+                        Map {
+                            name: "Fst",
+                            domain: "Loose",
+                        },
+                        Map {
+                            name: "Loose_pair",
+                            domain: "Loose_pair",
+                        },
+                        Map {
+                            name: "Snd",
+                            domain: "Loose",
+                        },
+                    ],
+                },
+                Type {
                     name: "H_Pair",
                     dims: [
                         Dim {
@@ -399,868 +1261,6 @@ Store {
                         Map {
                             name: "Snd",
                             domain: "Square",
-                        },
-                    ],
-                },
-                Type {
-                    name: "Loose",
-                    dims: [
-                        Dim {
-                            dim: 0,
-                            cells: [
-                                Cell {
-                                    name: "Cod.ob",
-                                    src: "",
-                                    tgt: "",
-                                },
-                                Cell {
-                                    name: "Dom.ob",
-                                    src: "",
-                                    tgt: "",
-                                },
-                            ],
-                        },
-                        Dim {
-                            dim: 1,
-                            cells: [
-                                Cell {
-                                    name: "Cod.loose_id",
-                                    src: "Cod.ob",
-                                    tgt: "Cod.ob",
-                                },
-                                Cell {
-                                    name: "Cod.tight_id",
-                                    src: "Cod.ob",
-                                    tgt: "Cod.ob",
-                                },
-                                Cell {
-                                    name: "Dom.loose_id",
-                                    src: "Dom.ob",
-                                    tgt: "Dom.ob",
-                                },
-                                Cell {
-                                    name: "Dom.tight_id",
-                                    src: "Dom.ob",
-                                    tgt: "Dom.ob",
-                                },
-                                Cell {
-                                    name: "arrow",
-                                    src: "Dom.ob",
-                                    tgt: "Cod.ob",
-                                },
-                            ],
-                        },
-                        Dim {
-                            dim: 2,
-                            cells: [
-                                Cell {
-                                    name: "Cod.Tight_id_id.dir",
-                                    src: "(Cod.tight_id #0 Cod.tight_id)",
-                                    tgt: "Cod.tight_id",
-                                },
-                                Cell {
-                                    name: "Cod.Tight_id_id.inv",
-                                    src: "Cod.tight_id",
-                                    tgt: "(Cod.tight_id #0 Cod.tight_id)",
-                                },
-                                Cell {
-                                    name: "Cod.id_square",
-                                    src: "(Cod.loose_id #0 Cod.tight_id)",
-                                    tgt: "(Cod.tight_id #0 Cod.loose_id)",
-                                },
-                                Cell {
-                                    name: "Dom.Tight_id_id.dir",
-                                    src: "(Dom.tight_id #0 Dom.tight_id)",
-                                    tgt: "Dom.tight_id",
-                                },
-                                Cell {
-                                    name: "Dom.Tight_id_id.inv",
-                                    src: "Dom.tight_id",
-                                    tgt: "(Dom.tight_id #0 Dom.tight_id)",
-                                },
-                                Cell {
-                                    name: "Dom.id_square",
-                                    src: "(Dom.loose_id #0 Dom.tight_id)",
-                                    tgt: "(Dom.tight_id #0 Dom.loose_id)",
-                                },
-                                Cell {
-                                    name: "id",
-                                    src: "(arrow #0 Cod.tight_id)",
-                                    tgt: "(Dom.tight_id #0 arrow)",
-                                },
-                            ],
-                        },
-                    ],
-                    diagrams: [
-                        Cell {
-                            name: "arrow",
-                            src: "Dom.ob",
-                            tgt: "Cod.ob",
-                        },
-                        Cell {
-                            name: "id",
-                            src: "(arrow #0 Cod.tight_id)",
-                            tgt: "(Dom.tight_id #0 arrow)",
-                        },
-                    ],
-                    maps: [
-                        Map {
-                            name: "Cod",
-                            domain: "Ob",
-                        },
-                        Map {
-                            name: "Dom",
-                            domain: "Ob",
-                        },
-                        Map {
-                            name: "Id",
-                            domain: "Square",
-                        },
-                        Map {
-                            name: "Loose",
-                            domain: "Loose",
-                        },
-                    ],
-                },
-                Type {
-                    name: "Loose_pair",
-                    dims: [
-                        Dim {
-                            dim: 0,
-                            cells: [
-                                Cell {
-                                    name: "Fst.Cod.ob",
-                                    src: "",
-                                    tgt: "",
-                                },
-                                Cell {
-                                    name: "Fst.Dom.ob",
-                                    src: "",
-                                    tgt: "",
-                                },
-                                Cell {
-                                    name: "Snd.Cod.ob",
-                                    src: "",
-                                    tgt: "",
-                                },
-                            ],
-                        },
-                        Dim {
-                            dim: 1,
-                            cells: [
-                                Cell {
-                                    name: "Fst.Cod.loose_id",
-                                    src: "Fst.Cod.ob",
-                                    tgt: "Fst.Cod.ob",
-                                },
-                                Cell {
-                                    name: "Fst.Cod.tight_id",
-                                    src: "Fst.Cod.ob",
-                                    tgt: "Fst.Cod.ob",
-                                },
-                                Cell {
-                                    name: "Fst.Dom.loose_id",
-                                    src: "Fst.Dom.ob",
-                                    tgt: "Fst.Dom.ob",
-                                },
-                                Cell {
-                                    name: "Fst.Dom.tight_id",
-                                    src: "Fst.Dom.ob",
-                                    tgt: "Fst.Dom.ob",
-                                },
-                                Cell {
-                                    name: "Fst.arrow",
-                                    src: "Fst.Dom.ob",
-                                    tgt: "Fst.Cod.ob",
-                                },
-                                Cell {
-                                    name: "Snd.Cod.loose_id",
-                                    src: "Snd.Cod.ob",
-                                    tgt: "Snd.Cod.ob",
-                                },
-                                Cell {
-                                    name: "Snd.Cod.tight_id",
-                                    src: "Snd.Cod.ob",
-                                    tgt: "Snd.Cod.ob",
-                                },
-                                Cell {
-                                    name: "Snd.arrow",
-                                    src: "Fst.Cod.ob",
-                                    tgt: "Snd.Cod.ob",
-                                },
-                            ],
-                        },
-                        Dim {
-                            dim: 2,
-                            cells: [
-                                Cell {
-                                    name: "Fst.Cod.Tight_id_id.dir",
-                                    src: "(Fst.Cod.tight_id #0 Fst.Cod.tight_id)",
-                                    tgt: "Fst.Cod.tight_id",
-                                },
-                                Cell {
-                                    name: "Fst.Cod.Tight_id_id.inv",
-                                    src: "Fst.Cod.tight_id",
-                                    tgt: "(Fst.Cod.tight_id #0 Fst.Cod.tight_id)",
-                                },
-                                Cell {
-                                    name: "Fst.Cod.id_square",
-                                    src: "(Fst.Cod.loose_id #0 Fst.Cod.tight_id)",
-                                    tgt: "(Fst.Cod.tight_id #0 Fst.Cod.loose_id)",
-                                },
-                                Cell {
-                                    name: "Fst.Dom.Tight_id_id.dir",
-                                    src: "(Fst.Dom.tight_id #0 Fst.Dom.tight_id)",
-                                    tgt: "Fst.Dom.tight_id",
-                                },
-                                Cell {
-                                    name: "Fst.Dom.Tight_id_id.inv",
-                                    src: "Fst.Dom.tight_id",
-                                    tgt: "(Fst.Dom.tight_id #0 Fst.Dom.tight_id)",
-                                },
-                                Cell {
-                                    name: "Fst.Dom.id_square",
-                                    src: "(Fst.Dom.loose_id #0 Fst.Dom.tight_id)",
-                                    tgt: "(Fst.Dom.tight_id #0 Fst.Dom.loose_id)",
-                                },
-                                Cell {
-                                    name: "Fst.id",
-                                    src: "(Fst.arrow #0 Fst.Cod.tight_id)",
-                                    tgt: "(Fst.Dom.tight_id #0 Fst.arrow)",
-                                },
-                                Cell {
-                                    name: "Snd.Cod.Tight_id_id.dir",
-                                    src: "(Snd.Cod.tight_id #0 Snd.Cod.tight_id)",
-                                    tgt: "Snd.Cod.tight_id",
-                                },
-                                Cell {
-                                    name: "Snd.Cod.Tight_id_id.inv",
-                                    src: "Snd.Cod.tight_id",
-                                    tgt: "(Snd.Cod.tight_id #0 Snd.Cod.tight_id)",
-                                },
-                                Cell {
-                                    name: "Snd.Cod.id_square",
-                                    src: "(Snd.Cod.loose_id #0 Snd.Cod.tight_id)",
-                                    tgt: "(Snd.Cod.tight_id #0 Snd.Cod.loose_id)",
-                                },
-                                Cell {
-                                    name: "Snd.id",
-                                    src: "(Snd.arrow #0 Snd.Cod.tight_id)",
-                                    tgt: "(Fst.Cod.tight_id #0 Snd.arrow)",
-                                },
-                            ],
-                        },
-                    ],
-                    diagrams: [],
-                    maps: [
-                        Map {
-                            name: "Compose",
-                            domain: "Loose",
-                        },
-                        Map {
-                            name: "Fst",
-                            domain: "Loose",
-                        },
-                        Map {
-                            name: "Loose_pair",
-                            domain: "Loose_pair",
-                        },
-                        Map {
-                            name: "Snd",
-                            domain: "Loose",
-                        },
-                    ],
-                },
-                Type {
-                    name: "Ob",
-                    dims: [
-                        Dim {
-                            dim: 0,
-                            cells: [
-                                Cell {
-                                    name: "ob",
-                                    src: "",
-                                    tgt: "",
-                                },
-                            ],
-                        },
-                        Dim {
-                            dim: 1,
-                            cells: [
-                                Cell {
-                                    name: "loose_id",
-                                    src: "ob",
-                                    tgt: "ob",
-                                },
-                                Cell {
-                                    name: "tight_id",
-                                    src: "ob",
-                                    tgt: "ob",
-                                },
-                            ],
-                        },
-                        Dim {
-                            dim: 2,
-                            cells: [
-                                Cell {
-                                    name: "Tight_id_id.dir",
-                                    src: "(tight_id #0 tight_id)",
-                                    tgt: "tight_id",
-                                },
-                                Cell {
-                                    name: "Tight_id_id.inv",
-                                    src: "tight_id",
-                                    tgt: "(tight_id #0 tight_id)",
-                                },
-                                Cell {
-                                    name: "id_square",
-                                    src: "(loose_id #0 tight_id)",
-                                    tgt: "(tight_id #0 loose_id)",
-                                },
-                            ],
-                        },
-                    ],
-                    diagrams: [
-                        Cell {
-                            name: "id_square",
-                            src: "(loose_id #0 tight_id)",
-                            tgt: "(tight_id #0 loose_id)",
-                        },
-                        Cell {
-                            name: "loose_id",
-                            src: "ob",
-                            tgt: "ob",
-                        },
-                        Cell {
-                            name: "ob",
-                            src: "",
-                            tgt: "",
-                        },
-                        Cell {
-                            name: "tight_id",
-                            src: "ob",
-                            tgt: "ob",
-                        },
-                    ],
-                    maps: [
-                        Map {
-                            name: "Id_square",
-                            domain: "Square",
-                        },
-                        Map {
-                            name: "Loose_id",
-                            domain: "Loose",
-                        },
-                        Map {
-                            name: "Ob",
-                            domain: "Ob",
-                        },
-                        Map {
-                            name: "Tight_id",
-                            domain: "Tight",
-                        },
-                        Map {
-                            name: "Tight_id_id",
-                            domain: "Eq",
-                        },
-                    ],
-                },
-                Type {
-                    name: "Square",
-                    dims: [
-                        Dim {
-                            dim: 0,
-                            cells: [
-                                Cell {
-                                    name: "BL.ob",
-                                    src: "",
-                                    tgt: "",
-                                },
-                                Cell {
-                                    name: "BR.ob",
-                                    src: "",
-                                    tgt: "",
-                                },
-                                Cell {
-                                    name: "TL.ob",
-                                    src: "",
-                                    tgt: "",
-                                },
-                                Cell {
-                                    name: "TR.ob",
-                                    src: "",
-                                    tgt: "",
-                                },
-                            ],
-                        },
-                        Dim {
-                            dim: 1,
-                            cells: [
-                                Cell {
-                                    name: "BL.loose_id",
-                                    src: "BL.ob",
-                                    tgt: "BL.ob",
-                                },
-                                Cell {
-                                    name: "BL.tight_id",
-                                    src: "BL.ob",
-                                    tgt: "BL.ob",
-                                },
-                                Cell {
-                                    name: "BR.loose_id",
-                                    src: "BR.ob",
-                                    tgt: "BR.ob",
-                                },
-                                Cell {
-                                    name: "BR.tight_id",
-                                    src: "BR.ob",
-                                    tgt: "BR.ob",
-                                },
-                                Cell {
-                                    name: "Bottom.arrow",
-                                    src: "BL.ob",
-                                    tgt: "BR.ob",
-                                },
-                                Cell {
-                                    name: "Left.arrow",
-                                    src: "TL.ob",
-                                    tgt: "BL.ob",
-                                },
-                                Cell {
-                                    name: "Right.arrow",
-                                    src: "TR.ob",
-                                    tgt: "BR.ob",
-                                },
-                                Cell {
-                                    name: "TL.loose_id",
-                                    src: "TL.ob",
-                                    tgt: "TL.ob",
-                                },
-                                Cell {
-                                    name: "TL.tight_id",
-                                    src: "TL.ob",
-                                    tgt: "TL.ob",
-                                },
-                                Cell {
-                                    name: "TR.loose_id",
-                                    src: "TR.ob",
-                                    tgt: "TR.ob",
-                                },
-                                Cell {
-                                    name: "TR.tight_id",
-                                    src: "TR.ob",
-                                    tgt: "TR.ob",
-                                },
-                                Cell {
-                                    name: "Top.arrow",
-                                    src: "TL.ob",
-                                    tgt: "TR.ob",
-                                },
-                            ],
-                        },
-                        Dim {
-                            dim: 2,
-                            cells: [
-                                Cell {
-                                    name: "BL.Tight_id_id.dir",
-                                    src: "(BL.tight_id #0 BL.tight_id)",
-                                    tgt: "BL.tight_id",
-                                },
-                                Cell {
-                                    name: "BL.Tight_id_id.inv",
-                                    src: "BL.tight_id",
-                                    tgt: "(BL.tight_id #0 BL.tight_id)",
-                                },
-                                Cell {
-                                    name: "BL.id_square",
-                                    src: "(BL.loose_id #0 BL.tight_id)",
-                                    tgt: "(BL.tight_id #0 BL.loose_id)",
-                                },
-                                Cell {
-                                    name: "BR.Tight_id_id.dir",
-                                    src: "(BR.tight_id #0 BR.tight_id)",
-                                    tgt: "BR.tight_id",
-                                },
-                                Cell {
-                                    name: "BR.Tight_id_id.inv",
-                                    src: "BR.tight_id",
-                                    tgt: "(BR.tight_id #0 BR.tight_id)",
-                                },
-                                Cell {
-                                    name: "BR.id_square",
-                                    src: "(BR.loose_id #0 BR.tight_id)",
-                                    tgt: "(BR.tight_id #0 BR.loose_id)",
-                                },
-                                Cell {
-                                    name: "Bottom.id",
-                                    src: "(Bottom.arrow #0 BR.tight_id)",
-                                    tgt: "(BL.tight_id #0 Bottom.arrow)",
-                                },
-                                Cell {
-                                    name: "Left.id",
-                                    src: "(TL.loose_id #0 Left.arrow)",
-                                    tgt: "(Left.arrow #0 BL.loose_id)",
-                                },
-                                Cell {
-                                    name: "Right.id",
-                                    src: "(TR.loose_id #0 Right.arrow)",
-                                    tgt: "(Right.arrow #0 BR.loose_id)",
-                                },
-                                Cell {
-                                    name: "TL.Tight_id_id.dir",
-                                    src: "(TL.tight_id #0 TL.tight_id)",
-                                    tgt: "TL.tight_id",
-                                },
-                                Cell {
-                                    name: "TL.Tight_id_id.inv",
-                                    src: "TL.tight_id",
-                                    tgt: "(TL.tight_id #0 TL.tight_id)",
-                                },
-                                Cell {
-                                    name: "TL.id_square",
-                                    src: "(TL.loose_id #0 TL.tight_id)",
-                                    tgt: "(TL.tight_id #0 TL.loose_id)",
-                                },
-                                Cell {
-                                    name: "TR.Tight_id_id.dir",
-                                    src: "(TR.tight_id #0 TR.tight_id)",
-                                    tgt: "TR.tight_id",
-                                },
-                                Cell {
-                                    name: "TR.Tight_id_id.inv",
-                                    src: "TR.tight_id",
-                                    tgt: "(TR.tight_id #0 TR.tight_id)",
-                                },
-                                Cell {
-                                    name: "TR.id_square",
-                                    src: "(TR.loose_id #0 TR.tight_id)",
-                                    tgt: "(TR.tight_id #0 TR.loose_id)",
-                                },
-                                Cell {
-                                    name: "Top.id",
-                                    src: "(Top.arrow #0 TR.tight_id)",
-                                    tgt: "(TL.tight_id #0 Top.arrow)",
-                                },
-                                Cell {
-                                    name: "square",
-                                    src: "(Top.arrow #0 Right.arrow)",
-                                    tgt: "(Left.arrow #0 Bottom.arrow)",
-                                },
-                            ],
-                        },
-                    ],
-                    diagrams: [
-                        Cell {
-                            name: "square",
-                            src: "(Top.arrow #0 Right.arrow)",
-                            tgt: "(Left.arrow #0 Bottom.arrow)",
-                        },
-                    ],
-                    maps: [
-                        Map {
-                            name: "BL",
-                            domain: "Ob",
-                        },
-                        Map {
-                            name: "BR",
-                            domain: "Ob",
-                        },
-                        Map {
-                            name: "Bottom",
-                            domain: "Loose",
-                        },
-                        Map {
-                            name: "Left",
-                            domain: "Tight",
-                        },
-                        Map {
-                            name: "Right",
-                            domain: "Tight",
-                        },
-                        Map {
-                            name: "Square",
-                            domain: "Square",
-                        },
-                        Map {
-                            name: "TL",
-                            domain: "Ob",
-                        },
-                        Map {
-                            name: "TR",
-                            domain: "Ob",
-                        },
-                        Map {
-                            name: "Top",
-                            domain: "Loose",
-                        },
-                    ],
-                },
-                Type {
-                    name: "Tight",
-                    dims: [
-                        Dim {
-                            dim: 0,
-                            cells: [
-                                Cell {
-                                    name: "Cod.ob",
-                                    src: "",
-                                    tgt: "",
-                                },
-                                Cell {
-                                    name: "Dom.ob",
-                                    src: "",
-                                    tgt: "",
-                                },
-                            ],
-                        },
-                        Dim {
-                            dim: 1,
-                            cells: [
-                                Cell {
-                                    name: "Cod.loose_id",
-                                    src: "Cod.ob",
-                                    tgt: "Cod.ob",
-                                },
-                                Cell {
-                                    name: "Cod.tight_id",
-                                    src: "Cod.ob",
-                                    tgt: "Cod.ob",
-                                },
-                                Cell {
-                                    name: "Dom.loose_id",
-                                    src: "Dom.ob",
-                                    tgt: "Dom.ob",
-                                },
-                                Cell {
-                                    name: "Dom.tight_id",
-                                    src: "Dom.ob",
-                                    tgt: "Dom.ob",
-                                },
-                                Cell {
-                                    name: "arrow",
-                                    src: "Dom.ob",
-                                    tgt: "Cod.ob",
-                                },
-                            ],
-                        },
-                        Dim {
-                            dim: 2,
-                            cells: [
-                                Cell {
-                                    name: "Cod.Tight_id_id.dir",
-                                    src: "(Cod.tight_id #0 Cod.tight_id)",
-                                    tgt: "Cod.tight_id",
-                                },
-                                Cell {
-                                    name: "Cod.Tight_id_id.inv",
-                                    src: "Cod.tight_id",
-                                    tgt: "(Cod.tight_id #0 Cod.tight_id)",
-                                },
-                                Cell {
-                                    name: "Cod.id_square",
-                                    src: "(Cod.loose_id #0 Cod.tight_id)",
-                                    tgt: "(Cod.tight_id #0 Cod.loose_id)",
-                                },
-                                Cell {
-                                    name: "Dom.Tight_id_id.dir",
-                                    src: "(Dom.tight_id #0 Dom.tight_id)",
-                                    tgt: "Dom.tight_id",
-                                },
-                                Cell {
-                                    name: "Dom.Tight_id_id.inv",
-                                    src: "Dom.tight_id",
-                                    tgt: "(Dom.tight_id #0 Dom.tight_id)",
-                                },
-                                Cell {
-                                    name: "Dom.id_square",
-                                    src: "(Dom.loose_id #0 Dom.tight_id)",
-                                    tgt: "(Dom.tight_id #0 Dom.loose_id)",
-                                },
-                                Cell {
-                                    name: "id",
-                                    src: "(Dom.loose_id #0 arrow)",
-                                    tgt: "(arrow #0 Cod.loose_id)",
-                                },
-                            ],
-                        },
-                    ],
-                    diagrams: [
-                        Cell {
-                            name: "arrow",
-                            src: "Dom.ob",
-                            tgt: "Cod.ob",
-                        },
-                        Cell {
-                            name: "id",
-                            src: "(Dom.loose_id #0 arrow)",
-                            tgt: "(arrow #0 Cod.loose_id)",
-                        },
-                    ],
-                    maps: [
-                        Map {
-                            name: "Cod",
-                            domain: "Ob",
-                        },
-                        Map {
-                            name: "Dom",
-                            domain: "Ob",
-                        },
-                        Map {
-                            name: "Id",
-                            domain: "Square",
-                        },
-                        Map {
-                            name: "Tight",
-                            domain: "Tight",
-                        },
-                    ],
-                },
-                Type {
-                    name: "Tight_pair",
-                    dims: [
-                        Dim {
-                            dim: 0,
-                            cells: [
-                                Cell {
-                                    name: "Fst.Cod.ob",
-                                    src: "",
-                                    tgt: "",
-                                },
-                                Cell {
-                                    name: "Fst.Dom.ob",
-                                    src: "",
-                                    tgt: "",
-                                },
-                                Cell {
-                                    name: "Snd.Cod.ob",
-                                    src: "",
-                                    tgt: "",
-                                },
-                            ],
-                        },
-                        Dim {
-                            dim: 1,
-                            cells: [
-                                Cell {
-                                    name: "Fst.Cod.loose_id",
-                                    src: "Fst.Cod.ob",
-                                    tgt: "Fst.Cod.ob",
-                                },
-                                Cell {
-                                    name: "Fst.Cod.tight_id",
-                                    src: "Fst.Cod.ob",
-                                    tgt: "Fst.Cod.ob",
-                                },
-                                Cell {
-                                    name: "Fst.Dom.loose_id",
-                                    src: "Fst.Dom.ob",
-                                    tgt: "Fst.Dom.ob",
-                                },
-                                Cell {
-                                    name: "Fst.Dom.tight_id",
-                                    src: "Fst.Dom.ob",
-                                    tgt: "Fst.Dom.ob",
-                                },
-                                Cell {
-                                    name: "Fst.arrow",
-                                    src: "Fst.Dom.ob",
-                                    tgt: "Fst.Cod.ob",
-                                },
-                                Cell {
-                                    name: "Snd.Cod.loose_id",
-                                    src: "Snd.Cod.ob",
-                                    tgt: "Snd.Cod.ob",
-                                },
-                                Cell {
-                                    name: "Snd.Cod.tight_id",
-                                    src: "Snd.Cod.ob",
-                                    tgt: "Snd.Cod.ob",
-                                },
-                                Cell {
-                                    name: "Snd.arrow",
-                                    src: "Fst.Cod.ob",
-                                    tgt: "Snd.Cod.ob",
-                                },
-                            ],
-                        },
-                        Dim {
-                            dim: 2,
-                            cells: [
-                                Cell {
-                                    name: "Fst.Cod.Tight_id_id.dir",
-                                    src: "(Fst.Cod.tight_id #0 Fst.Cod.tight_id)",
-                                    tgt: "Fst.Cod.tight_id",
-                                },
-                                Cell {
-                                    name: "Fst.Cod.Tight_id_id.inv",
-                                    src: "Fst.Cod.tight_id",
-                                    tgt: "(Fst.Cod.tight_id #0 Fst.Cod.tight_id)",
-                                },
-                                Cell {
-                                    name: "Fst.Cod.id_square",
-                                    src: "(Fst.Cod.loose_id #0 Fst.Cod.tight_id)",
-                                    tgt: "(Fst.Cod.tight_id #0 Fst.Cod.loose_id)",
-                                },
-                                Cell {
-                                    name: "Fst.Dom.Tight_id_id.dir",
-                                    src: "(Fst.Dom.tight_id #0 Fst.Dom.tight_id)",
-                                    tgt: "Fst.Dom.tight_id",
-                                },
-                                Cell {
-                                    name: "Fst.Dom.Tight_id_id.inv",
-                                    src: "Fst.Dom.tight_id",
-                                    tgt: "(Fst.Dom.tight_id #0 Fst.Dom.tight_id)",
-                                },
-                                Cell {
-                                    name: "Fst.Dom.id_square",
-                                    src: "(Fst.Dom.loose_id #0 Fst.Dom.tight_id)",
-                                    tgt: "(Fst.Dom.tight_id #0 Fst.Dom.loose_id)",
-                                },
-                                Cell {
-                                    name: "Fst.id",
-                                    src: "(Fst.Dom.loose_id #0 Fst.arrow)",
-                                    tgt: "(Fst.arrow #0 Fst.Cod.loose_id)",
-                                },
-                                Cell {
-                                    name: "Snd.Cod.Tight_id_id.dir",
-                                    src: "(Snd.Cod.tight_id #0 Snd.Cod.tight_id)",
-                                    tgt: "Snd.Cod.tight_id",
-                                },
-                                Cell {
-                                    name: "Snd.Cod.Tight_id_id.inv",
-                                    src: "Snd.Cod.tight_id",
-                                    tgt: "(Snd.Cod.tight_id #0 Snd.Cod.tight_id)",
-                                },
-                                Cell {
-                                    name: "Snd.Cod.id_square",
-                                    src: "(Snd.Cod.loose_id #0 Snd.Cod.tight_id)",
-                                    tgt: "(Snd.Cod.tight_id #0 Snd.Cod.loose_id)",
-                                },
-                                Cell {
-                                    name: "Snd.id",
-                                    src: "(Fst.Cod.loose_id #0 Snd.arrow)",
-                                    tgt: "(Snd.arrow #0 Snd.Cod.loose_id)",
-                                },
-                            ],
-                        },
-                    ],
-                    diagrams: [],
-                    maps: [
-                        Map {
-                            name: "Compose",
-                            domain: "Tight",
-                        },
-                        Map {
-                            name: "Fst",
-                            domain: "Tight",
-                        },
-                        Map {
-                            name: "Snd",
-                            domain: "Tight",
-                        },
-                        Map {
-                            name: "Tight_pair",
-                            domain: "Tight_pair",
                         },
                     ],
                 },

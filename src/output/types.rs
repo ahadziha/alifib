@@ -31,7 +31,7 @@ pub struct Store {
 pub struct Module {
     /// Canonical file-system path to the source file.
     pub path: String,
-    /// All named types defined in this module, sorted by name.
+    /// All named types defined in this module, in definition order.
     pub types: Vec<Type>,
 }
 
