@@ -8,7 +8,7 @@
 //! bypass the engine (currently just `homology`, which queries the
 //! interpreter's global store directly).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use serde::Serialize;
@@ -358,15 +358,19 @@ fn face_tags_json(store: &GlobalStore, tc: &crate::core::complex::Complex, tag: 
     face_tags
 }
 
-fn compute_thin_tags(store: &GlobalStore, tc: &Complex) -> Vec<serde_json::Value> {
+fn compute_thin_tags(
+    store: &GlobalStore,
+    tc: &Complex,
+    known_thin: &HashSet<Tag>,
+) -> Vec<Tag> {
     let Some(values) = tc.find_index("thin") else { return Vec::new() };
     let mut tags = Vec::new();
     for name in values {
         if let Some((tag, _)) = tc.find_generator(name) {
-            tags.push(tag_to_json(tag));
+            tags.push(tag.clone());
         } else if let Some(diag) = tc.find_diagram(name) {
             if let Some(tag) = diag.top_label() {
-                tags.push(tag_to_json(tag));
+                tags.push(tag.clone());
             }
         } else if let Some((pmap, domain)) = tc.find_map(name) {
             let dc = match domain {
@@ -375,9 +379,11 @@ fn compute_thin_tags(store: &GlobalStore, tc: &Complex) -> Vec<serde_json::Value
             };
             if let Some(dc) = dc {
                 for (_, gen_tag, _) in dc.generators_iter() {
-                    if let Ok(image) = pmap.image(gen_tag) {
-                        if let Some(tag) = image.top_label() {
-                            tags.push(tag_to_json(tag));
+                    if known_thin.contains(gen_tag) {
+                        if let Ok(image) = pmap.image(gen_tag) {
+                            if let Some(tag) = image.top_label() {
+                                tags.push(tag.clone());
+                            }
                         }
                     }
                 }
@@ -400,7 +406,7 @@ fn type_summaries_json(store: &GlobalStore) -> Vec<serde_json::Value> {
             })
         })
         .collect();
-    norm.modules
+    let types_with_modules: Vec<_> = norm.modules
         .iter()
         .flat_map(|m| {
             let module_name = std::path::Path::new(&m.path)
@@ -410,65 +416,70 @@ fn type_summaries_json(store: &GlobalStore) -> Vec<serde_json::Value> {
             m.types.iter().map(move |t| (module_name, t))
         })
         .filter(|(_, t)| !t.name.is_empty())
-        .map(|(module_name, t)| {
-            let tc = type_complexes.get(t.name.as_str());
-            let generators: Vec<serde_json::Value> = t
-                .dims
-                .iter()
-                .flat_map(|d| {
-                    let tc = tc.copied();
-                    d.cells.iter().map(move |c| {
-                        let (tag_json, faces_json) = tc
-                            .and_then(|tc| {
-                                let (tag, _) = tc.find_generator(&c.name)?;
-                                Some((tag_to_json(tag), face_tags_json(store, tc, tag)))
-                            })
-                            .unwrap_or((serde_json::Value::Null, Vec::new()));
-                        serde_json::json!({
-                            "name": c.name,
-                            "dim": d.dim,
-                            "src": c.src,
-                            "tgt": c.tgt,
-                            "tag": tag_json,
-                            "face_tags": faces_json,
+        .collect();
+    let mut known_thin: HashSet<Tag> = HashSet::new();
+    let mut result = Vec::new();
+    for (module_name, t) in types_with_modules {
+        let tc = type_complexes.get(t.name.as_str());
+        let generators: Vec<serde_json::Value> = t
+            .dims
+            .iter()
+            .flat_map(|d| {
+                let tc = tc.copied();
+                d.cells.iter().map(move |c| {
+                    let (tag_json, faces_json) = tc
+                        .and_then(|tc| {
+                            let (tag, _) = tc.find_generator(&c.name)?;
+                            Some((tag_to_json(tag), face_tags_json(store, tc, tag)))
                         })
-                    })
-                })
-                .collect();
-            let diagrams: Vec<serde_json::Value> = t
-                .diagrams
-                .iter()
-                .map(|c| {
+                        .unwrap_or((serde_json::Value::Null, Vec::new()));
                     serde_json::json!({
                         "name": c.name,
+                        "dim": d.dim,
                         "src": c.src,
                         "tgt": c.tgt,
+                        "tag": tag_json,
+                        "face_tags": faces_json,
                     })
                 })
-                .collect();
-            let maps: Vec<serde_json::Value> = t
-                .maps
-                .iter()
-                .map(|m| {
-                    serde_json::json!({
-                        "name": m.name,
-                        "domain": m.domain,
-                    })
-                })
-                .collect();
-            let thin_tags: Vec<serde_json::Value> = tc
-                .map(|tc| compute_thin_tags(store, tc))
-                .unwrap_or_default();
-            serde_json::json!({
-                "name": t.name,
-                "module": module_name,
-                "generators": generators,
-                "diagrams": diagrams,
-                "maps": maps,
-                "thin_tags": thin_tags,
             })
-        })
-        .collect()
+            .collect();
+        let diagrams: Vec<serde_json::Value> = t
+            .diagrams
+            .iter()
+            .map(|c| {
+                serde_json::json!({
+                    "name": c.name,
+                    "src": c.src,
+                    "tgt": c.tgt,
+                })
+            })
+            .collect();
+        let maps: Vec<serde_json::Value> = t
+            .maps
+            .iter()
+            .map(|m| {
+                serde_json::json!({
+                    "name": m.name,
+                    "domain": m.domain,
+                })
+            })
+            .collect();
+        let new_thin: Vec<Tag> = tc
+            .map(|tc| compute_thin_tags(store, tc, &known_thin))
+            .unwrap_or_default();
+        let thin_tags: Vec<serde_json::Value> = new_thin.iter().map(tag_to_json).collect();
+        known_thin.extend(new_thin);
+        result.push(serde_json::json!({
+            "name": t.name,
+            "module": module_name,
+            "generators": generators,
+            "diagrams": diagrams,
+            "maps": maps,
+            "thin_tags": thin_tags,
+        }));
+    }
+    result
 }
 
 fn load_error_message(error: &LoadFileError) -> String {
