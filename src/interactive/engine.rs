@@ -792,7 +792,7 @@ impl RewriteEngine {
     /// its own `Arc` references.
     pub fn register_proof(&mut self, name: &str) -> Result<(Arc<GlobalStore>, Arc<Complex>), String> {
         let diagram = self.assemble_proof()?
-            .ok_or_else(|| "no proof steps taken yet".to_owned())?;
+            .unwrap_or_else(|| self.source_diagram.clone());
 
         if self.type_complex.name_in_use(name) || self.type_complex.find_generator(name).is_some() {
             return Err(format!("name '{}' is already in use", name));
@@ -887,7 +887,11 @@ impl RewriteEngine {
                 // registering — registration rewrites `type_complex`, and the
                 // rendered form should reflect the shape at the time of store.
                 let stored_info = if self.steps().is_empty() {
-                    None
+                    Some(StoredInfo {
+                        type_name: self.type_name().to_owned(),
+                        def_name: name.clone(),
+                        expr: self.source_diagram_name().to_owned(),
+                    })
                 } else {
                     let n = self.source_diagram().top_dim();
                     let scope = self.type_complex();

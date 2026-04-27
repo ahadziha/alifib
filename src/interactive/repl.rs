@@ -240,7 +240,7 @@ pub fn run_repl(
                             match cmd {
                                 Cmd::Store(name) => {
                                     let source_expr = if e.steps().is_empty() {
-                                        None
+                                        Some(e.source_diagram_name().to_owned())
                                     } else {
                                         let n = e.source_diagram().top_dim();
                                         let scope = e.type_complex();
