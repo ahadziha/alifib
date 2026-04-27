@@ -309,6 +309,16 @@ impl WebRepl {
         })
     }
 
+    /// Return the string diagram for the session target diagram (if any).
+    pub fn get_target_strdiag(&self) -> String {
+        self.need_engine(|e| {
+            match e.target_diagram() {
+                Some(d) => ok_json(strdiag_json_from_diagram(d, e.type_complex())),
+                None => err_json("no target set for this session"),
+            }
+        })
+    }
+
     /// Return the string diagram for the target of rewrite `choice`.
     ///
     /// This is the diagram that would result from applying the given rewrite.

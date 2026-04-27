@@ -130,6 +130,9 @@ fn handle_connection(
         ("POST", "/api/get_session_strdiag") => {
             write_json_response(stream, 200, repl.get_session_strdiag())
         }
+        ("POST", "/api/get_target_strdiag") => {
+            write_json_response(stream, 200, repl.get_target_strdiag())
+        }
         ("POST", "/api/get_rewrite_preview_strdiag") => {
             let body: RewritePreviewBody = parse_json_body(&request.body)?;
             write_json_response(stream, 200, repl.get_rewrite_preview_strdiag(body.choice))

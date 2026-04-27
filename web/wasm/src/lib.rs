@@ -110,6 +110,11 @@ impl WasmRepl {
         self.inner.get_session_strdiag()
     }
 
+    /// Return the string diagram for the session target diagram (if any).
+    pub fn get_target_strdiag(&self) -> String {
+        self.inner.get_target_strdiag()
+    }
+
     /// Return the string diagram for the target of rewrite `choice`.
     ///
     /// This is the diagram that would result from applying the given rewrite.

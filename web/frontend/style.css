@@ -603,14 +603,22 @@ header {
 .infobox-name {
   font-weight: 600;
 }
-.btn-undo-vis {
+.infobox-actions {
   position: absolute;
   top: 6px;
   right: 8px;
-  font-size: 14px;
+  display: flex;
+  gap: 4px;
+}
+.btn-target-vis, .btn-undo-vis {
+  font-size: 11px;
   line-height: 1;
   padding: 3px 8px;
+  cursor: pointer;
+  user-select: none;
 }
+.btn-target-vis:active { background: var(--accent); color: #fff; }
+.btn-undo-vis { font-size: 14px; }
 .infobox-text { position: relative; }
 
 .infobox-label {

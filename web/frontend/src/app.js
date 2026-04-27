@@ -353,6 +353,10 @@ class WasmBackend {
     return this.inner.get_session_strdiag();
   }
 
+  async get_target_strdiag() {
+    return this.inner.get_target_strdiag();
+  }
+
   async get_rewrite_preview_strdiag(choice) {
     return this.inner.get_rewrite_preview_strdiag(choice);
   }
@@ -401,6 +405,10 @@ class HttpBackend {
 
   async get_session_strdiag() {
     return this.post('/api/get_session_strdiag', {});
+  }
+
+  async get_target_strdiag() {
+    return this.post('/api/get_target_strdiag', {});
   }
 
   async get_rewrite_preview_strdiag(choice) {
@@ -1847,7 +1855,10 @@ async function showSessionDiagram(data) {
   boundaryControls.hidden = true;
 
   let html = '';
-  if (data.step_count > 0) html += `<button id="btn-undo-vis" class="btn-undo-vis btn-secondary" title="Undo">&#x21A9;</button>`;
+  let buttons = '';
+  if (data.target) buttons += `<button id="btn-target-vis" class="btn-target-vis btn-secondary" title="Show target diagram">Target</button>`;
+  if (data.step_count > 0) buttons += `<button id="btn-undo-vis" class="btn-undo-vis btn-secondary" title="Undo">&#x21A9;</button>`;
+  if (buttons) html += `<div class="infobox-actions">${buttons}</div>`;
   html += `<span class="infobox-qual">Current diagram</span>`;
   html += `<div class="infobox-name">${hi(data.current.label || '—')} <span class="acc-dim">dim ${data.current.dim}, step ${data.step_count}</span></div>`;
   if (data.target) {
@@ -1857,6 +1868,21 @@ async function showSessionDiagram(data) {
   infoboxText.innerHTML = html;
   const btnUndo = document.getElementById('btn-undo-vis');
   if (btnUndo) btnUndo.addEventListener('click', () => { void performUndo(); });
+  const btnTarget = document.getElementById('btn-target-vis');
+  if (btnTarget) {
+    btnTarget.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      previewActive = true;
+      void showTargetPreview();
+    });
+    btnTarget.addEventListener('mouseup', () => {
+      previewActive = false;
+      endRewritePreview();
+    });
+    btnTarget.addEventListener('mouseleave', () => {
+      if (previewActive) { previewActive = false; endRewritePreview(); }
+    });
+  }
 
   // Render the string diagram.
   currentLayout = layoutStrDiag(sessionStrdiag, selOrientation.value);
@@ -2029,9 +2055,18 @@ let savedLayoutBeforePreview = null;
 
 async function showRewritePreview(choice) {
   if (!repl) return;
-  // Save the current layout (including any drag modifications) before switching.
   savedLayoutBeforePreview = currentLayout;
   const result = await parseReplResponse(repl.get_rewrite_preview_strdiag(choice));
+  if (result.status !== 'ok') return;
+  currentLayout = layoutStrDiag(result.data, selOrientation.value);
+  currentLayout._highlightPositions = null;
+  resizeAndRender();
+}
+
+async function showTargetPreview() {
+  if (!repl) return;
+  savedLayoutBeforePreview = currentLayout;
+  const result = await parseReplResponse(repl.get_target_strdiag());
   if (result.status !== 'ok') return;
   currentLayout = layoutStrDiag(result.data, selOrientation.value);
   currentLayout._highlightPositions = null;
