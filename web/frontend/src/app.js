@@ -989,10 +989,6 @@ function buildModuleAccordion(types, container) {
     }
     groups[idx].types.push(t);
   }
-  if (groups.length <= 1) {
-    types.forEach(t => container.appendChild(buildTypeAccordion(t)));
-    return;
-  }
   for (const g of groups) {
     const details = document.createElement('details');
     details.className = 'acc-module';
