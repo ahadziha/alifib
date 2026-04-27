@@ -1,5 +1,5 @@
-//! Stateful rewrite engine: holds session state in memory for O(1) undo
-//! and incremental step/apply without re-interpreting the source file.
+//! Stateful rewrite engine: holds session state in memory for incremental
+//! step/apply without re-interpreting the source file.
 
 use crate::aux::loader::Loader;
 use crate::aux::Tag;
@@ -17,12 +17,8 @@ use super::session::{Move, SessionFile};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// A snapshot of a single past step, stored for O(1) undo.
 struct HistoryEntry {
-    /// The serialisable move record (choice + rule name).
     mov: Move,
-    /// The current n-diagram *before* this step was applied.
-    prev_diagram: Diagram,
 }
 
 /// Stateful rewrite session engine.
@@ -313,9 +309,7 @@ impl RewriteEngine {
         })
     }
 
-    /// Load the source file and replay a saved session, building undo snapshots
-    /// incrementally so that subsequent [`step`](Self::step) / [`undo`](Self::undo)
-    /// calls are O(diagram) with no further replay.
+    /// Load the source file and replay a saved session.
     pub fn from_session(session: SessionFile) -> Result<Self, String> {
         let (store, type_complex, source_diagram, target_diagram) = load_context(
             &session.source_file,
@@ -363,10 +357,8 @@ impl RewriteEngine {
                 })?.step.clone()
             };
 
-            // Save snapshot before advancing.
             history.push(HistoryEntry {
                 mov: mov.clone(),
-                prev_diagram: current.clone(),
             });
 
             current = Diagram::boundary(Sign::Target, n, &step)
@@ -400,6 +392,12 @@ impl RewriteEngine {
 // ── Mutating operations ───────────────────────────────────────────────────────
 
 impl RewriteEngine {
+    fn diagram_after_step(&self, step_idx: usize) -> Result<Diagram, String> {
+        let n = self.source_diagram.top_dim();
+        Diagram::boundary(Sign::Target, n, &self.steps[step_idx])
+            .map_err(|e| format!("target boundary failed: {}", e))
+    }
+
     /// Recompute available rewrites (individual matches for manual selection).
     /// Parallel mode only affects `auto()`, not the manual rewrites list.
     fn refresh_rewrites(&mut self) -> Result<(), String> {
@@ -432,7 +430,6 @@ impl RewriteEngine {
         let step = pr.step.clone();
 
         let n = self.current_diagram.top_dim();
-        let prev_diagram = self.current_diagram.clone();
 
         let new_current = Diagram::boundary(Sign::Target, n, &step)
             .map_err(|e| format!("target boundary failed: {}", e))?;
@@ -442,7 +439,6 @@ impl RewriteEngine {
 
         self.history.push(HistoryEntry {
             mov: Move { choice: Some(choice), choices: None, rule_name: rule_name.clone(), parallel: false },
-            prev_diagram,
         });
 
         self.refresh_rewrites()?;
@@ -494,7 +490,6 @@ impl RewriteEngine {
         ).ok_or("parallel rewrite construction failed")?;
 
         let n = self.current_diagram.top_dim();
-        let prev_diagram = self.current_diagram.clone();
 
         let new_current = Diagram::boundary(Sign::Target, n, &pr.step)
             .map_err(|e| format!("target boundary failed: {}", e))?;
@@ -508,7 +503,6 @@ impl RewriteEngine {
                 rule_name,
                 parallel: true,
             },
-            prev_diagram,
         });
 
         self.refresh_rewrites()?;
@@ -520,9 +514,13 @@ impl RewriteEngine {
     ///
     /// Returns an error if there are no moves to undo.
     pub fn undo(&mut self) -> Result<(), String> {
-        let entry = self.history.pop().ok_or("nothing to undo")?;
-        self.current_diagram = entry.prev_diagram;
+        self.history.pop().ok_or("nothing to undo")?;
         self.steps.pop();
+        self.current_diagram = if self.steps.is_empty() {
+            self.source_diagram.clone()
+        } else {
+            self.diagram_after_step(self.steps.len() - 1)?
+        };
         self.refresh_rewrites()?;
         Ok(())
     }
@@ -573,7 +571,6 @@ impl RewriteEngine {
             let is_parallel = self.parallel && pr.members.len() > 1;
 
             let n = self.current_diagram.top_dim();
-            let prev_diagram = self.current_diagram.clone();
 
             let new_current = Diagram::boundary(Sign::Target, n, &pr.step)
                 .map_err(|e| format!("target boundary failed: {}", e))?;
@@ -587,7 +584,6 @@ impl RewriteEngine {
                     rule_name,
                     parallel: is_parallel,
                 },
-                prev_diagram,
             });
             applied += 1;
         }
@@ -607,13 +603,13 @@ impl RewriteEngine {
             ));
         }
         if target_step == self.history.len() { return Ok(()); }
+        self.history.truncate(target_step);
+        self.steps.truncate(target_step);
         self.current_diagram = if target_step == 0 {
             self.source_diagram.clone()
         } else {
-            self.history[target_step].prev_diagram.clone()
+            self.diagram_after_step(target_step - 1)?
         };
-        self.history.truncate(target_step);
-        self.steps.truncate(target_step);
         self.refresh_rewrites()?;
         Ok(())
     }
