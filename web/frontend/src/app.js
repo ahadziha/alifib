@@ -2287,7 +2287,7 @@ const PAD = 0;
 
 function layoutStrDiag(data, orientation = 'bt') {
   const n = data.vertices.length;
-  if (n === 0) return { _raw: data, verts: [], pos: [], orientation, hAdj: [], wAdj: [], dAdj: [], hPred: [], wPred: [] };
+  if (n === 0) return { _raw: data, verts: [], pos: [], orientation, hAdj: [], wAdj: [], dAdj: [], hPred: [], wPred: [], hTopo: [], wTopo: [] };
 
   const hAdj = buildAdj(n, data.height.edges);
   const hPred = buildPred(n, data.height.edges);
@@ -2308,6 +2308,7 @@ function layoutStrDiag(data, orientation = 'bt') {
   separateOverlaps(pos, n);
 
   return { _raw: data, verts: data.vertices, pos, orientation, hAdj, hPred, wAdj, wPred, dAdj,
+           hTopo: hDist.topo, wTopo: wDist.topo,
            numWires: data.num_wires, numNodes: data.num_nodes, depthEdges: data.depth.edges };
 }
 
@@ -2375,7 +2376,7 @@ function longestPathDistances(n, succ, pred) {
     }
   }
 
-  return { bw, fw };
+  return { bw, fw, topo: fwdOrder };
 }
 
 /// Nudge vertices that are exactly (or nearly exactly) coincident.
@@ -2687,47 +2688,51 @@ visCanvas.addEventListener('mousemove', (e) => {
 
   const L = currentLayout;
   const i = dragState.idx;
-  function clamp(val, limit, mustBeLess) {
-    if (mustBeLess ? val > limit : val < limit) return limit;
-    return val;
-  }
+  const n = L.verts.length;
+  const init = dragState.initPos;
+  const inf = dragState.influence;
 
   // Compute the delta of the dragged vertex (clamped by its own constraints).
   let dragW = mouseAbs.w;
   let dragH = mouseAbs.h;
-  for (const s of L.hAdj[i])  dragH = clamp(dragH, dragState.initPos[s].h, true);
-  for (const p of L.hPred[i]) dragH = clamp(dragH, dragState.initPos[p].h, false);
-  for (const s of (L.wAdj[i] || []))  dragW = clamp(dragW, dragState.initPos[s].w, true);
-  for (const p of (L.wPred[i] || [])) dragW = clamp(dragW, dragState.initPos[p].w, false);
+  for (const s of L.hAdj[i])  dragH = Math.min(dragH, init[s].h);
+  for (const p of L.hPred[i]) dragH = Math.max(dragH, init[p].h);
+  for (const s of (L.wAdj[i] || []))  dragW = Math.min(dragW, init[s].w);
+  for (const p of (L.wPred[i] || [])) dragW = Math.max(dragW, init[p].w);
 
-  const dw = dragW - dragState.initPos[i].w;
-  const dh = dragH - dragState.initPos[i].h;
+  const dw = dragW - init[i].w;
+  const dh = dragH - init[i].h;
 
-  // Apply influence-weighted delta to all vertices, then clamp constraints.
-  for (let v = 0; v < L.verts.length; v++) {
-    const inf = dragState.influence[v];
-    if (inf === 0) continue;
-    let newW = dragState.initPos[v].w + dw * inf;
-    let newH = dragState.initPos[v].h + dh * inf;
-    // Clamp to this vertex's own constraints (using projected positions of
-    // neighbours shifted by their own influence).
-    for (const s of L.hAdj[v]) {
-      const sH = dragState.initPos[s].h + dh * dragState.influence[s];
-      newH = clamp(newH, sH, true);
-    }
-    for (const p of L.hPred[v]) {
-      const pH = dragState.initPos[p].h + dh * dragState.influence[p];
-      newH = clamp(newH, pH, false);
-    }
-    for (const s of (L.wAdj[v] || [])) {
-      const sW = dragState.initPos[s].w + dw * dragState.influence[s];
-      newW = clamp(newW, sW, true);
-    }
-    for (const p of (L.wPred[v] || [])) {
-      const pW = dragState.initPos[p].w + dw * dragState.influence[p];
-      newW = clamp(newW, pW, false);
-    }
-    L.pos[v] = { w: newW, h: newH };
+  // Compute unclamped positions (influence-weighted delta applied to initial).
+  const newH = new Float64Array(n);
+  const newW = new Float64Array(n);
+  for (let v = 0; v < n; v++) {
+    newH[v] = init[v].h + dh * inf[v];
+    newW[v] = init[v].w + dw * inf[v];
+  }
+
+  // Two-pass constraint propagation in topological order ensures every
+  // vertex respects ALL transitive constraints as hard barriers.
+  // Backward pass (reverse topo): clamp against successors' final positions.
+  for (let k = L.hTopo.length - 1; k >= 0; k--) {
+    const v = L.hTopo[k];
+    for (const s of L.hAdj[v]) newH[v] = Math.min(newH[v], newH[s]);
+  }
+  for (let k = L.wTopo.length - 1; k >= 0; k--) {
+    const v = L.wTopo[k];
+    for (const s of (L.wAdj[v] || [])) newW[v] = Math.min(newW[v], newW[s]);
+  }
+  // Forward pass (topo order): clamp against predecessors' final positions.
+  for (const v of L.hTopo) {
+    for (const p of L.hPred[v]) newH[v] = Math.max(newH[v], newH[p]);
+  }
+  for (const v of L.wTopo) {
+    for (const p of (L.wPred[v] || [])) newW[v] = Math.max(newW[v], newW[p]);
+  }
+
+  for (let v = 0; v < n; v++) {
+    if (inf[v] === 0) continue;
+    L.pos[v] = { w: newW[v], h: newH[v] };
   }
 
   resizeAndRender();
