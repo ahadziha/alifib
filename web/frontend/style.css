@@ -13,6 +13,15 @@
   --ok:        #4ade80;
   --err:       #f87171;
   --warn:      #fbbf24;
+  --accent-a06: rgba(124, 106, 242, 0.06);
+  --accent-a08: rgba(124, 106, 242, 0.08);
+  --accent-a12: rgba(124, 106, 242, 0.12);
+  --accent-a15: rgba(124, 106, 242, 0.15);
+  --accent-a18: rgba(124, 106, 242, 0.18);
+  --accent-a20: rgba(124, 106, 242, 0.20);
+  --accent-a35: rgba(124, 106, 242, 0.35);
+  --accent-a40: rgba(124, 106, 242, 0.40);
+  --err-a08:    rgba(248, 113, 113, 0.08);
   --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
   --font-ui:   system-ui, -apple-system, sans-serif;
   --radius:    6px;
@@ -20,6 +29,30 @@
   --pane-hdr:  36px;
   --splitter-line: 1px;
   --splitter-hitbox: 8px;
+}
+
+/* ── Rock Bottom light theme ── */
+[data-theme="light"] {
+  --bg:        #f2ede0;
+  --surface:   #e8e2d3;
+  --border:    #cdc5b0;
+  --accent:    #4a7c7c;
+  --accent2:   #3d6b6b;
+  --text:      #4a4740;
+  --text-dim:  #8a857a;
+  --text-em:   #2a2824;
+  --ok:        #3a7a52;
+  --err:       #b54a3a;
+  --warn:      #9a7020;
+  --accent-a06: rgba(74, 124, 124, 0.07);
+  --accent-a08: rgba(74, 124, 124, 0.10);
+  --accent-a12: rgba(74, 124, 124, 0.14);
+  --accent-a15: rgba(74, 124, 124, 0.18);
+  --accent-a18: rgba(74, 124, 124, 0.22);
+  --accent-a20: rgba(74, 124, 124, 0.25);
+  --accent-a35: rgba(74, 124, 124, 0.30);
+  --accent-a40: rgba(74, 124, 124, 0.35);
+  --err-a08:    rgba(181, 74, 58, 0.10);
 }
 
 html, body {
@@ -54,11 +87,6 @@ header {
   color: var(--accent);
   letter-spacing: 0.04em;
 }
-.tagline {
-  color: var(--text-dim);
-  font-size: 11px;
-}
-
 /* ── Three-pane workspace ── */
 .workspace {
   display: grid;
@@ -118,7 +146,7 @@ header {
 }
 .pane-splitter:hover,
 .pane-splitter.is-active {
-  background: rgba(124, 106, 242, 0.4);
+  background: var(--accent-a40);
 }
 .pane-splitter-x {
   width: var(--splitter-hitbox);
@@ -215,10 +243,10 @@ header {
   color: var(--text);
 }
 .editor-wrap .cm-activeLine {
-  background: rgba(124, 106, 242, 0.06);
+  background: var(--accent-a06);
 }
 .editor-wrap .cm-selectionBackground {
-  background: rgba(124, 106, 242, 0.35) !important;
+  background: var(--accent-a35) !important;
 }
 .editor-wrap .cm-cursor {
   border-left-color: var(--text);
@@ -252,7 +280,7 @@ header {
   max-width: 160px;
 }
 .tab-item:hover {
-  background: rgba(124, 106, 242, 0.08);
+  background: var(--accent-a08);
 }
 .tab-item--active {
   color: var(--text-em);
@@ -423,7 +451,7 @@ header {
 .acc-section > summary:hover,
 .acc-item > summary:hover,
 .acc-leaf:hover {
-  background: rgba(124, 106, 242, 0.08);
+  background: var(--accent-a08);
 }
 
 /* ── Thin toggle on generator rows ── */
@@ -589,8 +617,8 @@ header {
   gap: 8px;
   color: var(--text-dim);
 }
-.rewrite-row:hover { background: rgba(124, 106, 242, 0.08); }
-.rewrite-row--selected { background: rgba(124, 106, 242, 0.15) !important; }
+.rewrite-row:hover { background: var(--accent-a08); }
+.rewrite-row--selected { background: var(--accent-a15) !important; }
 .rewrite-row .rw-index { color: var(--accent); font-weight: 600; min-width: 24px; }
 .rewrite-row .rw-name { color: var(--text-em); }
 .rw-parallel-badge {
@@ -634,12 +662,12 @@ header {
 
 /* Bunch card */
 .rewrite-row--bunch {
-  background: rgba(124, 106, 242, 0.12);
+  background: var(--accent-a12);
   border-left: 3px solid var(--accent);
   padding-left: 9px;
   margin-bottom: 4px;
 }
-.rewrite-row--bunch:hover { background: rgba(124, 106, 242, 0.20); }
+.rewrite-row--bunch:hover { background: var(--accent-a20); }
 .rewrite-actions--bunch { visibility: visible; }
 .rw-bunch-label {
   color: var(--accent);
@@ -655,7 +683,7 @@ header {
 
 /* ── Selected accordion item ── */
 .acc-leaf--selected {
-  background: rgba(124, 106, 242, 0.18) !important;
+  background: var(--accent-a18) !important;
   border-left: 2px solid var(--accent);
   padding-left: 10px;
 }
@@ -738,7 +766,7 @@ header {
 .err-snippet {
   margin: 4px 0 0 0;
   padding: 4px 8px;
-  background: rgba(248, 113, 113, 0.08);
+  background: var(--err-a08);
   border-left: 2px solid var(--err);
   color: var(--text);
   font-family: var(--font-mono);
@@ -787,3 +815,22 @@ header {
 }
 .repl-input::placeholder { color: var(--text-dim); }
 .repl-input:disabled { opacity: 0.4; }
+
+/* ── Theme toggle ── */
+.header-spacer { flex: 1; }
+.btn-theme {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  padding: 3px 10px;
+  cursor: pointer;
+  letter-spacing: 0.03em;
+  transition: color 0.15s, border-color 0.15s;
+}
+.btn-theme:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}

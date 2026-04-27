@@ -1,5 +1,5 @@
 import { EditorView, keymap, lineNumbers, drawSelection, highlightActiveLine } from '@codemirror/view';
-import { EditorState } from '@codemirror/state';
+import { EditorState, Compartment } from '@codemirror/state';
 import { defaultKeymap, indentWithTab, history as cmHistory, historyKeymap } from '@codemirror/commands';
 import { indentUnit, bracketMatching } from '@codemirror/language';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
@@ -18,6 +18,42 @@ let splitterDrag = null;
 const thinTags = new Set();
 const tagFaces = new Map();
 const fullyThinTags = new Set();
+
+// ── Theme ────────────────────────────────────────────────────────────────────
+
+const themeComp = new Compartment();
+
+function isDark() {
+  return document.documentElement.dataset.theme !== 'light';
+}
+
+function themeExtensions() {
+  const dark = isDark();
+  return [
+    ...aliExtensions(dark),
+    EditorView.theme({
+      '&': { height: '100%', backgroundColor: 'var(--bg)' },
+      '.cm-scroller': { overflow: 'auto' },
+    }, { dark }),
+  ];
+}
+
+function canvasColors() {
+  if (isDark()) {
+    return {
+      wire: '#d4d4d8', thin: '#505058',
+      nodeFill: '#7c6af2', nodeStroke: '#ffffff',
+      hlFill: '#ffffff', hlShadow: '#ffffff',
+      labelNode: '#f4f4f5', labelWire: '#a1a1aa',
+    };
+  }
+  return {
+    wire: '#4a4740', thin: '#c5c0b5',
+    nodeFill: '#4a7c7c', nodeStroke: '#2a2824',
+    hlFill: '#c8a030', hlShadow: '#c8a030',
+    labelNode: '#2a2824', labelWire: '#6a6560',
+  };
+}
 
 function recomputeFullyThin() {
   fullyThinTags.clear();
@@ -83,6 +119,7 @@ const canvasCtx   = visCanvas.getContext('2d');
 const tabBar      = document.getElementById('tab-bar');
 const btnNewTab   = document.getElementById('btn-new-tab');
 const fileLabel   = document.getElementById('file-label');
+const btnTheme    = document.getElementById('btn-theme');
 
 // ── Editor state & tabs ──────────────────────────────────────────────────────
 
@@ -134,7 +171,7 @@ function makeEditorState(doc) {
       indentUnit.of('    '),
       bracketMatching(),
       closeBrackets(),
-      ...aliExtensions(),
+      themeComp.of(themeExtensions()),
       keymap.of([
         ...closeBracketsKeymap,
         ...defaultKeymap,
@@ -151,10 +188,6 @@ function makeEditorState(doc) {
           }
         }
       }),
-      EditorView.theme({
-        '&': { height: '100%', backgroundColor: 'var(--bg)' },
-        '.cm-scroller': { overflow: 'auto' },
-      }, { dark: true }),
     ],
   });
 }
@@ -187,6 +220,7 @@ function switchTab(tabId) {
   const arriving = activeTab();
   if (arriving && view) {
     view.setState(arriving.cmState);
+    view.dispatch({ effects: themeComp.reconfigure(themeExtensions()) });
   }
   renderTabBar();
 }
@@ -812,6 +846,29 @@ workspaceResizeObs.observe(workspace);
 
 const analysisResizeObs = new ResizeObserver(() => syncAnalysisLayout());
 analysisResizeObs.observe(analysisBody);
+
+// ── Theme toggle ─────────────────────────────────────────────────────────────
+
+function applyTheme(dark) {
+  if (dark) {
+    delete document.documentElement.dataset.theme;
+  } else {
+    document.documentElement.dataset.theme = 'light';
+  }
+  btnTheme.textContent = dark ? 'Light' : 'Dark';
+  localStorage.setItem('alifib-theme', dark ? 'dark' : 'light');
+  if (view) {
+    view.dispatch({ effects: themeComp.reconfigure(themeExtensions()) });
+  }
+  resizeAndRender();
+}
+
+btnTheme.addEventListener('click', () => applyTheme(!isDark()));
+
+{
+  const saved = localStorage.getItem('alifib-theme');
+  if (saved === 'light') applyTheme(false);
+}
 
 // ── Evaluate ──────────────────────────────────────────────────────────────────
 
@@ -2325,8 +2382,9 @@ function renderStrDiag(ctx, L, cw, ch) {
     return { x: PAD + s.x * (cw - 2 * PAD), y: PAD + s.y * (ch - 2 * PAD) };
   });
 
-  const wireColor = '#d4d4d8';
-  const thinColor = '#505058';
+  const C = canvasColors();
+  const wireColor = C.wire;
+  const thinColor = C.thin;
   const BORDER_W = 6;
   const WIRE_W = 2;
 
@@ -2404,11 +2462,11 @@ function renderStrDiag(ctx, L, cw, ch) {
     const nodeFullyThin = L.verts[i].tag != null && fullyThinTags.has(L.verts[i].tag);
     if (nodeThin && highlighted) {
       ctx.save();
-      ctx.shadowColor = '#ffffff';
+      ctx.shadowColor = C.hlShadow;
       ctx.shadowBlur = 14;
       ctx.beginPath();
       ctx.arc(np.x, np.y, WIRE_R, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffffff';
+      ctx.fillStyle = C.hlFill;
       ctx.fill();
       ctx.restore();
     } else if (nodeThin) {
@@ -2418,19 +2476,19 @@ function renderStrDiag(ctx, L, cw, ch) {
       ctx.fill();
     } else if (highlighted) {
       ctx.save();
-      ctx.shadowColor = '#ffffff';
+      ctx.shadowColor = C.hlShadow;
       ctx.shadowBlur = 14;
       ctx.beginPath();
       ctx.arc(np.x, np.y, NODE_R, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffffff';
+      ctx.fillStyle = C.hlFill;
       ctx.fill();
       ctx.restore();
     } else {
       ctx.beginPath();
       ctx.arc(np.x, np.y, NODE_R, 0, Math.PI * 2);
-      ctx.fillStyle = '#7c6af2';
+      ctx.fillStyle = C.nodeFill;
       ctx.fill();
-      ctx.strokeStyle = '#ffffff';
+      ctx.strokeStyle = C.nodeStroke;
       ctx.lineWidth = 1.5;
       ctx.stroke();
     }
@@ -2444,7 +2502,7 @@ function renderStrDiag(ctx, L, cw, ch) {
     if (!label) continue;
     const isNode = L.verts[i].kind === 'node';
     const labelThin = L.verts[i].tag != null && thinTags.has(L.verts[i].tag);
-    ctx.fillStyle = labelThin ? thinColor : (isNode ? '#f4f4f5' : '#a1a1aa');
+    ctx.fillStyle = labelThin ? thinColor : (isNode ? C.labelNode : C.labelWire);
     const r = (isNode && !labelThin) ? NODE_R : WIRE_R;
     if (isNode) {
       if (isVert) {

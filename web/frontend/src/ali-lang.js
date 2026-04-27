@@ -88,7 +88,7 @@ const aliMode = {
 
 export const aliLanguage = StreamLanguage.define(aliMode);
 
-export const aliHighlightStyle = HighlightStyle.define([
+export const aliDarkHighlight = HighlightStyle.define([
   { tag: tags.blockComment,  color: '#6b8a6b', fontStyle: 'italic' },
   { tag: tags.keyword,       color: '#c586c0', fontWeight: '600' },
   { tag: tags.modifier,      color: '#dcdcaa' },
@@ -102,6 +102,21 @@ export const aliHighlightStyle = HighlightStyle.define([
   { tag: aliTags.typeHead,   color: '#5fa8d3', fontWeight: '600' },
 ]);
 
-export function aliExtensions() {
-  return [aliLanguage, syntaxHighlighting(aliHighlightStyle)];
+export const aliLightHighlight = HighlightStyle.define([
+  { tag: tags.blockComment,  color: '#7a8a6b', fontStyle: 'italic' },
+  { tag: tags.keyword,       color: '#8a5070', fontWeight: '600' },
+  { tag: tags.modifier,      color: '#806830' },
+  { tag: aliTags.decoType,   color: '#3a6a6a', fontWeight: '600' },
+  { tag: aliTags.decoId,     color: '#2d5a5a' },
+  { tag: tags.operator,      color: '#4a4740' },
+  { tag: aliTags.arrow,      color: '#8a6018' },
+  { tag: tags.punctuation,   color: '#8a857a' },
+  { tag: tags.number,        color: '#4a7a52' },
+  { tag: aliTags.hole,       color: '#b54a3a', fontWeight: '600' },
+  { tag: aliTags.typeHead,   color: '#2d5a5a', fontWeight: '600' },
+]);
+
+export function aliExtensions(dark = true) {
+  const hl = dark ? aliDarkHighlight : aliLightHighlight;
+  return [aliLanguage, syntaxHighlighting(hl)];
 }
