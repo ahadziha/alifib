@@ -164,6 +164,14 @@ function markClean(tab, snapshot) {
   renderTabBar();
 }
 
+function anyDirty() {
+  return editorTabs.tabs.some(t => t.dirty);
+}
+
+window.addEventListener('beforeunload', (e) => {
+  if (anyDirty()) e.preventDefault();
+});
+
 function makeEditorState(doc) {
   return EditorState.create({
     doc,
