@@ -10,6 +10,7 @@
     { "include": "#operators" },
     { "include": "#number" },
     { "include": "#hole" },
+    { "include": "#interpolation" },
     { "include": "#punctuation" }
   ],
   "repository": {
@@ -43,11 +44,11 @@
       "patterns": [
         {
           "name": "keyword.control.ali",
-          "match": "\\b(attach|along|include|assert)\\b"
+          "match": "\\b(attach|along|include|assert|for|index)\\b"
         },
         {
           "name": "keyword.other.ali",
-          "match": "\\b(let|def|as)\\b"
+          "match": "\\b(let|def|as|total|map)\\b"
         },
         {
           "name": "keyword.other.boundary.ali",
@@ -97,6 +98,10 @@
     "hole": {
       "name": "constant.language.hole.ali",
       "match": "\\?"
+    },
+    "interpolation": {
+      "name": "variable.other.interpolation.ali",
+      "match": "<[A-Za-z_][A-Za-z0-9_]*>"
     },
     "punctuation": {
       "patterns": [

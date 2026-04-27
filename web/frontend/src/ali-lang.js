@@ -3,7 +3,7 @@ import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { Tag } from '@lezer/highlight';
 import { tags } from '@lezer/highlight';
 
-const KEYWORDS_CONTROL = new Set(['attach', 'along', 'include', 'assert']);
+const KEYWORDS_CONTROL = new Set(['attach', 'along', 'include', 'assert', 'for', 'index']);
 const KEYWORDS_OTHER   = new Set(['let', 'def', 'as', 'total', 'map']);
 const KEYWORDS_BOUND   = new Set(['in', 'out']);
 
@@ -13,6 +13,7 @@ export const aliTags = {
   typeHead: Tag.define(),
   arrow: Tag.define(),
   hole: Tag.define(),
+  interpolation: Tag.define(),
 };
 
 const aliMode = {
@@ -52,6 +53,8 @@ const aliMode = {
       return stream.current() === '@Type' ? 'decoType' : 'decoId';
     }
 
+    if (stream.match(/^<[A-Za-z_][A-Za-z0-9_]*>/)) return 'interpolation';
+
     if (stream.match(/^[A-Za-z_][A-Za-z0-9_]*/)) {
       const word = stream.current();
       if (KEYWORDS_CONTROL.has(word) || KEYWORDS_OTHER.has(word)) return 'keyword';
@@ -83,6 +86,7 @@ const aliMode = {
     typeHead: aliTags.typeHead,
     arrow: aliTags.arrow,
     hole: aliTags.hole,
+    interpolation: aliTags.interpolation,
   },
 };
 
@@ -98,8 +102,9 @@ export const aliDarkHighlight = HighlightStyle.define([
   { tag: aliTags.arrow,      color: '#fbbf24' },
   { tag: tags.punctuation,   color: '#71717a' },
   { tag: tags.number,        color: '#b5cea8' },
-  { tag: aliTags.hole,       color: '#f87171', fontWeight: '600' },
-  { tag: aliTags.typeHead,   color: '#5fa8d3', fontWeight: '600' },
+  { tag: aliTags.hole,          color: '#f87171', fontWeight: '600' },
+  { tag: aliTags.typeHead,      color: '#5fa8d3', fontWeight: '600' },
+  { tag: aliTags.interpolation, color: '#e8a862' },
 ]);
 
 export const aliLightHighlight = HighlightStyle.define([
@@ -112,8 +117,9 @@ export const aliLightHighlight = HighlightStyle.define([
   { tag: aliTags.arrow,      color: '#8a6018' },
   { tag: tags.punctuation,   color: '#8a857a' },
   { tag: tags.number,        color: '#4a7a52' },
-  { tag: aliTags.hole,       color: '#b54a3a', fontWeight: '600' },
-  { tag: aliTags.typeHead,   color: '#2d5a5a', fontWeight: '600' },
+  { tag: aliTags.hole,          color: '#b54a3a', fontWeight: '600' },
+  { tag: aliTags.typeHead,      color: '#2d5a5a', fontWeight: '600' },
+  { tag: aliTags.interpolation, color: '#9a6828' },
 ]);
 
 export function aliExtensions(dark = true) {
