@@ -85,7 +85,7 @@
 -- An index is a named list of strings; a for-block expands its body
 -- once per index value, substituting <var> with each value.
 
-<IndexValue> ::= <Name> | <Nat>
+<IndexValue> ::= <Name>
 <IndexList> ::= "[" <IndexValue> { "," <IndexValue> } [","] "]"
 <IndexDecl> ::= "index" <Name> "=" <IndexList>
 <ForBlock> ::= "for" <Name> "in" ( <Name> | <IndexList> ) "{" <ForBody> "}"

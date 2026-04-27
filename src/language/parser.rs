@@ -45,9 +45,10 @@ fn sp<T>(inner: T, span: Span) -> Spanned<T> {
 fn name<'tokens, 'src: 'tokens>()
 -> impl Parser<'tokens, TokenInput<'tokens, 'src>, Spanned<String>, E<'tokens, 'src>> + Clone {
     select_ref! {
-        Token::Ident(identifier) => identifier.to_string(),
+        Token::Ident(s) => s.to_string(),
+        Token::Nat(s) => s.to_string(),
     }
-    .map_with(|identifier, event| sp(identifier, cspan(event.span())))
+    .map_with(|s, event| sp(s, cspan(event.span())))
 }
 
 fn nat<'tokens, 'src: 'tokens>()
@@ -64,14 +65,6 @@ fn t<'tokens, 'src: 'tokens>(
     just(tok).ignored()
 }
 
-fn name_or_nat<'tokens, 'src: 'tokens>()
--> impl Parser<'tokens, TokenInput<'tokens, 'src>, Spanned<String>, E<'tokens, 'src>> + Clone {
-    select_ref! {
-        Token::Ident(s) => s.to_string(),
-        Token::Nat(s) => s.to_string(),
-    }
-    .map_with(|s, event| sp(s, cspan(event.span())))
-}
 
 // ---------------------------------------------------------------------------
 // Address = Name { "." Name }
@@ -336,7 +329,10 @@ fn build_diagram<'tokens, 'src: 'tokens>() -> RDiagram<'tokens, 'src> {
             t(Token::In).map(|_| DComponent::In),
             t(Token::Out).map(|_| DComponent::Out),
             t(Token::Question).map(|_| DComponent::Hole),
-            select_ref! { Token::Ident(s) => DComponent::PartialMap(PartialMapBasic::Name(s.to_string())) },
+            select_ref! {
+                Token::Ident(s) => DComponent::PartialMap(PartialMapBasic::Name(s.to_string())),
+                Token::Nat(s) => DComponent::PartialMap(PartialMapBasic::Name(s.to_string())),
+            },
         ))
         .map_with(|v, e| sp(v, cspan(e.span())));
 
@@ -390,10 +386,10 @@ fn build_diagram<'tokens, 'src: 'tokens>() -> RDiagram<'tokens, 'src> {
 // Index & For
 // ---------------------------------------------------------------------------
 
-/// Parse a bracketed index list: `[name_or_nat, ...]`
+/// Parse a bracketed index list: `[name, ...]`
 fn index_list<'tokens, 'src: 'tokens>()
 -> impl Parser<'tokens, TokenInput<'tokens, 'src>, Vec<Spanned<String>>, E<'tokens, 'src>> + Clone {
-    name_or_nat()
+    name()
         .separated_by(t(Token::Comma))
         .allow_trailing()
         .collect::<Vec<_>>()

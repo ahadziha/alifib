@@ -39,7 +39,7 @@ pub fn lexer<'src>(
             "index" => Token::Index,
             "for" => Token::For,
             _ => {
-                if s.starts_with(|c: char| c.is_ascii_digit()) {
+                if s.chars().all(|c| c.is_ascii_digit()) {
                     Token::Nat(s)
                 } else {
                     Token::Ident(s)
