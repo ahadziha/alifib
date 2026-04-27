@@ -43,7 +43,7 @@
 -- * a local definition of a map
 -- * an inclusion of a module
 
-<TypeInst> ::= <Generator> | <LetDiag> | <DefPMap> | <IncludeModule>
+<TypeInst> ::= <Generator> | <LetDiag> | <DefPMap> | <IncludeModule> | <IndexDecl> | <ForBlock>
 <Generator> ::= <NameWithBoundary> "<<=" <Complex>
 <IncludeModule> ::= "include" <Name> [ "as" <Name> ]
 
@@ -65,7 +65,7 @@
 -- * An attach statement (attaching a copy of a previously existing block)
 -- * An include statement (making another complex a subcomplex of this one)
 
-<CInstr> ::= <NameWithBoundary> | <LetDiag> | <DefPMap> | <AttachStmt> | <IncludeStmt>  
+<CInstr> ::= <NameWithBoundary> | <LetDiag> | <DefPMap> | <AttachStmt> | <IncludeStmt> | <IndexDecl> | <ForBlock>
 <IncludeStmt> ::= "include" <Address> [ "as" <Name> ]
 <AttachStmt> ::= "attach" <Name> "::" <Address> [ "along" <PMapDef> ]
 
@@ -78,8 +78,21 @@
 -- * a local definition of a partial map
 -- * an assertion that two pastings are equal
 
-<LocalInst> ::= <LetDiag> | <DefPMap> | <AssertStmt>
+<LocalInst> ::= <LetDiag> | <DefPMap> | <AssertStmt> | <IndexDecl> | <ForBlock>
 <AssertStmt> ::= "assert" <Diagram> "=" <Diagram>
+
+-- Index declarations and for-blocks provide string templating.
+-- An index is a named list of strings; a for-block expands its body
+-- once per index value, substituting <var> with each value.
+
+<IndexValue> ::= <Name> | <Nat>
+<IndexList> ::= "[" <IndexValue> { "," <IndexValue> } [","] "]"
+<IndexDecl> ::= "index" <Name> "=" <IndexList>
+<ForBlock> ::= "for" <Name> "in" ( <Name> | <IndexList> ) "{" <ForBody> "}"
+
+-- <ForBody> is raw source text (with balanced braces); occurrences of
+-- <Name> delimited by < > are replaced with the current index value.
+-- For-blocks and index declarations may appear in type, complex, and local blocks.
 
 -- Comments are delimited by (* ... *) and may be nested.
 

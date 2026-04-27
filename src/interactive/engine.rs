@@ -150,6 +150,7 @@ pub fn eval_diagram_expr(
         module_key.to_owned(),
         std::sync::Arc::new(crate::aux::loader::ModuleResolutions::empty()),
         Arc::clone(store),
+        Arc::new(String::new()),
     );
     let (diagram_opt, interp_result) = crate::interpreter::interpret_diagram(&ctx, type_complex, &ast);
     if interp_result.has_errors() {
@@ -761,6 +762,7 @@ impl RewriteEngine {
             self.source_file.clone(),
             std::sync::Arc::new(crate::aux::loader::ModuleResolutions::empty()),
             Arc::clone(&self.store),
+            Arc::new(String::new()),
         );
         let (interp_opt, interp_result) =
             crate::interpreter::interpret_diagram(&ctx, &self.type_complex, &ast);

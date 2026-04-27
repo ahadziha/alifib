@@ -44,6 +44,8 @@ pub enum TypeInst {
     LetDiag(LetDiag),
     DefPartialMap(DefPartialMap),
     IncludeModule(IncludeModule),
+    Index(IndexDecl),
+    For(ForBlock),
 }
 
 pub struct Generator {
@@ -78,6 +80,8 @@ pub enum ComplexInstr {
     DefPartialMap(DefPartialMap),
     AttachStmt(AttachStmt),
     IncludeStmt(IncludeStmt),
+    Index(IndexDecl),
+    For(ForBlock),
 }
 
 pub struct AttachStmt {
@@ -99,6 +103,8 @@ pub enum LocalInst {
     LetDiag(LetDiag),
     DefPartialMap(DefPartialMap),
     AssertStmt(AssertStmt),
+    Index(IndexDecl),
+    For(ForBlock),
 }
 
 pub struct AssertStmt {
@@ -201,4 +207,24 @@ pub enum PartialMapBasic {
 pub struct PartialMapClause {
     pub lhs: Spanned<Diagram>,
     pub rhs: Spanned<Diagram>,
+}
+
+// ---------------------------------------------------------------------------
+// Index & For (string templating)
+// ---------------------------------------------------------------------------
+
+pub struct IndexDecl {
+    pub name: Spanned<String>,
+    pub values: Vec<Spanned<String>>,
+}
+
+pub struct ForBlock {
+    pub variable: Spanned<String>,
+    pub index: ForIndex,
+    pub body_span: Span,
+}
+
+pub enum ForIndex {
+    Named(Spanned<String>),
+    Inline(Vec<Spanned<String>>),
 }

@@ -1,0 +1,18 @@
+@Type
+X <<= {
+  index I = [a, b, c],
+  for i in I { <i>, }
+},
+
+Y <<= {
+  index I = [x, y],
+  attach Ob :: X,
+  for i in I {
+    <i> : Ob.a -> Ob.b,
+  }
+}
+
+@X
+for i in I {
+  assert <i> = <i>,
+}

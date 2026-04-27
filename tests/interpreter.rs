@@ -231,3 +231,37 @@ fn hole_boundaries_inferred() {
         );
     }
 }
+
+#[test]
+fn for_index_expansion() {
+    let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("ForIndex.ali"))
+        .ok()
+        .expect("ForIndex.ali should interpret without errors");
+
+    assert!(!file.has_holes());
+
+    let norm = file.state.normalize();
+
+    let module = &norm.modules[0];
+
+    // X should have generators a, b, c (expanded from for-block)
+    let x_type = module.types.iter().find(|t| t.name == "X").unwrap();
+    let x_dim0_names: Vec<&str> = x_type.dims.iter()
+        .filter(|d| d.dim == 0)
+        .flat_map(|d| d.cells.iter())
+        .map(|c| c.name.as_str())
+        .collect();
+    assert!(x_dim0_names.contains(&"a"), "X should contain generator 'a'");
+    assert!(x_dim0_names.contains(&"b"), "X should contain generator 'b'");
+    assert!(x_dim0_names.contains(&"c"), "X should contain generator 'c'");
+
+    // Y should have generators x, y (dim 1) with boundaries Ob.a -> Ob.b
+    let y_type = module.types.iter().find(|t| t.name == "Y").unwrap();
+    let y_dim1_names: Vec<&str> = y_type.dims.iter()
+        .filter(|d| d.dim == 1)
+        .flat_map(|d| d.cells.iter())
+        .map(|c| c.name.as_str())
+        .collect();
+    assert!(y_dim1_names.contains(&"x"), "Y should contain generator 'x'");
+    assert!(y_dim1_names.contains(&"y"), "Y should contain generator 'y'");
+}

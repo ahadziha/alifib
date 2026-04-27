@@ -153,3 +153,58 @@ pub(crate) fn collect_includes(program: &Program) -> Vec<String> {
         .collect()
 }
 
+// ---------------------------------------------------------------------------
+// Instruction-list parsers (for expanded for-block bodies)
+// ---------------------------------------------------------------------------
+
+pub fn parse_complex_instrs(source: &str) -> Result<Vec<ast::Spanned<ast::ComplexInstr>>, Vec<Error>> {
+    let (tokens, lex_errs) = lexer::lexer().parse(source).into_output_errors();
+    let mut errors: Vec<Error> = lex_errs.iter()
+        .map(|e| Error::Syntax { message: format!("{}", e.reason()), span: Span { start: e.span().start, end: e.span().end } })
+        .collect();
+    let Some(tokens) = tokens else { return Err(errors); };
+    let eoi = SimpleSpan::from(source.len()..source.len());
+    let (ast, parse_errs) = parser::complex_instrs_parser()
+        .parse(tokens.as_slice().split_token_span(eoi))
+        .into_output_errors();
+    errors.extend(parse_errs.iter().map(|e| Error::Syntax { message: format!("{}", e.reason()), span: Span { start: e.span().start, end: e.span().end } }));
+    match ast {
+        Some(result) if errors.is_empty() => Ok(result),
+        _ => { if errors.is_empty() { errors.push(Error::Syntax { message: "parse error".to_string(), span: Span { start: 0, end: 0 } }); } Err(errors) }
+    }
+}
+
+pub fn parse_type_instrs(source: &str) -> Result<Vec<ast::Spanned<ast::TypeInst>>, Vec<Error>> {
+    let (tokens, lex_errs) = lexer::lexer().parse(source).into_output_errors();
+    let mut errors: Vec<Error> = lex_errs.iter()
+        .map(|e| Error::Syntax { message: format!("{}", e.reason()), span: Span { start: e.span().start, end: e.span().end } })
+        .collect();
+    let Some(tokens) = tokens else { return Err(errors); };
+    let eoi = SimpleSpan::from(source.len()..source.len());
+    let (ast, parse_errs) = parser::type_instrs_parser()
+        .parse(tokens.as_slice().split_token_span(eoi))
+        .into_output_errors();
+    errors.extend(parse_errs.iter().map(|e| Error::Syntax { message: format!("{}", e.reason()), span: Span { start: e.span().start, end: e.span().end } }));
+    match ast {
+        Some(result) if errors.is_empty() => Ok(result),
+        _ => { if errors.is_empty() { errors.push(Error::Syntax { message: "parse error".to_string(), span: Span { start: 0, end: 0 } }); } Err(errors) }
+    }
+}
+
+pub fn parse_local_instrs(source: &str) -> Result<Vec<ast::Spanned<ast::LocalInst>>, Vec<Error>> {
+    let (tokens, lex_errs) = lexer::lexer().parse(source).into_output_errors();
+    let mut errors: Vec<Error> = lex_errs.iter()
+        .map(|e| Error::Syntax { message: format!("{}", e.reason()), span: Span { start: e.span().start, end: e.span().end } })
+        .collect();
+    let Some(tokens) = tokens else { return Err(errors); };
+    let eoi = SimpleSpan::from(source.len()..source.len());
+    let (ast, parse_errs) = parser::local_instrs_parser()
+        .parse(tokens.as_slice().split_token_span(eoi))
+        .into_output_errors();
+    errors.extend(parse_errs.iter().map(|e| Error::Syntax { message: format!("{}", e.reason()), span: Span { start: e.span().start, end: e.span().end } }));
+    match ast {
+        Some(result) if errors.is_empty() => Ok(result),
+        _ => { if errors.is_empty() { errors.push(Error::Syntax { message: "parse error".to_string(), span: Span { start: 0, end: 0 } }); } Err(errors) }
+    }
+}
+

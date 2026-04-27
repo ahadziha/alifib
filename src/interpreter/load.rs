@@ -118,6 +118,7 @@ impl InterpretedFile {
                 dep_path.clone(),
                 Arc::clone(&resolutions),
                 Arc::clone(&prev_state),
+                Arc::new(dep_module.source.clone()),
             );
             let dep_result = interpret_program(dep_context, &dep_module.program);
             if !dep_result.errors.is_empty() {
@@ -147,10 +148,12 @@ impl InterpretedFile {
         }
 
         // Phase 3b: interpret the root module.
+        let root_source = Arc::new(loaded.source.clone());
         let root_context = Context::new_with_resolutions(
             loaded.canonical_path.clone(),
             Arc::clone(&resolutions),
             prev_state,
+            Arc::clone(&root_source),
         );
         let result = interpret_program(root_context, &loaded.program);
 

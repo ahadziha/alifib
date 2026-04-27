@@ -14,6 +14,8 @@ pub enum Token<'src> {
     Total,
     Map,
     As,
+    Index,
+    For,
 
     // Symbols
     At,        // @
@@ -23,6 +25,8 @@ pub enum Token<'src> {
     RBrack,    // ]
     LParen,    // (
     RParen,    // )
+    LAngle,    // <
+    RAngle,    // >
     Dot,       // .
     Comma,     // ,
     Hash,      // #
@@ -53,6 +57,8 @@ impl fmt::Display for Token<'_> {
             Token::Total => write!(f, "total"),
             Token::Map => write!(f, "map"),
             Token::As => write!(f, "as"),
+            Token::Index => write!(f, "index"),
+            Token::For => write!(f, "for"),
             Token::At => write!(f, "@"),
             Token::LBrace => write!(f, "{{"),
             Token::RBrace => write!(f, "}}"),
@@ -60,6 +66,8 @@ impl fmt::Display for Token<'_> {
             Token::RBrack => write!(f, "]"),
             Token::LParen => write!(f, "("),
             Token::RParen => write!(f, ")"),
+            Token::LAngle => write!(f, "<"),
+            Token::RAngle => write!(f, ">"),
             Token::Dot => write!(f, "."),
             Token::Comma => write!(f, ","),
             Token::Hash => write!(f, "#"),

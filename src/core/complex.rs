@@ -74,6 +74,7 @@ pub struct Complex {
     diagrams: HashMap<LocalId, Diagram>,
     maps: HashMap<LocalId, MapEntry>,
     local_cells: LocalCells,
+    indices: HashMap<LocalId, Vec<String>>,
     used_names: HashSet<LocalId>,
 }
 
@@ -175,9 +176,22 @@ impl Complex {
         self.local_cells.by_id.get(name).map(|e| &e.data)
     }
 
+    // ---- Indices ----
+
+    /// Store a named index (list of strings) in the complex.
+    pub fn add_index(&mut self, name: LocalId, values: Vec<String>) {
+        self.indices.insert(name.clone(), values);
+        self.used_names.insert(name);
+    }
+
+    /// Look up a named index by name.
+    pub fn find_index(&self, name: &str) -> Option<&Vec<String>> {
+        self.indices.get(name)
+    }
+
     // ---- Name management ----
 
-    /// True if `name` is already taken by a diagram or map in this complex.
+    /// True if `name` is already taken by a diagram, map, or index in this complex.
     pub fn name_in_use(&self, name: &str) -> bool {
         self.used_names.contains(name)
     }

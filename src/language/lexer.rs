@@ -36,6 +36,8 @@ pub fn lexer<'src>(
             "total" => Token::Total,
             "map" => Token::Map,
             "as" => Token::As,
+            "index" => Token::Index,
+            "for" => Token::For,
             _ => {
                 if s.starts_with(|c: char| c.is_ascii_digit()) {
                     Token::Nat(s)
@@ -57,6 +59,8 @@ pub fn lexer<'src>(
         just(']').to(Token::RBrack),
         just('(').to(Token::LParen),
         just(')').to(Token::RParen),
+        just('<').to(Token::LAngle),
+        just('>').to(Token::RAngle),
         just('.').to(Token::Dot),
         just(',').to(Token::Comma),
         just('#').to(Token::Hash),

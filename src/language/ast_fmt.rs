@@ -201,6 +201,8 @@ fn pp_type_inst(f: &mut fmt::Formatter, inst: &TypeInst, d: usize) -> fmt::Resul
             }
             writeln!(f)
         }
+        TypeInst::Index(idx) => pp_index_decl(f, idx, d),
+        TypeInst::For(fb) => pp_for_block(f, fb, d),
     }
 }
 
@@ -228,6 +230,8 @@ fn pp_complex_instr(f: &mut fmt::Formatter, instr: &ComplexInstr, d: usize) -> f
             }
             writeln!(f)
         }
+        ComplexInstr::Index(idx) => pp_index_decl(f, idx, d),
+        ComplexInstr::For(fb) => pp_for_block(f, fb, d),
     }
 }
 
@@ -239,6 +243,8 @@ fn pp_local_inst(f: &mut fmt::Formatter, inst: &LocalInst, d: usize) -> fmt::Res
             pad(f, d)?;
             writeln!(f, "assert {} = {}", a.lhs.inner, a.rhs.inner)
         }
+        LocalInst::Index(idx) => pp_index_decl(f, idx, d),
+        LocalInst::For(fb) => pp_for_block(f, fb, d),
     }
 }
 
@@ -265,6 +271,23 @@ fn pp_def_partial_map(f: &mut fmt::Formatter, p: &DefPartialMap, d: usize) -> fm
             FmtAddress(&p.address.inner),
             p.value.inner
         )
+    }
+}
+
+fn pp_index_decl(f: &mut fmt::Formatter, idx: &IndexDecl, d: usize) -> fmt::Result {
+    pad(f, d)?;
+    let vals: Vec<&str> = idx.values.iter().map(|v| v.inner.as_str()).collect();
+    writeln!(f, "index {} = [{}]", idx.name.inner, vals.join(", "))
+}
+
+fn pp_for_block(f: &mut fmt::Formatter, fb: &ForBlock, d: usize) -> fmt::Result {
+    pad(f, d)?;
+    match &fb.index {
+        ForIndex::Named(n) => writeln!(f, "for {} in {} {{ ... }}", fb.variable.inner, n.inner),
+        ForIndex::Inline(vals) => {
+            let vs: Vec<&str> = vals.iter().map(|v| v.inner.as_str()).collect();
+            writeln!(f, "for {} in [{}] {{ ... }}", fb.variable.inner, vs.join(", "))
+        }
     }
 }
 

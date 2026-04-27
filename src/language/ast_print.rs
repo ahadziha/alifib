@@ -106,6 +106,8 @@ impl Printer {
             TypeInst::LetDiag(ld) => self.let_diag(ld),
             TypeInst::DefPartialMap(dp) => self.def_partial_map(dp),
             TypeInst::IncludeModule(im) => self.include_module(im),
+            TypeInst::Index(idx) => self.index_decl(idx),
+            TypeInst::For(fb) => self.for_block(fb),
         }
     }
 
@@ -138,7 +140,40 @@ impl Printer {
                 self.s(" = ");
                 self.diagram(&a.rhs.inner);
             }
+            LocalInst::Index(idx) => self.index_decl(idx),
+            LocalInst::For(fb) => self.for_block(fb),
         }
+    }
+
+    // ---- Index & For ----
+
+    fn index_decl(&mut self, idx: &IndexDecl) {
+        self.s("index ");
+        self.s(&idx.name.inner);
+        self.s(" = [");
+        for (i, v) in idx.values.iter().enumerate() {
+            if i > 0 { self.s(", "); }
+            self.s(&v.inner);
+        }
+        self.s("]");
+    }
+
+    fn for_block(&mut self, fb: &ForBlock) {
+        self.s("for ");
+        self.s(&fb.variable.inner);
+        self.s(" in ");
+        match &fb.index {
+            ForIndex::Named(n) => self.s(&n.inner),
+            ForIndex::Inline(vals) => {
+                self.s("[");
+                for (i, v) in vals.iter().enumerate() {
+                    if i > 0 { self.s(", "); }
+                    self.s(&v.inner);
+                }
+                self.s("]");
+            }
+        }
+        self.s(" { ... }");
     }
 
     // ---- Shared instructions ----
@@ -202,6 +237,8 @@ impl Printer {
             ComplexInstr::DefPartialMap(dp) => self.def_partial_map(dp),
             ComplexInstr::AttachStmt(a) => self.attach_stmt(a),
             ComplexInstr::IncludeStmt(inc) => self.include_stmt(inc),
+            ComplexInstr::Index(idx) => self.index_decl(idx),
+            ComplexInstr::For(fb) => self.for_block(fb),
         }
     }
 

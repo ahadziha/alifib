@@ -5,8 +5,9 @@ use chumsky::span::SimpleSpan;
 
 use super::ast::{
     Address, AssertStmt, AttachStmt, Block, Boundary, ComplexInstr, Complex, DComponent, DExpr,
-    DefPartialMap, Diagram, Generator, IncludeModule, IncludeStmt, LetDiag, LocalInst, NameWithBoundary,
-    PartialMap, PartialMapBasic, PartialMapClause, PartialMapDef, PartialMapExt, Program, Span, Spanned, TypeInst,
+    DefPartialMap, Diagram, ForBlock, ForIndex, Generator, IncludeModule, IncludeStmt, IndexDecl,
+    LetDiag, LocalInst, NameWithBoundary, PartialMap, PartialMapBasic, PartialMapClause,
+    PartialMapDef, PartialMapExt, Program, Span, Spanned, TypeInst,
 };
 use super::token::Token;
 
@@ -61,6 +62,15 @@ fn t<'tokens, 'src: 'tokens>(
     tok: Token<'src>,
 ) -> impl Parser<'tokens, TokenInput<'tokens, 'src>, (), E<'tokens, 'src>> + Clone {
     just(tok).ignored()
+}
+
+fn name_or_nat<'tokens, 'src: 'tokens>()
+-> impl Parser<'tokens, TokenInput<'tokens, 'src>, Spanned<String>, E<'tokens, 'src>> + Clone {
+    select_ref! {
+        Token::Ident(s) => s.to_string(),
+        Token::Nat(s) => s.to_string(),
+    }
+    .map_with(|s, event| sp(s, cspan(event.span())))
 }
 
 // ---------------------------------------------------------------------------
@@ -219,7 +229,12 @@ fn build_complex<'tokens, 'src: 'tokens>(
         let nwb = build_name_with_boundary(diagram.clone())
             .map(|s| sp(ComplexInstr::NameWithBoundary(s.inner), s.span));
 
-        let cinstr = choice((attach_stmt, include_stmt, let_or_def, nwb));
+        let c_index = index_decl()
+            .map(|s| sp(ComplexInstr::Index(s.inner), s.span));
+        let c_for = for_block()
+            .map(|s| sp(ComplexInstr::For(s.inner), s.span));
+
+        let cinstr = choice((c_index, c_for, attach_stmt, include_stmt, let_or_def, nwb));
 
         let complex_body = cinstr
             .separated_by(t(Token::Comma))
@@ -372,6 +387,70 @@ fn build_diagram<'tokens, 'src: 'tokens>() -> RDiagram<'tokens, 'src> {
 }
 
 // ---------------------------------------------------------------------------
+// Index & For
+// ---------------------------------------------------------------------------
+
+/// Parse a bracketed index list: `[name_or_nat, ...]`
+fn index_list<'tokens, 'src: 'tokens>()
+-> impl Parser<'tokens, TokenInput<'tokens, 'src>, Vec<Spanned<String>>, E<'tokens, 'src>> + Clone {
+    name_or_nat()
+        .separated_by(t(Token::Comma))
+        .allow_trailing()
+        .collect::<Vec<_>>()
+        .delimited_by(t(Token::LBrack), t(Token::RBrack))
+}
+
+/// Parse `index Name = [values]`.
+fn index_decl<'tokens, 'src: 'tokens>()
+-> impl Parser<'tokens, TokenInput<'tokens, 'src>, Spanned<IndexDecl>, E<'tokens, 'src>> + Clone {
+    t(Token::Index)
+        .ignore_then(name())
+        .then_ignore(t(Token::Eq))
+        .then(index_list())
+        .map_with(|(name, values), e| sp(IndexDecl { name, values }, cspan(e.span())))
+}
+
+/// Match balanced braces `{ ... }` and return the span of the body (between `{` and `}`).
+fn for_body<'tokens, 'src: 'tokens>()
+-> impl Parser<'tokens, TokenInput<'tokens, 'src>, Span, E<'tokens, 'src>> + Clone {
+    let brace_inner: R<'tokens, 'src, ()> = recursive(|inner| {
+        let non_brace = any()
+            .filter(|t: &Token| !matches!(t, Token::LBrace | Token::RBrace))
+            .ignored();
+        let nested = t(Token::LBrace)
+            .then(inner.repeated().collect::<Vec<()>>())
+            .then(t(Token::RBrace))
+            .ignored();
+        choice((non_brace, nested))
+    });
+
+    just(Token::LBrace)
+        .map_with(|_, e| cspan(e.span()))
+        .then(brace_inner.repeated().collect::<Vec<()>>())
+        .then(just(Token::RBrace).map_with(|_, e| cspan(e.span())))
+        .map(|((lbrace, _), rbrace)| Span {
+            start: lbrace.end,
+            end: rbrace.start,
+        })
+}
+
+/// Parse `for name in (Name | [values]) { body }`.
+fn for_block<'tokens, 'src: 'tokens>()
+-> impl Parser<'tokens, TokenInput<'tokens, 'src>, Spanned<ForBlock>, E<'tokens, 'src>> + Clone {
+    t(Token::For)
+        .ignore_then(name())
+        .then_ignore(t(Token::In))
+        .then(choice((
+            name().map(ForIndex::Named),
+            index_list().map(ForIndex::Inline),
+        )))
+        .then(for_body())
+        .map_with(|((variable, index), body_span), e| {
+            sp(ForBlock { variable, index, body_span }, cspan(e.span()))
+        })
+}
+
+// ---------------------------------------------------------------------------
 // Program
 // ---------------------------------------------------------------------------
 
@@ -419,7 +498,12 @@ pub fn program_parser<'tokens, 'src: 'tokens>()
     let let_or_def_local =
         build_let_or_def(diagram.clone(), partial_map_def.clone(), LocalInst::LetDiag, LocalInst::DefPartialMap);
 
-    let local_inst = choice((assert_stmt, let_or_def_local));
+    let l_index = index_decl()
+        .map(|s| sp(LocalInst::Index(s.inner), s.span));
+    let l_for = for_block()
+        .map(|s| sp(LocalInst::For(s.inner), s.span));
+
+    let local_inst = choice((l_index, l_for, assert_stmt, let_or_def_local));
 
     // --- Type instructions ---
     let generator = name_with_boundary
@@ -439,7 +523,12 @@ pub fn program_parser<'tokens, 'src: 'tokens>()
     let let_or_def_type =
         build_let_or_def(diagram.clone(), partial_map_def, TypeInst::LetDiag, TypeInst::DefPartialMap);
 
-    let type_inst = choice((generator, include_module, let_or_def_type));
+    let t_index = index_decl()
+        .map(|s| sp(TypeInst::Index(s.inner), s.span));
+    let t_for = for_block()
+        .map(|s| sp(TypeInst::For(s.inner), s.span));
+
+    let type_inst = choice((t_index, t_for, generator, include_module, let_or_def_type));
 
     // --- Blocks ---
     let type_block = t(Token::At)
@@ -469,4 +558,121 @@ pub fn program_parser<'tokens, 'src: 'tokens>()
         .collect()
         .then_ignore(end())
         .map(|blocks| Program { blocks })
+}
+
+/// Parse a comma-separated list of complex instructions (for expanded for-block bodies).
+pub fn complex_instrs_parser<'tokens, 'src: 'tokens>()
+-> impl Parser<'tokens, TokenInput<'tokens, 'src>, Vec<Spanned<ComplexInstr>>, E<'tokens, 'src>> {
+    let diagram = build_diagram();
+    let partial_map = build_partial_map(diagram.clone());
+    let partial_map_def = build_partial_map_def(diagram.clone(), partial_map.clone());
+
+    let let_or_def = build_let_or_def(
+        diagram.clone(), partial_map_def.clone(), ComplexInstr::LetDiag, ComplexInstr::DefPartialMap,
+    );
+
+    let attach_stmt = t(Token::Attach)
+        .ignore_then(name())
+        .then_ignore(t(Token::DColon))
+        .then(address())
+        .then(t(Token::Along).ignore_then(partial_map_def.clone()).or_not())
+        .map_with(|((name, address), along), event| {
+            sp(ComplexInstr::AttachStmt(AttachStmt { name, address, along }), cspan(event.span()))
+        });
+
+    let include_stmt = t(Token::Include)
+        .ignore_then(address())
+        .then(t(Token::As).ignore_then(name()).or_not())
+        .map_with(|(address, alias), event| {
+            sp(ComplexInstr::IncludeStmt(IncludeStmt { address, alias }), cspan(event.span()))
+        });
+
+    let nwb = build_name_with_boundary(diagram.clone())
+        .map(|s| sp(ComplexInstr::NameWithBoundary(s.inner), s.span));
+
+    let c_index = index_decl()
+        .map(|s| sp(ComplexInstr::Index(s.inner), s.span));
+    let c_for = for_block()
+        .map(|s| sp(ComplexInstr::For(s.inner), s.span));
+
+    let cinstr = choice((c_index, c_for, attach_stmt, include_stmt, let_or_def, nwb));
+
+    cinstr
+        .separated_by(t(Token::Comma))
+        .allow_trailing()
+        .collect::<Vec<_>>()
+        .then_ignore(end())
+}
+
+/// Parse a comma-separated list of type instructions (for expanded for-block bodies).
+pub fn type_instrs_parser<'tokens, 'src: 'tokens>()
+-> impl Parser<'tokens, TokenInput<'tokens, 'src>, Vec<Spanned<TypeInst>>, E<'tokens, 'src>> {
+    let diagram = build_diagram();
+    let partial_map = build_partial_map(diagram.clone());
+    let partial_map_def = build_partial_map_def(diagram.clone(), partial_map.clone());
+    let complex = build_complex(diagram.clone(), partial_map_def.clone());
+
+    let name_with_boundary = build_name_with_boundary(diagram.clone());
+
+    let generator = name_with_boundary
+        .then_ignore(t(Token::LArrow))
+        .then(complex)
+        .map_with(|(name, complex), e| {
+            sp(TypeInst::Generator(Generator { name, complex }), cspan(e.span()))
+        });
+
+    let include_module = t(Token::Include)
+        .ignore_then(name())
+        .then(t(Token::As).ignore_then(name()).or_not())
+        .map_with(|(name, alias), e| {
+            sp(TypeInst::IncludeModule(IncludeModule { name, alias }), cspan(e.span()))
+        });
+
+    let let_or_def_type =
+        build_let_or_def(diagram.clone(), partial_map_def, TypeInst::LetDiag, TypeInst::DefPartialMap);
+
+    let t_index = index_decl()
+        .map(|s| sp(TypeInst::Index(s.inner), s.span));
+    let t_for = for_block()
+        .map(|s| sp(TypeInst::For(s.inner), s.span));
+
+    let type_inst = choice((t_index, t_for, generator, include_module, let_or_def_type));
+
+    type_inst
+        .separated_by(t(Token::Comma))
+        .allow_trailing()
+        .collect::<Vec<_>>()
+        .then_ignore(end())
+}
+
+/// Parse a comma-separated list of local instructions (for expanded for-block bodies).
+pub fn local_instrs_parser<'tokens, 'src: 'tokens>()
+-> impl Parser<'tokens, TokenInput<'tokens, 'src>, Vec<Spanned<LocalInst>>, E<'tokens, 'src>> {
+    let diagram = build_diagram();
+    let partial_map = build_partial_map(diagram.clone());
+    let partial_map_def = build_partial_map_def(diagram.clone(), partial_map.clone());
+
+    let assert_stmt = t(Token::Assert)
+        .ignore_then(diagram.clone())
+        .then_ignore(t(Token::Eq))
+        .then(diagram.clone())
+        .map_with(|(lhs, rhs), e| {
+            sp(LocalInst::AssertStmt(AssertStmt { lhs, rhs }), cspan(e.span()))
+        });
+
+    let let_or_def_local =
+        build_let_or_def(diagram.clone(), partial_map_def, LocalInst::LetDiag, LocalInst::DefPartialMap);
+
+    let l_index = index_decl()
+        .map(|s| sp(LocalInst::Index(s.inner), s.span));
+    let l_for = for_block()
+        .map(|s| sp(LocalInst::For(s.inner), s.span));
+
+    let local_inst = choice((l_index, l_for, assert_stmt, let_or_def_local));
+
+    local_inst
+        .separated_by(t(Token::Comma))
+        .allow_trailing()
+        .collect::<Vec<_>>()
+        .then_ignore(end())
 }

@@ -27,6 +27,8 @@ pub struct Context {
     /// Resolution mappings from (parent path, module name) to canonical path,
     /// used by `IncludeModule` instructions to look up pre-interpreted modules.
     pub resolutions: Arc<ModuleResolutions>,
+    /// Original source text of the current module, used for `for`-block expansion.
+    pub source: Arc<String>,
 }
 
 impl Context {
@@ -36,6 +38,7 @@ impl Context {
             current_module: module_id,
             state: Arc::new(GlobalStore::default()),
             resolutions: Arc::new(ModuleResolutions::empty()),
+            source: Arc::new(String::new()),
         }
     }
 
@@ -45,8 +48,9 @@ impl Context {
         module_id: String,
         resolutions: Arc<ModuleResolutions>,
         state: Arc<GlobalStore>,
+        source: Arc<String>,
     ) -> Self {
-        Self { current_module: module_id, state, resolutions }
+        Self { current_module: module_id, state, resolutions, source }
     }
 
     /// Create a context for a new module that shares global state and resolutions
@@ -56,6 +60,7 @@ impl Context {
             current_module: module_id,
             state: Arc::clone(&other.state),
             resolutions: Arc::clone(&other.resolutions),
+            source: Arc::clone(&other.source),
         }
     }
 
@@ -289,6 +294,8 @@ pub enum NameKind {
     Diagram,
     /// A partial map definition.
     PartialMap,
+    /// An index declaration.
+    Index,
 }
 
 impl NameKind {
@@ -298,6 +305,7 @@ impl NameKind {
             NameKind::Generator => "Generator",
             NameKind::Diagram => "Diagram",
             NameKind::PartialMap => "Partial map",
+            NameKind::Index => "Index",
         }
     }
 }

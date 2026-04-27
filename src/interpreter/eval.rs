@@ -5,7 +5,8 @@ use crate::core::{
     diagram::{CellData, Diagram},
 };
 use crate::language::ast::{
-    self, Block, ComplexInstr, LocalInst, NameWithBoundary, Program, Span, Spanned, TypeInst,
+    self, Block, ComplexInstr, ForBlock, ForIndex, IndexDecl, LocalInst, NameWithBoundary, Program,
+    Span, Spanned, TypeInst,
 };
 use std::sync::Arc;
 
@@ -125,6 +126,12 @@ fn interpret_type_inst(
         }
         TypeInst::IncludeModule(include_mod) => {
             interpret_include_module_instr(context, include_mod, instr.span)
+        }
+        TypeInst::Index(idx) => {
+            interpret_type_index(context, idx)
+        }
+        TypeInst::For(fb) => {
+            expand_type_for(context, fb, instr.span)
         }
     }
 }
@@ -309,6 +316,12 @@ fn interpret_complex_instr(
                 interpret_attach_instr(&context, mode, &scope, attach_stmt, instr.span);
             (scope_opt.unwrap_or(scope), result)
         }
+        ComplexInstr::Index(idx) => {
+            interpret_complex_index(context, scope, idx, instr.span)
+        }
+        ComplexInstr::For(fb) => {
+            expand_complex_for(context, mode, scope, fb, instr.span)
+        }
     }
 }
 
@@ -428,5 +441,187 @@ fn interpret_local_inst(
                 }
             }
         }
+        LocalInst::Index(idx) => {
+            interpret_local_index(context, type_scope, idx, instr.span)
+        }
+        LocalInst::For(fb) => {
+            expand_local_for(context, type_scope, fb, instr.span)
+        }
     }
+}
+
+// ---- Index declarations ----
+
+fn interpret_complex_index(
+    context: Context,
+    mut scope: Complex,
+    idx: &IndexDecl,
+    _outer_span: Span,
+) -> (Complex, InterpResult) {
+    let name = idx.name.inner.clone();
+    let result = InterpResult::ok(context);
+    if let Some(name_result) = ensure_name_free(&result.context, &scope, &name, idx.name.span, NameKind::Index) {
+        return (scope, result.merge(name_result));
+    }
+    let values: Vec<String> = idx.values.iter().map(|v| v.inner.clone()).collect();
+    scope.add_index(name, values);
+    (scope, result)
+}
+
+fn interpret_type_index(
+    context: &Context,
+    idx: &IndexDecl,
+) -> InterpResult {
+    let name = idx.name.inner.clone();
+    let Some(scope) = current_module_scope(context) else {
+        return InterpResult::ok(context.clone());
+    };
+    if let Some(result) = ensure_name_free(context, scope, &name, idx.name.span, NameKind::Index) {
+        return result;
+    }
+    let values: Vec<String> = idx.values.iter().map(|v| v.inner.clone()).collect();
+    let mut result = InterpResult::ok(context.clone());
+    result.context.modify_current_module(|m| m.add_index(name, values));
+    result
+}
+
+fn interpret_local_index(
+    context: &Context,
+    type_scope: &TypeScope,
+    idx: &IndexDecl,
+    _span: Span,
+) -> (Option<Complex>, InterpResult) {
+    let name = idx.name.inner.clone();
+    let scope = &type_scope.working_complex;
+    if let Some(result) = ensure_name_free(context, scope, &name, idx.name.span, NameKind::Index) {
+        return (None, result);
+    }
+    let values: Vec<String> = idx.values.iter().map(|v| v.inner.clone()).collect();
+    let mut updated_scope = scope.clone();
+    updated_scope.add_index(name, values);
+    (Some(updated_scope), InterpResult::ok(context.clone()))
+}
+
+// ---- For-block expansion ----
+
+fn resolve_index_values(
+    scope: &Complex,
+    fb: &ForBlock,
+    _outer_span: Span,
+    context: &Context,
+) -> Result<Vec<String>, InterpResult> {
+    match &fb.index {
+        ForIndex::Inline(vals) => {
+            Ok(vals.iter().map(|v| v.inner.clone()).collect())
+        }
+        ForIndex::Named(name) => {
+            match scope.find_index(&name.inner) {
+                Some(vals) => Ok(vals.clone()),
+                None => Err(error_result(
+                    context,
+                    name.span,
+                    format!("Index not found: {}", name.inner),
+                )),
+            }
+        }
+    }
+}
+
+fn expand_body(source: &str, fb: &ForBlock, values: &[String]) -> String {
+    let body_text = &source[fb.body_span.start..fb.body_span.end];
+    let var_pattern = format!("<{}>", fb.variable.inner);
+    let mut expanded = String::new();
+    for value in values {
+        expanded.push_str(&body_text.replace(&var_pattern, value));
+    }
+    expanded
+}
+
+fn expand_complex_for(
+    context: Context,
+    mode: Mode,
+    scope: Complex,
+    fb: &ForBlock,
+    outer_span: Span,
+) -> (Complex, InterpResult) {
+    let values = match resolve_index_values(&scope, fb, outer_span, &context) {
+        Ok(v) => v,
+        Err(result) => return (scope, result),
+    };
+    let expanded = expand_body(&context.source, fb, &values);
+    let instrs = match crate::language::parse_complex_instrs(&expanded) {
+        Ok(instrs) => instrs,
+        Err(errors) => {
+            let mut result = InterpResult::ok(context);
+            for err in errors {
+                result.add_error(make_error(
+                    outer_span,
+                    format!("In for-block expansion: {}", err),
+                ));
+            }
+            return (scope, result);
+        }
+    };
+    interpret_complex_body(&context, mode, scope, &instrs)
+}
+
+fn expand_type_for(
+    context: &Context,
+    fb: &ForBlock,
+    outer_span: Span,
+) -> InterpResult {
+    let Some(scope) = current_module_scope(context) else {
+        return InterpResult::ok(context.clone());
+    };
+    let values = match resolve_index_values(scope, fb, outer_span, context) {
+        Ok(v) => v,
+        Err(result) => return result,
+    };
+    let expanded = expand_body(&context.source, fb, &values);
+    let instrs = match crate::language::parse_type_instrs(&expanded) {
+        Ok(instrs) => instrs,
+        Err(errors) => {
+            let mut result = InterpResult::ok(context.clone());
+            for err in errors {
+                result.add_error(make_error(
+                    outer_span,
+                    format!("In for-block expansion: {}", err),
+                ));
+            }
+            return result;
+        }
+    };
+    interpret_type_block(context, &instrs)
+}
+
+fn expand_local_for(
+    context: &Context,
+    type_scope: &TypeScope,
+    fb: &ForBlock,
+    outer_span: Span,
+) -> (Option<Complex>, InterpResult) {
+    let scope = &type_scope.working_complex;
+    let values = match resolve_index_values(scope, fb, outer_span, context) {
+        Ok(v) => v,
+        Err(result) => return (None, result),
+    };
+    let expanded = expand_body(&context.source, fb, &values);
+    let instrs = match crate::language::parse_local_instrs(&expanded) {
+        Ok(instrs) => instrs,
+        Err(errors) => {
+            let mut result = InterpResult::ok(context.clone());
+            for err in errors {
+                result.add_error(make_error(
+                    outer_span,
+                    format!("In for-block expansion: {}", err),
+                ));
+            }
+            return (None, result);
+        }
+    };
+    let (final_scope, result) =
+        interpret_items_in_type_scope(context, type_scope.clone(), &instrs, |step_context, scope, instr| {
+            interpret_local_inst(step_context, scope, instr)
+        });
+    (Some(final_scope.working_complex), result)
 }
