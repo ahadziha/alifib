@@ -352,7 +352,6 @@ header {
   padding: 6px 12px;
   font-weight: 600;
   font-size: 11px;
-  text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-dim);
   cursor: pointer;

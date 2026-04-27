@@ -50,7 +50,7 @@ function canvasColors() {
   return {
     wire: '#4a4740', thin: '#c5c0b5',
     nodeFill: '#4a7c7c', nodeStroke: '#2a2824',
-    hlFill: '#c8a030', hlShadow: '#c8a030',
+    hlFill: '#fff8e0', hlShadow: '#f0a000',
     labelNode: '#2a2824', labelWire: '#6a6560',
   };
 }
@@ -2527,7 +2527,7 @@ function renderStrDiag(ctx, L, cw, ch) {
       ctx.shadowBlur = 14;
       ctx.beginPath();
       ctx.arc(np.x, np.y, WIRE_R, 0, Math.PI * 2);
-      ctx.fillStyle = C.hlFill;
+      ctx.fillStyle = C.hlShadow;
       ctx.fill();
       ctx.restore();
     } else if (nodeThin) {
@@ -2543,7 +2543,7 @@ function renderStrDiag(ctx, L, cw, ch) {
       ctx.arc(np.x, np.y, NODE_R, 0, Math.PI * 2);
       ctx.fillStyle = C.hlFill;
       ctx.fill();
-      ctx.strokeStyle = C.hlFill;
+      ctx.strokeStyle = C.hlShadow;
       ctx.lineWidth = 1.5;
       ctx.stroke();
       ctx.restore();
