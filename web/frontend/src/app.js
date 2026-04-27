@@ -1699,7 +1699,13 @@ function collectDirectIncludes(source) {
 selExamples.addEventListener('change', async () => {
   const name = selExamples.value;
   selExamples.value = '';
+  selExamples.blur();
   if (!name) return;
+  const existing = editorTabs.tabs.find(t => t.name === name);
+  if (existing) {
+    switchTab(existing.id);
+    return;
+  }
   const content = await fetchExample(name);
   if (content === null) {
     appendReplMsg(`Failed to fetch example: ${name}`, 'repl-result err');
