@@ -36,6 +36,10 @@ impl WasmRepl {
         self.inner.reset();
     }
 
+    pub fn stop_session(&mut self) {
+        self.inner.stop_session();
+    }
+
     /// Interpret `.ali` source text and return a JSON response with structured
     /// type data (generators with boundaries, diagrams, maps).
     ///

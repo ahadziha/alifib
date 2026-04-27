@@ -286,6 +286,10 @@ class WasmBackend {
     this.inner.reset();
   }
 
+  async stop_session() {
+    this.inner.stop_session();
+  }
+
   async load_source(source, modules) {
     const modulesJson = modules ? JSON.stringify(modules) : null;
     return this.inner.load_source(source, modulesJson);
@@ -323,6 +327,10 @@ class HttpBackend {
   }
 
   async reset() {}
+
+  async stop_session() {
+    return this.post('/api/stop_session', {});
+  }
 
   async load_source(source, modules) {
     return this.post('/api/load_source', { source, modules: modules || {} });
@@ -1062,6 +1070,24 @@ async function startSession() {
 
 function resetSession() {
   sessionActive = false;
+  if (selectedEl) {
+    selectedEl.classList.remove('acc-item--selected');
+    selectedEl.classList.remove('acc-leaf--selected');
+    selectedEl = null;
+  }
+  currentItem = null;
+  currentLayout = null;
+  sessionStrdiag = null;
+  selectedRewrite = null;
+  previewActive = false;
+  infoboxText.innerHTML = '';
+  rewriteList.innerHTML = '';
+  infobox.hidden = true;
+  rewriteList.hidden = true;
+  visContainer.hidden = true;
+  visControls.hidden = true;
+  boundaryControls.hidden = true;
+  syncAnalysisLayout();
 }
 
 async function startSessionFromRepl(typeName, src, tgt, rawCmd) {
@@ -1213,6 +1239,7 @@ function buildCommand(cmd, arg, raw) {
         appendReplEntry(raw, formatError('no active session'));
         return null;
       }
+      void repl.stop_session();
       resetSession();
       appendReplEntry(raw, '<span class="meta">Session stopped.</span>');
       return null;

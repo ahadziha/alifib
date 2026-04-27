@@ -497,6 +497,7 @@ header {
   display: grid;
   grid-template-rows: minmax(56px, auto) var(--splitter-line) minmax(120px, 1fr) var(--splitter-line) minmax(72px, 0.45fr);
 }
+.infobox[hidden] { display: none; }
 .infobox-header {
   min-height: 0;
   overflow-y: auto;

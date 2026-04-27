@@ -92,6 +92,10 @@ fn handle_connection(
             let body: RunCommandBody = parse_json_body(&request.body)?;
             write_json_response(stream, 200, repl.run_command(&body.command_json))
         }
+        ("POST", "/api/stop_session") => {
+            repl.stop_session();
+            write_json_response(stream, 200, r#"{"status":"ok"}"#.to_owned())
+        }
         ("POST", "/api/get_types") => write_json_response(stream, 200, repl.get_types()),
 
         ("GET", "/examples/index.json") => {

@@ -84,6 +84,12 @@ impl WebRepl {
         self.state = State::Empty;
     }
 
+    pub fn stop_session(&mut self) {
+        if let State::Active { store, .. } = std::mem::replace(&mut self.state, State::Empty) {
+            self.state = State::Loaded { store };
+        }
+    }
+
     /// Interpret `.ali` source text and return a JSON response with structured
     /// type data (generators with boundaries, diagrams, maps).
     pub fn load_source(&mut self, source: &str) -> String {
