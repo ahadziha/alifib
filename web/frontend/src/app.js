@@ -2487,6 +2487,9 @@ function renderStrDiag(ctx, L, cw, ch) {
       ctx.arc(np.x, np.y, NODE_R, 0, Math.PI * 2);
       ctx.fillStyle = C.hlFill;
       ctx.fill();
+      ctx.strokeStyle = C.hlFill;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
       ctx.restore();
     } else {
       ctx.beginPath();
