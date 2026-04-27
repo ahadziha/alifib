@@ -359,9 +359,7 @@ fn face_tags_json(store: &GlobalStore, tc: &crate::core::complex::Complex, tag: 
 }
 
 fn compute_thin_tags(
-    store: &GlobalStore,
     tc: &Complex,
-    known_thin: &HashSet<Tag>,
 ) -> Vec<Tag> {
     let Some(values) = tc.find_index("thin") else { return Vec::new() };
     let mut tags = Vec::new();
@@ -372,18 +370,29 @@ fn compute_thin_tags(
             if let Some(tag) = diag.top_label() {
                 tags.push(tag.clone());
             }
-        } else if let Some((pmap, domain)) = tc.find_map(name) {
-            let dc = match domain {
-                MapDomain::Type(gid) => store.find_type(*gid).map(|e| &*e.complex),
-                MapDomain::Module(mid) => store.find_module(mid),
-            };
-            if let Some(dc) = dc {
-                for (_, gen_tag, _) in dc.generators_iter() {
-                    if known_thin.contains(gen_tag) {
-                        if let Ok(image) = pmap.image(gen_tag) {
-                            if let Some(tag) = image.top_label() {
-                                tags.push(tag.clone());
-                            }
+        }
+    }
+    tags
+}
+
+fn propagate_thin_through_maps(
+    store: &GlobalStore,
+    tc: &Complex,
+    known_thin: &HashSet<Tag>,
+) -> Vec<Tag> {
+    let mut tags = Vec::new();
+    for (_, pmap, domain) in tc.maps_iter() {
+        let dc = match domain {
+            MapDomain::Type(gid) => store.find_type(*gid).map(|e| &*e.complex),
+            MapDomain::Module(mid) => store.find_module(mid),
+        };
+        let Some(dc) = dc else { continue };
+        for (_, gen_tag, _) in dc.generators_iter() {
+            if known_thin.contains(gen_tag) {
+                if let Ok(image) = pmap.image(gen_tag) {
+                    if image.is_cell() {
+                        if let Some(tag) = image.top_label() {
+                            tags.push(tag.clone());
                         }
                     }
                 }
@@ -465,11 +474,16 @@ fn type_summaries_json(store: &GlobalStore) -> Vec<serde_json::Value> {
                 })
             })
             .collect();
-        let new_thin: Vec<Tag> = tc
-            .map(|tc| compute_thin_tags(store, tc, &known_thin))
+        let mut new_thin: Vec<Tag> = tc
+            .map(|tc| compute_thin_tags(tc))
             .unwrap_or_default();
+        known_thin.extend(new_thin.iter().cloned());
+        let propagated = tc
+            .map(|tc| propagate_thin_through_maps(store, tc, &known_thin))
+            .unwrap_or_default();
+        new_thin.extend(propagated.iter().cloned());
+        known_thin.extend(propagated);
         let thin_tags: Vec<serde_json::Value> = new_thin.iter().map(tag_to_json).collect();
-        known_thin.extend(new_thin);
         result.push(serde_json::json!({
             "name": t.name,
             "module": module_name,
