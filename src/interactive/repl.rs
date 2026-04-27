@@ -1,36 +1,32 @@
 //! In-process interactive REPL for rewrite sessions.
 //!
-//! The REPL has two phases:
+//! The REPL has two states:
 //!
-//! - **Setup phase** — file is loaded.  The user must select a type (`@ Idem`),
-//!   then set `source` and `target` diagram names.  When all three are set, the
-//!   engine is created, `>> Ready.` is printed, and the REPL enters the rewriting
-//!   phase.
-//! - **Rewriting phase** — engine active; `apply`, `undo`, `undo all`, `restart`,
-//!   `clear`, `show`, `history`, `proof`, `save`, `load`, etc. are available.
+//! - **No session** — file is loaded.  Non-session commands work: `types`,
+//!   `type`, `homology`, `status`, `print`.  Use `start <type> <source>
+//!   [<target>]` to begin a rewrite session.
+//! - **Session active** — engine running; `apply`, `undo`, `undo all`,
+//!   `restart`, `stop`, `show`, `history`, `proof`, `save`, `load`, etc.
 //!
 //! All human-readable output flows through a single [`Display`] value.
 //! Readline (with vi or emacs mode) is provided by `rustyline`.
 //!
 //! # Commands
 //!
-//! Setup (always available):
+//! Always available:
 //! ```text
-//! @ <type>         Select a type from the loaded file
 //! types            List all types in the file
 //! type <name>      Inspect a type: generators, diagrams, maps
 //! homology <name>  Compute cellular homology of a type
-//! source <name>    Set the source diagram  (requires type to be selected)
-//! target <name>    Set the target diagram  (requires type to be selected)
-//! status / show    Session state, or setup state when idle
+//! start <t> <s> [<g>]  Start a rewrite session  (target optional)
+//! status / show    Session state, or module path when idle
 //! print            Print the whole source file
-//! rules            List generators in the selected type  (alias: r)
-//! clear            Destroy engine and type selection, return to setup
+//! stop             End the active session
 //! help / ?         Show command list
 //! quit / exit / q  Exit
 //! ```
 //!
-//! Rewriting (require active session):
+//! Require active session:
 //! ```text
 //! apply <n>        Apply rewrite at index <n>            (alias: a)
 //! auto <n>         Apply up to <n> rewrites automatically, always picking index 0
@@ -54,8 +50,6 @@ use rustyline::EditMode;
 use crate::core::complex::Complex;
 use crate::core::diagram::{CellData, Diagram, Sign};
 use crate::interpreter::GlobalStore;
-use crate::language;
-use crate::language::ast::Complex as AstComplex;
 use crate::output::render_diagram;
 use super::display::Display;
 use super::engine::{RewriteEngine, load_file_context, resolve_type};
@@ -145,7 +139,8 @@ fn write_updated_file(
 /// Run the interactive REPL starting from a loaded file.
 ///
 /// `type_name`, `source_diagram`, and `target_diagram` may be given as CLI
-/// arguments; any that are omitted must be set interactively.
+/// arguments to auto-start a session; otherwise the user starts one
+/// interactively with `start <type> <source> [<target>]`.
 /// `emacs_mode` selects Emacs keybindings; the default is vi mode.
 #[allow(clippy::result_unit_err)]
 pub fn run_repl(
@@ -165,33 +160,14 @@ pub fn run_repl(
     display.meta(&format!("Loaded {}", source_file));
 
     let mut rl = make_editor(emacs_mode);
-
-    // Mutable setup-phase state
-    let mut type_complex: Option<Arc<Complex>> = None;
-    let mut type_name_str: Option<String> = None;
-    let mut pending_source: Option<String> = source_diagram.map(str::to_owned);
-    let mut pending_target: Option<String> = target_diagram.map(str::to_owned);
     let mut engine: Option<RewriteEngine> = None;
-    // Definitions stored this session: (type_name, def_name, rendered_label)
     let mut stored_defs: Vec<(String, String, String)> = Vec::new();
 
-    // Pre-select type from CLI arg.
-    if let Some(tn) = type_name {
-        match resolve_type(&store, &canonical_path, tn) {
-            Ok(tc) => {
-                type_complex = Some(tc);
-                type_name_str = Some(tn.to_owned());
-                display.meta(&format!("Type: {}", tn));
-            }
-            Err(e) => { display.error(&e); return Err(()); }
-        }
-    }
-
-    // If all three were given on the CLI, start immediately.
-    if type_complex.is_some() {
-        maybe_start_engine(
-            &type_complex, &type_name_str, &pending_source, &pending_target,
-            &store, source_file, &display, &mut engine,
+    // Auto-start from CLI flags when type and source are given.
+    if let (Some(tn), Some(src)) = (type_name, source_diagram) {
+        try_start_session(
+            &store, &canonical_path, source_file, tn, src, target_diagram,
+            &display, &mut engine,
         );
     }
 
@@ -209,27 +185,11 @@ pub fn run_repl(
                 if part.is_empty() { continue; }
                 match parse_command(part) {
                     // ── Always-available commands ─────────────────────
-                    Cmd::AtExpr(expr) => {
-                        handle_at_command(
-                            &expr, &store, &canonical_path, source_file,
-                            &display,
-                            &mut type_complex, &mut type_name_str,
-                            &mut pending_source, &mut pending_target,
-                            &mut engine,
-                        );
-                    }
                     Cmd::Types => dispatch_types(&store, &canonical_path, &display),
                     Cmd::Status => {
                         match engine.as_ref() {
                             Some(e) => show_state(e, &display),
-                            None => dispatch_status(
-                                source_file,
-                                type_name_str.as_deref(),
-                                type_complex.as_deref(),
-                                pending_source.as_deref(),
-                                pending_target.as_deref(),
-                                &display,
-                            ),
+                            None => display.meta(&format!("module: {}", source_file)),
                         }
                     }
                     Cmd::PrintFile => {
@@ -237,13 +197,9 @@ pub fn run_repl(
                         if !trimmed.is_empty() { display.file(trimmed); }
                     }
                     Cmd::Type(name) => {
-                        // Pass the live complex if it's for the active type, so that
-                        // proofs stored this session are visible in the output.
                         let live_tc: Option<&Complex> =
                             if engine.as_ref().map(|e| e.type_name()) == Some(name.as_str()) {
                                 engine.as_ref().map(|e| e.type_complex())
-                            } else if type_name_str.as_deref() == Some(name.as_str()) {
-                                type_complex.as_deref()
                             } else {
                                 None
                             };
@@ -252,86 +208,36 @@ pub fn run_repl(
                     Cmd::Homology(name) => {
                         dispatch_homology(&store, &canonical_path, &name, &display);
                     }
-                    Cmd::Clear => {
+                    Cmd::Stop => {
                         engine = None;
-                        type_complex = None;
-                        type_name_str = None;
-                        pending_source = None;
-                        pending_target = None;
-                        display.meta("Cleared.");
+                        display.meta("Session stopped.");
                     }
                     Cmd::Help => print_help(&display),
                     Cmd::Quit => break 'repl,
 
-                    // ── Commands that need type to be set ─────────────
-                    Cmd::Source(name) => {
-                        if type_complex.is_none() {
-                            display.error("no type selected — use '@ <TypeName>' first");
+                    Cmd::Start(type_arg, source_arg, target_arg) => {
+                        if engine.is_some() {
+                            display.error("session already active — use 'stop' first");
                         } else {
-                            // Only pre-print if the engine won't start and it's a simple name.
-                            let engine_will_start = type_name_str.is_some()
-                                && pending_target.is_some();
-                            let is_simple_name = !name.contains(char::is_whitespace);
-                            if !engine_will_start && is_simple_name
-                                && let Some(tc) = type_complex.as_deref() {
-                                dispatch_print_cell(tc, &name, &display);
-                            } else if !engine_will_start {
-                                display.meta(&format!("source: {}", name));
-                            }
-                            pending_source = Some(name);
-                            maybe_start_engine(
-                                &type_complex, &type_name_str, &pending_source, &pending_target,
-                                &store, source_file, &display, &mut engine,
+                            try_start_session(
+                                &store, &canonical_path, source_file,
+                                &type_arg, &source_arg, target_arg.as_deref(),
+                                &display, &mut engine,
                             );
                         }
                     }
-                    Cmd::Target(name) => {
-                        if type_complex.is_none() {
-                            display.error("no type selected — use '@ <TypeName>' first");
-                        } else {
-                            // Only pre-print if the engine won't start and it's a simple name.
-                            let engine_will_start = type_name_str.is_some()
-                                && pending_source.is_some();
-                            let is_simple_name = !name.contains(char::is_whitespace);
-                            if !engine_will_start && is_simple_name
-                                && let Some(tc) = type_complex.as_deref() {
-                                dispatch_print_cell(tc, &name, &display);
-                            } else if !engine_will_start {
-                                display.meta(&format!("target: {}", name));
-                            }
-                            pending_target = Some(name);
-                            maybe_start_engine(
-                                &type_complex, &type_name_str, &pending_source, &pending_target,
-                                &store, source_file, &display, &mut engine,
-                            );
-                        }
-                    }
-                    Cmd::Rules => {
-                        match (&engine, &type_complex) {
-                            (Some(e), _) => dispatch_rules(e.type_complex(), e.store(), Some(e.current_diagram().top_dim() + 1), &display),
-                            (None, Some(tc)) => dispatch_rules(tc, &store, None, &display),
-                            (None, None) => display.error("set type first (@ <TypeName>)"),
-                        }
-                    }
+
                     // ── Always dispatch errors regardless of engine state ──
                     Cmd::Unknown(s) => display.error(&format!("unrecognised command '{}' — type 'help' for a list", s)),
                     Cmd::UsageError(usage) => display.error(&format!("usage: {}", usage)),
 
-                    // ── Rewriting-phase commands (require engine) ─────
+                    // ── Session commands (require engine) ────────────
                     cmd => match engine.as_mut() {
                         None => {
-                            let msg = match (type_complex.is_some(), pending_source.is_some(), pending_target.is_some()) {
-                                (false, _, _) => "no type selected — use '@ <TypeName>'",
-                                (true, false, false) => "set source and target first",
-                                (true, true, false) => "set target first",
-                                (true, false, true) => "set source first",
-                                (true, true, true) => "engine failed to start — check source/target names",
-                            };
-                            display.error(msg);
+                            display.error("no active session — use 'start <type> <source> [<target>]'");
                         }
                         Some(e) => {
                             match cmd {
-                                // Store/Save handled here: need access to outer type_complex and stored_defs.
                                 Cmd::Store(name) => {
                                     let source_expr = if e.steps().is_empty() {
                                         None
@@ -346,13 +252,12 @@ pub fn run_repl(
                                         Some(format!("{}{}", first, rest))
                                     };
                                     match e.register_proof(&name) {
-                                        Ok((new_store, new_complex)) => {
+                                        Ok((new_store, _new_complex)) => {
                                             store = new_store;
-                                            type_complex = Some(new_complex);
                                             display.meta(&format!("Stored '{}'.", name));
                                             dispatch_print_cell(e.type_complex(), &name, &display);
-                                            if let (Some(tn), Some(expr)) = (type_name_str.as_deref(), source_expr) {
-                                                stored_defs.push((tn.to_owned(), name, expr));
+                                            if let Some(expr) = source_expr {
+                                                stored_defs.push((e.type_name().to_owned(), name, expr));
                                             }
                                         }
                                         Err(err) => display.error(&err),
@@ -389,7 +294,7 @@ pub fn dispatch_rewrite_command(
 ) -> DispatchResult {
     match parse_command(line) {
         Cmd::Quit => return DispatchResult::Quit,
-        Cmd::Clear | Cmd::Source(_) | Cmd::Target(_) | Cmd::AtExpr(_) | Cmd::Types | Cmd::PrintFile => {
+        Cmd::Stop | Cmd::Types | Cmd::PrintFile | Cmd::Start(..) => {
             display.error("command not available here");
         }
         Cmd::Type(_) | Cmd::Homology(_) => display.error("command not available here"),
@@ -407,48 +312,38 @@ fn make_editor(emacs_mode: bool) -> rustyline::DefaultEditor {
     rl
 }
 
-/// Process a `@ <expr>` command: parse the complex expression, resolve to a
-/// type, update state, and attempt to start the engine.
+/// Resolve type, source, and optional target, then create the engine.
 #[allow(clippy::too_many_arguments)]
-fn handle_at_command(
-    expr: &str,
+fn try_start_session(
     store: &Arc<GlobalStore>,
     canonical_path: &str,
     source_file: &str,
+    type_name: &str,
+    source_name: &str,
+    target_name: Option<&str>,
     display: &Display,
-    type_complex: &mut Option<Arc<Complex>>,
-    type_name_str: &mut Option<String>,
-    pending_source: &mut Option<String>,
-    pending_target: &mut Option<String>,
     engine: &mut Option<RewriteEngine>,
 ) {
-    match language::parse_complex(expr) {
-        Err(e) => {
-            display.error(&format!("parse error: {}", e));
-        }
-        Ok(AstComplex::Block { .. }) => {
-            display.error("block syntax not supported at the REPL prompt — use a bare name, e.g. @ Idem");
-        }
-        Ok(AstComplex::Address(addr)) => {
-            let name = addr.iter().map(|s| s.inner.as_str()).collect::<Vec<_>>().join(".");
-            match resolve_type(store, canonical_path, &name) {
-                Err(e) => display.error(&e),
-                Ok(tc) => {
-                    *type_complex = Some(tc);
-                    *type_name_str = Some(name.clone());
-                    // Reset source/target — they may not exist in the new type.
-                    *pending_source = None;
-                    *pending_target = None;
-                    *engine = None;
-                    display.meta(&format!("Type: {}", name));
-                    // Immediately try to start if source/target happen to be set
-                    maybe_start_engine(
-                        type_complex, type_name_str, pending_source, pending_target,
-                        store, source_file, display, engine,
-                    );
+    let tc = match resolve_type(store, canonical_path, type_name) {
+        Ok(tc) => tc,
+        Err(e) => { display.error(&e); return; }
+    };
+    match RewriteEngine::from_store(
+        Arc::clone(store), tc, source_name, target_name,
+        source_file.to_owned(), type_name.to_owned(),
+    ) {
+        Ok(e) => {
+            *engine = Some(e);
+            display.meta("Ready.");
+            let e = engine.as_ref().unwrap();
+            show_diagram_or_name(source_name, e.source_diagram(), e.type_complex(), display);
+            if let Some(tgt) = target_name {
+                if let Some(tgt_diag) = e.target_diagram() {
+                    show_diagram_or_name(tgt, tgt_diag, e.type_complex(), display);
                 }
             }
         }
+        Err(e) => display.error(&e),
     }
 }
 
@@ -513,43 +408,6 @@ fn dispatch_types(store: &GlobalStore, canonical_path: &str, display: &Display) 
     }
 }
 
-/// Create the engine when type, source, and target are all set.
-#[allow(clippy::too_many_arguments)]
-fn maybe_start_engine(
-    type_complex: &Option<Arc<Complex>>,
-    type_name_str: &Option<String>,
-    pending_source: &Option<String>,
-    pending_target: &Option<String>,
-    store: &Arc<GlobalStore>,
-    source_file: &str,
-    display: &Display,
-    engine: &mut Option<RewriteEngine>,
-) {
-    if let (Some(tc), Some(tn), Some(src), Some(tgt)) =
-        (type_complex, type_name_str, pending_source, pending_target)
-    {
-        match RewriteEngine::from_store(
-            Arc::clone(store),
-            Arc::clone(tc),
-            src,
-            Some(tgt),
-            source_file.to_owned(),
-            tn.clone(),
-        ) {
-            Ok(e) => {
-                *engine = Some(e);
-                display.meta("Ready.");
-                let e = engine.as_ref().unwrap();
-                show_diagram_or_name(src, e.source_diagram(), e.type_complex(), display);
-                if let Some(tgt_diag) = e.target_diagram() {
-                    show_diagram_or_name(tgt, tgt_diag, e.type_complex(), display);
-                }
-            }
-            Err(e) => display.error(&e),
-        }
-    }
-}
-
 /// Call `print_state` with fields drawn from `engine`.
 ///
 /// When the proof is complete (`target_reached`), runs `typecheck_proof` and reports
@@ -586,38 +444,6 @@ fn show_state(engine: &RewriteEngine, display: &Display) {
         engine.type_complex(),
         proof,
     );
-}
-
-/// Show the current proof status.
-///
-/// With an active engine: shows module, type, fully-expanded source and target,
-/// and the cell built so far.  Without an engine: shows module, type (if set),
-/// Show setup-phase state: module path, type name (if set), and any pending
-/// source/target diagrams. Only called when no engine is active — in rewriting
-/// mode `status` calls `show_state` directly.
-fn dispatch_status(
-    source_file: &str,
-    type_name_str: Option<&str>,
-    type_complex: Option<&Complex>,
-    pending_source: Option<&str>,
-    pending_target: Option<&str>,
-    display: &Display,
-) {
-    display.meta(&format!("module: {}", source_file));
-    match type_name_str {
-        Some(tn) => display.meta(&format!("type:   {}", tn)),
-        None     => display.meta("type:   (not set)"),
-    }
-    if let Some(tc) = type_complex {
-        if let Some(src) = pending_source {
-            display.meta("source:");
-            dispatch_print_cell(tc, src, display);
-        }
-        if let Some(tgt) = pending_target {
-            display.meta("target:");
-            dispatch_print_cell(tc, tgt, display);
-        }
-    }
 }
 
 /// Display generators in `complex`, optionally filtered to those at `filter_dim`.
@@ -932,41 +758,38 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
         Cmd::Help => print_help(display),
         Cmd::Quit => {}   // handled by caller
         // These are all handled before dispatch_engine_cmd is reached
-        Cmd::Clear | Cmd::Source(_) | Cmd::Target(_) | Cmd::AtExpr(_) | Cmd::Types
-        | Cmd::PrintFile | Cmd::Type(_) | Cmd::Homology(_) | Cmd::Status
+        Cmd::Stop | Cmd::Types | Cmd::PrintFile | Cmd::Type(_) | Cmd::Homology(_)
+        | Cmd::Status | Cmd::Start(..)
         | Cmd::Store(_) | Cmd::Save(_) | Cmd::Unknown(_) | Cmd::UsageError(_) => unreachable!(),
     }
 }
 
 fn print_help(display: &Display) {
     display.meta(
-        "Setup commands (always available):\n\
-         \x20 @ <type>         Select a type from the loaded file\n\
-         \x20 types            List all types in the file\n\
-         \x20 type <name>      Inspect a type: generators, diagrams, maps\n\
-         \x20 homology <name>  Compute cellular homology of a type\n\
-         \x20 source <name>    Set the source diagram  (requires type to be selected)\n\
-         \x20 target <name>    Set the target diagram  (requires type to be selected)\n\
-         \x20 status / show    Session state, or setup state when idle\n\
-         \x20 print            Print the whole source file\n\
-         \x20 rules            List generators in the selected type  (alias: r)\n\
-         \x20 clear            Destroy engine and type selection, return to setup\n\
-         \x20 help / ?         Show this help\n\
-         \x20 quit / exit / q  Exit\n\
+        "Always available:\n\
+         \x20 types               List all types in the file\n\
+         \x20 type <name>         Inspect a type: generators, diagrams, maps\n\
+         \x20 homology <name>     Compute cellular homology of a type\n\
+         \x20 start <t> <s> [<g>] Start a rewrite session  (target optional)\n\
+         \x20 status / show       Session state, or module info when idle\n\
+         \x20 print               Print the whole source file\n\
+         \x20 stop                End the active session\n\
+         \x20 help / ?            Show this help\n\
+         \x20 quit / exit / q     Exit\n\
          \n\
-         Rewriting commands (require active session):\n\
+         Session commands (require active session):\n\
          \x20 apply <n> [<n2>..]  Apply rewrite(s) at given indices    (alias: a)\n\
-         \x20 auto <n>           Apply up to <n> rewrites automatically\n\
-         \x20 parallel [on|off]  Show or toggle parallel rewrite mode  (default: on)\n\
-         \x20 undo               Undo the last step                    (alias: u)\n\
-         \x20 undo <n>           Undo back to step <n>\n\
-         \x20 undo all           Reset to source diagram               (= restart)\n\
-         \x20 rules              List rewrite rules at current dimension  (alias: r)\n\
-         \x20 history            Show the move history                 (alias: h)\n\
-         \x20 proof              Show the running proof diagram        (alias: p)\n\
-         \x20 store <name>       Store the current proof as a named diagram\n\
-         \x20 save <path>        Write source file with stored definitions appended\n\
-         \x20 load <path>        Load and replay a session file        (alias: l)"
+         \x20 auto <n>            Apply up to <n> rewrites automatically\n\
+         \x20 parallel [on|off]   Show or toggle parallel rewrite mode  (default: on)\n\
+         \x20 undo                Undo the last step                    (alias: u)\n\
+         \x20 undo <n>            Undo back to step <n>\n\
+         \x20 undo all            Reset to source diagram               (= restart)\n\
+         \x20 rules               List rewrite rules at current dimension  (alias: r)\n\
+         \x20 history             Show the move history                 (alias: h)\n\
+         \x20 proof               Show the running proof diagram        (alias: p)\n\
+         \x20 store <name>        Store the current proof as a named diagram\n\
+         \x20 save <path>         Write source file with stored definitions appended\n\
+         \x20 load <path>         Load and replay a session file        (alias: l)"
     );
 }
 
@@ -974,20 +797,16 @@ fn print_help(display: &Display) {
 
 /// A parsed REPL command.
 enum Cmd {
-    /// `@ <expr>` — select a type; the string is handed to `language::parse_complex`.
-    AtExpr(String),
     /// `types` — list all types in the file.
     Types,
-    /// `status` / `show` — show rewrite state when engine active, setup state otherwise.
+    /// `status` / `show` — show rewrite state when engine active, module path otherwise.
     Status,
     /// `print` — print the full source file.
     PrintFile,
     /// `type <name>` — inspect a type and its generators.
     Type(String),
-    /// `source <name>` — set the source diagram.
-    Source(String),
-    /// `target <name>` — set the target (goal) diagram.
-    Target(String),
+    /// `start <type> <source> [<target>]` — start a rewrite session.
+    Start(String, String, Option<String>),
     /// `apply <n> [<n2> ...]` — apply one or more candidate rewrites.
     Apply(Vec<usize>),
     /// `auto <n>` — apply up to `n` rewrites automatically, always picking the
@@ -999,8 +818,8 @@ enum Cmd {
     UndoAll,
     /// `restart` — alias for `undo all`.
     Restart,
-    /// `clear` — destroy engine and type selection, return to setup phase.
-    Clear,
+    /// `stop` — destroy engine and type selection, return to no-session mode.
+    Stop,
     /// `rules` — list generators (or rewrite rules when engine active).
     Rules,
     /// `history` — display the move log.
@@ -1025,12 +844,31 @@ enum Cmd {
     UsageError(String),
 }
 
-fn parse_command(line: &str) -> Cmd {
-    // `@ ...` — type selection using the language parser
-    if let Some(rest) = line.strip_prefix('@') {
-        return Cmd::AtExpr(rest.trim().to_owned());
+fn split_quoted_args(s: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut chars = s.chars().peekable();
+    while chars.peek().is_some() {
+        while chars.peek() == Some(&' ') { chars.next(); }
+        if chars.peek().is_none() { break; }
+        let quote = match chars.peek() {
+            Some(&q @ '\'' | &q @ '"') => { chars.next(); Some(q) }
+            _ => None,
+        };
+        let mut tok = String::new();
+        loop {
+            match chars.peek() {
+                None => break,
+                Some(&c) if quote == Some(c) => { chars.next(); break; }
+                Some(&c) if quote.is_none() && c.is_whitespace() => break,
+                _ => tok.push(chars.next().unwrap()),
+            }
+        }
+        if !tok.is_empty() { args.push(tok); }
     }
+    args
+}
 
+fn parse_command(line: &str) -> Cmd {
     let mut parts = line.splitn(2, char::is_whitespace);
     let word = parts.next().unwrap_or("").trim();
     let rest = parts.next().map(str::trim).unwrap_or("");
@@ -1053,13 +891,13 @@ fn parse_command(line: &str) -> Cmd {
             if rest.is_empty() { Cmd::UsageError("homology <name>".to_owned()) }
             else { Cmd::Homology(rest.to_owned()) }
         }
-        "source" => {
-            if rest.is_empty() { Cmd::UsageError("source <name>".to_owned()) }
-            else { Cmd::Source(rest.to_owned()) }
-        }
-        "target" => {
-            if rest.is_empty() { Cmd::UsageError("target <name>".to_owned()) }
-            else { Cmd::Target(rest.to_owned()) }
+        "start" => {
+            let args = split_quoted_args(rest);
+            match args.len() {
+                2 => Cmd::Start(args[0].clone(), args[1].clone(), None),
+                3 => Cmd::Start(args[0].clone(), args[1].clone(), Some(args[2].clone())),
+                _ => Cmd::UsageError("start <type> <source> [<target>]".to_owned()),
+            }
         }
         "apply" | "a" => {
             let nums: Result<Vec<usize>, _> = rest.split_whitespace()
@@ -1089,7 +927,7 @@ fn parse_command(line: &str) -> Cmd {
             }
         }
         "restart" => Cmd::Restart,
-        "clear"   => Cmd::Clear,
+        "stop"    => Cmd::Stop,
         "rules" | "r" => Cmd::Rules,
         "history" | "h" => Cmd::History,
         "proof" | "p"   => Cmd::Proof,

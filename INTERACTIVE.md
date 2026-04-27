@@ -13,34 +13,40 @@ integration.
 alifib repl <file> [--type <t>] [--source <s>] [--target <t>] [--emacs]
 ```
 
-Loads `<file>`. If `--type`, `--source`, and `--target` are all supplied, the
-session starts immediately. Otherwise the REPL enters a setup phase where you
-set them interactively before rewriting begins.
+Loads `<file>` and enters **no-session** mode: inspection commands work
+immediately. Use `start <type> <source> [<target>]` to begin a rewrite
+session (target is optional). If `--type` and `--source` are given on the
+command line, the session starts automatically.
 
 `--emacs` selects Emacs keybindings; the default is vi mode.
 
-### Setup commands (always available)
+Composite diagram expressions can be quoted with `'` or `"`:
+
+```
+start Mor 'comp #(f, comp #(g, h))' 'comp #(comp #(f, g), h)'
+```
+
+### Always available
 
 | Command | Description |
 |---------|-------------|
-| `@ <type>` | Select a type from the loaded file |
 | `types` | List all types defined in the file |
 | `type <name>` | Inspect a type: generators, diagrams, maps |
 | `homology <name>` | Compute cellular homology of a type |
-| `source <name>` | Set the source diagram (starts session when all three are set) |
-| `target <name>` | Set the target diagram (starts session when all three are set) |
-| `status` / `show` | Show setup state (module, type, pending source/target) |
+| `start <t> <s> [<g>]` | Start a rewrite session (target optional) |
+| `status` / `show` | Session state, or module path when idle |
 | `print` | Print the full source file |
-| `rules` | List generators in the selected type |
-| `clear` | Destroy engine and type selection, return to setup |
+| `stop` | End the active session |
 | `help` / `?` | Show command list |
 | `quit` / `exit` / `q` | Exit |
 
-### Rewriting commands (require active session)
+### Session commands (require active session)
 
 | Command | Aliases | Description |
 |---------|---------|-------------|
-| `apply <n>` | `a <n>` | Apply rewrite at index `n` |
+| `apply <n> [<n2> ...]` | `a` | Apply rewrite(s) at given indices |
+| `auto <n>` | | Apply up to `n` rewrites automatically |
+| `parallel [on\|off]` | | Show or toggle parallel rewrite mode (default: on) |
 | `undo` | `u` | Undo the last step |
 | `undo <n>` | `u <n>` | Undo back to step `n` (0 = reset to source) |
 | `undo all` / `restart` | | Reset to source diagram |
@@ -105,6 +111,18 @@ ssh -L 8000:127.0.0.1:8000 user@remote-host
 ```
 
 Then open `http://127.0.0.1:8000` locally.
+
+The web GUI has its own REPL panel. After evaluating a source file, the REPL
+enters no-session mode and accepts the same commands as the CLI REPL
+(`types`, `type`, `homology`, `start`, `stop`, etc.). Two additional commands
+are web-specific:
+
+| Command | Description |
+|---------|-------------|
+| `clear` | Clear the REPL output (same as the Clear button) |
+
+Sessions can also be started via the GUI controls (type selector + source/target
+inputs + Start button), which echoes the equivalent `start` command in the REPL.
 
 The web GUI uses the same rewrite engine and visualization helpers as the WASM
 frontend, but keeps the live session state on the server side.

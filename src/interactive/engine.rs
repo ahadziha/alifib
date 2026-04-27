@@ -698,6 +698,14 @@ impl RewriteEngine {
     /// Name of the target diagram, or `None` if no goal was declared.
     pub fn target_diagram_name(&self) -> Option<&str> { self.target_diagram_name.as_deref() }
 
+    /// Set or replace the target diagram on a running session.
+    pub fn set_target(&mut self, name: &str) -> Result<(), String> {
+        let diag = eval_diagram_expr(&self.store, &self.type_complex, &self.source_file, name)?;
+        self.target_diagram = Some(diag);
+        self.target_diagram_name = Some(name.to_owned());
+        Ok(())
+    }
+
     /// Returns true only if the current diagram is isomorphic to the target AND
     /// at least one rewrite step has been applied.  Regular directed complexes
     /// have no identities, so source == target at the start is never a valid proof.
@@ -910,6 +918,9 @@ impl RewriteEngine {
             Request::Parallel { on } => {
                 self.set_parallel(*on);
                 Ok(build_response(self, false))
+            }
+            Request::SetTarget { name } => {
+                self.set_target(name).map(|_| build_response(self, false))
             }
             Request::Init { .. }
             | Request::Resume { .. }

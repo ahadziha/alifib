@@ -104,25 +104,30 @@ Example:
 alifib repl examples/Idem.ali --type Idem --source lhs --target rhs
 ```
 
-The REPL has two phases:
+After loading, the REPL is in **no-session** mode: inspection commands like
+`types`, `type <name>`, and `homology <name>` work immediately. Use
+`start <type> <source> [<target>]` to begin a rewrite session (target is
+optional). Composite diagram expressions can be quoted:
 
-- **Setup** — select a type (`@ Idem`), then set `source` and `target` diagram
-  names. When all three are set the session starts automatically.
-- **Rewriting** — apply rewrites with `apply <n>`, undo with `undo`, inspect
-  the running proof with `proof`, name and store it with `store <name>`.
+```
+start Mor 'comp #(f, comp #(g, h))' 'comp #(comp #(f, g), h)'
+```
+
+If `--type` and `--source` are given on the command line, the session starts
+automatically.
 
 Key commands:
 
 | Command | Description |
 |---------|-------------|
-| `@ <type>` | Select a type |
-| `source <name>` / `target <name>` | Set source and target |
+| `start <t> <s> [<g>]` | Start a rewrite session (target optional) |
 | `apply <n>` | Apply rewrite at index `n` (alias `a`) |
 | `undo` | Undo last step (alias `u`) |
 | `rules` | List available rewrite rules (alias `r`) |
 | `proof` | Show the running proof diagram (alias `p`) |
 | `store <name>` | Register proof as a first-class generator |
 | `save <path>` | Write source file with stored definitions appended |
+| `stop` | End the active session |
 | `help` | Full command list |
 
 See `INTERACTIVE.md` for the complete reference.

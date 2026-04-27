@@ -22,6 +22,7 @@ use crate::language::error::Diagnostic;
 use super::engine::{RewriteEngine, resolve_type};
 use super::protocol::{
     Request, Response, build_homology_response, build_response, build_strdiag_response,
+    build_types_from_store, build_type_detail_from_store,
     step_target_strdiag_json, strdiag_json_from_diagram, tag_to_json,
 };
 
@@ -32,8 +33,10 @@ pub const WEB_SOURCE_PATH: &str = "source.ali";
 /// Lifecycle:
 /// 1. `new()` — create an empty instance
 /// 2. `load_source(text)` — parse and interpret `.ali` source text
-/// 3. `init_session(type, src, tgt?)` — start a rewrite session on a type
-/// 4. `run_command(json)` — send daemon-protocol commands (step/undo/show/…)
+/// 3. `run_command(json)` — non-session commands (`types`, `type`, `homology`)
+///    work immediately after loading
+/// 4. `init_session(type, src, tgt?)` — start a rewrite session on a type
+/// 5. `run_command(json)` — session commands (step/undo/show/…) plus the above
 pub struct WebRepl {
     state: State,
 }
@@ -208,9 +211,33 @@ impl WebRepl {
             _ => {}
         }
 
+        // Store-level queries: work in both Loaded and Active states.
+        // If the engine is active, fall through to the engine dispatch instead.
+        if self.state.engine().is_none() {
+            let Some(store) = self.state.store() else {
+                return err_json("no source loaded");
+            };
+            match &request {
+                Request::Types => {
+                    return ok_json(serde_json::json!({
+                        "types": build_types_from_store(store, WEB_SOURCE_PATH),
+                    }));
+                }
+                Request::TypeInfo { name } => {
+                    return match build_type_detail_from_store(store, WEB_SOURCE_PATH, name) {
+                        Ok(detail) => ok_json(serde_json::json!({ "type_detail": detail })),
+                        Err(msg) => err_json(&msg),
+                    };
+                }
+                _ => {
+                    return err_json("no session active — use 'start' to begin");
+                }
+            }
+        }
+
         // Everything else is engine-level: delegate to the shared dispatcher.
         let State::Active { store, engine } = &mut self.state else {
-            return err_json("no session active; call init_session first");
+            return err_json("no session active — use 'start' to begin");
         };
         match engine.handle(&request) {
             Some(Ok(data)) => {

@@ -826,6 +826,7 @@ async function evaluateSource() {
     appendReplEntry('(evaluate)', formatError(result));
     sessionSetup.hidden = true;
     resetSession();
+    replInput.disabled = true;
     syncAnalysisLayout();
     return;
   }
@@ -874,6 +875,7 @@ async function evaluateSource() {
 
   sessionSetup.hidden = false;
   resetSession();
+  replInput.disabled = false;
   syncAnalysisLayout();
   appendReplEntry('(evaluate)', formatOk(
     types.length
@@ -1055,29 +1057,29 @@ async function startSession() {
   const tgt = inpTarget.value.trim() || undefined;
   if (!typeName) { appendReplMsg('Select a type first.', 'repl-result err'); return; }
   if (!src)      { appendReplMsg('Enter a source diagram.', 'repl-result err'); return; }
+  await startSessionFromRepl(typeName, src, tgt, formatStartCmd(typeName, src, tgt));
+}
 
+function resetSession() {
+  sessionActive = false;
+}
+
+async function startSessionFromRepl(typeName, src, tgt, rawCmd) {
   const result = await parseReplResponse(repl.init_session(typeName, src, tgt));
   if (result.status === 'error') {
-    appendReplEntry('(start session)', formatError(result));
+    appendReplEntry(rawCmd, formatError(result));
     return;
   }
   sessionActive = true;
-  replInput.disabled = false;
   replInput.focus();
-  // Clear any accordion selection so session display takes over.
   if (selectedEl) {
     selectedEl.classList.remove('acc-item--selected');
     selectedEl.classList.remove('acc-leaf--selected');
     selectedEl = null;
   }
   currentItem = null;
-  appendReplEntry(`start ${typeName} ${src}${tgt ? ' → ' + tgt : ''}`, renderState(result.data));
+  appendReplEntry(rawCmd, renderState(result.data));
   await showSessionDiagram(result.data);
-}
-
-function resetSession() {
-  sessionActive = false;
-  replInput.disabled = true;
 }
 
 // ── REPL input ────────────────────────────────────────────────────────────────
@@ -1122,7 +1124,7 @@ async function handleCommand(raw) {
     appendReplEntry(raw, rendered);
     // Only update the session diagram display for state-changing commands.
     const stateCommands = ['apply', 'a', 'auto', 'undo', 'u', 'restart', 'show', 'status', 'store', 'parallel'];
-    if (stateCommands.includes(cmd)) {
+    if (sessionActive && stateCommands.includes(cmd)) {
       await updateVisInfo(result.data);
     }
     // Append definition to editor and refresh accordion when store succeeds.
@@ -1135,6 +1137,30 @@ async function handleCommand(raw) {
       await refreshAccordion();
     }
   }
+}
+
+function quoteArg(s) { return /\s/.test(s) ? `'${s}'` : s; }
+
+function formatStartCmd(type, src, tgt) {
+  return `start ${quoteArg(type)} ${quoteArg(src)}${tgt ? ' ' + quoteArg(tgt) : ''}`;
+}
+
+function splitQuotedArgs(s) {
+  const args = [];
+  let i = 0;
+  while (i < s.length) {
+    while (i < s.length && s[i] === ' ') i++;
+    if (i >= s.length) break;
+    let tok = '';
+    const q = (s[i] === "'" || s[i] === '"') ? s[i++] : null;
+    while (i < s.length) {
+      if (q && s[i] === q) { i++; break; }
+      if (!q && /\s/.test(s[i])) break;
+      tok += s[i++];
+    }
+    if (tok) args.push(tok);
+  }
+  return args;
 }
 
 function buildCommand(cmd, arg, raw) {
@@ -1182,6 +1208,32 @@ function buildCommand(cmd, arg, raw) {
       if (!arg)          return JSON.stringify({ command: 'show' });
       appendReplEntry(raw, formatError('usage: parallel [on|off]'));
       return null;
+    case 'stop': {
+      if (!sessionActive) {
+        appendReplEntry(raw, formatError('no active session'));
+        return null;
+      }
+      resetSession();
+      appendReplEntry(raw, '<span class="meta">Session stopped.</span>');
+      return null;
+    }
+    case 'clear':
+      replOutput.innerHTML = '';
+      return null;
+    case 'start': {
+      if (sessionActive) {
+        appendReplEntry(raw, formatError('session already active — use stop first'));
+        return null;
+      }
+      const parts = splitQuotedArgs(arg);
+      if (parts.length < 2 || parts.length > 3) {
+        appendReplEntry(raw, formatError('usage: start <type> <source> [<target>]'));
+        return null;
+      }
+      const [typeName, src, tgt] = parts;
+      void startSessionFromRepl(typeName, src, tgt, raw);
+      return null;
+    }
     default:
       appendReplEntry(raw, formatError(`unknown command '${cmd}' — type help for commands`));
       return null;
@@ -1432,7 +1484,16 @@ btnClear.addEventListener('click', () => {
   replOutput.innerHTML = '';
 });
 
-const HELP_TEXT = `Commands:
+const HELP_TEXT = `Always available:
+  types               list all types in the file
+  type <name>         inspect a type
+  homology <name>     compute cellular homology of a type
+  start <t> <s> [<g>] start a rewrite session (target optional)
+  stop                end the active session
+  clear               clear the REPL output
+  help / ?            show this message
+
+Session commands (require active session):
   apply <n> [<n2>..]  apply rewrite(s) at given indices     (alias: a)
   auto <n>            apply up to n rewrites automatically
   parallel [on|off]   show or toggle parallel rewrite mode  (default: on)
@@ -1443,11 +1504,7 @@ const HELP_TEXT = `Commands:
   show / status       show current state
   rules (r)           list all rewrite rules
   history (h)         show move history
-  types               list all types in the file
-  type <name>         inspect a type
-  homology <name>     compute cellular homology of a type
   store <name>        store the current proof as a named diagram
-  help / ?            show this message
 
 Keyboard: ↑/↓ navigate history · Ctrl+Enter evaluate file`;
 

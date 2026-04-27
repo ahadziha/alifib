@@ -99,6 +99,10 @@ pub enum Request {
     Parallel {
         on: bool,
     },
+    /// Set or change the target diagram on a running session.
+    SetTarget {
+        name: String,
+    },
     /// Compute cellular homology of a named type.
     Homology {
         name: String,
@@ -747,6 +751,107 @@ pub fn strdiag_json_from_diagram(
 ) -> serde_json::Value {
     let sd = StrDiag::from_diagram(diagram, scope);
     strdiag_to_json(&sd)
+}
+
+/// Build a [`TypeSummaryInfo`] list from the store, without requiring an engine.
+pub fn build_types_from_store(
+    store: &crate::interpreter::GlobalStore,
+    source_path: &str,
+) -> Vec<TypeSummaryInfo> {
+    let normalized = store.normalize();
+    normalized
+        .modules
+        .iter()
+        .find(|m| m.path == source_path)
+        .map(|module| {
+            module
+                .types
+                .iter()
+                .filter(|t| !t.name.is_empty())
+                .map(|t| {
+                    let max_dim = t.dims.iter().map(|d| d.dim).max();
+                    let generator_count: usize = t.dims.iter().map(|d| d.cells.len()).sum();
+                    TypeSummaryInfo {
+                        name: t.name.clone(),
+                        max_dim,
+                        generator_count,
+                        diagram_count: t.diagrams.len(),
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Build a [`TypeDetailInfo`] from the store, without requiring an engine.
+pub fn build_type_detail_from_store(
+    store: &crate::interpreter::GlobalStore,
+    source_path: &str,
+    name: &str,
+) -> Result<TypeDetailInfo, String> {
+    let type_complex = super::engine::resolve_type(store, source_path, name)?;
+
+    let generators: Vec<GeneratorInfo> = type_complex
+        .generators_iter()
+        .filter(|(n, _, _)| !n.is_empty())
+        .map(|(gen_name, tag, dim)| {
+            let (source, target) = if dim > 0 {
+                match store.cell_data_for_tag(&type_complex, tag) {
+                    Some(CellData::Boundary { boundary_in, boundary_out }) => (
+                        Some(diagram_info(&boundary_in, &type_complex)),
+                        Some(diagram_info(&boundary_out, &type_complex)),
+                    ),
+                    _ => (None, None),
+                }
+            } else {
+                (None, None)
+            };
+            GeneratorInfo { name: gen_name.clone(), dim, source, target }
+        })
+        .collect();
+
+    let diagrams: Vec<DiagramEntryInfo> = type_complex
+        .diagrams_iter()
+        .filter(|(n, _)| !n.is_empty())
+        .map(|(diag_name, diag)| {
+            let dim = diag.top_dim();
+            let (source, target) = if dim > 0 {
+                let k = dim - 1;
+                let src = Diagram::boundary(Sign::Source, k, diag)
+                    .ok()
+                    .map(|d| diagram_info(&d, &type_complex));
+                let tgt = Diagram::boundary(Sign::Target, k, diag)
+                    .ok()
+                    .map(|d| diagram_info(&d, &type_complex));
+                (src, tgt)
+            } else {
+                (None, None)
+            };
+            DiagramEntryInfo {
+                name: diag_name.clone(),
+                dim,
+                source,
+                target,
+                expr: render_diagram(diag, &type_complex),
+            }
+        })
+        .collect();
+
+    let normalized = store.normalize();
+    let maps: Vec<MapEntry> = normalized
+        .modules
+        .iter()
+        .find(|m| m.path == source_path)
+        .and_then(|module| module.types.iter().find(|t| t.name == name))
+        .map(|ty| {
+            ty.maps
+                .iter()
+                .map(|m| MapEntry { name: m.name.clone(), domain: m.domain.clone() })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Ok(TypeDetailInfo { name: name.to_owned(), generators, diagrams, maps })
 }
 
 /// Compute cellular homology of a named type and return as JSON.
