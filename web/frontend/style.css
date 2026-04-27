@@ -33,9 +33,9 @@
 
 /* ── Rock Bottom light theme ── */
 [data-theme="light"] {
-  --bg:        #f2ede0;
-  --surface:   #e8e2d3;
-  --border:    #cdc5b0;
+  --bg:        #efece4;
+  --surface:   #e5e2d8;
+  --border:    #c9c4b4;
   --accent:    #4a7c7c;
   --accent2:   #3d6b6b;
   --text:      #4a4740;
