@@ -906,7 +906,11 @@ async function evaluateSource() {
     for (const g of t.generators) {
       if (g.tag != null) tagFaces.set(g.tag, (g.face_tags || []).filter(ft => ft != null));
     }
+    for (const tag of (t.thin_tags || [])) {
+      if (tag != null) thinTags.add(tag);
+    }
   }
+  recomputeFullyThin();
 
   // Build accordion in file output area, grouped by module
   fileOutput.innerHTML = '';

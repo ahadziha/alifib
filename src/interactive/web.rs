@@ -15,6 +15,7 @@ use serde::Serialize;
 
 use crate::aux::Tag;
 use crate::aux::loader::{LoadFileError, Loader};
+use crate::core::complex::{Complex, MapDomain};
 use crate::core::diagram::CellData;
 use crate::interpreter::{GlobalStore, InterpretedFile, LoadResult};
 use crate::language::error::Diagnostic;
@@ -347,6 +348,35 @@ fn face_tags_json(store: &GlobalStore, tc: &crate::core::complex::Complex, tag: 
     face_tags
 }
 
+fn compute_thin_tags(store: &GlobalStore, tc: &Complex) -> Vec<serde_json::Value> {
+    let Some(values) = tc.find_index("thin") else { return Vec::new() };
+    let mut tags = Vec::new();
+    for name in values {
+        if let Some((tag, _)) = tc.find_generator(name) {
+            tags.push(tag_to_json(tag));
+        } else if let Some(diag) = tc.find_diagram(name) {
+            if let Some(tag) = diag.top_label() {
+                tags.push(tag_to_json(tag));
+            }
+        } else if let Some((pmap, domain)) = tc.find_map(name) {
+            let dc = match domain {
+                MapDomain::Type(gid) => store.find_type(*gid).map(|e| &*e.complex),
+                MapDomain::Module(mid) => store.find_module(mid),
+            };
+            if let Some(dc) = dc {
+                for (_, gen_tag, _) in dc.generators_iter() {
+                    if let Ok(image) = pmap.image(gen_tag) {
+                        if let Some(tag) = image.top_label() {
+                            tags.push(tag_to_json(tag));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    tags
+}
+
 fn type_summaries_json(store: &GlobalStore) -> Vec<serde_json::Value> {
     let norm = store.normalize();
     let type_complexes: HashMap<&str, &crate::core::complex::Complex> = store
@@ -416,12 +446,16 @@ fn type_summaries_json(store: &GlobalStore) -> Vec<serde_json::Value> {
                     })
                 })
                 .collect();
+            let thin_tags: Vec<serde_json::Value> = tc
+                .map(|tc| compute_thin_tags(store, tc))
+                .unwrap_or_default();
             serde_json::json!({
                 "name": t.name,
                 "module": module_name,
                 "generators": generators,
                 "diagrams": diagrams,
                 "maps": maps,
+                "thin_tags": thin_tags,
             })
         })
         .collect()
