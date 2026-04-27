@@ -107,7 +107,7 @@
       "patterns": [
         {
           "name": "punctuation.separator.dot.ali",
-          "match": "\\."
+          "match": "[.<>]"
         }
       ]
     }

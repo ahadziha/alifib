@@ -75,7 +75,7 @@ const aliMode = {
     if (ch === '?') return 'hole';
     if (ch === '#' || ch === '=') return 'arrow';
     if (ch === '.' || ch === ',' || ch === ':' || ch === ';') return 'punctuation';
-    if (ch === '(' || ch === ')' || ch === '[' || ch === ']' || ch === '{' || ch === '}') return 'punctuation';
+    if (ch === '(' || ch === ')' || ch === '[' || ch === ']' || ch === '{' || ch === '}' || ch === '<' || ch === '>') return 'punctuation';
 
     return null;
   },
