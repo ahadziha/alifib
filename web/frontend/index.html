@@ -86,12 +86,29 @@
       <div class="pane-header">
         <span class="pane-title">Analysis</span>
         <div class="vis-controls" id="vis-controls" hidden>
-          <select id="sel-orientation" title="Diagram orientation">
-            <option value="bt">bottom → top</option>
-            <option value="tb">top → bottom</option>
-            <option value="lr">left → right</option>
-            <option value="rl">right → left</option>
-          </select>
+          <div class="appearance-dropdown" id="appearance-dropdown">
+            <button class="appearance-btn" id="appearance-btn" title="Appearance settings">Appearance</button>
+            <div class="appearance-menu" id="appearance-menu" hidden>
+              <label class="appearance-item">
+                Orientation
+                <select id="sel-orientation">
+                  <option value="bt">bottom → top</option>
+                  <option value="tb">top → bottom</option>
+                  <option value="lr">left → right</option>
+                  <option value="rl">right → left</option>
+                </select>
+              </label>
+              <div class="appearance-sep"></div>
+              <label class="appearance-item">
+                <input type="checkbox" id="chk-node-labels" checked>
+                Node labels
+              </label>
+              <label class="appearance-item">
+                <input type="checkbox" id="chk-wire-labels" checked>
+                Wire labels
+              </label>
+            </div>
+          </div>
         </div>
       </div>
       <div class="pane-body pane-body-analysis" id="analysis-body">

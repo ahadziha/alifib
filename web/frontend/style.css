@@ -515,6 +515,67 @@ header {
 }
 .vis-controls select:focus { border-color: var(--accent); }
 
+.appearance-dropdown { position: relative; }
+.appearance-btn {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-dim);
+  font-size: 11px;
+  padding: 3px 10px;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+  transition: border-color 0.15s, color 0.15s;
+}
+.appearance-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.appearance-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 0;
+  z-index: 20;
+  min-width: 200px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.3);
+}
+.appearance-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  font-size: 11px;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.1s;
+}
+.appearance-item:hover { background: var(--accent-a08); }
+.appearance-item input[type="checkbox"] {
+  accent-color: var(--accent);
+  margin: 0;
+}
+.appearance-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 10px;
+}
+.appearance-item select {
+  margin-left: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 11px;
+  padding: 2px 6px;
+  outline: none;
+}
+.appearance-item select:focus { border-color: var(--accent); }
+
 /* ── Infobox ── */
 .infobox {
   padding: 0;

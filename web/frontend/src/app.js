@@ -113,6 +113,10 @@ const signControls = document.getElementById('sign-controls');
 const visCanvas   = document.getElementById('vis-canvas');
 const visControls = document.getElementById('vis-controls');
 const selOrientation = document.getElementById('sel-orientation');
+const appearanceBtn  = document.getElementById('appearance-btn');
+const appearanceMenu = document.getElementById('appearance-menu');
+const chkNodeLabels  = document.getElementById('chk-node-labels');
+const chkWireLabels  = document.getElementById('chk-wire-labels');
 const rewriteResizer = document.getElementById('rewrite-resizer');
 const rewriteList = document.getElementById('rewrite-list');
 const canvasCtx   = visCanvas.getContext('2d');
@@ -2224,6 +2228,16 @@ selOrientation.addEventListener('change', () => {
   }
 });
 
+appearanceBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  appearanceMenu.hidden = !appearanceMenu.hidden;
+});
+appearanceMenu.addEventListener('click', (e) => e.stopPropagation());
+document.addEventListener('click', () => { appearanceMenu.hidden = true; });
+
+chkNodeLabels.addEventListener('change', () => resizeAndRender());
+chkWireLabels.addEventListener('change', () => resizeAndRender());
+
 // ── Layout ───────────────────────────────────────────────────────────────────
 
 const NODE_R = 6;
@@ -2509,6 +2523,8 @@ function renderStrDiag(ctx, L, cw, ch) {
     const label = L.verts[i].label;
     if (!label) continue;
     const isNode = L.verts[i].kind === 'node';
+    if (isNode && !chkNodeLabels.checked) continue;
+    if (!isNode && !chkWireLabels.checked) continue;
     const labelThin = L.verts[i].tag != null && thinTags.has(L.verts[i].tag);
     ctx.fillStyle = labelThin ? thinColor : (isNode ? C.labelNode : C.labelWire);
     const r = (isNode && !labelThin) ? NODE_R : WIRE_R;
