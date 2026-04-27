@@ -34,6 +34,14 @@ jobs:
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build frontend JS
+        run: cd web/frontend && npm ci && npm run build
+
       - name: Build WASM
         # --out-dir is relative to the crate dir, so ../frontend/pkg lands in web/frontend/pkg/
         run: wasm-pack build --target web --release web/wasm --out-dir ../frontend/pkg

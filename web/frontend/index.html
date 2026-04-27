@@ -17,7 +17,7 @@
     <!-- ── File pane ── -->
     <section class="pane" id="pane-file">
       <div class="pane-header">
-        <span class="pane-title">File</span>
+        <span class="pane-title" id="file-label">File</span>
         <div class="pane-actions">
           <select id="sel-examples" class="sel-examples" title="Load a bundled example">
             <option value="">Examples…</option>
@@ -28,12 +28,11 @@
           <input id="file-input" type="file" accept=".ali,text/plain" hidden>
         </div>
       </div>
+      <div class="tab-bar" id="tab-bar">
+        <button class="tab-new" id="btn-new-tab" title="New file">+</button>
+      </div>
       <div class="pane-body">
-        <div class="editor-wrap">
-          <pre id="editor-highlight" class="editor-highlight" aria-hidden="true"></pre>
-          <textarea id="editor" spellcheck="false" autocomplete="off"
-            placeholder="Enter .ali source here…"></textarea>
-        </div>
+        <div class="editor-wrap" id="editor-wrap"></div>
       </div>
     </section>
 
@@ -125,6 +124,6 @@
 
   </main>
 
-  <script type="module" src="app.js"></script>
+  <script type="module" src="dist/app.js"></script>
 </body>
 </html>

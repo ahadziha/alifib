@@ -329,9 +329,15 @@ fn type_summaries_json(store: &GlobalStore) -> Vec<serde_json::Value> {
         .collect();
     norm.modules
         .iter()
-        .flat_map(|m| &m.types)
-        .filter(|t| !t.name.is_empty())
-        .map(|t| {
+        .flat_map(|m| {
+            let module_name = std::path::Path::new(&m.path)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or(&m.path);
+            m.types.iter().map(move |t| (module_name, t))
+        })
+        .filter(|(_, t)| !t.name.is_empty())
+        .map(|(module_name, t)| {
             let tc = type_complexes.get(t.name.as_str());
             let generators: Vec<serde_json::Value> = t
                 .dims
@@ -379,6 +385,7 @@ fn type_summaries_json(store: &GlobalStore) -> Vec<serde_json::Value> {
                 .collect();
             serde_json::json!({
                 "name": t.name,
+                "module": module_name,
                 "generators": generators,
                 "diagrams": diagrams,
                 "maps": maps,

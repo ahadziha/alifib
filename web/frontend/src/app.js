@@ -1,8 +1,15 @@
+import { EditorView, keymap, lineNumbers, drawSelection, highlightActiveLine } from '@codemirror/view';
+import { EditorState } from '@codemirror/state';
+import { defaultKeymap, indentWithTab, history as cmHistory, historyKeymap } from '@codemirror/commands';
+import { indentUnit, bracketMatching } from '@codemirror/language';
+import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
+import { aliExtensions } from './ali-lang.js';
+
 // ── State ─────────────────────────────────────────────────────────────────────
 
 let repl = null;
 let sessionActive = false;
-const history = [];
+const replHistory = [];
 let histIdx = -1;
 let currentLayout = null;
 let selectedEl = null;
@@ -44,8 +51,7 @@ const resizerFileRepl = document.getElementById('resizer-file-repl');
 const resizerReplAnalysis = document.getElementById('resizer-repl-analysis');
 const analysisBody = document.getElementById('analysis-body');
 const analysisResizer = document.getElementById('analysis-resizer');
-const editor      = document.getElementById('editor');
-const editorHighlight = document.getElementById('editor-highlight');
+const editorWrap  = document.getElementById('editor-wrap');
 const selExamples = document.getElementById('sel-examples');
 const btnLoad     = document.getElementById('btn-load');
 const btnSave     = document.getElementById('btn-save');
@@ -74,6 +80,199 @@ const selOrientation = document.getElementById('sel-orientation');
 const rewriteResizer = document.getElementById('rewrite-resizer');
 const rewriteList = document.getElementById('rewrite-list');
 const canvasCtx   = visCanvas.getContext('2d');
+const tabBar      = document.getElementById('tab-bar');
+const btnNewTab   = document.getElementById('btn-new-tab');
+const fileLabel   = document.getElementById('file-label');
+
+// ── Editor state & tabs ──────────────────────────────────────────────────────
+
+const editorTabs = {
+  tabs: [],
+  activeTabId: null,
+};
+
+let tabIdCounter = 0;
+let untitledCounter = 0;
+
+function activeTab() {
+  return editorTabs.tabs.find(t => t.id === editorTabs.activeTabId) || null;
+}
+
+function tabNameExists(name, excludeTabId) {
+  return editorTabs.tabs.some(t => t.id !== excludeTabId && t.name === name);
+}
+
+function nextUntitledName() {
+  untitledCounter++;
+  return `Untitled${untitledCounter}`;
+}
+
+function getEditorText() {
+  return view.state.doc.toString();
+}
+
+function markDirty(tab) {
+  const wasDirty = tab.dirty;
+  tab.dirty = tab.cmState.doc.toString() !== tab.savedSnapshot;
+  if (wasDirty !== tab.dirty) renderTabBar();
+}
+
+function markClean(tab, snapshot) {
+  tab.savedSnapshot = snapshot;
+  tab.dirty = false;
+  renderTabBar();
+}
+
+function makeEditorState(doc) {
+  return EditorState.create({
+    doc,
+    extensions: [
+      lineNumbers(),
+      cmHistory(),
+      drawSelection(),
+      highlightActiveLine(),
+      indentUnit.of('    '),
+      bracketMatching(),
+      closeBrackets(),
+      ...aliExtensions(),
+      keymap.of([
+        ...closeBracketsKeymap,
+        ...defaultKeymap,
+        ...historyKeymap,
+        indentWithTab,
+        { key: 'Mod-Enter', run: () => { void evaluateSource(); return true; } },
+      ]),
+      EditorView.updateListener.of(update => {
+        if (update.docChanged) {
+          const tab = activeTab();
+          if (tab) {
+            tab.cmState = update.state;
+            markDirty(tab);
+          }
+        }
+      }),
+      EditorView.theme({
+        '&': { height: '100%', backgroundColor: 'var(--bg)' },
+        '.cm-scroller': { overflow: 'auto' },
+      }, { dark: true }),
+    ],
+  });
+}
+
+let view = null;
+
+function createTab(name, content, fileHandle) {
+  const id = String(++tabIdCounter);
+  if (!name) name = nextUntitledName();
+  const cmState = makeEditorState(content);
+  const tab = { id, name, cmState, savedSnapshot: content, dirty: false, fileHandle };
+  editorTabs.tabs.push(tab);
+  if (!view) {
+    view = new EditorView({ state: cmState, parent: editorWrap });
+    editorTabs.activeTabId = id;
+    renderTabBar();
+  } else {
+    switchTab(id);
+  }
+  return tab;
+}
+
+function switchTab(tabId) {
+  if (editorTabs.activeTabId === tabId) return;
+  const departing = activeTab();
+  if (departing && view) {
+    departing.cmState = view.state;
+  }
+  editorTabs.activeTabId = tabId;
+  const arriving = activeTab();
+  if (arriving && view) {
+    view.setState(arriving.cmState);
+  }
+  renderTabBar();
+}
+
+function closeTab(tabId) {
+  const tab = editorTabs.tabs.find(t => t.id === tabId);
+  if (!tab) return;
+  if (tab.dirty) {
+    if (!window.confirm('Close tab? Unsaved changes will be lost.')) return;
+  }
+  const idx = editorTabs.tabs.indexOf(tab);
+  editorTabs.tabs.splice(idx, 1);
+  if (editorTabs.tabs.length === 0) {
+    createTab(null, '', null);
+    return;
+  }
+  if (editorTabs.activeTabId === tabId) {
+    const nextIdx = Math.min(idx, editorTabs.tabs.length - 1);
+    switchTab(editorTabs.tabs[nextIdx].id);
+  } else {
+    renderTabBar();
+  }
+}
+
+function renderTabBar() {
+  if (!tabBar) return;
+  tabBar.querySelectorAll('.tab-item').forEach(el => el.remove());
+  for (const tab of editorTabs.tabs) {
+    const el = document.createElement('button');
+    el.className = 'tab-item'
+      + (tab.id === editorTabs.activeTabId ? ' tab-item--active' : '')
+      + (tab.dirty ? ' tab-item--dirty' : '');
+    el.dataset.tabId = tab.id;
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'tab-name';
+    nameSpan.textContent = tab.name || 'untitled';
+    el.appendChild(nameSpan);
+
+    const closeBtn = document.createElement('span');
+    closeBtn.className = 'tab-close';
+    closeBtn.textContent = '×';
+    closeBtn.addEventListener('click', e => { e.stopPropagation(); closeTab(tab.id); });
+    el.appendChild(closeBtn);
+
+    el.addEventListener('click', () => switchTab(tab.id));
+    nameSpan.addEventListener('click', e => {
+      if (tab.id === editorTabs.activeTabId) {
+        e.stopPropagation();
+        startTabRename(tab.id, nameSpan);
+      }
+    });
+    tabBar.insertBefore(el, btnNewTab);
+  }
+}
+
+function startTabRename(tabId, nameSpan) {
+  const tab = editorTabs.tabs.find(t => t.id === tabId);
+  if (!tab) return;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'tab-rename';
+  input.value = tab.name || '';
+  input.placeholder = 'module name';
+  nameSpan.replaceWith(input);
+  input.focus();
+  input.select();
+
+  function commit() {
+    const raw = input.value.trim();
+    if (!raw) { renderTabBar(); return; }
+    const name = stemFromFilename(raw);
+    if (name && tabNameExists(name, tab.id)) {
+      input.classList.add('tab-rename--error');
+      input.title = `"${name}" is already open`;
+      return;
+    }
+    tab.name = name || nextUntitledName();
+    renderTabBar();
+  }
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') { e.preventDefault(); renderTabBar(); }
+  });
+  input.addEventListener('blur', commit);
+}
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
@@ -199,7 +398,7 @@ async function createBackend() {
     return new HttpBackend(config.apiBase);
   }
 
-  const wasm = await import('./pkg/alifib_wasm.js');
+  const wasm = await import('../pkg/alifib_wasm.js');
   await wasm.default();
   return new WasmBackend(new wasm.WasmRepl());
 }
@@ -609,13 +808,10 @@ analysisResizeObs.observe(analysisBody);
 // ── Evaluate ──────────────────────────────────────────────────────────────────
 
 btnEval.addEventListener('click', () => { void evaluateSource(); });
-editor.addEventListener('keydown', e => {
-  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); void evaluateSource(); }
-});
 
 async function evaluateSource() {
   if (!repl) return;
-  const src = editor.value;
+  const src = getEditorText();
   if (!src.trim()) return;
 
   const previousType = selType.value;
@@ -645,18 +841,32 @@ async function evaluateSource() {
     }
   }
 
-  // Build accordion in file output area
+  // Build accordion in file output area, grouped by module
   fileOutput.innerHTML = '';
   fileOutput.hidden = types.length === 0;
-  types.forEach(t => fileOutput.appendChild(buildTypeAccordion(t)));
+  buildModuleAccordion(types, fileOutput);
 
-  // Populate type selector
+  // Populate type selector, grouped by module when there are multiple
   selType.innerHTML = '<option value="">— select type —</option>';
-  types.forEach(t => {
-    const opt = document.createElement('option');
-    opt.value = opt.textContent = t.name;
-    selType.appendChild(opt);
-  });
+  const moduleSet = new Set(types.map(t => t.module || 'source'));
+  if (moduleSet.size <= 1) {
+    types.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = opt.textContent = t.name;
+      selType.appendChild(opt);
+    });
+  } else {
+    for (const mod of moduleSet) {
+      const group = document.createElement('optgroup');
+      group.label = displayModuleName(mod);
+      types.filter(t => (t.module || 'source') === mod).forEach(t => {
+        const opt = document.createElement('option');
+        opt.value = opt.textContent = t.name;
+        group.appendChild(opt);
+      });
+      selType.appendChild(group);
+    }
+  }
 
   if (previousType && types.some(t => t.name === previousType)) {
     selType.value = previousType;
@@ -673,6 +883,43 @@ async function evaluateSource() {
 }
 
 // ── Accordion builders ───────────────────────────────────────────────────────
+
+function displayModuleName(mod) {
+  if (mod === 'source') {
+    const tab = activeTab();
+    return tab ? tab.name : 'source';
+  }
+  return mod;
+}
+
+function buildModuleAccordion(types, container) {
+  const groups = [];
+  const indexByModule = new Map();
+  for (const t of types) {
+    const mod = t.module || 'source';
+    let idx = indexByModule.get(mod);
+    if (idx === undefined) {
+      idx = groups.length;
+      indexByModule.set(mod, idx);
+      groups.push({ module: mod, types: [] });
+    }
+    groups[idx].types.push(t);
+  }
+  if (groups.length <= 1) {
+    types.forEach(t => container.appendChild(buildTypeAccordion(t)));
+    return;
+  }
+  for (const g of groups) {
+    const details = document.createElement('details');
+    details.className = 'acc-module';
+    details.open = g.module === 'source';
+    const summary = document.createElement('summary');
+    summary.innerHTML = esc(displayModuleName(g.module)) + ` <span class="acc-count">${g.types.length}</span>`;
+    details.appendChild(summary);
+    g.types.forEach(t => details.appendChild(buildTypeAccordion(t)));
+    container.appendChild(details);
+  }
+}
 
 function buildTypeAccordion(t) {
   const details = document.createElement('details');
@@ -840,16 +1087,16 @@ replInput.addEventListener('keydown', e => {
     e.preventDefault();
     const cmd = replInput.value.trim();
     if (!cmd) return;
-    history.unshift(cmd);
+    replHistory.unshift(cmd);
     histIdx = -1;
     replInput.value = '';
     void handleCommand(cmd);
   } else if (e.key === 'ArrowUp') {
     e.preventDefault();
-    if (histIdx + 1 < history.length) { histIdx++; replInput.value = history[histIdx]; }
+    if (histIdx + 1 < replHistory.length) { histIdx++; replInput.value = replHistory[histIdx]; }
   } else if (e.key === 'ArrowDown') {
     e.preventDefault();
-    if (histIdx > 0) { histIdx--; replInput.value = history[histIdx]; }
+    if (histIdx > 0) { histIdx--; replInput.value = replHistory[histIdx]; }
     else { histIdx = -1; replInput.value = ''; }
   }
 });
@@ -882,8 +1129,9 @@ async function handleCommand(raw) {
     if (cmd === 'store' && result.data && result.data.stored) {
       const s = result.data.stored;
       const code = `\n\n@${s.type_name}\nlet ${s.def_name} = ${s.expr}`;
-      editor.value = editor.value.trimEnd() + code + '\n';
-      updateHighlight();
+      const doc = view.state.doc;
+      const trimmed = doc.toString().trimEnd();
+      view.dispatch({ changes: { from: 0, to: doc.length, insert: trimmed + code + '\n' } });
       await refreshAccordion();
     }
   }
@@ -1279,7 +1527,8 @@ async function collectIncludeModules(source) {
     const name = pending.pop();
     if (seen.has(name)) continue;
     seen.add(name);
-    const content = await fetchExample(name);
+    const tab = editorTabs.tabs.find(t => t.name === name);
+    const content = tab ? tab.cmState.doc.toString() : await fetchExample(name);
     if (content === null) continue;
     map[`${name}.ali`] = content;
     for (const next of collectDirectIncludes(content)) {
@@ -1289,11 +1538,11 @@ async function collectIncludeModules(source) {
   return map;
 }
 
-const INCLUDE_RE = /(^|[,\s])include\s+([A-Za-z_][A-Za-z0-9_]*)\b/g;
 function collectDirectIncludes(source) {
+  const re = /(^|[,\s])include\s+([A-Za-z_][A-Za-z0-9_]*)\b/g;
   const names = [];
   let m;
-  while ((m = INCLUDE_RE.exec(source)) !== null) names.push(m[2]);
+  while ((m = re.exec(source)) !== null) names.push(m[2]);
   return names;
 }
 
@@ -1301,15 +1550,18 @@ selExamples.addEventListener('change', async () => {
   const name = selExamples.value;
   selExamples.value = '';
   if (!name) return;
-  if (!confirmReplaceIfDirty()) return;
   const content = await fetchExample(name);
   if (content === null) {
     appendReplMsg(`Failed to fetch example: ${name}`, 'repl-result err');
     return;
   }
-  currentFileHandle = null;
-  currentFile = name;
-  setEditorValue(content);
+  const tab = activeTab();
+  if (tab && !tab.dirty && tab.savedSnapshot === '') {
+    tab.name = name;
+    setEditorValue(content);
+  } else {
+    createTab(name, content, null);
+  }
 });
 
 const hasFsAccess = typeof window.showOpenFilePicker === 'function';
@@ -1317,18 +1569,19 @@ const aliPickerTypes = [{
   description: 'alifib source',
   accept: { 'text/plain': ['.ali'] },
 }];
-let currentFileHandle = null;
+
+function stemFromFilename(name) {
+  if (!name) return null;
+  return name.endsWith('.ali') ? name.slice(0, -4) : name;
+}
 
 btnLoad.addEventListener('click', async () => {
-  if (!confirmReplaceIfDirty()) return;
   if (hasFsAccess) {
     try {
       const [handle] = await window.showOpenFilePicker({ types: aliPickerTypes });
       const file = await handle.getFile();
       const text = await file.text();
-      currentFileHandle = handle;
-      currentFile = file.name;
-      setEditorValue(text);
+      createTab(stemFromFilename(file.name), text, handle);
     } catch (e) {
       if (e?.name === 'AbortError') return;
       appendReplMsg('Failed to open file: ' + (e?.message || e), 'repl-result err');
@@ -1343,37 +1596,38 @@ fileInput.addEventListener('change', () => {
   if (!f) return;
   const reader = new FileReader();
   reader.onload = () => {
-    currentFileHandle = null;
-    currentFile = f.name;
-    setEditorValue(String(reader.result || ''));
+    createTab(stemFromFilename(f.name), String(reader.result || ''), null);
   };
   reader.onerror = () => { appendReplMsg('Failed to read file: ' + reader.error, 'repl-result err'); };
   reader.readAsText(f);
 });
 
 btnSave.addEventListener('click', async () => {
-  const content = editor.value;
+  const tab = activeTab();
+  if (!tab) return;
+  const content = getEditorText();
   if (hasFsAccess) {
     try {
-      let handle = currentFileHandle;
+      let handle = tab.fileHandle;
       if (!handle) {
+        const suggestedName = (tab.name || 'untitled') + '.ali';
         handle = await window.showSaveFilePicker({
-          suggestedName: currentFileName() || 'untitled.ali',
+          suggestedName,
           types: aliPickerTypes,
         });
-        currentFileHandle = handle;
+        tab.fileHandle = handle;
       }
       const writable = await handle.createWritable();
       await writable.write(content);
       await writable.close();
-      currentFile = handle.name;
-      savedSnapshot = content;
+      tab.name = stemFromFilename(handle.name);
+      markClean(tab, content);
     } catch (e) {
       if (e?.name === 'AbortError') return;
       appendReplMsg('Failed to save file: ' + (e?.message || e), 'repl-result err');
     }
   } else {
-    const defaultName = currentFileName() || 'untitled.ali';
+    const defaultName = (tab.name || 'untitled') + '.ali';
     const name = window.prompt('Save as:', defaultName);
     if (!name) return;
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
@@ -1385,268 +1639,21 @@ btnSave.addEventListener('click', async () => {
     a.click();
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 0);
-    savedSnapshot = content;
-    currentFile = a.download;
+    tab.name = stemFromFilename(a.download);
+    markClean(tab, content);
   }
 });
 
-let currentFile = null;
-let savedSnapshot = '';
-
-function currentFileName() { return currentFile; }
-
-function confirmReplaceIfDirty() {
-  if (editor.value === savedSnapshot) return true;
-  return window.confirm('Replace the editor contents? Unsaved changes will be lost.');
-}
-
 function setEditorValue(text) {
-  editor.value = text;
-  savedSnapshot = text;
-  updateHighlight();
+  const tab = activeTab();
+  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
+  if (tab) markClean(tab, text);
 }
 
-// ── Syntax highlighting (overlay renderer) ───────────────────────────────────
-//
-// A hidden <pre> behind the textarea is repainted on every input.  Both
-// layers share every metric that affects glyph advance — font, padding,
-// line-height, tab-size, wrapping — so the rendered colours line up with the
-// caret.  Scroll is mirrored from the textarea (the source of truth).
+// ── Default example & editor init ────────────────────────────────────────────
 
-const ALI_KEYWORDS_CONTROL = new Set(['attach', 'along', 'include', 'assert']);
-const ALI_KEYWORDS_OTHER   = new Set(['let', 'def', 'as', 'total', 'map']);
-const ALI_KEYWORDS_BOUND   = new Set(['in', 'out']);
-
-function escapeHtmlChar(ch) {
-  switch (ch) {
-    case '&': return '&amp;';
-    case '<': return '&lt;';
-    case '>': return '&gt;';
-    default:  return ch;
-  }
-}
-
-function escapeHtml(s) {
-  let out = '';
-  for (const ch of s) out += escapeHtmlChar(ch);
-  return out;
-}
-
-// Returns an HTML string with <span class="tok-…"> wrappers.  The token set
-// mirrors the VSCode TextMate grammar at editors/vscode/syntaxes/ali.tmLanguage.json.
-function highlightAli(src) {
-  let out = '';
-  let i = 0;
-  const n = src.length;
-
-  const isIdentStart = c => /[A-Za-z_]/.test(c);
-  const isIdentPart  = c => /[A-Za-z0-9_]/.test(c);
-  const isDigit      = c => /[0-9]/.test(c);
-
-  while (i < n) {
-    const c = src[i];
-
-    // Block comment (* ... *), with balanced nesting.
-    if (c === '(' && src[i + 1] === '*') {
-      let depth = 1;
-      let j = i + 2;
-      while (j < n && depth > 0) {
-        if (src[j] === '(' && src[j + 1] === '*') { depth++; j += 2; }
-        else if (src[j] === '*' && src[j + 1] === ')') { depth--; j += 2; }
-        else { j++; }
-      }
-      out += `<span class="tok-comment">${escapeHtml(src.slice(i, j))}</span>`;
-      i = j;
-      continue;
-    }
-
-    // Decorators: @Type, @Name, @Name.Sub
-    if (c === '@') {
-      let j = i + 1;
-      while (j < n && (isIdentPart(src[j]) || src[j] === '.')) j++;
-      const rest = src.slice(i + 1, j);
-      if (rest === 'Type') {
-        out += `<span class="tok-deco">${escapeHtml(src.slice(i, j))}</span>`;
-      } else {
-        out += `<span class="tok-deco">@</span><span class="tok-decoId">${escapeHtml(rest)}</span>`;
-      }
-      i = j;
-      continue;
-    }
-
-    // Type-definition head:   Name <<=
-    if (isIdentStart(c)) {
-      let j = i + 1;
-      while (j < n && isIdentPart(src[j])) j++;
-      const word = src.slice(i, j);
-
-      // Lookahead, skipping horizontal whitespace, for `<<=`.
-      let k = j;
-      while (k < n && (src[k] === ' ' || src[k] === '\t')) k++;
-      const isTypeHead = src[k] === '<' && src[k + 1] === '<' && src[k + 2] === '=';
-
-      let cls = null;
-      if (ALI_KEYWORDS_CONTROL.has(word))      cls = 'tok-keyword';
-      else if (ALI_KEYWORDS_OTHER.has(word))   cls = 'tok-keyword';
-      else if (ALI_KEYWORDS_BOUND.has(word))   cls = 'tok-bound';
-      else if (isTypeHead)                     cls = 'tok-typehead';
-
-      out += cls ? `<span class="${cls}">${escapeHtml(word)}</span>` : escapeHtml(word);
-      i = j;
-      continue;
-    }
-
-    // Numbers
-    if (isDigit(c)) {
-      let j = i + 1;
-      while (j < n && isDigit(src[j])) j++;
-      out += `<span class="tok-num">${escapeHtml(src.slice(i, j))}</span>`;
-      i = j;
-      continue;
-    }
-
-    // Multi-char operators
-    if (c === '<' && src[i + 1] === '<' && src[i + 2] === '=') {
-      out += `<span class="tok-arrow">&lt;&lt;=</span>`;
-      i += 3;
-      continue;
-    }
-    if (c === '-' && src[i + 1] === '>') {
-      out += `<span class="tok-arrow">-&gt;</span>`;
-      i += 2;
-      continue;
-    }
-    if (c === '=' && src[i + 1] === '>') {
-      out += `<span class="tok-arrow">=&gt;</span>`;
-      i += 2;
-      continue;
-    }
-    if (c === ':' && src[i + 1] === ':') {
-      out += `<span class="tok-op">::</span>`;
-      i += 2;
-      continue;
-    }
-
-    // Single-char tokens
-    if (c === '?') { out += `<span class="tok-hole">?</span>`; i++; continue; }
-    if (c === '#') { out += `<span class="tok-arrow">#</span>`; i++; continue; }
-    if (c === '=') { out += `<span class="tok-arrow">=</span>`; i++; continue; }
-    if (c === '.' || c === ',' || c === ':' || c === ';') {
-      out += `<span class="tok-punct">${escapeHtmlChar(c)}</span>`;
-      i++;
-      continue;
-    }
-    if (c === '(' || c === ')' || c === '[' || c === ']' || c === '{' || c === '}') {
-      out += `<span class="tok-punct">${c}</span>`;
-      i++;
-      continue;
-    }
-
-    // Whitespace and everything else passes through.
-    out += escapeHtmlChar(c);
-    i++;
-  }
-
-  return out;
-}
-
-function updateHighlight() {
-  // Trailing newline keeps the highlight layer's last line visible so the
-  // textarea's caret at EOF still sits on a rendered glyph row.
-  const text = editor.value;
-  editorHighlight.innerHTML = highlightAli(text) + '\n';
-  syncScroll();
-}
-
-function syncScroll() {
-  editorHighlight.scrollTop = editor.scrollTop;
-  editorHighlight.scrollLeft = editor.scrollLeft;
-}
-
-editor.addEventListener('input', updateHighlight);
-editor.addEventListener('scroll', syncScroll);
-
-// ── Default example ───────────────────────────────────────────────────────────
-
-editor.value = `(*
-    A minimal setup for the topological Eckmann-Hilton argument.
-    In type TwoCells, construct a diagram with source A.cell B.cell
-    and target B.cell A.cell.
-*)
-
-@Type
-Equation <<= {
-    s0,
-    t0,
-
-    s1: s0 -> t0,
-    t1: s0 -> t0,
-
-    lhs: s1 -> t1,
-    rhs: s1 -> t1,
-
-    dir: lhs -> rhs,
-    inv: rhs -> lhs
-},
-
-Unit <<= {
-    pt,
-
-    ob: pt -> pt,
-
-    id: ob -> ob,
-
-    attach Id_id :: Equation along [
-        lhs => id id,
-        rhs => id
-    ],
-
-    merge: ob ob -> ob,
-    split: ob -> ob ob,
-
-    attach Split_merge :: Equation along [
-        lhs => split merge,
-        rhs => id
-    ]
-},
-
-Cell <<= Unit {
-    cell: ob -> ob,
-
-    attach Cell_id :: Equation along [
-        lhs => cell id,
-        rhs => cell
-    ],
-    attach Id_cell :: Equation along [
-        lhs => id cell,
-        rhs => cell
-    ],
-
-    attach Left_split :: Equation along [
-        lhs => cell split,
-        rhs => split (cell ob)
-    ],
-    attach Right_split :: Equation along [
-        lhs => cell split,
-        rhs => split (ob cell)
-    ],
-    attach Left_merge :: Equation along [
-        lhs => merge cell,
-        rhs => (cell ob) merge
-    ],
-    attach Right_merge :: Equation along [
-        lhs => merge cell,
-        rhs => (ob cell) merge
-    ]
-},
-
-TwoCells <<= Unit {
-    attach A :: Cell along [ Unit => Unit ],
-    attach B :: Cell along [ Unit => Unit ]
-}
-`;
-savedSnapshot = editor.value;
-updateHighlight();
+createTab(null, '', null);
+btnNewTab.addEventListener('click', () => createTab(null, '', null));
 
 async function refreshAccordion() {
   if (!repl) return;
@@ -1662,7 +1669,7 @@ async function refreshAccordion() {
   recomputeFullyThin();
   fileOutput.innerHTML = '';
   fileOutput.hidden = types.length === 0;
-  types.forEach(t => fileOutput.appendChild(buildTypeAccordion(t)));
+  buildModuleAccordion(types, fileOutput);
   syncAnalysisLayout();
 }
 

@@ -190,55 +190,122 @@ header {
   background: var(--bg);
   overflow: hidden;
 }
-/* Shared text metrics: the highlight layer must render at the exact same
-   position as the textarea caret, so every inherited style that affects
-   glyph advance (font, padding, line-height, tab-size, wrapping) is
-   duplicated verbatim between the two. */
-.editor-highlight,
-#editor {
-  position: absolute;
-  inset: 0;
-  margin: 0;
-  border: 0;
-  padding: 12px;
+.editor-wrap .cm-editor {
+  height: 100%;
+  color: var(--text);
+}
+.editor-wrap .cm-scroller {
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.55;
-  tab-size: 2;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  overflow-wrap: break-word;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: auto;
 }
-.editor-highlight {
-  pointer-events: none;
+.editor-wrap .cm-content {
+  padding: 12px 0;
+}
+.editor-wrap .cm-gutters {
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 12px;
+  padding: 0 4px 0 8px;
+}
+.editor-wrap .cm-activeLineGutter {
+  background: transparent;
   color: var(--text);
-  background: transparent;
-  z-index: 1;
 }
-#editor {
-  resize: none;
-  background: transparent;
-  color: transparent;
-  caret-color: var(--text);
-  outline: none;
-  z-index: 2;
+.editor-wrap .cm-activeLine {
+  background: rgba(124, 106, 242, 0.06);
 }
-#editor::selection { background: rgba(124, 106, 242, 0.35); color: transparent; }
+.editor-wrap .cm-selectionBackground {
+  background: rgba(124, 106, 242, 0.35) !important;
+}
+.editor-wrap .cm-cursor {
+  border-left-color: var(--text);
+}
 
-/* Syntax tokens (overlay layer) */
-.tok-comment  { color: #6b8a6b; font-style: italic; }
-.tok-keyword  { color: #c586c0; font-weight: 600; }
-.tok-bound    { color: #dcdcaa; }
-.tok-deco     { color: #7c6af2; font-weight: 600; }
-.tok-decoId   { color: #5fa8d3; }
-.tok-op       { color: #d4d4d8; }
-.tok-arrow    { color: #fbbf24; }
-.tok-punct    { color: #71717a; }
-.tok-num      { color: #b5cea8; }
-.tok-hole     { color: #f87171; font-weight: 600; }
-.tok-typehead { color: #5fa8d3; font-weight: 600; }
+/* ── Tab bar ── */
+.tab-bar {
+  display: flex;
+  align-items: stretch;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  flex-shrink: 0;
+  height: 28px;
+  scrollbar-width: thin;
+}
+.tab-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border);
+  cursor: pointer;
+  white-space: nowrap;
+  min-width: 0;
+  max-width: 160px;
+}
+.tab-item:hover {
+  background: rgba(124, 106, 242, 0.08);
+}
+.tab-item--active {
+  color: var(--text-em);
+  background: var(--bg);
+  border-bottom: 2px solid var(--accent);
+}
+.tab-item--dirty .tab-name::after {
+  content: ' •';
+  color: var(--text-dim);
+}
+.tab-close {
+  font-size: 10px;
+  color: var(--text-dim);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  visibility: hidden;
+}
+.tab-item:hover .tab-close,
+.tab-item--active .tab-close {
+  visibility: visible;
+}
+.tab-close:hover {
+  color: var(--err);
+}
+.tab-new {
+  padding: 0 10px;
+  font-size: 14px;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.tab-new:hover {
+  color: var(--text-em);
+}
+.tab-rename {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--bg);
+  color: var(--text-em);
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  padding: 0 4px;
+  width: 90px;
+  outline: none;
+}
+.tab-rename--error {
+  border-color: var(--err);
+  color: var(--err);
+}
 
 .output-area {
   padding: 4px 0;
@@ -250,6 +317,32 @@ header {
 }
 
 /* ── Accordion ── */
+.acc-module {
+  border-bottom: 1px solid var(--border);
+}
+.acc-module > summary {
+  padding: 6px 12px;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.acc-module > summary::before {
+  content: "▸ ";
+}
+.acc-module[open] > summary::before {
+  content: "▾ ";
+}
+.acc-module > .acc-type {
+  border-bottom: none;
+}
+.acc-module > .acc-type:last-child {
+  border-bottom: none;
+}
 .acc-type {
   border-bottom: 1px solid var(--border);
 }
@@ -325,6 +418,7 @@ header {
 }
 
 /* Hover highlights for all accordion rows */
+.acc-module > summary:hover,
 .acc-type > summary:hover,
 .acc-section > summary:hover,
 .acc-item > summary:hover,

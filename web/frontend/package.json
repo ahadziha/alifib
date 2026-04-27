@@ -1,0 +1,19 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/app.js --bundle --format=esm --outfile=dist/app.js --external:../pkg/alifib_wasm.js",
+    "watch": "esbuild src/app.js --bundle --format=esm --outfile=dist/app.js --external:../pkg/alifib_wasm.js --watch"
+  },
+  "dependencies": {
+    "@codemirror/autocomplete": "^6.20.1",
+    "@codemirror/commands": "^6.8",
+    "@codemirror/language": "^6.11",
+    "@codemirror/state": "^6.5",
+    "@codemirror/view": "^6.36",
+    "@lezer/highlight": "^1.2"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25"
+  }
+}

@@ -15,9 +15,19 @@ release:
 #     just web some/other/dir
 #     just web --bind 127.0.0.1:8080
 web *ARGS:
+    just web-js
     cargo run -- web {{ARGS}}
 
+# Bundle the frontend JS (CodeMirror + app) with esbuild.
+web-js:
+    cd web/frontend && npm install --silent && npm run build
+
+# Watch frontend JS for changes and rebuild automatically.
+web-js-watch:
+    cd web/frontend && npm install --silent && npm run watch
+
 # Prepare a static WASM deployment under web/frontend/:
+#   - bundle frontend JS with esbuild
 #   - wasm-pack build into web/frontend/pkg/
 #   - recursively mirror examples/ into web/frontend/examples/, preserving
 #     the directory tree and generating an index.json manifest via the
@@ -25,6 +35,7 @@ web *ARGS:
 # The resulting directory can be served as-is (GitHub Pages, `python3 -m
 # http.server`, anything static).  Duplicate stems fail the build.
 web-wasm:
+    just web-js
     wasm-pack build --target web web/wasm --out-dir ../frontend/pkg
     python3 scripts/build_examples_manifest.py examples web/frontend/examples
 

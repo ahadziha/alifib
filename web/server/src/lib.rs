@@ -14,9 +14,9 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 
 const INDEX_HTML: &str = include_str!("../../frontend/index.html");
-const APP_JS: &str = include_str!("../../frontend/app.js");
+const APP_JS: &str = include_str!("../../frontend/dist/app.js");
 const STYLE_CSS: &str = include_str!("../../frontend/style.css");
-const INDEX_SCRIPT_TAG: &str = r#"  <script type="module" src="app.js"></script>"#;
+const INDEX_SCRIPT_TAG: &str = r#"  <script type="module" src="dist/app.js"></script>"#;
 const HTTP_CONFIG_TAG: &str = r#"  <script>window.ALIFIB_CONFIG = { backend: 'http', apiBase: '' };</script>
   <script type="module" src="app.js"></script>"#;
 
