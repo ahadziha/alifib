@@ -5,7 +5,7 @@
 *)
 
 @Type
-include Semisimplicial as S,
+include Delta_0 as S,
 
 (* The circle S^1 *)
 S1 <<= {
