@@ -562,7 +562,10 @@ fn expand_complex_for(
             return (scope, result);
         }
     };
-    interpret_complex_body(&context, mode, scope, &instrs)
+    let inner_context = context.with_source(Arc::new(expanded));
+    let (scope, mut result) = interpret_complex_body(&inner_context, mode, scope, &instrs);
+    result.context.source = context.source.clone();
+    (scope, result)
 }
 
 fn expand_type_for(
@@ -591,7 +594,10 @@ fn expand_type_for(
             return result;
         }
     };
-    interpret_type_block(context, &instrs)
+    let inner_context = context.with_source(Arc::new(expanded));
+    let mut result = interpret_type_block(&inner_context, &instrs);
+    result.context.source = context.source.clone();
+    result
 }
 
 fn expand_local_for(
@@ -619,9 +625,12 @@ fn expand_local_for(
             return (None, result);
         }
     };
+    let inner_context = context.with_source(Arc::new(expanded));
     let (final_scope, result) =
-        interpret_items_in_type_scope(context, type_scope.clone(), &instrs, |step_context, scope, instr| {
+        interpret_items_in_type_scope(&inner_context, type_scope.clone(), &instrs, |step_context, scope, instr| {
             interpret_local_inst(step_context, scope, instr)
         });
+    let mut result = result;
+    result.context.source = context.source.clone();
     (Some(final_scope.working_complex), result)
 }
