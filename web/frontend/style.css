@@ -261,7 +261,10 @@ header {
   overflow-x: auto;
   flex-shrink: 0;
   height: 28px;
-  scrollbar-width: thin;
+  scrollbar-width: none;
+}
+.tab-bar::-webkit-scrollbar {
+  display: none;
 }
 .tab-item {
   display: flex;
@@ -276,8 +279,9 @@ header {
   border-right: 1px solid var(--border);
   cursor: pointer;
   white-space: nowrap;
-  min-width: 0;
+  flex-shrink: 0;
   max-width: 160px;
+  overflow: hidden;
 }
 .tab-item:hover {
   background: var(--accent-a08);
@@ -286,6 +290,10 @@ header {
   color: var(--text-em);
   background: var(--bg);
   border-bottom: 2px solid var(--accent);
+}
+.tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .tab-item--dirty .tab-name::after {
   content: ' •';
