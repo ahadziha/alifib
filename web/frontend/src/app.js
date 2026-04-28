@@ -1823,6 +1823,25 @@ function setEditorValue(text) {
 createTab(null, '', null);
 btnNewTab.addEventListener('click', () => createTab(null, '', null));
 
+window.addEventListener('keydown', e => {
+  const mod = e.ctrlKey || e.metaKey;
+  if (!mod) return;
+  switch (e.key.toLowerCase()) {
+    case 's': e.preventDefault(); btnSave.click(); break;
+    case 'o': e.preventDefault(); btnLoad.click(); break;
+    case 't': e.preventDefault(); createTab(null, '', null); break;
+    case 'w': e.preventDefault(); closeTab(editorTabs.activeTabId); break;
+    case '1': case '2': case '3': case '4': case '5':
+    case '6': case '7': case '8': case '9': {
+      e.preventDefault();
+      const tabs = editorTabs.tabs;
+      const idx = e.key === '9' ? tabs.length - 1 : Number(e.key) - 1;
+      if (tabs[idx]) switchTab(tabs[idx].id);
+      break;
+    }
+  }
+});
+
 async function refreshAccordion() {
   if (!repl) return;
   const result = await parseReplResponse(repl.get_types());
