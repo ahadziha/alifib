@@ -1,0 +1,185 @@
+(* 
+    A collection of finite semisimplicial sets.
+    Compute their homology with `homology <type>` in the repl.
+*)
+
+@Type
+include Semisimplicial as S,
+
+(* The circle S^1 *)
+S1 <<= {
+    attach v :: S.0Simplex,
+    
+    attach loop :: S.1Simplex along
+        [ d0 => v, d1 => v ]
+},
+
+(* Bouquet of three circles *)
+Bouquet3 <<= {
+    attach v :: S.0Simplex,
+    attach a :: S1 along [ v => v ],
+    attach b :: S1 along [ v => v ],
+    attach c :: S1 along [ v => v ],
+},
+
+(* 
+    The dunce hat, contractible but not collapsible.
+    We will obtain it as an extension of S^1.
+*)
+Dunce <<= S1 {
+    attach hat :: S.2Simplex along
+        [ d0 => loop, d1 => loop, d2 => loop ]
+},
+
+(* The next three examples follow Hatcher, p.102 *)
+
+(* The torus *)
+T <<= {
+    attach v :: S.0Simplex,
+    
+    attach a :: S.1Simplex along
+        [ d0 => v, d1 => v ],
+    attach b :: S.1Simplex along
+        [ d0 => v, d1 => v ],
+    attach c :: S.1Simplex along
+        [ d0 => v, d1 => v ],
+    
+    attach U :: S.2Simplex along
+        [ d0 => b, d1 => c, d2 => a ],
+    attach L :: S.2Simplex along
+        [ d0 => a, d1 => c, d2 => b ]
+},
+
+(* The projective plane *)
+RP2 <<= {
+    attach v :: S.0Simplex,
+    attach w :: S.0Simplex,
+
+    attach a :: S.1Simplex along
+        [ d0 => w, d1 => v ],
+    attach b :: S.1Simplex along
+        [ d0 => w, d1 => v ],
+    attach c :: S.1Simplex along
+        [ d0 => v, d1 => v ],
+
+    attach U :: S.2Simplex along
+        [ d0 => b, d1 => a, d2 => c ],
+    attach L :: S.2Simplex along
+        [ d0 => a, d1 => b, d2 => c ]
+},
+
+(* The Klein bottle *)
+K <<= { 
+    attach v :: S.0Simplex,
+    
+    attach a :: S.1Simplex along
+        [ d0 => v, d1 => v ],
+    attach b :: S.1Simplex along
+        [ d0 => v, d1 => v ],
+    attach c :: S.1Simplex along
+        [ d0 => v, d1 => v ],
+
+    attach U :: S.2Simplex along
+        [ d0 => b, d1 => c, d2 => a ],
+    attach L :: S.2Simplex along
+        [ d0 => a, d1 => b, d2 => c ]
+},
+
+(* Higher spheres S^2, S^3, S^4 as in Hatcher, Example 2.5 *)
+S2 <<= {
+    attach U :: S.2Simplex,
+    attach L :: S.2Simplex along
+        [ d0 => U.d0, d1 => U.d1, d2 => U.d2 ]
+},
+
+S3 <<= {
+    attach U :: S.3Simplex,
+    attach L :: S.3Simplex along
+        [ d0 => U.d0, d1 => U.d1, 
+        d2 => U.d2, d3 => U.d3 ]
+},
+
+S4 <<= {
+    attach U :: S.4Simplex,
+    attach L :: S.4Simplex along
+        [ d0 => U.d0, d1 => U.d1, 
+        d2 => U.d2, d3 => U.d3, d4 => U.d4 ]
+},
+
+(* 
+    Lens spaces L(2,1), L(3,1), L(4,1) 
+    as in Hatcher, Exercise 2.1.8 
+*)
+
+(* A common scaffolding *)
+Lens <<= {
+    attach v :: S.0Simplex,
+    attach w :: S.0Simplex,
+
+    (* An inner loop, an outer loop, and two
+    edges connecting them *)
+    attach inner :: S.1Simplex along 
+        [ d0 => v, d1 => v ],
+    attach outer :: S.1Simplex along
+        [ d0 => w, d1 => w ],
+    attach a :: S.1Simplex along 
+        [ d0 => v, d1 => w ],
+    attach b :: S.1Simplex along 
+        [ d0 => v, d1 => w ]
+},
+
+(* This is also the projective space RP^3 *)
+L2_1 <<= Lens {
+    attach T1 :: S.3Simplex along [
+        01 => outer, 02 => a, 03 => b, 
+        13 => a, 23 => inner,
+        12 => b (* Needed in T_{n-1} *)
+    ],
+    attach T2 :: S.3Simplex along [
+        d2 => T1.d3,
+        d1 => T1.d0,
+        
+        d3 => T1.d2,
+        d0 => T1.d1
+    ] 
+},
+
+L3_1 <<= Lens {
+    attach T1 :: S.3Simplex along [
+        01 => outer, 02 => a, 03 => b,
+        13 => a, 23 => inner
+    ],
+    attach T2 :: S.3Simplex along [
+        d2 => T1.d3,
+        d1 => T1.d0,
+        12 => b (* Needed in T_{n-1} *)
+    ],
+    attach T3 :: S.3Simplex along [
+        d2 => T2.d3,
+        d1 => T2.d0,
+        d0 => T1.d1,
+        d3 => T1.d2
+    ]
+},
+
+L4_1 <<= Lens {
+    attach T1 :: S.3Simplex along [
+        01 => outer, 02 => a, 03 => b,
+        13 => a, 23 => inner
+    ],
+    attach T2 :: S.3Simplex along [
+        d2 => T1.d3,
+        d1 => T1.d0
+    ],
+    attach T3 :: S.3Simplex along [
+        d2 => T2.d3,
+        d1 => T2.d0,
+        12 => b (* Needed in T_{n-1} *)
+    ],
+    attach T4 :: S.3Simplex along [
+        d2 => T3.d3,
+        d1 => T3.d0,
+        d0 => T1.d1,
+        d3 => T1.d2
+    ]
+}

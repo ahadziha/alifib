@@ -1,5 +1,5 @@
 (*
-    A module for semi-simplicial sets up to dimension 5.
+    A module for semisimplicial sets up to dimension 5.
 *)
 
 @Type
