@@ -476,7 +476,7 @@ async function boot() {
     repl = await createBackend();
     btnEval.disabled = false;
     btnEval.textContent = 'Evaluate';
-    appendReplMsg('\u{266B} Not nit not, nit no not, nit nit folly bololey...', 'repl-dim');
+    appendReplMsg('\u{266B} No nit not, nit no not, nit nit folly bololey...', 'repl-dim');
     appendReplMsg(' ', 'repl-dim');
     appendReplMsg(`${repl.label} engine ready. Evaluate a file to begin.`, 'repl-dim');
     const helpEl = document.createElement('div');
