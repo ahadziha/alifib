@@ -1,0 +1,228 @@
+(* ======================================================================
+   Peterson.ali
+   ----------------------------------------------------------------------
+   Peterson's mutual exclusion algorithm as a polygraphic operational
+   semantics, with the `turn` variable tracked structurally.
+
+   Each thread monotonically advances through four phases
+
+        idle (i)  --s_i->  want (w)  --e_i->  cs (c)  --x_i->  done (d)
+
+   We model one full lock-and-release transaction per thread, so the
+   joint state space is {i, w, c, d}^2. Mutual exclusion forbids the
+   (c, c) corner.
+
+   The `turn` variable matters only at the contention point. We keep the
+   16 - 1 = 15 plain joint states for non-contention and split the
+   contention state into two: ww0 (turn = 0) and ww1 (turn = 1). When
+   thread i transitions out of (j-want, i-idle) it sets `turn := j`, so
+   the joint contention state is determined by *which thread last set
+   the turn variable*.
+
+     wi  --m1_wi-->  ww0    (thread 1 enters w, sets turn := 0)
+     iw  --m0_iw-->  ww1    (thread 0 enters w, sets turn := 1)
+
+   In ww0 the spin condition for thread 1 (flag[0] && turn = 0) is
+   satisfied, so thread 1 spins; thread 0 proceeds to cw. Symmetric in
+   ww1. So ww0 has a single outgoing edge m0_ww0 : ww0 -> cw, and ww1
+   has m1_ww1 : ww1 -> wc.
+
+   A direct consequence: the Mazurkiewicz square at the initial entry,
+
+        m0_ii ; m1_wi   vs   m1_ii ; m0_iw
+
+   does NOT exist as a 2-cell. The two orderings reach distinct states
+   ww0 and ww1 because each thread writes a different value to `turn`.
+   Setting flag/turn is *not* an independent action across threads --
+   the polygraphic structure records this directly.
+
+   Three presentations:
+
+     * NoMutex   -- 4 x 4 with (c, c), all tiles filled. Contractible.
+     * Peterson  -- turn-aware, no (c, c). Mutex obstruction in H_1.
+     * AsymmBug  -- Peterson with one arbitration coherence dropped:
+                    the protocol resolves contention when thread 0 wins
+                    (ind_iw asserted) but is silent when thread 1 wins
+                    (ind_wi withheld). An extra 1-class survives in H_1.
+     * Spec      -- minimal model whose H_1 matches Peterson's.
+
+   Run:
+       alifib examples/Peterson.ali
+       alifib repl examples/Peterson.ali
+       >> homology NoMutex
+       >> homology Peterson
+       >> homology AsymmBug
+       >> homology Spec
+   ====================================================================== *)
+
+@Type
+
+(* ------------------------------------------------------------------ *)
+(* NoMutex -- two threads with no synchronisation.                     *)
+(*                                                                     *)
+(* All 16 joint states (including (c, c)) and all 24 monotone          *)
+(* transitions are present; no `turn` variable since there is no race  *)
+(* to arbitrate. Every unit tile is filled by an independence square.  *)
+(* The configuration space is a contractible disc.                     *)
+(*                                                                     *)
+(*   H_0 = Z, H_1 = 0, H_2 = 0, chi = 1                                *)
+(* ------------------------------------------------------------------ *)
+NoMutex <<= {
+    ii, iw, ic, id,
+    wi, ww, wc, wd,
+    ci, cw, cc, cd,
+    di, dw, dc, dd,
+
+    m0_ii : ii -> wi,    m0_iw : iw -> ww,    m0_ic : ic -> wc,    m0_id : id -> wd,
+    m0_wi : wi -> ci,    m0_ww : ww -> cw,    m0_wc : wc -> cc,    m0_wd : wd -> cd,
+    m0_ci : ci -> di,    m0_cw : cw -> dw,    m0_cc : cc -> dc,    m0_cd : cd -> dd,
+
+    m1_ii : ii -> iw,    m1_iw : iw -> ic,    m1_ic : ic -> id,
+    m1_wi : wi -> ww,    m1_ww : ww -> wc,    m1_wc : wc -> wd,
+    m1_ci : ci -> cw,    m1_cw : cw -> cc,    m1_cc : cc -> cd,
+    m1_di : di -> dw,    m1_dw : dw -> dc,    m1_dc : dc -> dd,
+
+    ind_ii : m0_ii m1_wi -> m1_ii m0_iw,
+    ind_iw : m0_iw m1_ww -> m1_iw m0_ic,
+    ind_ic : m0_ic m1_wc -> m1_ic m0_id,
+    ind_wi : m0_wi m1_ci -> m1_wi m0_ww,
+    ind_ww : m0_ww m1_cw -> m1_ww m0_wc,
+    ind_wc : m0_wc m1_cc -> m1_wc m0_wd,
+    ind_ci : m0_ci m1_di -> m1_ci m0_cw,
+    ind_cw : m0_cw m1_dw -> m1_cw m0_cc,
+    ind_cc : m0_cc m1_dc -> m1_cc m0_cd
+},
+
+(* ------------------------------------------------------------------ *)
+(* Peterson -- turn-aware contention, (c, c) excluded.                 *)
+(*                                                                     *)
+(* The contention state is split: ww0 (last turn write = 0, thread 0   *)
+(* proceeds) and ww1 (last turn write = 1, thread 1 proceeds). Each    *)
+(* has a single outgoing edge.                                         *)
+(*                                                                     *)
+(* Independence 2-cells survive at four interior tiles: ind_iw, ind_wi *)
+(* are the arbitration coherences (the contested route through ww0 /  *)
+(* ww1 agrees with the uncontested route via the corresponding         *)
+(* thread's "fast" path); ind_ic and ind_ci are exit-side commutations *)
+(* that do not touch the contention.                                   *)
+(*                                                                     *)
+(* The "raise both flags" tile ind_ii does NOT exist: the two          *)
+(* orderings end at ww0 vs ww1, so there is no schedule-equivalence    *)
+(* 2-cell to assert. This is a structural mark of turn-tracking.       *)
+(*                                                                     *)
+(*   H_0 = Z, H_1 = Z, H_2 = 0, chi = 0                                *)
+(* ------------------------------------------------------------------ *)
+Peterson <<= {
+    ii, iw, ic, id,
+    wi, ww0, ww1, wc, wd,
+    ci, cw,           cd,
+    di, dw, dc, dd,
+
+    m0_ii  : ii -> wi,     m0_iw  : iw  -> ww1,    m0_ic : ic -> wc,    m0_id : id -> wd,
+    m0_wi  : wi -> ci,     m0_ww0 : ww0 -> cw,                          m0_wd : wd -> cd,
+    m0_ci  : ci -> di,     m0_cw  : cw  -> dw,                          m0_cd : cd -> dd,
+
+    m1_ii  : ii -> iw,     m1_iw  : iw  -> ic,     m1_ic : ic -> id,
+    m1_wi  : wi -> ww0,    m1_ww1 : ww1 -> wc,     m1_wc : wc -> wd,
+    m1_ci  : ci -> cw,
+    m1_di  : di -> dw,     m1_dw  : dw  -> dc,     m1_dc : dc -> dd,
+
+    ind_iw : m0_iw m1_ww1 -> m1_iw m0_ic,
+    ind_wi : m0_wi m1_ci  -> m1_wi m0_ww0,
+    ind_ic : m0_ic m1_wc  -> m1_ic m0_id,
+    ind_ci : m0_ci m1_di  -> m1_ci m0_cw
+},
+
+(* ------------------------------------------------------------------ *)
+(* AsymmBug -- Peterson with the thread-1-wins coherence dropped.      *)
+(*                                                                     *)
+(* Same 0-cells and 1-cells as Peterson. The 2-cell ind_wi is removed: *)
+(* the contested route from wi (via ww0) and the uncontested route     *)
+(* (via ci) reach cw, but the implementation does not assert their     *)
+(* equivalence. ind_iw is still asserted, so the protocol is *correct  *)
+(* when thread 0 wins arbitration* and silently broken when thread 1   *)
+(* wins.                                                               *)
+(*                                                                     *)
+(* The dropped 2-cell leaves an unbounded 1-cycle; integer homology    *)
+(* picks it up.                                                        *)
+(*                                                                     *)
+(*   H_0 = Z, H_1 = Z^2, H_2 = 0, chi = -1                             *)
+(*                                                                     *)
+(* The two H_1 generators are: the mutex obstruction (shared with      *)
+(* Peterson) and the dropped arbitration cycle.                        *)
+(* ------------------------------------------------------------------ *)
+AsymmBug <<= {
+    ii, iw, ic, id,
+    wi, ww0, ww1, wc, wd,
+    ci, cw,           cd,
+    di, dw, dc, dd,
+
+    m0_ii  : ii -> wi,     m0_iw  : iw  -> ww1,    m0_ic : ic -> wc,    m0_id : id -> wd,
+    m0_wi  : wi -> ci,     m0_ww0 : ww0 -> cw,                          m0_wd : wd -> cd,
+    m0_ci  : ci -> di,     m0_cw  : cw  -> dw,                          m0_cd : cd -> dd,
+
+    m1_ii  : ii -> iw,     m1_iw  : iw  -> ic,     m1_ic : ic -> id,
+    m1_wi  : wi -> ww0,    m1_ww1 : ww1 -> wc,     m1_wc : wc -> wd,
+    m1_ci  : ci -> cw,
+    m1_di  : di -> dw,     m1_dw  : dw  -> dc,     m1_dc : dc -> dd,
+
+    ind_iw : m0_iw m1_ww1 -> m1_iw m0_ic,
+    ind_ic : m0_ic m1_wc  -> m1_ic m0_id,
+    ind_ci : m0_ci m1_di  -> m1_ci m0_cw
+},
+
+(* ------------------------------------------------------------------ *)
+(* Spec -- minimal model with the Peterson obstruction.                *)
+(*                                                                     *)
+(* Four 0-cells, four 1-cells in a square, no 2-cell. Topologically a  *)
+(* circle, H_1 = Z. Reproduces Peterson's homological signature.       *)
+(* ------------------------------------------------------------------ *)
+Spec <<= {
+    p, q, r, s,
+
+    a : p -> q,
+    b : p -> r,
+    c : q -> s,
+    d : r -> s
+}
+
+(* ====================================================================
+   What the homology computation tells you.
+
+   * NoMutex's H_1 = 0 says: no synchronisation, no obstruction.
+
+   * Peterson and Spec share H_1 = Z: the mutex constraint forces a
+     single 1-cycle, the topological boundary of the missing (c, c)
+     tile. Peterson and Spec agree on this signature.
+
+   * AsymmBug has H_1 = Z^2: the dropped arbitration coherence creates
+     an unbounded 1-cycle in addition to the mutex obstruction. This
+     bug -- "arbitration is correct for one side but silently broken
+     for the other" -- is detected by integer homology because it is a
+     missing 2-cell, not a missing direction.
+
+   What this example does NOT detect.
+
+   * A NaiveFlag-style protocol that withholds *both* contention edges
+     m0_ww and m1_ww (Dekker's first attempt: contention is a sink and
+     the system deadlocks) would have the same H_1 = Z as Peterson.
+     Removing two 1-cells and two 2-cells in lockstep leaves chi
+     unchanged. Distinguishing deadlock from progress requires a
+     directed invariant of the configuration space (Goubault et al.).
+
+   What is honest about this example.
+
+   * The polygraph IS Peterson-specific in one structural sense: ww0
+     and ww1 are distinct states because the algorithm writes `turn`,
+     which means the order of two flag-raises is an observable
+     distinction, not a Mazurkiewicz independence. A flag-only protocol
+     (Dekker without `turn`) would merge ww0 and ww1 and recover the
+     ind_ii square. The split is the algorithm's signature.
+
+   * The model elides the read-test substep that distinguishes
+     Peterson from Lamport's bakery: both algorithms produce this
+     polygraph at the chosen granularity. Refining the model to
+     separate Peterson and Bakery would split the contention state
+     further by the *value of the spin counter*, which the current
+     model does not track.
+   ==================================================================== *)

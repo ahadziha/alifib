@@ -32,7 +32,7 @@
 @Type
 
 (* ------------------------------------------------------------------ *)
-(* Act I. Raw broadcast.                                               *)
+(* Raw broadcast.                                               *)
 (*                                                                     *)
 (*   m1, m2, m3 : pt -> pt                                             *)
 (*                                                                     *)
@@ -51,7 +51,7 @@ Raw <<= {
 },
 
 (* ------------------------------------------------------------------ *)
-(* Act II. Pairwise reliable broadcast.                                *)
+(* Pairwise reliable broadcast.                                *)
 (*                                                                     *)
 (*   m_i : pt -> pt             (i = 1, 2, 3)                          *)
 (*   c_ij : m_i m_j -> m_j m_i  (for each pair i < j)                  *)
@@ -84,7 +84,7 @@ PairwiseReliable <<= {
 },
 
 (* ------------------------------------------------------------------ *)
-(* Act III. Atomic broadcast (total-order broadcast).                  *)
+(* Atomic broadcast (total-order broadcast).                  *)
 (*                                                                     *)
 (* Same presentation as PairwiseReliable, plus one 3-cell — the        *)
 (* Zamolodchikov tetrahedron, rewritten here as the total-order        *)
@@ -118,7 +118,7 @@ AtomicBroadcast <<= {
 },
 
 (* ------------------------------------------------------------------ *)
-(* Act IV. A Byzantine link breaks pairwise reliability.               *)
+(* A Byzantine link breaks pairwise reliability.               *)
 (*                                                                     *)
 (*   m_i : pt -> pt             (i = 1, 2, 3)                          *)
 (*   c12, c13 : 2-cells         (c23 is missing)                       *)
@@ -135,8 +135,8 @@ AtomicBroadcast <<= {
 (* misses this bug. You need to look at H_2 and compare its rank       *)
 (* against the number of node-pairs (3). Homology is strictly more     *)
 (* informative than the Euler characteristic alone: chi is a fast      *)
-(* filter that catches Act II's missing 3-cell, but only the group-    *)
-(* level structure catches Act IV's missing 2-cell.                    *)
+(* filter that catches PairwiseReliable's missing 3-cell, but only    *)
+(* the group-level structure catches the missing 2-cell here.          *)
 (* ------------------------------------------------------------------ *)
 DroppedCoherence <<= {
     pt,

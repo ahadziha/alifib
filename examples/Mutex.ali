@@ -1,0 +1,151 @@
+(* ======================================================================
+   Mutex.ali
+   ----------------------------------------------------------------------
+   Mutual exclusion as a hole in the configuration space.
+
+   Two threads, each performing two atomic operations, give rise to a
+   3 x 3 grid of joint states. Going right is a step of thread A;
+   going up is a step of thread B. A square 2-cell at tile (i, j)
+   witnesses that A's (i+1)-th op and B's (j+1)-th op are independent —
+   the two ways of getting from the bottom-left corner of that tile to
+   the top-right are equivalent.
+
+   With every tile filled, the configuration space is a contractible
+   disc. Mutual exclusion is encoded by *withholding* the tiles where
+   both threads would simultaneously execute mutex-protected ops: the
+   independence square is no longer asserted, and the cycle that would
+   have bounded it survives in H_1.
+
+   This is exactly the polygraphic skeleton of the directed-topology /
+   higher-dimensional automata picture (Pratt, Goubault, Fahrenberg,
+   van Glabbeek): rank H_1 of the configuration space counts the
+   topologically independent schedule obstructions induced by the
+   synchronisation primitives.
+
+   The story differs in kind from a Squier-style "torsion = race
+   multiplicity" reading. Every 2-cell here is a balanced word swap
+   (length on both sides matches), so the boundary map sends each 2-cell
+   to a non-trivial 1-cycle and never to a multiple of a single
+   generator. There is no torsion. The integer ranks of H_1 are
+   computing the topology of the configuration space — they are not
+   reading back a multiplicity that the user typed in.
+
+   Run:
+
+       alifib repl examples/Mutex.ali
+       >> homology Free
+       >> homology Lock
+       >> homology TwoLocks
+
+   ====================================================================== *)
+
+@Type
+
+(* ------------------------------------------------------------------ *)
+(* Free composition.                                           *)
+(*                                                                     *)
+(* Vertices s_ab represent the joint state where thread A has run `a`  *)
+(* atomic ops (a in {0, 1, 2}) and thread B has run `b` atomic ops     *)
+(* (b in {0, 1, 2}).                                                   *)
+(*                                                                     *)
+(*       s02 -- a1_2 --> s12 -- a2_2 --> s22                           *)
+(*        ^               ^               ^                            *)
+(*       b2_0           b2_1            b2_2                           *)
+(*        |               |               |                            *)
+(*       s01 -- a1_1 --> s11 -- a2_1 --> s21                           *)
+(*        ^               ^               ^                            *)
+(*       b1_0           b1_1            b1_2                           *)
+(*        |               |               |                            *)
+(*       s00 -- a1_0 --> s10 -- a2_0 --> s20                           *)
+(*                                                                     *)
+(* All four unit tiles have an independence 2-cell. The configuration  *)
+(* space is contractible.                                              *)
+(*                                                                     *)
+(*   H_0 = Z, H_1 = 0, H_2 = 0, chi = 1                                *)
+(* ------------------------------------------------------------------ *)
+Free <<= {
+  s00, s01, s02,
+  s10, s11, s12,
+  s20, s21, s22,
+
+  a1_0 : s00 -> s10,  a1_1 : s01 -> s11,  a1_2 : s02 -> s12,
+  a2_0 : s10 -> s20,  a2_1 : s11 -> s21,  a2_2 : s12 -> s22,
+
+  b1_0 : s00 -> s01,  b1_1 : s10 -> s11,  b1_2 : s20 -> s21,
+  b2_0 : s01 -> s02,  b2_1 : s11 -> s12,  b2_2 : s21 -> s22,
+
+  ind_00 : a1_0 b1_1 -> b1_0 a1_1,
+  ind_01 : a1_1 b2_1 -> b2_0 a1_2,
+  ind_10 : a2_0 b1_2 -> b1_1 a2_1,
+  ind_11 : a2_1 b2_2 -> b2_1 a2_2
+},
+
+(* ------------------------------------------------------------------ *)
+(* A shared mutex.                                            *)
+(*                                                                     *)
+(* Suppose a2 and b2 are critical sections protected by the same       *)
+(* mutex: at most one thread may be inside at a time. In the HDA       *)
+(* semantics this forbids the open interior of the (1, 1) tile, where  *)
+(* both threads would be mid-CS simultaneously. We encode that by      *)
+(* *withholding* the corresponding independence 2-cell `ind_11`. The   *)
+(* other three tiles still witness commutation away from the lock.     *)
+(*                                                                     *)
+(*   H_0 = Z, H_1 = Z, H_2 = 0, chi = 0                                *)
+(*                                                                     *)
+(* The Z generator is the boundary cycle of the missing tile —         *)
+(* the difference between the two paths from s11 to s22 that the       *)
+(* removed independence 2-cell would have identified.                  *)
+(*                                                                     *)
+(* Topologically, of those two paths, the homology                     *)
+(* records that they are not equivalent: there is no homotopy through  *)
+(* the configuration space taking one to the other, because the        *)
+(* interior of the tile they would have to sweep through has been      *)
+(* removed. This is the schedule obstruction induced by the lock,      *)
+(* read off as a cellular invariant.                                   *)
+(* ------------------------------------------------------------------ *)
+Lock <<= {
+  s00, s01, s02,
+  s10, s11, s12,
+  s20, s21, s22,
+
+  a1_0 : s00 -> s10,  a1_1 : s01 -> s11,  a1_2 : s02 -> s12,
+  a2_0 : s10 -> s20,  a2_1 : s11 -> s21,  a2_2 : s12 -> s22,
+
+  b1_0 : s00 -> s01,  b1_1 : s10 -> s11,  b1_2 : s20 -> s21,
+  b2_0 : s01 -> s02,  b2_1 : s11 -> s12,  b2_2 : s21 -> s22,
+
+  ind_00 : a1_0 b1_1 -> b1_0 a1_1,
+  ind_01 : a1_1 b2_1 -> b2_0 a1_2,
+  ind_10 : a2_0 b1_2 -> b1_1 a2_1
+},
+
+(* ------------------------------------------------------------------ *)
+(* Two independent locks.                                    *)
+(*                                                                     *)
+(* A second mutex is added: a1 and b2 share lock X, while a2 and b1    *)
+(* share lock Y. The two forbidden tiles are (0, 1) and (1, 0); they   *)
+(* are non-adjacent, and their bounding cycles are linearly            *)
+(* independent in H_1.                                                 *)
+(*                                                                     *)
+(*   H_0 = Z, H_1 = Z^2, H_2 = 0, chi = -1                             *)
+(*                                                                     *)
+(* Each lock contributes one Z summand. The pattern generalises: in    *)
+(* an n x n configuration grid, the rank of H_1 equals the number of   *)
+(* tiles withheld for synchronisation. Whether the locks are taken in  *)
+(* compatible or incompatible orders is a *directed* question; the     *)
+(* undirected integer homology only sees the count.                    *)
+(* ------------------------------------------------------------------ *)
+TwoLocks <<= {
+  s00, s01, s02,
+  s10, s11, s12,
+  s20, s21, s22,
+
+  a1_0 : s00 -> s10,  a1_1 : s01 -> s11,  a1_2 : s02 -> s12,
+  a2_0 : s10 -> s20,  a2_1 : s11 -> s21,  a2_2 : s12 -> s22,
+
+  b1_0 : s00 -> s01,  b1_1 : s10 -> s11,  b1_2 : s20 -> s21,
+  b2_0 : s01 -> s02,  b2_1 : s11 -> s12,  b2_2 : s21 -> s22,
+
+  ind_00 : a1_0 b1_1 -> b1_0 a1_1,
+  ind_11 : a2_1 b2_2 -> b2_1 a2_2
+}

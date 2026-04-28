@@ -26,7 +26,7 @@
 @Type
 
 (* ------------------------------------------------------------------ *)
-(* Act I. Two concurrent actions that commute.                         *)
+(* Two concurrent actions that commute.                         *)
 (*                                                                     *)
 (*   generators:  a, b : pt → pt                                       *)
 (*   relation:    comm : a b → b a                                     *)
@@ -48,7 +48,7 @@ Pair <<= {
 },
 
 (* ------------------------------------------------------------------ *)
-(* Act II. Three pairwise-concurrent actions — no higher coherence.    *)
+(* Three pairwise-concurrent actions — no higher coherence.    *)
 (*                                                                     *)
 (*   generators:  a, b, c : pt → pt                                    *)
 (*   relations :  each pair commutes                                   *)
@@ -69,7 +69,7 @@ Triple <<= {
 },
 
 (* ------------------------------------------------------------------ *)
-(* Act III. The Zamolodchikov tetrahedron.                             *)
+(* The Zamolodchikov tetrahedron.                             *)
 (*                                                                     *)
 (* From a b c to c b a there are two "reduction strategies":           *)
 (*                                                                     *)
@@ -80,7 +80,7 @@ Triple <<= {
 (*                                                                     *)
 (* Both are compositions of three 2-cells. Strict equality between     *)
 (* them is the "Zamolodchikov tetrahedron", a 3-cell that fills the    *)
-(* 3-dimensional hole left by Act II.                                  *)
+(* 3-dimensional hole left by Triple.                                 *)
 (*                                                                     *)
 (* Expected homology (the 3-torus T³):                                 *)
 (*   H_0 = Z                                                           *)
@@ -102,7 +102,7 @@ TripleCoh <<= {
 },
 
 (* ------------------------------------------------------------------ *)
-(* Act IV. A rewriting system with 2-torsion.                          *)
+(* A rewriting system with 2-torsion.                          *)
 (*                                                                     *)
 (*   generator:  a : pt → pt                                           *)
 (*   relation :  a² → a⁴                                               *)
