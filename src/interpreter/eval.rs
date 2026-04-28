@@ -8,6 +8,7 @@ use crate::language::ast::{
     self, Block, ComplexInstr, ForBlock, ForIndex, IndexDecl, LocalInst, NameWithBoundary, Program,
     Span, Spanned, TypeInst,
 };
+use crate::language::Error;
 use std::sync::Arc;
 
 use super::diagram::{check_assert, interpret_assert, interpret_let_diag};
@@ -527,12 +528,19 @@ fn resolve_index_values(
     }
 }
 
-fn expand_body(source: &str, fb: &ForBlock, values: &[String]) -> String {
-    let body_text = &source[fb.body_span.start..fb.body_span.end];
+fn relocate_errors(result: &mut InterpResult, target: Span) {
+    for error in &mut result.errors {
+        match error {
+            Error::Syntax { span, .. } | Error::Runtime { span, .. } => *span = target,
+        }
+    }
+}
+
+fn expand_body(fb: &ForBlock, values: &[String]) -> String {
     let var_pattern = format!("<{}>", fb.variable.inner);
     let mut expanded = String::new();
     for value in values {
-        expanded.push_str(&body_text.replace(&var_pattern, value));
+        expanded.push_str(&fb.body_text.replace(&var_pattern, value));
     }
     expanded
 }
@@ -548,7 +556,7 @@ fn expand_complex_for(
         Ok(v) => v,
         Err(result) => return (scope, result),
     };
-    let expanded = expand_body(&context.source, fb, &values);
+    let expanded = expand_body(fb, &values);
     let instrs = match crate::language::parse_complex_instrs(&expanded) {
         Ok(instrs) => instrs,
         Err(errors) => {
@@ -562,9 +570,8 @@ fn expand_complex_for(
             return (scope, result);
         }
     };
-    let inner_context = context.with_source(Arc::new(expanded));
-    let (scope, mut result) = interpret_complex_body(&inner_context, mode, scope, &instrs);
-    result.context.source = context.source.clone();
+    let (scope, mut result) = interpret_complex_body(&context, mode, scope, &instrs);
+    relocate_errors(&mut result, outer_span);
     (scope, result)
 }
 
@@ -580,7 +587,7 @@ fn expand_type_for(
         Ok(v) => v,
         Err(result) => return result,
     };
-    let expanded = expand_body(&context.source, fb, &values);
+    let expanded = expand_body(fb, &values);
     let instrs = match crate::language::parse_type_instrs(&expanded) {
         Ok(instrs) => instrs,
         Err(errors) => {
@@ -594,9 +601,8 @@ fn expand_type_for(
             return result;
         }
     };
-    let inner_context = context.with_source(Arc::new(expanded));
-    let mut result = interpret_type_block(&inner_context, &instrs);
-    result.context.source = context.source.clone();
+    let mut result = interpret_type_block(context, &instrs);
+    relocate_errors(&mut result, outer_span);
     result
 }
 
@@ -611,7 +617,7 @@ fn expand_local_for(
         Ok(v) => v,
         Err(result) => return (None, result),
     };
-    let expanded = expand_body(&context.source, fb, &values);
+    let expanded = expand_body(fb, &values);
     let instrs = match crate::language::parse_local_instrs(&expanded) {
         Ok(instrs) => instrs,
         Err(errors) => {
@@ -625,12 +631,11 @@ fn expand_local_for(
             return (None, result);
         }
     };
-    let inner_context = context.with_source(Arc::new(expanded));
     let (final_scope, result) =
-        interpret_items_in_type_scope(&inner_context, type_scope.clone(), &instrs, |step_context, scope, instr| {
+        interpret_items_in_type_scope(context, type_scope.clone(), &instrs, |step_context, scope, instr| {
             interpret_local_inst(step_context, scope, instr)
         });
     let mut result = result;
-    result.context.source = context.source.clone();
+    relocate_errors(&mut result, outer_span);
     (Some(final_scope.working_complex), result)
 }

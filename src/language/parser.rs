@@ -442,7 +442,7 @@ fn for_block<'tokens, 'src: 'tokens>()
         )))
         .then(for_body())
         .map_with(|((variable, index), body_span), e| {
-            sp(ForBlock { variable, index, body_span }, cspan(e.span()))
+            sp(ForBlock { variable, index, body_span, body_text: String::new() }, cspan(e.span()))
         })
 }
 

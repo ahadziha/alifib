@@ -64,15 +64,6 @@ impl Context {
         }
     }
 
-    pub fn with_source(&self, source: Arc<String>) -> Self {
-        Self {
-            current_module: self.current_module.clone(),
-            state: Arc::clone(&self.state),
-            resolutions: Arc::clone(&self.resolutions),
-            source,
-        }
-    }
-
     /// Get a mutable reference to the state via `Arc::make_mut` (copy-on-write).
     pub fn state_mut(&mut self) -> &mut GlobalStore {
         Arc::make_mut(&mut self.state)

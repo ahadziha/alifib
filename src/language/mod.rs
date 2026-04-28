@@ -49,7 +49,10 @@ pub fn parse(source: &str) -> Result<Program, Vec<Error>> {
     });
 
     match ast {
-        Some(program) if errors.is_empty() => Ok(program),
+        Some(mut program) if errors.is_empty() => {
+            resolve_for_bodies_program(source, &mut program);
+            Ok(program)
+        }
         _ => {
             if errors.is_empty() {
                 errors.push(Error::Syntax {
@@ -169,7 +172,10 @@ pub fn parse_complex_instrs(source: &str) -> Result<Vec<ast::Spanned<ast::Comple
         .into_output_errors();
     errors.extend(parse_errs.iter().map(|e| Error::Syntax { message: format!("{}", e.reason()), span: Span { start: e.span().start, end: e.span().end } }));
     match ast {
-        Some(result) if errors.is_empty() => Ok(result),
+        Some(mut result) if errors.is_empty() => {
+            resolve_for_bodies_complex(&mut result, source);
+            Ok(result)
+        }
         _ => { if errors.is_empty() { errors.push(Error::Syntax { message: "parse error".to_string(), span: Span { start: 0, end: 0 } }); } Err(errors) }
     }
 }
@@ -186,8 +192,63 @@ pub fn parse_type_instrs(source: &str) -> Result<Vec<ast::Spanned<ast::TypeInst>
         .into_output_errors();
     errors.extend(parse_errs.iter().map(|e| Error::Syntax { message: format!("{}", e.reason()), span: Span { start: e.span().start, end: e.span().end } }));
     match ast {
-        Some(result) if errors.is_empty() => Ok(result),
+        Some(mut result) if errors.is_empty() => {
+            resolve_for_bodies_type(&mut result, source);
+            Ok(result)
+        }
         _ => { if errors.is_empty() { errors.push(Error::Syntax { message: "parse error".to_string(), span: Span { start: 0, end: 0 } }); } Err(errors) }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// For-block body resolution
+// ---------------------------------------------------------------------------
+
+fn resolve_fb(fb: &mut ast::ForBlock, source: &str) {
+    fb.body_text = source[fb.body_span.start..fb.body_span.end].to_string();
+}
+
+fn resolve_for_bodies_complex(instrs: &mut [ast::Spanned<ast::ComplexInstr>], source: &str) {
+    for instr in instrs {
+        if let ast::ComplexInstr::For(fb) = &mut instr.inner {
+            resolve_fb(fb, source);
+        }
+    }
+}
+
+fn resolve_for_bodies_type(instrs: &mut [ast::Spanned<ast::TypeInst>], source: &str) {
+    for instr in instrs {
+        match &mut instr.inner {
+            ast::TypeInst::For(fb) => resolve_fb(fb, source),
+            ast::TypeInst::Generator(g) => {
+                if let ast::Complex::Block { body, .. } = &mut g.complex.inner {
+                    resolve_for_bodies_complex(body, source);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn resolve_for_bodies_local(instrs: &mut [ast::Spanned<ast::LocalInst>], source: &str) {
+    for instr in instrs {
+        if let ast::LocalInst::For(fb) = &mut instr.inner {
+            resolve_fb(fb, source);
+        }
+    }
+}
+
+fn resolve_for_bodies_program(source: &str, program: &mut ast::Program) {
+    for block in &mut program.blocks {
+        match &mut block.inner {
+            ast::Block::TypeBlock(instrs) => resolve_for_bodies_type(instrs, source),
+            ast::Block::LocalBlock { complex, body } => {
+                if let ast::Complex::Block { body: cb, .. } = &mut complex.inner {
+                    resolve_for_bodies_complex(cb, source);
+                }
+                resolve_for_bodies_local(body, source);
+            }
+        }
     }
 }
 
@@ -203,7 +264,10 @@ pub fn parse_local_instrs(source: &str) -> Result<Vec<ast::Spanned<ast::LocalIns
         .into_output_errors();
     errors.extend(parse_errs.iter().map(|e| Error::Syntax { message: format!("{}", e.reason()), span: Span { start: e.span().start, end: e.span().end } }));
     match ast {
-        Some(result) if errors.is_empty() => Ok(result),
+        Some(mut result) if errors.is_empty() => {
+            resolve_for_bodies_local(&mut result, source);
+            Ok(result)
+        }
         _ => { if errors.is_empty() { errors.push(Error::Syntax { message: "parse error".to_string(), span: Span { start: 0, end: 0 } }); } Err(errors) }
     }
 }
