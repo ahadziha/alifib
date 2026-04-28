@@ -1,5 +1,6 @@
 (* 
-    A collection of finite semisimplicial sets.
+    A collection of finite Delta-complexes
+    (or semisimplicial sets).
     Compute their homology with `homology <type>` in the repl.
 *)
 

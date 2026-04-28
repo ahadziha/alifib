@@ -1,5 +1,6 @@
 (*
-    A module for semisimplicial sets up to dimension 5.
+    The simplices with face maps up to dimension 5,
+    i.e. the category Delta_0 up to dimension 5.
 *)
 
 @Type
@@ -268,7 +269,7 @@
 }
 
 (* 
-    Semi-simplicial identities: 
+    Simplicial identities: 
     d_i . d_{j-1} = d_j . d_i if i < j
 *)
 @5Simplex
