@@ -1,0 +1,130 @@
+(* 
+    Some auxiliary gadgets for monoidal categories 
+*)
+
+@Type
+(* Equation between morphisms *)
+Equation <<= {
+    pt,
+    
+    src: pt -> pt,
+    tgt: pt -> pt,
+
+    lhs: src -> tgt,
+    rhs: src -> tgt,
+
+    dir: lhs -> rhs,
+    inv: rhs -> lhs,
+
+    index thin = [ dir, inv ]
+},
+
+(* Wire with identity *)
+Wire <<= {
+    pt,
+
+    ob: pt -> pt,
+
+    id: ob -> ob,
+
+    attach Id :: Equation along [
+        lhs => id id,
+        rhs => id
+    ]
+},
+
+(* One-input, one-output node *)
+Node_1_to_1 <<= {
+    pt,
+
+    attach Dom :: Wire along [ pt => pt ],
+    attach Cod :: Wire along [ pt => pt ],
+
+    node: Dom.ob -> Cod.ob,
+
+    attach DomId :: Equation along [
+        lhs => Dom.id node,
+        rhs => node
+    ],
+    attach CodId :: Equation along [
+        lhs => node Cod.id,
+        rhs => node
+    ]
+},
+
+(* Two-input, one-output node *)
+Node_2_to_1 <<= {
+    pt,
+
+    attach LDom :: Wire along [ pt => pt ],
+    attach RDom :: Wire along [ pt => pt ],
+    attach Cod :: Wire along [ pt => pt ],
+
+    node: LDom.ob RDom.ob -> Cod.ob,
+
+    attach LDomId :: Equation along [
+        lhs => (LDom.id RDom.ob) node,
+        rhs => node
+    ],
+    attach RDomId :: Equation along [
+        lhs => (LDom.ob RDom.id) node,
+        rhs => node
+    ],
+    attach CodId :: Equation along [
+        lhs => node Cod.id,
+        rhs => node
+    ]
+},
+
+(* One-input, two-output node *)
+Node_1_to_2 <<= {
+    pt,
+
+    attach Dom :: Wire along [ pt => pt ],
+    attach LCod :: Wire along [ pt => pt ],
+    attach RCod :: Wire along [ pt => pt ],
+
+    node: Dom.ob -> LCod.ob RCod.ob,
+
+    attach DomId :: Equation along [
+        lhs => Dom.id node,
+        rhs => node
+    ],
+    attach LCodId :: Equation along [
+        lhs => node (LCod.id RCod.ob),
+        rhs => node
+    ],
+    attach RCodId :: Equation along [
+        lhs => node (LCod.ob RCod.id),
+        rhs => node
+    ]
+},
+
+(* Two-input, two-output node *)
+Node_2_to_2 <<= {
+    pt,
+
+    attach LDom :: Wire along [ pt => pt ],
+    attach RDom :: Wire along [ pt => pt ],
+    attach LCod :: Wire along [ pt => pt ],
+    attach RCod :: Wire along [ pt => pt ],
+
+    node: LDom.ob RDom.ob -> LCod.ob RCod.ob,
+
+    attach LDomId :: Equation along [
+        lhs => (LDom.id RDom.ob) node,
+        rhs => node
+    ],
+    attach RDomId :: Equation along [
+        lhs => (LDom.ob RDom.id) node,
+        rhs => node
+    ],
+    attach LCodId :: Equation along [
+        lhs => node (LCod.id RCod.ob),
+        rhs => node
+    ],
+    attach RCodId :: Equation along [
+        lhs => node (LCod.ob RCod.id),
+        rhs => node
+    ]
+}

@@ -1,0 +1,205 @@
+(* 
+    A module for (planar) monoidal categories
+*)
+
+@Type
+include Monoidal_aux as Aux,
+let Equation = Aux.Equation,
+
+(* Monoidal unit *)
+Unit <<= {
+    pt,
+
+    ob: pt -> pt,
+
+    id: ob -> ob,
+    (* Exhibiting idempotence of the unit *)
+    merge: ob ob -> ob,
+    split: ob -> ob ob,
+
+    attach Wire :: Aux.Wire along [ id => id ],
+    
+    attach Merge :: Aux.Node_2_to_1 along [
+        LDom => Wire, RDom => Wire, Cod => Wire,
+        node => merge
+    ],
+    attach Split :: Aux.Node_1_to_2 along [
+        Dom => Wire, LCod => Wire, RCod => Wire,
+        node => split
+    ],
+    
+    attach Assoc :: Equation along [
+        lhs => (merge ob) merge,
+        rhs => (ob merge) merge
+    ],
+    attach Coassoc :: Equation along [
+        lhs => split (split ob),
+        rhs => split (ob split)
+    ],
+    attach LFrobenius :: Equation along [
+        lhs => (split ob) (ob merge),
+        rhs => merge split
+    ],
+    attach RFrobenius :: Equation along [
+        lhs => (ob split) (merge ob),
+        rhs => merge split
+    ],
+    attach Split_Merge :: Equation along [
+        lhs => split merge,
+        rhs => id
+    ],
+
+    index thin = [
+        pt, ob, id, merge, split
+    ]
+},
+
+(* A single object *)
+Object <<= {
+    include Unit,
+    let unit = Unit.ob,
+    let merge = Unit.merge,
+    let split = Unit.split,
+
+    ob: Unit.pt -> Unit.pt,
+    id: ob -> ob,
+
+    attach Wire :: Aux.Wire along [ id => id ],
+
+    (* Left and right unitors, and their inverses *)
+    lunit: unit ob -> ob,
+    lunit_inv: ob -> unit ob,
+    runit: ob unit -> ob,
+    runit_inv: ob -> ob unit,
+    attach LUnit :: Aux.Node_2_to_1 along [
+        LDom => Unit.Wire, RDom => Wire, Cod => Wire,
+        node => lunit
+    ],
+    attach RUnit :: Aux.Node_2_to_1 along [
+        LDom => Wire, RDom => Unit.Wire, Cod => Wire,
+        node => runit
+    ],
+    attach LUnit_Inv :: Aux.Node_1_to_2 along [
+        Dom => Wire, LCod => Unit.Wire, RCod => Wire,
+        node => lunit_inv
+    ],
+    attach RUnit_Inv :: Aux.Node_1_to_2 along [
+        Dom => Wire, LCod => Wire, RCod => Unit.Wire,
+        node => runit_inv
+    ],
+
+    attach LUnit_Inversion :: Equation along [
+        lhs => lunit_inv lunit,
+        rhs => id
+    ],
+    attach RUnit_Inversion :: Equation along [
+        lhs => runit_inv runit,
+        rhs => id
+    ],
+    attach Left_Module :: Equation along [
+        lhs => (merge ob) lunit,
+        rhs => (unit lunit) lunit
+    ],
+    attach Right_Module :: Equation along [
+        lhs => (runit unit) runit,
+        rhs => (ob merge) runit
+    ],
+    attach Left_Comodule :: Equation along [
+        lhs => lunit_inv (split ob),
+        rhs => lunit_inv (unit lunit_inv)
+    ],
+    attach Right_Comodule :: Equation along [
+        lhs => runit_inv (runit_inv unit),
+        rhs => runit_inv (ob split)
+    ],
+    attach Bimodule :: Equation along [
+        lhs => (lunit unit) runit,
+        rhs => (unit runit) lunit
+    ],
+    attach Bicomodule :: Equation along [
+        lhs => runit_inv (lunit_inv unit),
+        rhs => lunit_inv (unit runit_inv)
+    ],
+    attach LFrobenius_Bimodule :: Equation along [
+        lhs => (lunit_inv unit) (unit runit),
+        rhs => runit lunit_inv
+    ],
+    attach RFrobenius_Bimodule :: Equation along [
+        lhs => (unit runit_inv) (lunit unit),
+        rhs => lunit runit_inv
+    ],
+    attach Left_Frobenius_Module :: Equation along [
+        lhs => (split ob) (unit lunit),
+        rhs => lunit lunit_inv,
+    ],
+    attach Right_Frobenius_Module :: Equation along [
+        lhs => (runit_inv unit) (ob merge),
+        rhs => runit runit_inv
+    ],
+
+    index thin = [ id, lunit, lunit_inv, runit, runit_inv ]
+}
+
+(* The unit is itself an object *)
+@Unit
+let total Object :: Object = [
+    Wire => Wire,
+    Unit => Unit,
+    LUnit => Merge,
+    RUnit => Merge,
+    LUnit_Inv => Split,
+    RUnit_Inv => Split,
+    LUnit_Inversion => Split_Merge,
+    RUnit_Inversion => Split_Merge,
+    Left_Module => Assoc,
+    Right_Module => Assoc,
+    Left_Comodule => Coassoc,
+    Right_Comodule => Coassoc,
+    Bimodule => Assoc,
+    Bicomodule => Coassoc,
+    LFrobenius_Bimodule => LFrobenius,
+    RFrobenius_Bimodule => RFrobenius,
+    Left_Frobenius_Module => LFrobenius,
+    Right_Frobenius_Module => LFrobenius,
+]
+
+@Type
+(* A pair of objects can function as a single object *)
+Pair <<= {
+    include Unit,
+    let unit = Unit.ob,
+    let merge = Unit.merge,
+    let split = Unit.split,
+
+    attach Fst :: Object along [ Unit => Unit ],
+    attach Snd :: Object along [ Unit => Unit ],
+
+    let ob = Fst.ob Snd.ob,
+    let id = (Fst.ob Snd.lunit_inv) (Fst.runit Snd.ob),
+    let total Id :: Equation = [
+        dir => ((Fst.ob #0 Snd.Left_Comodule.inv) #1 (Fst.Right_Module.dir #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Unit.Split_Merge.dir #0 Snd.ob) #1 (Fst.runit #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd.LUnit_Inv.LCodId.dir) #1 (Fst.runit #0 Snd.ob)),
+        inv => ((Fst.ob #0 Snd.lunit_inv) #1 (Fst.RUnit.RDomId.inv #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Unit.Split_Merge.inv #0 Snd.ob) #1 (Fst.runit #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd.Left_Comodule.dir) #1 (Fst.Right_Module.inv #0 Snd.ob))
+    ],
+    let total Wire :: Aux.Wire = [ id => id, Id => Id ],
+
+    let lunit = (Fst.lunit Snd.ob) id,
+    let runit = (Fst.ob Snd.runit) id,
+    let lunit_inv = id (Fst.lunit_inv Snd.ob),
+    let runit_inv = id (Fst.ob Snd.runit_inv),
+
+    let LUnit :: Aux.Node_2_to_1 = [
+        LDom => Unit.Wire, RDom => Wire, Cod => Wire,
+        node => lunit,
+        LDomId => (map [
+            dir => ((Fst.LUnit.LDomId.dir #0 Snd.ob) #1 (Fst.ob #0 Snd.LUnit_Inv.LCodId.inv) #1 (Fst.RUnit.LDomId.inv #0 Snd.ob))
+                #2 ((Fst.LUnit.CodId.dir #0 Snd.ob) #1 (Fst.ob #0 Snd.lunit_inv) #1 (Fst.RUnit.RDomId.dir #0 Snd.ob)),
+            inv => ((Fst.LUnit.CodId.inv #0 Snd.ob) #1 (Fst.ob #0 Snd.lunit_inv) #1 (Fst.RUnit.RDomId.inv #0 Snd.ob))
+#2 ((Fst.LUnit.LDomId.inv #0 Snd.ob) #1 (Fst.ob #0 Snd.LUnit_Inv.LCodId.dir) #1 (Fst.RUnit.LDomId.dir #0 Snd.ob))
+        ] :: Equation )
+        (* To be continued *)
+    ]
+}
