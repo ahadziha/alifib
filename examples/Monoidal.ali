@@ -191,7 +191,7 @@ Pair <<= {
     let lunit_inv = id (Fst.lunit_inv Snd.ob),
     let runit_inv = id (Fst.ob Snd.runit_inv),
 
-    let LUnit :: Aux.Node_2_to_1 = [
+    let total LUnit :: Aux.Node_2_to_1 = [
         LDom => Unit.Wire, RDom => Wire, Cod => Wire,
         node => lunit,
         LDomId => (map [
@@ -199,7 +199,26 @@ Pair <<= {
                 #2 ((Fst.LUnit.CodId.dir #0 Snd.ob) #1 (Fst.ob #0 Snd.lunit_inv) #1 (Fst.RUnit.RDomId.dir #0 Snd.ob)),
             inv => ((Fst.LUnit.CodId.inv #0 Snd.ob) #1 (Fst.ob #0 Snd.lunit_inv) #1 (Fst.RUnit.RDomId.inv #0 Snd.ob))
 #2 ((Fst.LUnit.LDomId.inv #0 Snd.ob) #1 (Fst.ob #0 Snd.LUnit_Inv.LCodId.dir) #1 (Fst.RUnit.LDomId.dir #0 Snd.ob))
+        ] :: Equation ),
+        RDomId => (map [
+            dir => ((Unit.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.Bimodule.inv #0 Snd.ob) #1 (Fst.ob #0 Snd.lunit_inv) #1 (Fst.runit #0 Snd.ob))
+#2 ((Unit.ob #0 Fst.ob #0 Snd.Left_Comodule.inv) #1 (Fst.lunit #0 Unit.ob #0 Unit.ob #0 Snd.ob) #1 (Fst.Right_Module.dir #0 Snd.ob))
+#2 ((Fst.lunit #0 Snd.ob) #1 (Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Unit.Split_Merge.dir #0 Snd.ob) #1 (Fst.runit #0 Snd.ob))
+#2 ((Unit.ob #0 Fst.ob #0 Snd.LUnit_Inv.LCodId.dir) #1 (Fst.lunit #0 Unit.ob #0 Snd.ob) #1 (Fst.runit #0 Snd.ob)),
+            inv => ((Fst.lunit #0 Snd.ob) #1 (Fst.ob #0 Snd.lunit_inv) #1 (Fst.RUnit.RDomId.inv #0 Snd.ob))
+#2 ((Unit.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Unit.ob #0 Fst.ob #0 Unit.Split_Merge.inv #0 Snd.ob) #1 (Fst.lunit #0 Unit.ob #0 Snd.ob) #1 (Fst.runit #0 Snd.ob))
+#2 ((Unit.ob #0 Fst.ob #0 Snd.Left_Comodule.dir) #1 (Fst.lunit #0 Unit.ob #0 Unit.ob #0 Snd.ob) #1 (Fst.Right_Module.inv #0 Snd.ob))
+#2 ((Unit.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.Bimodule.dir #0 Snd.ob) #1 (Fst.ob #0 Snd.lunit_inv) #1 (Fst.runit #0 Snd.ob))
+        ] :: Equation ),
+        CodId => (map [
+            dir => ((Unit.ob #0 Fst.ob #0 Snd.Left_Comodule.inv) #1 (Fst.LUnit.CodId.inv #0 Unit.ob #0 Unit.ob #0 Snd.ob) #1 (Fst.Right_Module.dir #0 Snd.ob))
+#2 ((Fst.lunit #0 Snd.ob) #1 (Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Unit.Split_Merge.dir #0 Snd.ob) #1 (Fst.RUnit.LDomId.dir #0 Snd.ob))
+#2 ((Unit.ob #0 Fst.ob #0 Snd.LUnit_Inv.LCodId.dir) #1 (Fst.lunit #0 Unit.ob #0 Snd.ob) #1 (Fst.runit #0 Snd.ob)),
+            inv => ((Unit.ob #0 Fst.ob #0 Snd.LUnit_Inv.LCodId.inv) #1 (Fst.lunit #0 Unit.ob #0 Snd.ob) #1 (Fst.RUnit.LDomId.inv #0 Snd.ob))
+#2 ((Fst.LUnit.CodId.dir #0 Snd.ob) #1 (Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Unit.Split_Merge.inv #0 Snd.ob) #1 (Fst.runit #0 Snd.ob))
+#2 ((Unit.ob #0 Fst.ob #0 Snd.Left_Comodule.dir) #1 (Fst.lunit #0 Unit.ob #0 Unit.ob #0 Snd.ob) #1 (Fst.Right_Module.inv #0 Snd.ob))
         ] :: Equation )
-        (* To be continued *)
     ]
+
+    (* To be continued *)
 }
