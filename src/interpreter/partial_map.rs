@@ -154,8 +154,22 @@ pub fn interpret_anon_map_component(
     let (ns_opt, target_result) =
         super::eval::interpret_complex(context, super::types::Mode::Local, target);
     let Some(ns) = ns_opt else { return (None, target_result); };
+    // For simple type references (no block body), use the canonical Arc<Complex>
+    // from the type store so that pointer-based domain comparison works correctly
+    // when matching named maps against anonymous maps of the same type.
+    let canonical_domain = if matches!(&target.inner, ast::Complex::Address(_)) {
+        target_result.context.state
+            .find_type(ns.owner_type_id)
+            .map(|entry| Arc::clone(&entry.complex))
+    } else {
+        None
+    };
     let (mc_opt, def_result) =
         interpret_pmap_def(&target_result.context, scope, &ns.working_complex, def);
+    let mc_opt = mc_opt.map(|eval_map| match canonical_domain {
+        Some(arc) => EvalMap { domain: arc, ..eval_map },
+        None => eval_map,
+    });
     (mc_opt, target_result.merge(def_result))
 }
 
