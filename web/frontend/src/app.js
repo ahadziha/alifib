@@ -2547,11 +2547,14 @@ function renderStrDiag(ctx, L, cw, ch) {
     if (nodeThin && highlighted) {
       ctx.save();
       ctx.shadowColor = C.hlShadow;
-      ctx.shadowBlur = 14;
+      ctx.shadowBlur = 10;
       ctx.beginPath();
-      ctx.arc(np.x, np.y, WIRE_R, 0, Math.PI * 2);
-      ctx.fillStyle = C.hlShadow;
+      ctx.arc(np.x, np.y, WIRE_R + 1.5, 0, Math.PI * 2);
+      ctx.fillStyle = C.hlFill;
       ctx.fill();
+      ctx.strokeStyle = C.hlShadow;
+      ctx.lineWidth = 1;
+      ctx.stroke();
       ctx.restore();
     } else if (nodeThin) {
       ctx.beginPath();
