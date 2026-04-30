@@ -48,7 +48,7 @@
       </div>
       <div class="pane-body repl-body">
 
-        <!-- Session setup (shown before a session is active) -->
+        <!-- Session setup (shown after file is loaded, before a session is active) -->
         <div id="session-setup" class="session-setup" hidden>
           <div class="setup-row">
             <label for="sel-type">Type</label>
@@ -63,6 +63,10 @@
             <input id="inp-target" type="text" placeholder="(optional)">
           </div>
           <button id="btn-start" class="btn-primary">Start session</button>
+        </div>
+        <!-- Stop button (shown while a session is active) -->
+        <div id="session-stop" class="session-stop" hidden>
+          <button id="btn-stop" class="btn-secondary">Stop session</button>
         </div>
 
         <!-- REPL output history -->

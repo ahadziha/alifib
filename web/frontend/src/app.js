@@ -99,6 +99,8 @@ const inpSource   = document.getElementById('inp-source');
 const inpTarget   = document.getElementById('inp-target');
 const btnStart    = document.getElementById('btn-start');
 const sessionSetup = document.getElementById('session-setup');
+const btnStop     = document.getElementById('btn-stop');
+const sessionStop = document.getElementById('session-stop');
 const replOutput  = document.getElementById('repl-output');
 const replInput   = document.getElementById('repl-input');
 const btnClear    = document.getElementById('btn-clear-repl');
@@ -910,8 +912,8 @@ async function evaluateSource() {
     fileOutput.innerHTML = '';
     fileOutput.hidden = true;
     appendReplEntry('(evaluate)', formatError(result));
-    sessionSetup.hidden = true;
     resetSession();
+    sessionSetup.hidden = true;
     replInput.disabled = true;
     syncAnalysisLayout();
     return;
@@ -963,8 +965,8 @@ async function evaluateSource() {
     selType.value = previousType;
   }
 
-  sessionSetup.hidden = false;
   resetSession();
+  sessionSetup.hidden = false;
   replInput.disabled = false;
   syncAnalysisLayout();
   appendReplEntry('(evaluate)', formatOk(
@@ -1135,6 +1137,12 @@ async function returnToSessionView() {
 btnStart.addEventListener('click', () => { void startSession(); });
 inpSource.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); void startSession(); } });
 inpTarget.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); void startSession(); } });
+btnStop.addEventListener('click', () => {
+  if (!sessionActive || !repl) return;
+  void repl.stop_session();
+  resetSession();
+  appendReplEntry('stop', '<span class="meta">Session stopped.</span>');
+});
 
 async function startSession() {
   if (!repl) return;
@@ -1147,7 +1155,10 @@ async function startSession() {
 }
 
 function resetSession() {
+  const wasActive = sessionActive;
   sessionActive = false;
+  sessionStop.hidden = true;
+  if (wasActive) sessionSetup.hidden = false;
   if (selectedEl) {
     selectedEl.classList.remove('acc-item--selected');
     selectedEl.classList.remove('acc-leaf--selected');
@@ -1176,6 +1187,8 @@ async function startSessionFromRepl(typeName, src, tgt, rawCmd) {
     return;
   }
   sessionActive = true;
+  sessionSetup.hidden = true;
+  sessionStop.hidden = false;
   replInput.focus();
   if (selectedEl) {
     selectedEl.classList.remove('acc-item--selected');

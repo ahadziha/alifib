@@ -817,6 +817,15 @@ header {
   background: var(--surface);
   flex-shrink: 0;
 }
+.session-setup[hidden] { display: none; }
+.session-stop {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.session-stop[hidden] { display: none; }
+.session-stop button { width: 100%; }
 .setup-row {
   display: flex;
   align-items: center;
