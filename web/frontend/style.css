@@ -685,6 +685,7 @@ header {
 .infobox-header {
   min-height: 0;
   overflow-y: auto;
+  background: var(--surface);
 }
 .infobox-text {
   padding: 8px 12px;
@@ -769,6 +770,7 @@ header {
   display: inline-flex;
   gap: 8px;
   color: var(--text-dim);
+  font-family: var(--font-ui);
   font-size: 11px;
 }
 .sign-controls label {
@@ -776,6 +778,10 @@ header {
   align-items: center;
   gap: 3px;
   cursor: pointer;
+}
+.sign-controls input[type="radio"] {
+  accent-color: var(--accent);
+  margin: 0;
 }
 
 .vis-container {
@@ -789,10 +795,11 @@ header {
   inset: 0;
   background: var(--ok-a10);
   pointer-events: none;
-  animation: reached-flash 0.8s ease-out forwards;
+  animation: reached-flash 1.2s ease-out forwards;
 }
 @keyframes reached-flash {
-  0%   { opacity: 1; }
+  0%   { opacity: 0; }
+  25%  { opacity: 1; }
   100% { opacity: 0; }
 }
 .vis-container canvas {
