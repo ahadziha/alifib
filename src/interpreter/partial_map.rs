@@ -233,7 +233,7 @@ fn eval_partial_map_basic(ctx: &PartialMapCtx<'_>, basic: &PartialMapBasic, span
             (Some(EvalMap { map: map.clone(), domain }), InterpResult::ok(ctx.context.clone()))
         }
         PartialMapBasic::AnonMap { def, target } => {
-            interpret_anon_map_component(ctx.context, ctx.domain, target, def)
+            interpret_anon_map_component(ctx.context, ctx.scope, target, def)
         }
         PartialMapBasic::Paren(inner) => interpret_partial_map(ctx.context, ctx.scope, ctx.domain, inner),
     }
