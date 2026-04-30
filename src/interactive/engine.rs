@@ -190,17 +190,17 @@ fn check_parallel(source: &Diagram, target: &Diagram) -> Result<(), String> {
     if source.dim() <= 0 {
         return Ok(());
     }
-    let n = source.top_dim();
-    let src_in = Diagram::boundary(Sign::Source, n, source)
+    let k = source.top_dim() - 1;
+    let src_in = Diagram::boundary_normal(Sign::Source, k, source)
         .map_err(|e| format!("source input boundary: {}", e))?;
-    let tgt_in = Diagram::boundary(Sign::Source, n, target)
+    let tgt_in = Diagram::boundary_normal(Sign::Source, k, target)
         .map_err(|e| format!("target input boundary: {}", e))?;
     if !Diagram::isomorphic(&src_in, &tgt_in) {
         return Err("source and target are not parallel: input boundaries do not match".to_owned());
     }
-    let src_out = Diagram::boundary(Sign::Target, n, source)
+    let src_out = Diagram::boundary_normal(Sign::Target, k, source)
         .map_err(|e| format!("source output boundary: {}", e))?;
-    let tgt_out = Diagram::boundary(Sign::Target, n, target)
+    let tgt_out = Diagram::boundary_normal(Sign::Target, k, target)
         .map_err(|e| format!("target output boundary: {}", e))?;
     if !Diagram::isomorphic(&src_out, &tgt_out) {
         return Err("source and target are not parallel: output boundaries do not match".to_owned());
