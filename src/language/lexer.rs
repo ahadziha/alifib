@@ -7,10 +7,12 @@ pub type Spanned<T> = (T, Span);
 
 pub fn lexer<'src>(
 ) -> impl Parser<'src, &'src str, Vec<Spanned<Token<'src>>>, extra::Err<Rich<'src, char>>> {
-    let comment = just("(*")
-        .then(any().and_is(just("*)").not()).repeated())
-        .then(just("*)"))
-        .padded();
+    let comment = recursive(|comment| {
+        just("(*")
+            .then(choice((comment.to(()), any().and_is(just("*)").not()).to(()))).repeated())
+            .then(just("*)"))
+    })
+    .padded();
 
     let nat = any()
         .filter(|c: &char| c.is_ascii_digit())
