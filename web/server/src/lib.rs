@@ -137,6 +137,20 @@ fn handle_connection(
             let body: RewritePreviewBody = parse_json_body(&request.body)?;
             write_json_response(stream, 200, repl.get_rewrite_preview_strdiag(body.choice))
         }
+        ("POST", "/api/get_map_image_strdiag") => {
+            let body: MapImageStrdiagBody = parse_json_body(&request.body)?;
+            write_json_response(
+                stream,
+                200,
+                repl.get_map_image_strdiag(
+                    &body.type_name,
+                    &body.map_name,
+                    &body.gen_name,
+                    body.boundary_dim,
+                    body.boundary_sign,
+                ),
+            )
+        }
 
         ("POST", _) if path.starts_with("/api/") => write_json_response(
             stream,
@@ -295,4 +309,15 @@ struct GetStrdiagBody {
 #[derive(Deserialize)]
 struct RewritePreviewBody {
     choice: usize,
+}
+
+#[derive(Deserialize)]
+struct MapImageStrdiagBody {
+    type_name: String,
+    map_name: String,
+    gen_name: String,
+    #[serde(default)]
+    boundary_dim: Option<usize>,
+    #[serde(default)]
+    boundary_sign: Option<String>,
 }

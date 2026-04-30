@@ -24,9 +24,10 @@
 use serde::{Deserialize, Serialize};
 
 use crate::aux::Tag;
-use crate::core::complex::Complex;
+use crate::core::complex::{Complex, MapDomain};
 use crate::core::diagram::{CellData, Diagram, Sign};
 use crate::core::matching::MatchResult;
+use crate::core::partial_map::PartialMap;
 use crate::core::strdiag::{StrDiag, VertexKind};
 use crate::output::render_diagram;
 use super::engine::RewriteEngine;
@@ -216,11 +217,19 @@ pub struct DiagramEntryInfo {
     pub expr: String,
 }
 
+/// A generator in the domain of a map.
+#[derive(Debug, Serialize)]
+pub struct MapDomainGenerator {
+    pub name: String,
+    pub dim: usize,
+}
+
 /// A named partial map in a type.
 #[derive(Debug, Serialize)]
 pub struct MapEntry {
     pub name: String,
     pub domain: String,
+    pub generators: Vec<MapDomainGenerator>,
 }
 
 /// Full detail of a type, for the `type_info` response.
@@ -348,6 +357,62 @@ pub fn diagram_info(diagram: &Diagram, scope: &Complex) -> DiagramInfo {
         .collect();
 
     DiagramInfo { label, dim, cell_count, cells_by_dim }
+}
+
+fn map_domain_generators(pmap: &PartialMap, domain_complex: &Complex) -> Vec<MapDomainGenerator> {
+    let mut gens = Vec::new();
+    for (dim, tags) in pmap.domain_by_dim() {
+        for tag in &tags {
+            if let Some(name) = domain_complex.find_generator_by_tag(tag) {
+                if !name.is_empty() {
+                    gens.push(MapDomainGenerator { name: name.clone(), dim });
+                }
+            }
+        }
+    }
+    gens
+}
+
+pub fn resolve_domain_complex<'a>(
+    store: &'a crate::interpreter::GlobalStore,
+    domain: &MapDomain,
+) -> Option<&'a Complex> {
+    match domain {
+        MapDomain::Type(gid) => store.find_type(*gid).map(|e| &*e.complex),
+        MapDomain::Module(mid) => store.find_module(mid),
+    }
+}
+
+fn domain_label(store: &crate::interpreter::GlobalStore, domain: &MapDomain) -> String {
+    match domain {
+        MapDomain::Type(gid) => {
+            let tag = Tag::Global(*gid);
+            store.modules_iter()
+                .find_map(|(_, mc)| mc.find_generator_by_tag(&tag).cloned())
+                .filter(|n| !n.is_empty())
+                .unwrap_or_default()
+        }
+        MapDomain::Module(mid) => mid.clone(),
+    }
+}
+
+pub fn build_map_entries(
+    tc: &Complex,
+    store: &crate::interpreter::GlobalStore,
+) -> Vec<MapEntry> {
+    tc.maps_iter()
+        .filter(|(n, _, _)| !n.is_empty())
+        .map(|(map_name, pmap, domain)| {
+            let gens = resolve_domain_complex(store, domain)
+                .map(|dc| map_domain_generators(pmap, dc))
+                .unwrap_or_default();
+            MapEntry {
+                name: map_name.clone(),
+                domain: domain_label(store, domain),
+                generators: gens,
+            }
+        })
+        .collect()
 }
 
 /// Build the standard [`ResponseData`] snapshot from an engine.
@@ -519,21 +584,7 @@ pub fn build_type_info_response(
             })
             .collect();
 
-        // Maps from the normalized store (static; don't change at runtime).
-        let normalized = store.normalize();
-        let source_file = engine.source_file();
-        let maps: Vec<MapEntry> = normalized
-            .modules
-            .iter()
-            .find(|m| m.path == source_file)
-            .and_then(|module| module.types.iter().find(|t| t.name == name))
-            .map(|ty| {
-                ty.maps
-                    .iter()
-                    .map(|m| MapEntry { name: m.name.clone(), domain: m.domain.clone() })
-                    .collect()
-            })
-            .unwrap_or_default();
+        let maps = build_map_entries(live_tc, store);
 
         Ok(TypeDetailInfo { name: name.to_owned(), generators, diagrams, maps })
     };
@@ -682,6 +733,49 @@ pub fn strdiag_to_json(sd: &StrDiag) -> serde_json::Value {
 /// If `boundary` is `Some((dim, sign))`, extracts the `(sign, dim)`-boundary
 /// of the diagram first. Returns a JSON object with `strdiag`, `dim`, `src`,
 /// and `tgt` fields.
+fn diagram_strdiag_json(
+    diagram: &Diagram,
+    scope: &Complex,
+    boundary: Option<(usize, &str)>,
+) -> Result<serde_json::Value, String> {
+    let target_diagram = match boundary {
+        None => diagram.clone(),
+        Some((k, sign_str)) => {
+            let sign = match sign_str {
+                "input" => Sign::Source,
+                _ => Sign::Target,
+            };
+            Diagram::boundary(sign, k, diagram)
+                .map_err(|e| format!("boundary extraction failed: {}", e))?
+        }
+    };
+
+    let dim = target_diagram.top_dim();
+    let (src, tgt) = if dim >= 1 {
+        let s = Diagram::boundary(Sign::Source, dim - 1, &target_diagram)
+            .map_err(|e| format!("{}", e))?;
+        let t = Diagram::boundary(Sign::Target, dim - 1, &target_diagram)
+            .map_err(|e| format!("{}", e))?;
+        (
+            render_diagram(&s, scope),
+            render_diagram(&t, scope),
+        )
+    } else {
+        (String::new(), String::new())
+    };
+
+    let label = render_diagram(&target_diagram, scope);
+    let sd = StrDiag::from_diagram(&target_diagram, scope);
+
+    Ok(serde_json::json!({
+        "strdiag": strdiag_to_json(&sd),
+        "dim": dim,
+        "label": label,
+        "src": src,
+        "tgt": tgt,
+    }))
+}
+
 pub fn build_strdiag_response(
     store: &crate::interpreter::GlobalStore,
     source_path: &str,
@@ -693,43 +787,32 @@ pub fn build_strdiag_response(
     let diagram = type_complex.find_diagram(item_name)
         .or_else(|| type_complex.classifier(item_name))
         .ok_or_else(|| format!("'{}' not found in type '{}'", item_name, type_name))?;
+    diagram_strdiag_json(diagram, &type_complex, boundary)
+}
 
-    let target_diagram = match boundary {
-        None => diagram.clone(),
-        Some((k, sign_str)) => {
-            let sign = match sign_str {
-                "input" => crate::core::diagram::Sign::Source,
-                _ => crate::core::diagram::Sign::Target,
-            };
-            Diagram::boundary(sign, k, diagram)
-                .map_err(|e| format!("boundary extraction failed: {}", e))?
-        }
-    };
+/// Build a StrDiag JSON for the image of a domain generator under a map.
+pub fn build_map_image_strdiag(
+    store: &crate::interpreter::GlobalStore,
+    source_path: &str,
+    type_name: &str,
+    map_name: &str,
+    gen_name: &str,
+    boundary: Option<(usize, &str)>,
+) -> Result<serde_json::Value, String> {
+    let type_complex = super::engine::resolve_type(store, source_path, type_name)?;
+    let (pmap, domain) = type_complex.find_map(map_name)
+        .ok_or_else(|| format!("map '{}' not found in type '{}'", map_name, type_name))?;
 
-    let dim = target_diagram.top_dim();
-    let (src, tgt) = if dim >= 1 {
-        let s = Diagram::boundary(crate::core::diagram::Sign::Source, dim - 1, &target_diagram)
-            .map_err(|e| format!("{}", e))?;
-        let t = Diagram::boundary(crate::core::diagram::Sign::Target, dim - 1, &target_diagram)
-            .map_err(|e| format!("{}", e))?;
-        (
-            crate::output::render_diagram(&s, &type_complex),
-            crate::output::render_diagram(&t, &type_complex),
-        )
-    } else {
-        (String::new(), String::new())
-    };
+    let domain_complex = resolve_domain_complex(store, domain)
+        .ok_or_else(|| format!("domain of map '{}' could not be resolved", map_name))?;
 
-    let label = crate::output::render_diagram(&target_diagram, &type_complex);
-    let sd = StrDiag::from_diagram(&target_diagram, &type_complex);
+    let gen_classifier = domain_complex.classifier(gen_name)
+        .ok_or_else(|| format!("generator '{}' not found in domain of '{}'", gen_name, map_name))?;
 
-    Ok(serde_json::json!({
-        "strdiag": strdiag_to_json(&sd),
-        "dim": dim,
-        "label": label,
-        "src": src,
-        "tgt": tgt,
-    }))
+    let image = PartialMap::apply(pmap, gen_classifier)
+        .map_err(|e| format!("failed to apply map: {}", e))?;
+
+    diagram_strdiag_json(&image, &type_complex, boundary)
 }
 
 /// Build a StrDiag JSON for the target boundary of a step diagram.
@@ -837,19 +920,7 @@ pub fn build_type_detail_from_store(
         })
         .collect();
 
-    let normalized = store.normalize();
-    let maps: Vec<MapEntry> = normalized
-        .modules
-        .iter()
-        .find(|m| m.path == source_path)
-        .and_then(|module| module.types.iter().find(|t| t.name == name))
-        .map(|ty| {
-            ty.maps
-                .iter()
-                .map(|m| MapEntry { name: m.name.clone(), domain: m.domain.clone() })
-                .collect()
-        })
-        .unwrap_or_default();
+    let maps = build_map_entries(&type_complex, store);
 
     Ok(TypeDetailInfo { name: name.to_owned(), generators, diagrams, maps })
 }

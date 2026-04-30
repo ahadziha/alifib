@@ -376,6 +376,10 @@ class WasmBackend {
   async get_rewrite_preview_strdiag(choice) {
     return this.inner.get_rewrite_preview_strdiag(choice);
   }
+
+  async get_map_image_strdiag(typeName, mapName, genName, boundaryDim, boundarySign) {
+    return this.inner.get_map_image_strdiag(typeName, mapName, genName, boundaryDim, boundarySign);
+  }
 }
 
 class HttpBackend {
@@ -429,6 +433,16 @@ class HttpBackend {
 
   async get_rewrite_preview_strdiag(choice) {
     return this.post('/api/get_rewrite_preview_strdiag', { choice });
+  }
+
+  async get_map_image_strdiag(typeName, mapName, genName, boundaryDim, boundarySign) {
+    return this.post('/api/get_map_image_strdiag', {
+      type_name: typeName,
+      map_name: mapName,
+      gen_name: genName,
+      boundary_dim: boundaryDim,
+      boundary_sign: boundarySign,
+    });
   }
 
   async post(path, body) {
@@ -1034,7 +1048,7 @@ function buildTypeAccordion(t) {
       () => selectItem(t.name, { kind: 'diagram', name: d.name, src: d.src, tgt: d.tgt }))));
   if (t.maps.length) body.appendChild(buildSection('Maps', t.maps,
     m => buildClickableRow(hi(m.name),
-      () => selectItem(t.name, { kind: 'map', name: m.name, domain: m.domain }))));
+      () => selectItem(t.name, { kind: 'map', name: m.name, domain: m.domain, generators: m.generators || [] }))));
 
   details.appendChild(body);
   return details;
@@ -2194,17 +2208,26 @@ let bunchPositions = new Set();
 
 let currentItem = null;   // { typeName, item }
 let currentItemDim = null; // dimension of the main diagram
+let currentMapGen = null;  // selected generator name for map infobox
 let sessionStrdiag = null; // strdiag data for current session diagram
 let selectedRewrite = null; // index of selected rewrite
 let previewActive = false;
 
 async function selectItem(typeName, item) {
   currentItem = { typeName, item };
+  currentMapGen = null;
   infobox.hidden = false;
   rewriteList.hidden = true; // hide session rewrite list when inspecting an item
 
+  if (item.kind === 'map') {
+    currentItemDim = 0;
+    boundaryControls.hidden = true;
+    await refreshInfobox();
+    return;
+  }
+
   // For generators and diagrams: fetch dimension from the main strdiag response
-  if (item.kind !== 'map' && repl) {
+  if (repl) {
     const mainResult = await parseReplResponse(
       repl.get_strdiag(typeName, item.name, undefined, undefined)
     );
@@ -2218,7 +2241,7 @@ async function selectItem(typeName, item) {
   }
 
   // Populate boundary selector
-  if (item.kind !== 'map' && currentItemDim >= 1) {
+  if (currentItemDim >= 1) {
     selBoundary.innerHTML = '<option value="main">Main</option>';
     for (let k = currentItemDim - 1; k >= 0; k--) {
       const opt = document.createElement('option');
@@ -2240,7 +2263,8 @@ async function refreshInfobox() {
   if (!currentItem) return;
   const { typeName, item } = currentItem;
   const bdVal = selBoundary.value;
-  const isBoundary = bdVal !== 'main' && item.kind !== 'map';
+  const mapHasGen = item.kind === 'map' && currentMapGen;
+  const isBoundary = bdVal !== 'main' && (item.kind !== 'map' || mapHasGen);
   const bdDim = isBoundary ? parseInt(bdVal, 10) : null;
   const bdSign = isBoundary ? document.querySelector('input[name="bd-sign"]:checked').value : null;
 
@@ -2249,7 +2273,10 @@ async function refreshInfobox() {
                    : item.kind === 'diagram'   ? 'Diagram at'
                    : 'Map at';
   let displayName;
-  if (isBoundary) {
+  if (isBoundary && mapHasGen) {
+    const signLabel = bdSign === 'output' ? 'Output' : 'Input';
+    displayName = `${signLabel} ${bdDim}-boundary of ${item.name}.${currentMapGen}`;
+  } else if (isBoundary) {
     const signLabel = bdSign === 'output' ? 'Output' : 'Input';
     displayName = `${signLabel} ${bdDim}-boundary of ${item.name}`;
   } else {
@@ -2263,10 +2290,65 @@ async function refreshInfobox() {
 
   if (item.kind === 'map') {
     html += `<div class="infobox-boundary">:: ${esc(item.domain)}</div>`;
-    infoboxText.innerHTML = html;
-    visContainer.hidden = true;
-    visControls.hidden = true;
+    if (item.generators && item.generators.length) {
+      html += `<div class="setup-row infobox-map-gen"><label for="sel-map-gen">Image of</label><select id="sel-map-gen">`;
+      html += `<option value="">— select generator —</option>`;
+      for (const g of item.generators) {
+        const sel = currentMapGen === g.name ? ' selected' : '';
+        html += `<option value="${esc(g.name)}"${sel}>${esc(g.name)} (dim ${g.dim})</option>`;
+      }
+      html += `</select></div>`;
+    }
+
     currentLayout = null;
+    if (currentMapGen && repl) {
+      const result = await parseReplResponse(
+        repl.get_map_image_strdiag(typeName, item.name, currentMapGen, bdDim ?? undefined, bdSign ?? undefined)
+      );
+      if (result.status === 'error') {
+        html += `<div class="infobox-boundary" style="color:var(--err)">${esc(result.message)}</div>`;
+      } else {
+        const data = result.data;
+        if (data.label) html += `<div class="infobox-label">${esc(data.label)}</div>`;
+        if (data.src || data.tgt) html += `<div class="infobox-boundary">${esc(data.src)} → ${esc(data.tgt)}</div>`;
+        currentLayout = layoutStrDiag(data.strdiag, selOrientation.value);
+      }
+    }
+
+    infoboxText.innerHTML = html;
+
+    const selMapGen = document.getElementById('sel-map-gen');
+    if (selMapGen) {
+      selMapGen.addEventListener('change', async () => {
+        currentMapGen = selMapGen.value || null;
+        const gen = item.generators.find(g => g.name === currentMapGen);
+        currentItemDim = gen ? gen.dim : 0;
+        if (currentItemDim >= 1) {
+          selBoundary.innerHTML = '<option value="main">Main</option>';
+          for (let k = currentItemDim - 1; k >= 0; k--) {
+            const opt = document.createElement('option');
+            opt.value = String(k);
+            opt.textContent = `${k}-boundary`;
+            selBoundary.appendChild(opt);
+          }
+          boundaryControls.hidden = false;
+          selBoundary.value = 'main';
+          setSignControlsEnabled(false);
+        } else {
+          boundaryControls.hidden = true;
+        }
+        await refreshInfobox();
+      });
+    }
+
+    if (currentLayout) {
+      visContainer.hidden = false;
+      visControls.hidden = false;
+      resizeAndRender();
+    } else {
+      visContainer.hidden = true;
+      visControls.hidden = true;
+    }
     syncAnalysisLayout();
     return;
   }

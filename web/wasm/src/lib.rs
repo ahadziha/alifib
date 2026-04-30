@@ -100,6 +100,19 @@ impl WasmRepl {
             .get_strdiag(type_name, item_name, boundary_dim, boundary_sign)
     }
 
+    /// Return string diagram data for the image of a domain generator under a map.
+    pub fn get_map_image_strdiag(
+        &self,
+        type_name: &str,
+        map_name: &str,
+        gen_name: &str,
+        boundary_dim: Option<usize>,
+        boundary_sign: Option<String>,
+    ) -> String {
+        self.inner
+            .get_map_image_strdiag(type_name, map_name, gen_name, boundary_dim, boundary_sign)
+    }
+
     /// Return the current type list for the accordion (same format as load_source).
     pub fn get_types(&self) -> String {
         self.inner.get_types()

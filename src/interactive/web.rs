@@ -15,16 +15,16 @@ use serde::Serialize;
 
 use crate::aux::Tag;
 use crate::aux::loader::{LoadFileError, Loader};
-use crate::core::complex::{Complex, MapDomain};
+use crate::core::complex::Complex;
 use crate::core::diagram::CellData;
 use crate::interpreter::{GlobalStore, InterpretedFile, LoadResult};
 use crate::language::error::Diagnostic;
 
 use super::engine::{RewriteEngine, resolve_type};
 use super::protocol::{
-    Request, Response, build_homology_response, build_response, build_strdiag_response,
-    build_types_from_store, build_type_detail_from_store,
-    step_target_strdiag_json, strdiag_json_from_diagram, tag_to_json,
+    Request, Response, build_homology_response, build_map_entries, build_map_image_strdiag,
+    build_response, build_strdiag_response, build_types_from_store, build_type_detail_from_store,
+    resolve_domain_complex, step_target_strdiag_json, strdiag_json_from_diagram, tag_to_json,
 };
 
 pub const WEB_SOURCE_PATH: &str = "source.ali";
@@ -289,6 +289,28 @@ impl WebRepl {
         }
     }
 
+    /// Return string diagram data for the image of a domain generator under a map.
+    pub fn get_map_image_strdiag(
+        &self,
+        type_name: &str,
+        map_name: &str,
+        gen_name: &str,
+        boundary_dim: Option<usize>,
+        boundary_sign: Option<String>,
+    ) -> String {
+        let Some(store) = self.state.store() else {
+            return err_json("no source loaded; call load_source first");
+        };
+        let boundary = boundary_dim.map(|d| {
+            let sign = boundary_sign.as_deref().unwrap_or("input");
+            (d, sign)
+        });
+        match build_map_image_strdiag(store, WEB_SOURCE_PATH, type_name, map_name, gen_name, boundary) {
+            Ok(data) => ok_json(data),
+            Err(msg) => err_json(&msg),
+        }
+    }
+
     /// Return the current type list for the accordion (same format as load_source).
     pub fn get_types(&self) -> String {
         let Some(store) = self.state.store() else {
@@ -382,11 +404,7 @@ fn propagate_thin_through_maps(
 ) -> Vec<Tag> {
     let mut tags = Vec::new();
     for (_, pmap, domain) in tc.maps_iter() {
-        let dc = match domain {
-            MapDomain::Type(gid) => store.find_type(*gid).map(|e| &*e.complex),
-            MapDomain::Module(mid) => store.find_module(mid),
-        };
-        let Some(dc) = dc else { continue };
+        let Some(dc) = resolve_domain_complex(store, domain) else { continue };
         for (_, gen_tag, _) in dc.generators_iter() {
             if known_thin.contains(gen_tag) {
                 if let Ok(image) = pmap.image(gen_tag) {
@@ -464,16 +482,9 @@ fn type_summaries_json(store: &GlobalStore) -> Vec<serde_json::Value> {
                 })
             })
             .collect();
-        let maps: Vec<serde_json::Value> = t
-            .maps
-            .iter()
-            .map(|m| {
-                serde_json::json!({
-                    "name": m.name,
-                    "domain": m.domain,
-                })
-            })
-            .collect();
+        let maps = tc
+            .map(|tc| build_map_entries(tc, store))
+            .unwrap_or_default();
         let mut new_thin: Vec<Tag> = tc
             .map(|tc| compute_thin_tags(tc))
             .unwrap_or_default();

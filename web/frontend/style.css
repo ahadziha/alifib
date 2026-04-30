@@ -723,6 +723,16 @@ header {
   color: var(--text-dim);
   margin-top: 2px;
 }
+.infobox-map-gen {
+  margin-top: 4px;
+}
+.infobox-map-gen label {
+  width: auto;
+  font-family: var(--font-ui);
+}
+.infobox-map-gen select {
+  font-family: var(--font-ui);
+}
 .target-reached-banner {
   margin-top: 6px;
   padding: 3px 8px;
