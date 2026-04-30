@@ -178,6 +178,36 @@ fn load_context(
     Ok((store, type_complex, source_diagram, target_diagram))
 }
 
+/// Check that `source` and `target` are parallel: same dimension, and (for
+/// dim > 0) isomorphic input and output boundaries.
+fn check_parallel(source: &Diagram, target: &Diagram) -> Result<(), String> {
+    if source.dim() != target.dim() {
+        return Err(format!(
+            "source has dimension {} but target has dimension {}",
+            source.top_dim(), target.top_dim(),
+        ));
+    }
+    if source.dim() <= 0 {
+        return Ok(());
+    }
+    let n = source.top_dim();
+    let src_in = Diagram::boundary(Sign::Source, n, source)
+        .map_err(|e| format!("source input boundary: {}", e))?;
+    let tgt_in = Diagram::boundary(Sign::Source, n, target)
+        .map_err(|e| format!("target input boundary: {}", e))?;
+    if !Diagram::isomorphic(&src_in, &tgt_in) {
+        return Err("source and target are not parallel: input boundaries do not match".to_owned());
+    }
+    let src_out = Diagram::boundary(Sign::Target, n, source)
+        .map_err(|e| format!("source output boundary: {}", e))?;
+    let tgt_out = Diagram::boundary(Sign::Target, n, target)
+        .map_err(|e| format!("target output boundary: {}", e))?;
+    if !Diagram::isomorphic(&src_out, &tgt_out) {
+        return Err("source and target are not parallel: output boundaries do not match".to_owned());
+    }
+    Ok(())
+}
+
 /// Build precomputed [`RulePattern`]s for every rewrite rule at dimension
 /// `n + 1` in `type_complex`, indexed by rule name.
 fn build_rule_patterns(
@@ -252,6 +282,9 @@ impl RewriteEngine {
         let target_diagram = target_diagram_name
             .map(|expr| eval_diagram_expr(&store, &type_complex, &source_file, expr))
             .transpose()?;
+        if let Some(ref target) = target_diagram {
+            check_parallel(&source_diagram, target)?;
+        }
 
         let rule_patterns = build_rule_patterns(&type_complex, source_diagram.top_dim())?;
         let rewrites = collect_confirmed_matches(
@@ -285,6 +318,9 @@ impl RewriteEngine {
     ) -> Result<Self, String> {
         let (store, type_complex, source_diagram, target_diagram) =
             load_context(source_file, type_name, source_diagram_name, target_diagram_name)?;
+        if let Some(ref target) = target_diagram {
+            check_parallel(&source_diagram, target)?;
+        }
 
         let rule_patterns = build_rule_patterns(&type_complex, source_diagram.top_dim())?;
         let rewrites = collect_confirmed_matches(
@@ -317,6 +353,9 @@ impl RewriteEngine {
             &session.source_diagram,
             session.target_diagram.as_deref(),
         )?;
+        if let Some(ref target) = target_diagram {
+            check_parallel(&source_diagram, target)?;
+        }
 
         let n = source_diagram.top_dim();
         let rule_patterns = build_rule_patterns(&type_complex, n)?;
@@ -698,6 +737,7 @@ impl RewriteEngine {
     /// Set or replace the target diagram on a running session.
     pub fn set_target(&mut self, name: &str) -> Result<(), String> {
         let diag = eval_diagram_expr(&self.store, &self.type_complex, &self.source_file, name)?;
+        check_parallel(&self.source_diagram, &diag)?;
         self.target_diagram = Some(diag);
         self.target_diagram_name = Some(name.to_owned());
         Ok(())
