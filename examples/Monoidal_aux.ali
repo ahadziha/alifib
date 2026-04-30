@@ -27,7 +27,7 @@ Wire <<= {
 
     id: ob -> ob,
 
-    attach Id :: Equation along [
+    attach Idem :: Equation along [
         lhs => id id,
         rhs => id
     ]
