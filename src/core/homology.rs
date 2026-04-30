@@ -840,33 +840,23 @@ mod tests {
     use crate::aux::loader::Loader;
     use crate::aux::Tag;
     use crate::interpreter::InterpretedFile;
-    use std::path::PathBuf;
     use std::sync::Arc;
 
-    fn fixture(name: &str) -> String {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures")
-            .join(name)
-            .to_string_lossy()
-            .into_owned()
-    }
-
-    fn example(name: &str) -> String {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("examples")
-            .join(name)
-            .to_string_lossy()
-            .into_owned()
-    }
-
-    fn load_type(path: &str, type_name: &str) -> Arc<Complex> {
+    fn load_type_from_source(source: &str, type_name: &str) -> Arc<Complex> {
+        let dir = std::env::temp_dir().join("alifib_test");
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let path = dir.join(format!("{}_{}.ali", type_name, std::process::id()));
+        std::fs::write(&path, source).expect("write temp file");
         let loader = Loader::default(vec![]);
-        let file = InterpretedFile::load(&loader, path).ok().expect("fixture should load");
+        let file = InterpretedFile::load(&loader, path.to_str().unwrap())
+            .ok().expect("fixture should load");
         let store = Arc::clone(&file.state);
         let module = store.find_module(&file.path).expect("module should exist");
         let (tag, _) = module.find_generator(type_name).expect("type not found");
         let gid = match tag { Tag::Global(gid) => *gid, _ => panic!("expected global tag") };
-        store.find_type(gid).expect("type entry not found").complex.clone()
+        let result = store.find_type(gid).expect("type entry not found").complex.clone();
+        let _ = std::fs::remove_file(&path);
+        result
     }
 
     // ── Smith Normal Form tests ──────────────────────────────────────────
@@ -919,27 +909,63 @@ mod tests {
 
     // ── Homology tests ───────────────────────────────────────────────────
 
+    // Idem: ob (0-cell), id : ob -> ob (1-cell), idem : id id -> id (2-cell).
+    const IDEM_SRC: &str = "@Type\nIdem <<= {\n  ob,\n  id : ob -> ob,\n  idem : id id -> id\n}\n";
+
+    // Magma: pt (0), ob : pt -> pt (1), m : ob ob -> ob (2).
+    const MAGMA_SRC: &str = "@Type\nOb <<= {\n  pt,\n  ob : pt -> pt\n},\nMagma <<= {\n  attach Ob :: Ob,\n  m : Ob.ob Ob.ob -> Ob.ob\n}\n";
+
+    // P2 models RP²: pt (0), id : pt -> pt (1), idem : id id -> id (2),
+    // a : pt -> pt (1), tor : a a -> id (2).
+    const P2_SRC: &str = "@Type\nP2 <<= {\n  pt,\n  id: pt -> pt,\n  idem: id id -> id,\n  a: pt -> pt,\n  tor: a a -> id\n}\n";
+
+    // Unit from EckmannHilton: monoid with merge/split.
+    const UNIT_SRC: &str = "\
+@Type\n\
+Equation <<= {\n\
+    s0, t0,\n\
+    s1: s0 -> t0, t1: s0 -> t0,\n\
+    lhs: s1 -> t1, rhs: s1 -> t1,\n\
+    dir: lhs -> rhs, inv: rhs -> lhs\n\
+},\n\
+Unit <<= {\n\
+    pt,\n\
+    ob: pt -> pt,\n\
+    id: ob -> ob,\n\
+    attach Id_id :: Equation along [\n\
+        lhs => id id,\n\
+        rhs => id\n\
+    ],\n\
+    merge: ob ob -> ob,\n\
+    split: ob -> ob ob,\n\
+    attach Split_merge :: Equation along [\n\
+        lhs => split merge,\n\
+        rhs => id\n\
+    ]\n\
+}\n";
+
+    // Ob from Category: object with identity and id-id equation.
+    const OB_SRC: &str = "\
+@Type\n\
+Eq <<= {\n\
+  dom, cod,\n\
+  lhs: dom -> cod, rhs: dom -> cod,\n\
+  dir: lhs -> rhs, inv: rhs -> lhs\n\
+},\n\
+Ob <<= {\n\
+  ob,\n\
+  id: ob -> ob,\n\
+  attach Id_id :: Eq along [\n\
+    lhs => id id,\n\
+    rhs => id\n\
+  ]\n\
+}\n";
+
     #[test]
     fn homology_ob_type() {
-        // Ob has: pt (dim 0), ob (dim 1).
-        // d_1(ob) = pt - pt = 0.
-        // H_0 = Z (one 0-gen, rank(d_1) = 0, rank(d_1) used from below = 0).
-        // H_1 = Z (one 1-gen, ker(d_1) = 1, im(d_2) = 0).
-        let complex = load_type(&fixture("Idem.ali"), "Idem");
+        let complex = load_type_from_source(IDEM_SRC, "Idem");
         let h = compute_homology(&complex);
-        eprintln!("{}", h);
-        // Idem has: ob (dim 0), id (dim 1), idem (dim 2).
-        // d_1(id) = ob - ob = 0 → rank(d_1) = 0
-        // d_2(idem) = id - 2*id = -id → rank(d_2) = 1
-        // H_0 = Z^1 (1 gen, rank d_1 = 0, rank d_1 from below = 0)
-        // H_1 = Z^0 (1 gen, rank d_1 = 0, rank d_2 = 1 → 1 - 0 - 1 = 0)
-        // H_2 = Z^1 (1 gen, rank d_2 = 1, no d_3 → 1 - 1 - 0 = 0)
-        // Wait, let me recalculate...
-        // Actually: idem : id id -> id. So output face has 1 copy of id, input face has 2 copies.
-        // d_2(idem) = 1*id - 2*id = -id. Matrix is [-1]. Rank = 1.
-        // H_0: 1 gen, rank(d_1)=0, rank(d_1 from below)=0 → free_rank = 1
-        // H_1: 1 gen, rank(d_1)=0, rank(d_2)=1 → free_rank = 0
-        // H_2: 1 gen, rank(d_2)=1, no d_3 → free_rank = 0
+        // H_0 = Z, H_1 = 0, H_2 = 0.
         let h0 = h.groups.iter().find(|(d, _)| *d == 0).unwrap();
         assert_eq!(h0.1.free_rank, 1);
         assert!(h0.1.torsion.is_empty());
@@ -951,13 +977,9 @@ mod tests {
 
     #[test]
     fn homology_magma() {
-        // Magma: Ob.pt (dim 0), Ob.ob (dim 1), m (dim 2).
-        // m : ob ob -> ob. Output face: 1 × ob. Input face: 2 × ob.
-        // d_2(m) = ob - 2*ob = -ob. Matrix [-1]. Rank 1.
         // H_0 = Z, H_1 = 0, H_2 = 0.
-        let complex = load_type(&fixture("Magma.ali"), "Magma");
+        let complex = load_type_from_source(MAGMA_SRC, "Magma");
         let h = compute_homology(&complex);
-        eprintln!("{}", h);
         let h0 = h.groups.iter().find(|(d, _)| *d == 0).unwrap();
         assert_eq!(h0.1.free_rank, 1);
         let h1 = h.groups.iter().find(|(d, _)| *d == 1).unwrap();
@@ -966,8 +988,8 @@ mod tests {
 
     #[test]
     fn homology_p2_torsion() {
-        // P2 models RP²: H_0 = Z, H_1 = Z/2, H_2 = 0.
-        let complex = load_type(&fixture("P2.ali"), "P2");
+        // H_0 = Z, H_1 = Z/2, H_2 = 0.
+        let complex = load_type_from_source(P2_SRC, "P2");
         let h = compute_homology(&complex);
         let h0 = h.groups.iter().find(|(d, _)| *d == 0).unwrap();
         assert_eq!(h0.1, AbelianGroup { free_rank: 1, torsion: vec![] });
@@ -979,7 +1001,7 @@ mod tests {
 
     #[test]
     fn homology_unit() {
-        let complex = load_type(&example("EckmannHilton.ali"), "Unit");
+        let complex = load_type_from_source(UNIT_SRC, "Unit");
         let h = compute_homology(&complex);
         let h0 = h.groups.iter().find(|(d, _)| *d == 0).unwrap();
         assert_eq!(h0.1.free_rank, 1);
@@ -989,18 +1011,36 @@ mod tests {
 
     #[test]
     fn homology_category() {
-        // Category.ali has multiple types; test Ob.
-        let complex = load_type(&example("Category.ali"), "Ob");
+        let complex = load_type_from_source(OB_SRC, "Ob");
         let h = compute_homology(&complex);
         eprintln!("Ob homology:\n{}", h);
     }
 
-    // ── Homology.ali gallery tests ───────────────────────────────────
+    // ── Homology gallery tests ─────────────────────────────────────
 
-    fn assert_homology(path: &str, type_name: &str, expected: &[(usize, usize, &[i64])], chi: i64) {
-        let complex = load_type(path, type_name);
+    // Inline type definitions from Homology.ali (these use `attach` so
+    // types that depend on Loop must be in the same source string).
+
+    const S1_SRC: &str = "@Type\nS1 <<= { pt, a: pt -> pt }\n";
+    const BOUQUET3_SRC: &str = "@Type\nBouquet3 <<= { pt, a: pt -> pt, b: pt -> pt, c: pt -> pt }\n";
+    const TORUS_SRC: &str = "@Type\nTorus <<= { pt, a: pt -> pt, b: pt -> pt, f: a b -> b a }\n";
+    const SIGMA2_SRC: &str = "@Type\nSigma2 <<= {\n  pt,\n  a: pt -> pt, b: pt -> pt, c: pt -> pt, d: pt -> pt,\n  f: a b c d -> b a d c\n}\n";
+    const KLEIN_SRC: &str = "@Type\nKlein <<= { pt, a: pt -> pt, b: pt -> pt, f: a -> a b b }\n";
+    const DUNCE_SRC: &str = "@Type\nDunce <<= { pt, a: pt -> pt, f: a -> a a }\n";
+
+    const S2_SRC: &str = "@Type\nLoop <<= { pt, id: pt -> pt, idem: id id -> id },\nS2 <<= { attach L :: Loop, s: L.id -> L.id }\n";
+    const RP2_SRC: &str = "@Type\nLoop <<= { pt, id: pt -> pt, idem: id id -> id },\nRP2 <<= { attach L :: Loop, a: L.pt -> L.pt, face: L.id -> a a }\n";
+    const N3_SRC: &str = "@Type\nLoop <<= { pt, id: pt -> pt, idem: id id -> id },\nN3 <<= {\n  attach L :: Loop,\n  a: L.pt -> L.pt, b: L.pt -> L.pt, c: L.pt -> L.pt,\n  face: L.id -> a a b b c c\n}\n";
+    const LENS5_SRC: &str = "@Type\nLoop <<= { pt, id: pt -> pt, idem: id id -> id },\nLens5 <<= { attach L :: Loop, a: L.pt -> L.pt, face: L.id -> a a a a a }\n";
+    const KLEIN4_SRC: &str = "@Type\nLoop <<= { pt, id: pt -> pt, idem: id id -> id },\nKlein4 <<= {\n  attach L1 :: Loop,\n  attach L2 :: Loop along [ pt => L1.pt ],\n  a: L1.pt -> L1.pt, b: L1.pt -> L1.pt,\n  f1: L1.id -> a a, f2: L2.id -> b b\n}\n";
+    const WEDGE_S2_SRC: &str = "@Type\nLoop <<= { pt, id: pt -> pt, idem: id id -> id },\nWedge_S2 <<= { attach L :: Loop, s1: L.id -> L.id, s2: L.id -> L.id }\n";
+    const S3_SRC: &str = "@Type\nLoop <<= { pt, id: pt -> pt, idem: id id -> id },\nS3 <<= { attach L :: Loop, id2: L.id -> L.id, idem2: id2 id2 -> id2, s: id2 -> id2 }\n";
+    const T3_SRC: &str = "@Type\nT3 <<= {\n  pt,\n  a: pt -> pt, b: pt -> pt, c: pt -> pt,\n  f_ab: a b -> b a, f_ac: a c -> c a, f_bc: b c -> c b,\n  vol: (f_ab c) #1 (b f_ac) #1 (f_bc a)\n    -> (a f_bc) #1 (f_ac b) #1 (c f_ab)\n}\n";
+    const RP3_SRC: &str = "@Type\nLoop <<= { pt, id: pt -> pt, idem: id id -> id },\nRP3 <<= {\n  attach L :: Loop,\n  a: L.pt -> L.pt, face: L.id -> a a,\n  id2: L.id -> L.id, idem2: id2 id2 -> id2, s: id2 -> id2\n}\n";
+
+    fn assert_homology(source: &str, type_name: &str, expected: &[(usize, usize, &[i64])], chi: i64) {
+        let complex = load_type_from_source(source, type_name);
         let h = compute_homology(&complex);
-        eprintln!("{} homology:\n{}", type_name, h);
         for &(dim, free_rank, torsion) in expected {
             let group = h.groups.iter().find(|(d, _)| *d == dim)
                 .unwrap_or_else(|| panic!("H_{} missing for {}", dim, type_name));
@@ -1015,100 +1055,83 @@ mod tests {
 
     #[test]
     fn homology_s1() {
-        assert_homology(&example("Homology.ali"), "S1",
-            &[(0, 1, &[]), (1, 1, &[])], 0);
+        assert_homology(S1_SRC, "S1", &[(0, 1, &[]), (1, 1, &[])], 0);
     }
 
     #[test]
     fn homology_bouquet3() {
-        assert_homology(&example("Homology.ali"), "Bouquet3",
-            &[(0, 1, &[]), (1, 3, &[])], -2);
+        assert_homology(BOUQUET3_SRC, "Bouquet3", &[(0, 1, &[]), (1, 3, &[])], -2);
     }
 
     #[test]
     fn homology_s2() {
-        assert_homology(&example("Homology.ali"), "S2",
-            &[(0, 1, &[]), (1, 0, &[]), (2, 1, &[])], 2);
+        assert_homology(S2_SRC, "S2", &[(0, 1, &[]), (1, 0, &[]), (2, 1, &[])], 2);
     }
 
     #[test]
     fn homology_torus() {
-        assert_homology(&example("Homology.ali"), "Torus",
-            &[(0, 1, &[]), (1, 2, &[]), (2, 1, &[])], 0);
+        assert_homology(TORUS_SRC, "Torus", &[(0, 1, &[]), (1, 2, &[]), (2, 1, &[])], 0);
     }
 
     #[test]
     fn homology_sigma2() {
-        assert_homology(&example("Homology.ali"), "Sigma2",
-            &[(0, 1, &[]), (1, 4, &[]), (2, 1, &[])], -2);
+        assert_homology(SIGMA2_SRC, "Sigma2", &[(0, 1, &[]), (1, 4, &[]), (2, 1, &[])], -2);
     }
 
     #[test]
     fn homology_rp2() {
-        assert_homology(&example("Homology.ali"), "RP2",
-            &[(0, 1, &[]), (1, 0, &[2]), (2, 0, &[])], 1);
+        assert_homology(RP2_SRC, "RP2", &[(0, 1, &[]), (1, 0, &[2]), (2, 0, &[])], 1);
     }
 
     #[test]
     fn homology_klein() {
-        assert_homology(&example("Homology.ali"), "Klein",
-            &[(0, 1, &[]), (1, 1, &[2]), (2, 0, &[])], 0);
+        assert_homology(KLEIN_SRC, "Klein", &[(0, 1, &[]), (1, 1, &[2]), (2, 0, &[])], 0);
     }
 
     #[test]
     fn homology_n3() {
-        assert_homology(&example("Homology.ali"), "N3",
-            &[(0, 1, &[]), (1, 2, &[2]), (2, 0, &[])], -1);
+        assert_homology(N3_SRC, "N3", &[(0, 1, &[]), (1, 2, &[2]), (2, 0, &[])], -1);
     }
 
     #[test]
     fn homology_lens5() {
-        assert_homology(&example("Homology.ali"), "Lens5",
-            &[(0, 1, &[]), (1, 0, &[5]), (2, 0, &[])], 1);
+        assert_homology(LENS5_SRC, "Lens5", &[(0, 1, &[]), (1, 0, &[5]), (2, 0, &[])], 1);
     }
 
     #[test]
     fn homology_klein4() {
-        assert_homology(&example("Homology.ali"), "Klein4",
-            &[(0, 1, &[]), (1, 0, &[2, 2]), (2, 0, &[])], 1);
+        assert_homology(KLEIN4_SRC, "Klein4", &[(0, 1, &[]), (1, 0, &[2, 2]), (2, 0, &[])], 1);
     }
 
     #[test]
     fn homology_dunce() {
-        assert_homology(&example("Homology.ali"), "Dunce",
-            &[(0, 1, &[]), (1, 0, &[]), (2, 0, &[])], 1);
+        assert_homology(DUNCE_SRC, "Dunce", &[(0, 1, &[]), (1, 0, &[]), (2, 0, &[])], 1);
     }
 
     #[test]
     fn homology_wedge_s2() {
-        assert_homology(&example("Homology.ali"), "Wedge_S2",
-            &[(0, 1, &[]), (1, 0, &[]), (2, 2, &[])], 3);
+        assert_homology(WEDGE_S2_SRC, "Wedge_S2", &[(0, 1, &[]), (1, 0, &[]), (2, 2, &[])], 3);
     }
 
     #[test]
     fn homology_s3() {
-        assert_homology(&example("Homology.ali"), "S3",
-            &[(0, 1, &[]), (1, 0, &[]), (2, 0, &[]), (3, 1, &[])], 0);
+        assert_homology(S3_SRC, "S3", &[(0, 1, &[]), (1, 0, &[]), (2, 0, &[]), (3, 1, &[])], 0);
     }
 
     #[test]
     fn homology_t3() {
-        assert_homology(&example("Homology.ali"), "T3",
-            &[(0, 1, &[]), (1, 3, &[]), (2, 3, &[]), (3, 1, &[])], 0);
+        assert_homology(T3_SRC, "T3", &[(0, 1, &[]), (1, 3, &[]), (2, 3, &[]), (3, 1, &[])], 0);
     }
 
     #[test]
     fn homology_rp3() {
-        assert_homology(&example("Homology.ali"), "RP3",
-            &[(0, 1, &[]), (1, 0, &[2]), (2, 0, &[]), (3, 1, &[])], 0);
+        assert_homology(RP3_SRC, "RP3", &[(0, 1, &[]), (1, 0, &[2]), (2, 0, &[]), (3, 1, &[])], 0);
     }
 
     // ── Torsion-witness tests ────────────────────────────────────────────
 
-    /// Check that torsion classes come with a cycle whose order-multiple is
-    /// actually a boundary, and that the cycle is in ker(d_n).
-    fn assert_witness_consistent(path: &str, type_name: &str, expected_dim: usize, expected_witnesses: &[(i64, &[(&str, i64)])]) {
-        let complex = load_type(path, type_name);
+    fn assert_witness_consistent(source: &str, type_name: &str, expected_dim: usize, expected_witnesses: &[(i64, &[(&str, i64)])]) {
+        let complex = load_type_from_source(source, type_name);
         let h = compute_homology(&complex);
         let witnesses = h.torsion_witnesses.get(&expected_dim)
             .unwrap_or_else(|| panic!("no torsion witnesses at dim {} for {}", expected_dim, type_name));
@@ -1126,38 +1149,32 @@ mod tests {
         }
     }
 
+    const TORSION_SRC: &str = "@Type\nTorsion <<= { pt, a : pt -> pt, double : a a -> a a a a }\n";
+    const K_CONTENTION_SRC: &str = "@Type\nKContention <<= { pt, a : pt -> pt, race : a a a a a -> a a a a a a a a a a }\n";
+    const ABA_UNSAFE_SRC: &str = "@Type\nABAUnsafe <<= { pt, push : pt -> pt, pop : pt -> pt, aba : push pop push pop push pop -> push pop }\n";
+    const LINEARIZABLE_CAS_SRC: &str = "@Type\nLinearizableCAS <<= { pt, push : pt -> pt, linearize : push push -> push push }\n";
+
     #[test]
     fn witness_torsion_example() {
-        // Torsion (a^2 → a^4) has H_1 = Z/2 generated by [a].
-        assert_witness_consistent(
-            &example("ShapeOfConcurrency.ali"), "Torsion", 1,
-            &[(2, &[("a", 1)])],
-        );
+        // a^2 → a^4: H_1 = Z/2 generated by [a].
+        assert_witness_consistent(TORSION_SRC, "Torsion", 1, &[(2, &[("a", 1)])]);
     }
 
     #[test]
     fn witness_races_k_contention() {
-        // a^5 → a^10: d_2 = 5·a, so H_1 = Z/5 generated by [a].
-        assert_witness_consistent(
-            &example("Races.ali"), "KContention", 1,
-            &[(5, &[("a", 1)])],
-        );
+        // a^5 → a^10: H_1 = Z/5 generated by [a].
+        assert_witness_consistent(K_CONTENTION_SRC, "KContention", 1, &[(5, &[("a", 1)])]);
     }
 
     #[test]
     fn witness_aba_bug() {
-        // (push pop)^3 → (push pop): d_2 = -2·(push + pop), so H_1 = Z + Z/2
-        // with torsion cycle pop + push (alphabetical order, sign-normalised).
-        assert_witness_consistent(
-            &example("Treiber.ali"), "ABAUnsafe", 1,
-            &[(2, &[("pop", 1), ("push", 1)])],
-        );
+        // (push pop)^3 → (push pop): H_1 = Z + Z/2.
+        assert_witness_consistent(ABA_UNSAFE_SRC, "ABAUnsafe", 1, &[(2, &[("pop", 1), ("push", 1)])]);
     }
 
     #[test]
     fn witness_none_when_torsion_free() {
-        // LinearizableCAS has no torsion, so no witnesses at any dimension.
-        let complex = load_type(&example("Treiber.ali"), "LinearizableCAS");
+        let complex = load_type_from_source(LINEARIZABLE_CAS_SRC, "LinearizableCAS");
         let h = compute_homology(&complex);
         assert!(h.torsion_witnesses.is_empty(),
             "expected no torsion witnesses for torsion-free type, got {:?}", h.torsion_witnesses);
@@ -1165,9 +1182,7 @@ mod tests {
 
     #[test]
     fn witness_rp2() {
-        // Classical RP²: H_1 = Z/2. The witness is some cycle of the 1-skeleton.
-        // We just check that a Z/2 witness exists at dim 1.
-        let complex = load_type(&example("Homology.ali"), "RP2");
+        let complex = load_type_from_source(RP2_SRC, "RP2");
         let h = compute_homology(&complex);
         let ws = h.torsion_witnesses.get(&1).expect("RP2 should have torsion at H_1");
         assert_eq!(ws.len(), 1);
@@ -1254,16 +1269,11 @@ mod tests {
         assert_eq!(v[1][1], 201);
     }
 
-    /// End-to-end: for every example with reported torsion, check that each
-    /// witness is a valid cycle whose order-multiple lies in im(d_{n+1}).
-    fn verify_witnesses_valid(path: &str, type_name: &str) {
+    fn verify_witnesses_valid(complex: &Complex, type_name: &str) {
         use std::collections::HashMap as Map;
 
-        let complex = load_type(path, type_name);
-        let h = compute_homology(&complex);
+        let h = compute_homology(complex);
 
-        // Index generators by dimension, deterministically (same order as
-        // compute_homology).
         let mut gens_by_dim: Map<usize, Vec<String>> = Map::new();
         for (name, _, dim) in complex.generators_iter() {
             gens_by_dim.entry(dim).or_default().push(name.clone());
@@ -1271,13 +1281,10 @@ mod tests {
         for v in gens_by_dim.values_mut() { v.sort(); }
 
         for (&n, witnesses) in &h.torsion_witnesses {
-            // Rebuild d_n and d_{n+1} by calling the private compute_homology
-            // path indirectly: we check via the classifier boundaries directly.
             let row_gens_n = match gens_by_dim.get(&n) { Some(v) => v, None => continue };
             let row_gens_n1 = gens_by_dim.get(&(n.saturating_sub(1)));
 
             for w in witnesses {
-                // Convert cycle to coefficient vector.
                 let mut z = vec![0i64; row_gens_n.len()];
                 for (name, coeff) in &w.cycle {
                     let idx = row_gens_n.iter().position(|g| g == name)
@@ -1285,9 +1292,8 @@ mod tests {
                     z[idx] = *coeff;
                 }
 
-                // Check z ∈ ker(d_n): apply d_n to z and check it's zero.
                 if let Some(row_gens_below) = row_gens_n1 {
-                    let dn_z = apply_dn_to_chain(&complex, &z, n, row_gens_n, row_gens_below);
+                    let dn_z = apply_dn_to_chain(complex, &z, n, row_gens_n, row_gens_below);
                     assert!(dn_z.iter().all(|&c| c == 0),
                         "{} dim {}: witness {} not a cycle; d_n(z) = {:?}",
                         type_name, n, w, dn_z);
@@ -1296,7 +1302,6 @@ mod tests {
                 assert!(z.iter().any(|&c| c != 0),
                     "{} dim {}: witness is the zero chain", type_name, n);
 
-                // Check d_{n+1}(preimage) = order · cycle.
                 if let Some(row_gens_above) = gens_by_dim.get(&(n + 1)) {
                     let mut p = vec![0i64; row_gens_above.len()];
                     for (name, coeff) in &w.preimage {
@@ -1305,7 +1310,7 @@ mod tests {
                                 "preimage names unknown (n+1)-generator {}", name));
                         p[idx] = *coeff;
                     }
-                    let dn1_p = apply_dn_to_chain(&complex, &p, n + 1, row_gens_above, row_gens_n);
+                    let dn1_p = apply_dn_to_chain(complex, &p, n + 1, row_gens_above, row_gens_n);
                     let order_z: Vec<i64> = z.iter().map(|c| c * w.order).collect();
                     assert_eq!(dn1_p, order_z,
                         "{} dim {}: d_{}(preimage) != {}·cycle\n  preimage = {:?}\n  cycle = {:?}\n  d·preimage = {:?}\n  order·cycle = {:?}",
@@ -1315,7 +1320,6 @@ mod tests {
         }
     }
 
-    /// Helper: apply d_n to a chain z in C_n, returning the result in C_{n-1}.
     fn apply_dn_to_chain(
         complex: &Complex,
         z: &[i64],
@@ -1356,18 +1360,27 @@ mod tests {
         result
     }
 
+    const LOST_UPDATE_SRC: &str = "@Type\nLostUpdate <<= { pt, a : pt -> pt, race : a a -> a a a a }\n";
+    const TRIPLE_CONTENTION_SRC: &str = "@Type\nTripleContention <<= { pt, a : pt -> pt, race : a a a -> a a a a a a }\n";
+    const TORN_OP_BUG_SRC: &str = "@Type\nTornOpBug <<= { pt, push : pt -> pt, torn : push push -> push push push push }\n";
+
     #[test]
     fn all_witnesses_are_cycles() {
-        verify_witnesses_valid(&example("ShapeOfConcurrency.ali"), "Torsion");
-        verify_witnesses_valid(&example("Races.ali"), "LostUpdate");
-        verify_witnesses_valid(&example("Races.ali"), "TripleContention");
-        verify_witnesses_valid(&example("Races.ali"), "KContention");
-        verify_witnesses_valid(&example("Treiber.ali"), "TornOpBug");
-        verify_witnesses_valid(&example("Treiber.ali"), "ABAUnsafe");
-        verify_witnesses_valid(&example("Homology.ali"), "RP2");
-        verify_witnesses_valid(&example("Homology.ali"), "Klein");
-        verify_witnesses_valid(&example("Homology.ali"), "Lens5");
-        verify_witnesses_valid(&example("Homology.ali"), "Klein4");
-        verify_witnesses_valid(&example("Homology.ali"), "N3");
+        for (src, name) in [
+            (TORSION_SRC, "Torsion"),
+            (LOST_UPDATE_SRC, "LostUpdate"),
+            (TRIPLE_CONTENTION_SRC, "TripleContention"),
+            (K_CONTENTION_SRC, "KContention"),
+            (TORN_OP_BUG_SRC, "TornOpBug"),
+            (ABA_UNSAFE_SRC, "ABAUnsafe"),
+            (RP2_SRC, "RP2"),
+            (KLEIN_SRC, "Klein"),
+            (LENS5_SRC, "Lens5"),
+            (KLEIN4_SRC, "Klein4"),
+            (N3_SRC, "N3"),
+        ] {
+            let complex = load_type_from_source(src, name);
+            verify_witnesses_valid(&complex, name);
+        }
     }
 }
