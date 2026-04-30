@@ -1,0 +1,48 @@
+(*
+     Examples of monoidal categories   
+*)
+
+@Type
+include Monoidal,
+let Equation = Monoidal.Aux.Equation,
+
+(* The walking monoid *)
+Monoid <<= {
+    include Monoidal.Unit as Unit,
+    let I :: Monoidal.Object = Unit.Object,
+    let i = I.ob,
+
+    (* A single generating object, or sort *)
+    attach A :: Monoidal.Object along [ Unit => Unit ],
+    let a = A.ob,
+
+    (* Monoid multiplication *)
+    attach M :: Monoidal.Morphism along [
+        Dom => ( map [ Fst => A, Snd => A ] :: Monoidal.Pair ).Tensor,
+        Cod => A
+    ],
+    let m = M.mor,
+
+    (* Monoid unit *)
+    attach E :: Monoidal.Morphism along [
+        Dom => I,
+        Cod => A
+    ],
+    let e = E.mor,
+
+    (* Associativity of multiplication *)
+    attach Assoc :: Equation along [
+        lhs => (m a) m,
+        rhs => (a m) m
+    ],
+    (* Left unitality *)
+    attach LUnit :: Equation along [
+        lhs => (e a) m,
+        rhs => A.lunit,
+    ],
+    (* Right unitality *)
+    attach RUnit :: Equation along [
+        lhs => (a e) m,
+        rhs => A.runit
+    ]
+}
