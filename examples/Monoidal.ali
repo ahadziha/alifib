@@ -360,8 +360,33 @@ Pair <<= {
         Left_Frobenius_Module => Left_Frobenius_Module,
         Right_Frobenius_Module => Right_Frobenius_Module
     ]
-},
+}
 
+@Pair
+(* 
+    A proof that the dual choice for the identity 
+    on a pair is equivalent 
+*)
+let total Id_Flip :: Equation = [
+    dir => ((Fst.ob #0 Snd.LUnit_Inv.RCodId.inv) #1 (Fst.RUnit.LDomId.inv #0 Snd.ob))
+        #2 ((Fst.RUnit_Inversion.inv #0 Snd.ob) #1 (Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Unit.ob #0 Snd.LUnit_Inversion.inv) #1 (Fst.runit #0 Snd.ob))
+        #2 ((Fst.ob #0 Snd.Left_Comodule.inv) #1 (Fst.ob #0 Unit.ob #0 Snd.lunit) #1 (Fst.runit_inv #0 Unit.ob #0 Snd.ob) #1 (Fst.Right_Module.dir #0 Snd.ob))
+        #2 ((Fst.runit_inv #0 Snd.ob) #1 (Fst.ob #0 Unit.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Unit.RFrobenius.dir #0 Snd.ob) #1 (Fst.runit #0 Unit.ob #0 Snd.ob) #1 (Fst.ob #0 Snd.lunit))
+        #2 ((Fst.runit_inv #0 Snd.ob) #1 (Fst.ob #0 Unit.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Unit.LFrobenius.inv #0 Snd.ob) #1 (Fst.ob #0 Unit.ob #0 Snd.lunit) #1 (Fst.runit #0 Snd.ob))
+        #2 ((Fst.Right_Comodule.inv #0 Snd.ob) #1 (Fst.runit #0 Unit.ob #0 Snd.ob) #1 (Fst.ob #0 Unit.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd.Left_Module.dir))
+        #2 ((Fst.ob #0 Snd.LUnit_Inversion.dir) #1 (Fst.runit_inv #0 Snd.ob) #1 (Fst.RUnit_Inversion.dir #0 Unit.ob #0 Snd.ob) #1 (Fst.ob #0 Snd.lunit))
+        #2 ((Fst.RUnit_Inv.LCodId.dir #0 Snd.ob) #1 (Fst.ob #0 Snd.LUnit.RDomId.dir)),
+    inv => ((Fst.RUnit_Inv.LCodId.inv #0 Snd.ob) #1 (Fst.ob #0 Snd.LUnit.RDomId.inv))
+        #2 ((Fst.ob #0 Snd.LUnit_Inversion.inv) #1 (Fst.runit_inv #0 Snd.ob) #1 (Fst.RUnit_Inversion.inv #0 Unit.ob #0 Snd.ob) #1 (Fst.ob #0 Snd.lunit))
+        #2 ((Fst.Right_Comodule.dir #0 Snd.ob) #1 (Fst.runit #0 Unit.ob #0 Snd.ob) #1 (Fst.ob #0 Unit.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd.Left_Module.inv))
+        #2 ((Fst.ob #0 Snd.lunit_inv) #1 (Fst.runit_inv #0 Unit.ob #0 Snd.ob) #1 (Fst.ob #0 Unit.LFrobenius.dir #0 Snd.ob) #1 (Fst.ob #0 Unit.ob #0 Snd.lunit) #1 (Fst.runit #0 Snd.ob))
+        #2 ((Fst.ob #0 Snd.lunit_inv) #1 (Fst.runit_inv #0 Unit.ob #0 Snd.ob) #1 (Fst.ob #0 Unit.RFrobenius.inv #0 Snd.ob) #1 (Fst.runit #0 Unit.ob #0 Snd.ob) #1 (Fst.ob #0 Snd.lunit))
+        #2 ((Fst.ob #0 Snd.Left_Comodule.dir) #1 (Fst.ob #0 Unit.ob #0 Snd.lunit) #1 (Fst.runit_inv #0 Unit.ob #0 Snd.ob) #1 (Fst.Right_Module.inv #0 Snd.ob))
+        #2 ((Fst.RUnit_Inversion.dir #0 Snd.ob) #1 (Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Unit.ob #0 Snd.LUnit_Inversion.dir) #1 (Fst.runit #0 Snd.ob))
+        #2 ((Fst.ob #0 Snd.LUnit_Inv.RCodId.dir) #1 (Fst.RUnit.LDomId.dir #0 Snd.ob))
+]
+
+@Type
 (* A morphism *)
 Morphism <<= {
     include Unit,

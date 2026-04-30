@@ -1,5 +1,5 @@
 (*
-     Examples of monoidal categories   
+     Examples of monoidal categories and equational proofs
 *)
 
 @Type
@@ -44,5 +44,59 @@ Monoid <<= {
     attach RUnit :: Equation along [
         lhs => (a e) m,
         rhs => A.runit
+    ]
+},
+
+(* 
+    A set-up for the Eckmann--Hilton argument: 
+    two endomorphisms of the monoidal unit
+*)
+EckmannHilton <<= {
+    include Monoidal.Unit as Unit,
+    let I :: Monoidal.Object = Unit.Object,
+    let i = I.ob,
+
+    (* First endomorphism *)
+    attach A :: Monoidal.Morphism along [
+        Dom => I,
+        Cod => I
+    ],
+    let a = A.mor,
+
+    (* Second endomorphism *)
+    attach B :: Monoidal.Morphism along [
+        Dom => I,
+        Cod => I
+    ],
+    let b = B.mor,
+
+    (* Proofs that a b = b a *)
+    let total Clockwise :: Equation = [
+        dir => (A.CodId.inv #1 B.mor)
+            #2 (A.mor #1 Unit.Split_Merge.inv #1 B.mor)
+            #2 (A.RUnit_Inv_Nat.dir #1 B.LUnit_Nat.inv)
+            #2 (B.LUnit_Inv_Nat.inv #1 A.RUnit_Nat.dir)
+            #2 (B.mor #1 Unit.Split_Merge.dir #1 A.mor)
+            #2 (B.mor #1 A.DomId.dir),
+        inv => (B.mor #1 A.DomId.inv)
+            #2 (B.mor #1 Unit.Split_Merge.inv #1 A.mor)
+            #2 (B.LUnit_Inv_Nat.dir #1 A.RUnit_Nat.inv)
+            #2 (A.RUnit_Inv_Nat.inv #1 B.LUnit_Nat.dir)
+            #2 (A.mor #1 Unit.Split_Merge.dir #1 B.mor)
+            #2 (A.CodId.dir #1 B.mor)
+    ],
+    let total Counterclockwise :: Equation = [
+        dir => (A.CodId.inv #1 B.mor)
+            #2 (A.mor #1 Unit.Split_Merge.inv #1 B.mor)
+            #2 (A.LUnit_Inv_Nat.dir #1 B.RUnit_Nat.inv)
+            #2 (B.RUnit_Inv_Nat.inv #1 A.LUnit_Nat.dir)
+            #2 (B.mor #1 Unit.Split_Merge.dir #1 A.mor)
+            #2 (B.mor #1 A.DomId.dir),
+        inv => (B.mor #1 A.DomId.inv)
+            #2 (B.mor #1 Unit.Split_Merge.inv #1 A.mor)
+            #2 (B.RUnit_Inv_Nat.dir #1 A.LUnit_Nat.inv)
+            #2 (A.LUnit_Inv_Nat.inv #1 B.RUnit_Nat.dir)
+            #2 (A.mor #1 Unit.Split_Merge.dir #1 B.mor)
+            #2 (A.CodId.dir #1 B.mor)
     ]
 }
