@@ -11,6 +11,7 @@
   --text-dim:  #71717a;
   --text-em:   #f4f4f5;
   --ok:        #4ade80;
+  --ok-a10:    rgba(74, 222, 128, 0.10);
   --err:       #f87171;
   --warn:      #fbbf24;
   --accent-a06: rgba(124, 106, 242, 0.06);
@@ -42,6 +43,7 @@
   --text-dim:  #8a857a;
   --text-em:   #2a2824;
   --ok:        #3a7a52;
+  --ok-a10:    rgba(58, 122, 82, 0.10);
   --err:       #b54a3a;
   --warn:      #9a7020;
   --accent-a06: rgba(74, 124, 124, 0.07);
@@ -635,6 +637,20 @@ header {
   color: var(--text-dim);
   margin-top: 2px;
 }
+.target-reached-banner {
+  margin-top: 6px;
+  padding: 3px 8px;
+  background: var(--ok-a10);
+  border-left: 2px solid var(--ok);
+  color: var(--ok);
+  font-weight: 600;
+  font-size: 11px;
+  animation: banner-in 0.4s ease-out;
+}
+@keyframes banner-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
 .boundary-controls[hidden] { display: none; }
 .boundary-controls {
   display: flex;
@@ -670,6 +686,18 @@ header {
   position: relative;
   overflow: hidden;
   min-height: 0;
+}
+.vis-container.target-reached-flash::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--ok-a10);
+  pointer-events: none;
+  animation: reached-flash 0.8s ease-out forwards;
+}
+@keyframes reached-flash {
+  0%   { opacity: 1; }
+  100% { opacity: 0; }
 }
 .vis-container canvas {
   width: 100%;

@@ -1163,6 +1163,7 @@ function resetSession() {
   infobox.hidden = true;
   rewriteList.hidden = true;
   visContainer.hidden = true;
+  visContainer.classList.remove('target-reached-flash');
   visControls.hidden = true;
   boundaryControls.hidden = true;
   syncAnalysisLayout();
@@ -1885,8 +1886,10 @@ async function showSessionDiagram(data) {
   html += `<span class="infobox-qual">Current diagram</span>`;
   html += `<div class="infobox-name">${hi(data.current.label || '—')} <span class="acc-dim">dim ${data.current.dim}, step ${data.step_count}</span></div>`;
   if (data.target) {
-    const reached = data.target_reached ? ` <span class="repl-ok">reached</span>` : '';
-    html += `<div class="infobox-boundary">target: ${esc(data.target.label)}${reached}</div>`;
+    html += `<div class="infobox-boundary">target: ${esc(data.target.label)}</div>`;
+    if (data.target_reached) {
+      html += `<div class="target-reached-banner">&#x2714; target reached</div>`;
+    }
   }
   infoboxText.innerHTML = html;
   const btnUndo = document.getElementById('btn-undo-vis');
@@ -1911,6 +1914,14 @@ async function showSessionDiagram(data) {
   currentLayout = layoutStrDiag(sessionStrdiag, selOrientation.value);
   visContainer.hidden = false;
   visControls.hidden = false;
+  if (data.target_reached) {
+    visContainer.classList.remove('target-reached-flash');
+    void visContainer.offsetWidth;
+    visContainer.classList.add('target-reached-flash');
+    visContainer.addEventListener('animationend', () => {
+      visContainer.classList.remove('target-reached-flash');
+    }, { once: true });
+  }
   resizeAndRender();
 
   // Build rewrite list.
