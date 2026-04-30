@@ -253,6 +253,92 @@ header {
 .editor-wrap .cm-cursor {
   border-left-color: var(--text);
 }
+.editor-wrap .cm-panels {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 11px;
+}
+.editor-wrap .cm-search {
+  padding: 6px 10px;
+}
+.editor-wrap .cm-search .cm-textfield {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 3px 8px;
+  outline: none;
+  min-width: 140px;
+}
+.editor-wrap .cm-search .cm-textfield:focus {
+  border-color: var(--accent);
+}
+.editor-wrap .cm-button {
+  all: unset !important;
+  display: inline-block !important;
+  background: var(--border) !important;
+  border-radius: var(--radius) !important;
+  color: var(--text) !important;
+  font: 12px var(--font-ui) !important;
+  -webkit-font-smoothing: auto !important;
+  padding: 4px 12px !important;
+  cursor: pointer !important;
+  text-transform: capitalize !important;
+  transition: opacity 0.15s !important;
+  margin: 0 3px !important;
+}
+.editor-wrap .cm-button:active {
+  all: unset !important;
+  display: inline-block !important;
+  background: var(--border) !important;
+  border-radius: var(--radius) !important;
+  color: var(--text) !important;
+  font: 12px var(--font-ui) !important;
+  -webkit-font-smoothing: auto !important;
+  padding: 4px 12px !important;
+  cursor: pointer !important;
+  text-transform: capitalize !important;
+}
+.editor-wrap .cm-button:hover {
+  opacity: 0.75 !important;
+}
+.editor-wrap .cm-search label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.editor-wrap .cm-search input[type="checkbox"] {
+  accent-color: var(--accent);
+  margin: 0 0 0 6px;
+}
+.editor-wrap .cm-search button[name="close"] {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  margin-left: auto;
+}
+.editor-wrap .cm-search button[name="close"]:hover { color: var(--text); }
+.editor-wrap .cm-selectionMatch {
+  background: var(--accent-a20);
+}
+.editor-wrap .cm-searchMatch {
+  background: var(--accent-a35);
+}
+.editor-wrap .cm-searchMatch-selected {
+  background: var(--accent-a40);
+}
 
 /* ── Tab bar ── */
 .tab-bar {
