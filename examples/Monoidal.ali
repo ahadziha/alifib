@@ -472,6 +472,7 @@ let total RUnit_Inv_Nat :: Equation = [
         #2 (DomId.dir #1 Cod.runit_inv)
 ]
 
+@Type
 (* A pair of morphisms, sequentially composable *)
 Sequential_Pair <<= {
     include Unit,
