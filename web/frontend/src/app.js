@@ -15,6 +15,8 @@ let histIdx = -1;
 let currentLayout = null;
 let selectedEl = null;
 let dragState = null;
+let panState = null;
+let zoomLevel = 1;
 let splitterDrag = null;
 const thinTags = new Set();
 const tagFaces = new Map();
@@ -120,6 +122,9 @@ const appearanceBtn  = document.getElementById('appearance-btn');
 const appearanceMenu = document.getElementById('appearance-menu');
 const chkNodeLabels  = document.getElementById('chk-node-labels');
 const chkWireLabels  = document.getElementById('chk-wire-labels');
+const zoomSlider     = document.getElementById('zoom-slider');
+const zoomLabel      = document.getElementById('zoom-label');
+const btnZoomReset   = document.getElementById('btn-zoom-reset');
 const rewriteResizer = document.getElementById('rewrite-resizer');
 const rewriteList = document.getElementById('rewrite-list');
 const canvasCtx   = visCanvas.getContext('2d');
@@ -1186,6 +1191,7 @@ function resetSession() {
   }
   currentItem = null;
   currentLayout = null;
+  resetZoom();
   sessionStrdiag = null;
   selectedRewrite = null;
   previewActive = false;
@@ -1944,6 +1950,7 @@ async function showSessionDiagram(data) {
   }
 
   // Render the string diagram.
+  resetZoom();
   currentLayout = layoutStrDiag(sessionStrdiag, selOrientation.value);
   visContainer.hidden = false;
   visControls.hidden = false;
@@ -2301,6 +2308,7 @@ async function refreshInfobox() {
     }
 
     currentLayout = null;
+    resetZoom();
     if (currentMapGen && repl) {
       const result = await parseReplResponse(
         repl.get_map_image_strdiag(typeName, item.name, currentMapGen, bdDim ?? undefined, bdSign ?? undefined)
@@ -2364,6 +2372,7 @@ async function refreshInfobox() {
     visContainer.hidden = true;
     visControls.hidden = true;
     currentLayout = null;
+    resetZoom();
     syncAnalysisLayout();
     return;
   }
@@ -2377,6 +2386,7 @@ async function refreshInfobox() {
   }
   infoboxText.innerHTML = html;
 
+  resetZoom();
   currentLayout = layoutStrDiag(data.strdiag, selOrientation.value);
   visContainer.hidden = false;
   visControls.hidden = false;
@@ -2413,6 +2423,22 @@ document.addEventListener('click', () => { appearanceMenu.hidden = true; });
 
 chkNodeLabels.addEventListener('change', () => resizeAndRender());
 chkWireLabels.addEventListener('change', () => resizeAndRender());
+
+zoomSlider.addEventListener('input', () => {
+  zoomLevel = parseFloat(zoomSlider.value);
+  zoomLabel.textContent = zoomLevel.toFixed(1) + 'x';
+  resizeAndRender();
+});
+btnZoomReset.addEventListener('click', () => resetZoom());
+
+function resetZoom() {
+  zoomLevel = 1;
+  zoomSlider.value = '1';
+  zoomLabel.textContent = '1.0x';
+  visContainer.scrollLeft = 0;
+  visContainer.scrollTop = 0;
+  resizeAndRender();
+}
 
 // ── Layout ───────────────────────────────────────────────────────────────────
 
@@ -2552,7 +2578,7 @@ function resizeAndRender() {
   if (!currentLayout) return;
   const rect = visContainer.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
-  const w = rect.width, h = rect.height;
+  const w = rect.width * zoomLevel, h = rect.height * zoomLevel;
   if (w < 1 || h < 1) return;
   visCanvas.width = w * dpr;
   visCanvas.height = h * dpr;
@@ -2560,6 +2586,7 @@ function resizeAndRender() {
   visCanvas.style.height = h + 'px';
   canvasCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   renderStrDiag(canvasCtx, currentLayout, w, h);
+  visCanvas.style.cursor = zoomLevel > 1 ? 'grab' : '';
 }
 
 const resizeObs = new ResizeObserver(() => resizeAndRender());
@@ -2811,10 +2838,22 @@ visCanvas.addEventListener('mousedown', (e) => {
     const initPos = L.pos.map(p => ({ w: p.w, h: p.h }));
     dragState = { idx: best, influence, initPos };
     e.preventDefault();
+  } else if (zoomLevel > 1) {
+    panState = {
+      startX: e.clientX, startY: e.clientY,
+      scrollLeft: visContainer.scrollLeft, scrollTop: visContainer.scrollTop,
+    };
+    visCanvas.style.cursor = 'grabbing';
+    e.preventDefault();
   }
 });
 
 visCanvas.addEventListener('mousemove', (e) => {
+  if (panState) {
+    visContainer.scrollLeft = panState.scrollLeft - (e.clientX - panState.startX);
+    visContainer.scrollTop = panState.scrollTop - (e.clientY - panState.startY);
+    return;
+  }
   if (!dragState || !currentLayout) return;
   const rect = visCanvas.getBoundingClientRect();
   const mx = e.clientX - rect.left, my = e.clientY - rect.top;
@@ -2876,8 +2915,46 @@ visCanvas.addEventListener('mousemove', (e) => {
   resizeAndRender();
 });
 
-visCanvas.addEventListener('mouseup', () => { dragState = null; });
-visCanvas.addEventListener('mouseleave', () => { dragState = null; });
+visCanvas.addEventListener('mouseup', () => {
+  if (panState) { visCanvas.style.cursor = zoomLevel > 1 ? 'grab' : ''; }
+  dragState = null;
+  panState = null;
+});
+visCanvas.addEventListener('mouseleave', () => {
+  if (panState) { visCanvas.style.cursor = zoomLevel > 1 ? 'grab' : ''; }
+  dragState = null;
+  panState = null;
+});
+
+// ── Zoom ─────────────────────────────────────────────────────────────────────
+
+visCanvas.addEventListener('wheel', (e) => {
+  if (!e.ctrlKey && !e.metaKey) return;
+  e.preventDefault();
+
+  const MIN_ZOOM = 1, MAX_ZOOM = 5, ZOOM_STEP = 0.1;
+  const oldZoom = zoomLevel;
+  const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM,
+    zoomLevel - Math.sign(e.deltaY) * ZOOM_STEP));
+  if (newZoom === oldZoom) return;
+
+  const rect = visContainer.getBoundingClientRect();
+  const cursorX = e.clientX - rect.left + visContainer.scrollLeft;
+  const cursorY = e.clientY - rect.top + visContainer.scrollTop;
+  const canvasW = rect.width * oldZoom;
+  const canvasH = rect.height * oldZoom;
+  const fracX = cursorX / canvasW;
+  const fracY = cursorY / canvasH;
+
+  zoomLevel = newZoom;
+  resizeAndRender();
+
+  visContainer.scrollLeft = fracX * rect.width * newZoom - (e.clientX - rect.left);
+  visContainer.scrollTop = fracY * rect.height * newZoom - (e.clientY - rect.top);
+
+  zoomSlider.value = zoomLevel;
+  zoomLabel.textContent = zoomLevel.toFixed(1) + 'x';
+}, { passive: false });
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 

@@ -670,6 +670,30 @@ header {
   outline: none;
 }
 .appearance-item select:focus { border-color: var(--accent); }
+.zoom-slider {
+  width: 80px;
+  margin-left: auto;
+  accent-color: var(--accent);
+}
+.zoom-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  min-width: 30px;
+  text-align: right;
+}
+.btn-zoom-reset {
+  background: var(--border);
+  border: none;
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 10px;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+.btn-zoom-reset:hover {
+  background: var(--accent);
+  color: #fff;
+}
 
 /* ── Infobox ── */
 .infobox {
@@ -786,7 +810,7 @@ header {
 
 .vis-container {
   position: relative;
-  overflow: hidden;
+  overflow: auto;
   min-height: 0;
 }
 .vis-container.target-reached-flash::after {
@@ -803,8 +827,6 @@ header {
   100% { opacity: 0; }
 }
 .vis-container canvas {
-  width: 100%;
-  height: 100%;
   display: block;
 }
 
