@@ -440,13 +440,14 @@ fn type_summaries_json(store: &GlobalStore) -> Vec<serde_json::Value> {
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or(&m.path);
-            m.types.iter().map(move |t| (module_name, t))
+            let module_path = m.path.as_str();
+            m.types.iter().map(move |t| (module_name, module_path, t))
         })
-        .filter(|(_, t)| !t.name.is_empty())
+        .filter(|(_, _, t)| !t.name.is_empty())
         .collect();
     let mut known_thin: HashSet<Tag> = HashSet::new();
     let mut result = Vec::new();
-    for (module_name, t) in types_with_modules {
+    for (module_name, module_path, t) in types_with_modules {
         let tc = type_complexes.get(t.name.as_str());
         let generators: Vec<serde_json::Value> = t
             .dims
@@ -482,8 +483,9 @@ fn type_summaries_json(store: &GlobalStore) -> Vec<serde_json::Value> {
                 })
             })
             .collect();
+        let module_complex = store.find_module(module_path);
         let maps = tc
-            .map(|tc| build_map_entries(tc, store))
+            .and_then(|tc| module_complex.map(|mc| build_map_entries(tc, mc, store)))
             .unwrap_or_default();
         let mut new_thin: Vec<Tag> = tc
             .map(|tc| compute_thin_tags(tc))

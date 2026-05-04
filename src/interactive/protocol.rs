@@ -383,13 +383,14 @@ pub fn resolve_domain_complex<'a>(
     }
 }
 
-fn domain_label(store: &crate::interpreter::GlobalStore, domain: &MapDomain) -> String {
+fn domain_label(module_complex: &Complex, domain: &MapDomain) -> String {
     match domain {
         MapDomain::Type(gid) => {
             let tag = Tag::Global(*gid);
-            store.modules_iter()
-                .find_map(|(_, mc)| mc.find_generator_by_tag(&tag).cloned())
+            module_complex
+                .find_generator_by_tag(&tag)
                 .filter(|n| !n.is_empty())
+                .cloned()
                 .unwrap_or_default()
         }
         MapDomain::Module(mid) => mid.clone(),
@@ -398,6 +399,7 @@ fn domain_label(store: &crate::interpreter::GlobalStore, domain: &MapDomain) -> 
 
 pub fn build_map_entries(
     tc: &Complex,
+    module_complex: &Complex,
     store: &crate::interpreter::GlobalStore,
 ) -> Vec<MapEntry> {
     let mut entries: Vec<MapEntry> = tc.maps_iter()
@@ -408,7 +410,7 @@ pub fn build_map_entries(
                 .unwrap_or_default();
             MapEntry {
                 name: map_name.clone(),
-                domain: domain_label(store, domain),
+                domain: domain_label(module_complex, domain),
                 generators: gens,
             }
         })
@@ -586,7 +588,9 @@ pub fn build_type_info_response(
             })
             .collect();
 
-        let maps = build_map_entries(live_tc, store);
+        let module_complex = store.find_module(engine.source_file())
+            .ok_or_else(|| format!("module '{}' not found", engine.source_file()))?;
+        let maps = build_map_entries(live_tc, module_complex, store);
 
         Ok(TypeDetailInfo { name: name.to_owned(), generators, diagrams, maps })
     };
@@ -875,6 +879,8 @@ pub fn build_type_detail_from_store(
     name: &str,
 ) -> Result<TypeDetailInfo, String> {
     let type_complex = super::engine::resolve_type(store, source_path, name)?;
+    let module_complex = store.find_module(source_path)
+        .ok_or_else(|| format!("module '{}' not found", source_path))?;
 
     let mut generators: Vec<GeneratorInfo> = type_complex
         .generators_iter()
@@ -924,7 +930,7 @@ pub fn build_type_detail_from_store(
         .collect();
     diagrams.sort_by(|a, b| a.name.cmp(&b.name));
 
-    let maps = build_map_entries(&type_complex, store);
+    let maps = build_map_entries(&type_complex, module_complex, store);
 
     Ok(TypeDetailInfo { name: name.to_owned(), generators, diagrams, maps })
 }
