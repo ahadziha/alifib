@@ -400,7 +400,7 @@ pub fn build_map_entries(
     tc: &Complex,
     store: &crate::interpreter::GlobalStore,
 ) -> Vec<MapEntry> {
-    tc.maps_iter()
+    let mut entries: Vec<MapEntry> = tc.maps_iter()
         .filter(|(n, _, _)| !n.is_empty())
         .map(|(map_name, pmap, domain)| {
             let gens = resolve_domain_complex(store, domain)
@@ -412,7 +412,9 @@ pub fn build_map_entries(
                 generators: gens,
             }
         })
-        .collect()
+        .collect();
+    entries.sort_by(|a, b| a.name.cmp(&b.name));
+    entries
 }
 
 /// Build the standard [`ResponseData`] snapshot from an engine.
@@ -874,7 +876,7 @@ pub fn build_type_detail_from_store(
 ) -> Result<TypeDetailInfo, String> {
     let type_complex = super::engine::resolve_type(store, source_path, name)?;
 
-    let generators: Vec<GeneratorInfo> = type_complex
+    let mut generators: Vec<GeneratorInfo> = type_complex
         .generators_iter()
         .filter(|(n, _, _)| !n.is_empty())
         .map(|(gen_name, tag, dim)| {
@@ -892,8 +894,9 @@ pub fn build_type_detail_from_store(
             GeneratorInfo { name: gen_name.clone(), dim, source, target }
         })
         .collect();
+    generators.sort_by(|a, b| a.dim.cmp(&b.dim).then_with(|| a.name.cmp(&b.name)));
 
-    let diagrams: Vec<DiagramEntryInfo> = type_complex
+    let mut diagrams: Vec<DiagramEntryInfo> = type_complex
         .diagrams_iter()
         .filter(|(n, _)| !n.is_empty())
         .map(|(diag_name, diag)| {
@@ -919,6 +922,7 @@ pub fn build_type_detail_from_store(
             }
         })
         .collect();
+    diagrams.sort_by(|a, b| a.name.cmp(&b.name));
 
     let maps = build_map_entries(&type_complex, store);
 
