@@ -838,9 +838,14 @@ impl RewriteEngine {
             return Err(format!("name '{}' is already in use", name));
         }
 
-        let type_gid = self.store
-            .find_type_gid(&self.type_name)
-            .ok_or_else(|| format!("type '{}' not found in store", self.type_name))?;
+        let type_gid = {
+            let mc = self.store.find_module(&self.source_file)
+                .ok_or_else(|| format!("module '{}' not found", self.source_file))?;
+            match mc.find_generator(&self.type_name) {
+                Some((Tag::Global(gid), _)) => *gid,
+                _ => return Err(format!("type '{}' not found in module", self.type_name)),
+            }
+        };
 
         Arc::make_mut(&mut self.store)
             .modify_type_complex(type_gid, |cx| {
