@@ -2586,7 +2586,6 @@ function resizeAndRender() {
   visCanvas.style.height = h + 'px';
   canvasCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   renderStrDiag(canvasCtx, currentLayout, w, h);
-  visCanvas.style.cursor = zoomLevel > 1 ? 'grab' : '';
 }
 
 const resizeObs = new ResizeObserver(() => resizeAndRender());
@@ -2843,7 +2842,6 @@ visCanvas.addEventListener('mousedown', (e) => {
       startX: e.clientX, startY: e.clientY,
       scrollLeft: visContainer.scrollLeft, scrollTop: visContainer.scrollTop,
     };
-    visCanvas.style.cursor = 'grabbing';
     e.preventDefault();
   }
 });
@@ -2916,12 +2914,10 @@ visCanvas.addEventListener('mousemove', (e) => {
 });
 
 visCanvas.addEventListener('mouseup', () => {
-  if (panState) { visCanvas.style.cursor = zoomLevel > 1 ? 'grab' : ''; }
   dragState = null;
   panState = null;
 });
 visCanvas.addEventListener('mouseleave', () => {
-  if (panState) { visCanvas.style.cursor = zoomLevel > 1 ? 'grab' : ''; }
   dragState = null;
   panState = null;
 });
