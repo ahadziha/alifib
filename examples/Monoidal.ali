@@ -130,12 +130,20 @@ Object <<= {
         lhs => (unit runit_inv) (lunit unit),
         rhs => lunit runit_inv
     ],
-    attach Left_Frobenius_Module :: Equation along [
+    attach Left_LFrobenius_Module :: Equation along [
         lhs => (split ob) (unit lunit),
         rhs => lunit lunit_inv,
     ],
-    attach Right_Frobenius_Module :: Equation along [
+    attach Right_LFrobenius_Module :: Equation along [
         lhs => (runit_inv unit) (ob merge),
+        rhs => runit runit_inv
+    ],
+    attach Left_RFrobenius_Module :: Equation along [
+        lhs => (unit lunit_inv) (merge ob),
+        rhs => lunit lunit_inv,
+    ],
+    attach Right_RFrobenius_Module :: Equation along [
+        lhs => (ob split) (runit unit),
         rhs => runit runit_inv
     ],
 
@@ -154,9 +162,37 @@ let total Object :: Object = [
     Bimodule => Assoc, Bicomodule => Coassoc,
     LFrobenius_Bimodule => LFrobenius,
     RFrobenius_Bimodule => RFrobenius,
-    Left_Frobenius_Module => LFrobenius,
-    Right_Frobenius_Module => LFrobenius,
+    Left_LFrobenius_Module => LFrobenius,
+    Right_LFrobenius_Module => LFrobenius,
+    Left_RFrobenius_Module => RFrobenius, 
+    Right_RFrobenius_Module => RFrobenius
 ]
+
+(* 
+    Proof that the RFrobenius_Module equations are derivable
+    from the LFrobenius_Module equations
+*)
+@Object {
+let left_rfrobenius_from_lfrobenius = 
+    ((Unit.ob #0 LUnit_Inv.RCodId.inv) #1 (Unit.merge #0 ob))
+    #2 ((Unit.ob #0 lunit_inv) #1 (Unit.ob #0 Unit.ob #0 LUnit_Inversion.inv) #1 (Unit.merge #0 ob))
+    #2 ((Unit.ob #0 Left_Comodule.inv) #1 (Unit.merge #0 Unit.ob #0 ob) #1 (Unit.ob #0 lunit))
+    #2 ((Unit.ob #0 lunit_inv) #1 (Unit.RFrobenius.dir #0 ob) #1 (Unit.ob #0 lunit))
+    #2 ((Unit.ob #0 lunit_inv) #1 (Unit.LFrobenius.inv #0 ob) #1 (Unit.ob #0 lunit))
+    #2 ((Unit.ob #0 lunit_inv) #1 (Unit.split #0 Unit.ob #0 ob) #1 (Unit.ob #0 Left_Module.dir))
+    #2 ((Unit.ob #0 LUnit_Inversion.dir) #1 (Unit.split #0 ob) #1 (Unit.ob #0 lunit))
+    #2 ((Unit.split #0 ob) #1 (Unit.ob #0 LUnit.RDomId.dir))
+    #2 Left_LFrobenius_Module.dir,
+let right_rfrobenius_from_lfrobenius = ((ob #0 Unit.split) #1 (RUnit.LDomId.inv #0 Unit.ob))
+    #2 ((RUnit_Inversion.inv #0 Unit.ob) #1 (ob #0 Unit.split) #1 (runit #0 Unit.ob))
+    #2 ((ob #0 Unit.split) #1 (runit_inv #0 Unit.ob #0 Unit.ob) #1 (Right_Module.dir #0 Unit.ob))
+    #2 ((runit_inv #0 Unit.ob) #1 (ob #0 Unit.RFrobenius.dir) #1 (runit #0 Unit.ob))
+    #2 ((runit_inv #0 Unit.ob) #1 (ob #0 Unit.LFrobenius.inv) #1 (runit #0 Unit.ob))
+    #2 ((Right_Comodule.inv #0 Unit.ob) #1 (runit #0 Unit.ob #0 Unit.ob) #1 (ob #0 Unit.merge))
+    #2 ((runit_inv #0 Unit.ob) #1 (RUnit_Inversion.dir #0 Unit.ob #0 Unit.ob) #1 (ob #0 Unit.merge))
+    #2 ((RUnit_Inv.LCodId.dir #0 Unit.ob) #1 (ob #0 Unit.merge))
+    #2 Right_LFrobenius_Module.dir
+}
 
 @Type
 (* A pair of objects can act as a single object *)
@@ -328,21 +364,37 @@ Pair <<= {
             #2 ((Fst.lunit #0 Snd.ob) #1 Idem.inv #1 (Fst.ob #0 Snd.runit_inv))
             #2 ((Unit.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Unit.ob #0 Fst.ob #0 Unit.ob #0 Snd.Bicomodule.inv) #1 (Fst.Bimodule.dir #0 Unit.ob #0 Snd.ob #0 Unit.ob) #1 (Fst.runit #0 Snd.ob #0 Unit.ob))
     ],
-    let total Left_Frobenius_Module :: Equation = [
-        dir => ((Fst.Left_Frobenius_Module.dir #0 Snd.ob) #1 (Unit.ob #0 Idem.inv))
+    let total Left_LFrobenius_Module :: Equation = [
+        dir => ((Fst.Left_LFrobenius_Module.dir #0 Snd.ob) #1 (Unit.ob #0 Idem.inv))
             #2 ((Fst.lunit #0 Snd.ob) #1 (Fst.ob #0 Snd.lunit_inv) #1 (Fst.LFrobenius_Bimodule.dir #0 Snd.ob) #1 (Unit.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Unit.ob #0 Fst.runit #0 Snd.ob))
             #2 ((Unit.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Unit.ob #0 Fst.ob #0 Unit.ob #0 Snd.lunit_inv) #1 (Fst.lunit #0 Unit.ob #0 Unit.ob #0 Snd.ob) #1 (Fst.runit #0 Unit.ob #0 Snd.ob) #1 (Fst.LFrobenius_Bimodule.dir #0 Snd.ob)),
         inv => ((Fst.lunit #0 Snd.ob) #1 (Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Unit.ob #0 Snd.lunit_inv) #1 (Fst.runit #0 Unit.ob #0 Snd.ob) #1 (Fst.LFrobenius_Bimodule.inv #0 Snd.ob))
             #2 ((Unit.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Unit.ob #0 Fst.ob #0 Unit.ob #0 Snd.lunit_inv) #1 (Fst.lunit #0 Unit.ob #0 Unit.ob #0 Snd.ob) #1 (Fst.LFrobenius_Bimodule.inv #0 Unit.ob #0 Snd.ob) #1 (Unit.ob #0 Fst.runit #0 Snd.ob))
-            #2 ((Fst.Left_Frobenius_Module.inv #0 Snd.ob) #1 (Unit.ob #0 Idem.dir))
+            #2 ((Fst.Left_LFrobenius_Module.inv #0 Snd.ob) #1 (Unit.ob #0 Idem.dir))
     ],
-    let total Right_Frobenius_Module :: Equation = [
-        dir => ((Idem.inv #0 Unit.ob) #1 (Fst.ob #0 Snd.Right_Frobenius_Module.dir))
+    let total Right_LFrobenius_Module :: Equation = [
+        dir => ((Idem.inv #0 Unit.ob) #1 (Fst.ob #0 Snd.Right_LFrobenius_Module.dir))
             #2 ((Fst.ob #0 Snd.lunit_inv #0 Unit.ob) #1 (Fst.ob #0 Unit.ob #0 Snd.LFrobenius_Bimodule.dir) #1 (Fst.ob #0 Unit.ob #0 Unit.ob #0 Snd.runit_inv) #1 (Fst.runit #0 Unit.ob #0 Snd.ob #0 Unit.ob) #1 (Fst.runit #0 Snd.ob #0 Unit.ob))
             #2 ((Fst.ob #0 Snd.LFrobenius_Bimodule.dir) #1 (Fst.runit #0 Snd.ob) #1 (Fst.ob #0 Snd.lunit_inv) #1 (Fst.runit #0 Snd.ob) #1 (Fst.ob #0 Snd.runit_inv)),
         inv => ((Fst.ob #0 Snd.LFrobenius_Bimodule.inv) #1 (Fst.ob #0 Unit.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Unit.ob #0 Unit.ob #0 Snd.runit_inv) #1 (Fst.runit #0 Unit.ob #0 Snd.ob #0 Unit.ob) #1 (Fst.runit #0 Snd.ob #0 Unit.ob))
             #2 ((Fst.ob #0 Snd.lunit_inv #0 Unit.ob) #1 (Fst.ob #0 Unit.ob #0 Snd.LFrobenius_Bimodule.inv) #1 (Fst.ob #0 Unit.ob #0 Unit.ob #0 Snd.runit_inv) #1 (Fst.runit #0 Unit.ob #0 Snd.ob #0 Unit.ob) #1 (Fst.runit #0 Snd.ob #0 Unit.ob))
-            #2 ((Idem.dir #0 Unit.ob) #1 (Fst.ob #0 Snd.Right_Frobenius_Module.inv))
+            #2 ((Idem.dir #0 Unit.ob) #1 (Fst.ob #0 Snd.Right_LFrobenius_Module.inv))
+    ],
+    let total Left_RFrobenius_Module :: Equation = [
+        dir => ((Unit.ob #0 Idem.inv) #1 (Fst.Left_RFrobenius_Module.dir #0 Snd.ob))
+            #2 ((Unit.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Unit.ob #0 Fst.ob #0 Unit.ob #0 Snd.lunit_inv) #1 (Unit.ob #0 Fst.runit #0 Unit.ob #0 Snd.ob) #1 (Fst.Bimodule.inv #0 Snd.ob) #1 (Fst.lunit_inv #0 Snd.ob))
+            #2 ((Unit.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.Bimodule.inv #0 Snd.ob) #1 (Fst.ob #0 Snd.lunit_inv) #1 (Fst.runit #0 Snd.ob) #1 (Fst.lunit_inv #0 Snd.ob)),
+        inv => ((Unit.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.Bimodule.dir #0 Snd.ob) #1 (Fst.ob #0 Snd.lunit_inv) #1 (Fst.runit #0 Snd.ob) #1 (Fst.lunit_inv #0 Snd.ob))
+            #2 ((Unit.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Unit.ob #0 Fst.ob #0 Unit.ob #0 Snd.lunit_inv) #1 (Unit.ob #0 Fst.runit #0 Unit.ob #0 Snd.ob) #1 (Fst.Bimodule.dir #0 Snd.ob) #1 (Fst.lunit_inv #0 Snd.ob))
+            #2 ((Unit.ob #0 Idem.dir) #1 (Fst.Left_RFrobenius_Module.inv #0 Snd.ob))
+    ],
+    let total Right_RFrobenius_Module :: Equation = [
+        dir => ((Fst.ob #0 Snd.Right_RFrobenius_Module.dir) #1 (Idem.inv #0 Unit.ob))
+            #2 ((Fst.ob #0 Snd.runit) #1 (Fst.ob #0 Snd.Bicomodule.dir) #1 (Fst.ob #0 Unit.ob #0 Snd.lunit_inv #0 Unit.ob) #1 (Fst.runit #0 Unit.ob #0 Snd.ob #0 Unit.ob) #1 (Fst.runit #0 Snd.ob #0 Unit.ob))
+            #2 ((Fst.ob #0 Snd.runit) #1 (Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Unit.ob #0 Snd.Bicomodule.dir) #1 (Fst.runit #0 Unit.ob #0 Snd.ob #0 Unit.ob) #1 (Fst.runit #0 Snd.ob #0 Unit.ob)),
+        inv => ((Fst.ob #0 Snd.runit) #1 (Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Unit.ob #0 Snd.Bicomodule.inv) #1 (Fst.runit #0 Unit.ob #0 Snd.ob #0 Unit.ob) #1 (Fst.runit #0 Snd.ob #0 Unit.ob))
+            #2 ((Fst.ob #0 Snd.runit) #1 (Fst.ob #0 Snd.Bicomodule.inv) #1 (Fst.runit #0 Snd.ob #0 Unit.ob) #1 (Fst.ob #0 Snd.lunit_inv #0 Unit.ob) #1 (Fst.runit #0 Snd.ob #0 Unit.ob))
+            #2 ((Fst.ob #0 Snd.Right_RFrobenius_Module.inv) #1 (Idem.dir #0 Unit.ob))
     ],
 
     (* Tensoring = representation of the pair as a single object *)
@@ -357,16 +409,18 @@ Pair <<= {
         Bimodule => Bimodule, Bicomodule => Bicomodule,
         LFrobenius_Bimodule => LFrobenius_Bimodule,
         RFrobenius_Bimodule => RFrobenius_Bimodule,
-        Left_Frobenius_Module => Left_Frobenius_Module,
-        Right_Frobenius_Module => Right_Frobenius_Module
+        Left_LFrobenius_Module => Left_LFrobenius_Module,
+        Right_LFrobenius_Module => Right_LFrobenius_Module,
+        Left_RFrobenius_Module => Left_RFrobenius_Module,
+        Right_RFrobenius_Module => Right_RFrobenius_Module
     ]
-}
+},
 
-@Pair
 (* 
     A proof that the dual choice for the identity 
     on a pair is equivalent 
 *)
+@Pair 
 let total Id_Flip :: Equation = [
     dir => ((Fst.ob #0 Snd.LUnit_Inv.RCodId.inv) #1 (Fst.RUnit.LDomId.inv #0 Snd.ob))
         #2 ((Fst.RUnit_Inversion.inv #0 Snd.ob) #1 (Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Unit.ob #0 Snd.LUnit_Inversion.inv) #1 (Fst.runit #0 Snd.ob))
@@ -384,6 +438,13 @@ let total Id_Flip :: Equation = [
         #2 ((Fst.ob #0 Snd.Left_Comodule.dir) #1 (Fst.ob #0 Unit.ob #0 Snd.lunit) #1 (Fst.runit_inv #0 Unit.ob #0 Snd.ob) #1 (Fst.Right_Module.inv #0 Snd.ob))
         #2 ((Fst.RUnit_Inversion.dir #0 Snd.ob) #1 (Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Unit.ob #0 Snd.LUnit_Inversion.dir) #1 (Fst.runit #0 Snd.ob))
         #2 ((Fst.ob #0 Snd.LUnit_Inv.RCodId.dir) #1 (Fst.RUnit.LDomId.dir #0 Snd.ob))
+]
+
+
+(* The "diagonal" pair of an object *)
+@Object
+let total Pair :: Pair = [
+    Fst => Object, Snd => Object
 ]
 
 @Type
@@ -414,63 +475,41 @@ Morphism <<= {
     attach RUnit_Nat :: Equation along [
         lhs => (mor unit) Cod.runit,
         rhs => Dom.runit mor
+    ],
+    attach LUnit_Inv_Nat :: Equation along [
+        lhs => mor Cod.lunit_inv,
+        rhs => Dom.lunit_inv (unit mor)
+    ],
+    attach RUnit_Inv_Nat :: Equation along [
+        lhs => mor Cod.runit_inv,
+        rhs => Dom.runit_inv (mor unit)
     ]
-},
+}
 
-@Morphism
-(* Proof that naturality wrt the inverse unitors is derivable *)
-let total LUnit_Inv_Nat :: Equation = [
-    dir => (DomId.inv #1 Cod.lunit_inv)
-        #2 (Dom.LUnit_Inversion.inv #1 mor #1 Cod.lunit_inv)
-        #2 (Dom.lunit_inv #1 LUnit_Nat.inv #1 Cod.lunit_inv)
-        #2 (Dom.lunit_inv #1 (Unit.ob #0 mor) #1 Cod.Left_Frobenius_Module.inv)
-        #2 (Dom.lunit_inv #1 (Unit.split #0 Dom.ob) #1 (Unit.ob #0 LUnit_Nat.dir))
-        #2 (Dom.lunit_inv #1 Dom.Left_Frobenius_Module.dir #1 (Unit.ob #0 mor))
-        #2 (Dom.LUnit_Inversion.dir #1 Dom.lunit_inv #1 (Unit.ob #0 mor))
-        #2 (Dom.LUnit_Inv.DomId.dir #1 (Unit.ob #0 mor)),
-    inv => (Dom.LUnit_Inv.DomId.inv #1 (Unit.ob #0 mor))
-        #2 (Dom.LUnit_Inversion.inv #1 Dom.lunit_inv #1 (Unit.ob #0 mor))
-        #2 (Dom.lunit_inv #1 Dom.Left_Frobenius_Module.inv #1 (Unit.ob #0 mor))
-        #2 (Dom.lunit_inv #1 (Unit.split #0 Dom.ob) #1 (Unit.ob #0 LUnit_Nat.inv))
-        #2 (Dom.lunit_inv #1 (Unit.ob #0 mor) #1 Cod.Left_Frobenius_Module.dir)
-        #2 (Dom.lunit_inv #1 LUnit_Nat.dir #1 Cod.lunit_inv)
-        #2 (Dom.LUnit_Inversion.dir #1 mor #1 Cod.lunit_inv)
-        #2 (DomId.dir #1 Cod.lunit_inv)
-],
-let total RUnit_Inv_Nat :: Equation = [
-    dir => (DomId.inv #1 Cod.runit_inv)
-        #2 (Dom.RUnit_Inversion.inv #1 mor #1 Cod.runit_inv)
-        #2 (Dom.runit_inv #1 RUnit_Nat.inv #1 Cod.runit_inv)
-        #2 (Dom.runit_inv #1 (mor #0 Unit.ob) #1 Cod.Right_Frobenius_Module.inv)
-        #2 (Dom.runit_inv #1 (mor #0 Unit.ob) #1 (Cod.RUnit_Inv.LCodId.inv #0 Unit.ob) #1 (Cod.ob #0 Unit.merge))
-        #2 (Dom.runit_inv #1 (mor #0 Unit.ob) #1 (Cod.runit_inv #0 Unit.ob) #1 (Cod.RUnit_Inversion.inv #0 Unit.ob #0 Unit.ob) #1 (Cod.ob #0 Unit.merge))
-        #2 (Dom.runit_inv #1 (mor #0 Unit.ob) #1 (Cod.Right_Comodule.dir #0 Unit.ob) #1 (Cod.ob #0 Unit.ob #0 Unit.merge) #1 (Cod.runit #0 Unit.ob))
-        #2 (Dom.runit_inv #1 (mor #0 Unit.ob) #1 (Cod.runit_inv #0 Unit.ob) #1 (Cod.ob #0 Unit.LFrobenius.dir) #1 (Cod.runit #0 Unit.ob))
-        #2 (Dom.runit_inv #1 (mor #0 Unit.ob) #1 (Cod.runit_inv #0 Unit.ob) #1 (Cod.ob #0 Unit.RFrobenius.inv) #1 (Cod.runit #0 Unit.ob))
-        #2 (Dom.runit_inv #1 (mor #0 Unit.ob) #1 (Cod.runit_inv #0 Unit.ob) #1 (Cod.ob #0 Unit.ob #0 Unit.split) #1 (Cod.Right_Module.inv #0 Unit.ob))
-        #2 (Dom.runit_inv #1 (Dom.ob #0 Unit.split) #1 (mor #0 Unit.ob #0 Unit.ob) #1 (Cod.RUnit_Inversion.dir #0 Unit.ob #0 Unit.ob) #1 (Cod.runit #0 Unit.ob))
-        #2 (Dom.runit_inv #1 (CodId.dir #0 Unit.ob) #1 (Cod.ob #0 Unit.split) #1 (Cod.runit #0 Unit.ob))
-        #2 (Dom.runit_inv #1 (Dom.ob #0 Unit.split) #1 (RUnit_Nat.dir #0 Unit.ob))
-        #2 (Dom.Right_Comodule.inv #1 (Dom.runit #0 Unit.ob) #1 (mor #0 Unit.ob))
-        #2 (Dom.runit_inv #1 (Dom.RUnit_Inversion.dir #0 Unit.ob) #1 (mor #0 Unit.ob))
-        #2 (Dom.runit_inv #1 (DomId.dir #0 Unit.ob)),
-    inv => (Dom.runit_inv #1 (DomId.inv #0 Unit.ob))
-        #2 (Dom.runit_inv #1 (Dom.RUnit_Inversion.inv #0 Unit.ob) #1 (mor #0 Unit.ob))
-        #2 (Dom.Right_Comodule.dir #1 (Dom.runit #0 Unit.ob) #1 (mor #0 Unit.ob))
-        #2 (Dom.runit_inv #1 (Dom.ob #0 Unit.split) #1 (RUnit_Nat.inv #0 Unit.ob))
-        #2 (Dom.runit_inv #1 (CodId.inv #0 Unit.ob) #1 (Cod.ob #0 Unit.split) #1 (Cod.runit #0 Unit.ob))
-        #2 (Dom.runit_inv #1 (Dom.ob #0 Unit.split) #1 (mor #0 Unit.ob #0 Unit.ob) #1 (Cod.RUnit_Inversion.inv #0 Unit.ob #0 Unit.ob) #1 (Cod.runit #0 Unit.ob))
-        #2 (Dom.runit_inv #1 (mor #0 Unit.ob) #1 (Cod.runit_inv #0 Unit.ob) #1 (Cod.ob #0 Unit.ob #0 Unit.split) #1 (Cod.Right_Module.dir #0 Unit.ob))
-        #2 (Dom.runit_inv #1 (mor #0 Unit.ob) #1 (Cod.runit_inv #0 Unit.ob) #1 (Cod.ob #0 Unit.RFrobenius.dir) #1 (Cod.runit #0 Unit.ob))
-        #2 (Dom.runit_inv #1 (mor #0 Unit.ob) #1 (Cod.runit_inv #0 Unit.ob) #1 (Cod.ob #0 Unit.LFrobenius.inv) #1 (Cod.runit #0 Unit.ob))
-        #2 (Dom.runit_inv #1 (mor #0 Unit.ob) #1 (Cod.Right_Comodule.inv #0 Unit.ob) #1 (Cod.runit #0 Unit.ob #0 Unit.ob) #1 (Cod.ob #0 Unit.merge))
-        #2 (Dom.runit_inv #1 (mor #0 Unit.ob) #1 (Cod.runit_inv #0 Unit.ob) #1 (Cod.RUnit_Inversion.dir #0 Unit.ob #0 Unit.ob) #1 (Cod.ob #0 Unit.merge))
-        #2 (Dom.runit_inv #1 (mor #0 Unit.ob) #1 (Cod.RUnit_Inv.LCodId.dir #0 Unit.ob) #1 (Cod.ob #0 Unit.merge))
-        #2 (Dom.runit_inv #1 (mor #0 Unit.ob) #1 Cod.Right_Frobenius_Module.dir)
-        #2 (Dom.runit_inv #1 RUnit_Nat.dir #1 Cod.runit_inv)
-        #2 (Dom.RUnit_Inversion.dir #1 mor #1 Cod.runit_inv)
-        #2 (DomId.dir #1 Cod.runit_inv)
-]
+(* 
+    Proof that naturality wrt the inverse unitors 
+    is derivable from naturality wrt the unitors
+*)
+@Morphism {
+let lunit_inv_nat_from_lunit_nat = 
+    (DomId.inv #1 Cod.lunit_inv)
+    #2 (Dom.LUnit_Inversion.inv #1 mor #1 Cod.lunit_inv)
+    #2 (Dom.lunit_inv #1 LUnit_Nat.inv #1 Cod.lunit_inv)
+    #2 (Dom.lunit_inv #1 (Unit.ob #0 mor) #1 Cod.Left_LFrobenius_Module.inv)
+    #2 (Dom.lunit_inv #1 (Unit.split #0 Dom.ob) #1 (Unit.ob #0 LUnit_Nat.dir))
+    #2 (Dom.lunit_inv #1 Dom.Left_LFrobenius_Module.dir #1 (Unit.ob #0 mor))
+    #2 (Dom.LUnit_Inversion.dir #1 Dom.lunit_inv #1 (Unit.ob #0 mor))
+    #2 (Dom.LUnit_Inv.DomId.dir #1 (Unit.ob #0 mor)),
+let runit_inv_nat_from_runit_nat =
+    (DomId.inv #1 Cod.runit_inv)
+    #2 (Dom.RUnit_Inversion.inv #1 mor #1 Cod.runit_inv)
+    #2 (Dom.runit_inv #1 RUnit_Nat.inv #1 Cod.runit_inv)
+    #2 (Dom.runit_inv #1 (mor #0 Unit.ob) #1 Cod.Right_RFrobenius_Module.inv)
+    #2 (Dom.runit_inv #1 (Dom.ob #0 Unit.split) #1 (RUnit_Nat.dir #0 Unit.ob))
+    #2 (Dom.runit_inv #1 Dom.Right_RFrobenius_Module.dir #1 (mor #0 Unit.ob))
+    #2 (Dom.RUnit_Inversion.dir #1 Dom.runit_inv #1 (mor #0 Unit.ob))
+    #2 (Dom.RUnit_Inv.DomId.dir #1 (mor #0 Unit.ob))
+}
 
 @Type
 (* A pair of morphisms, sequentially composable *)
@@ -513,6 +552,18 @@ Sequential_Pair <<= {
         inv => (Fst.RUnit_Nat.inv #1 Snd.mor)
             #2 ((Fst.mor #0 Unit.ob) #1 Snd.RUnit_Nat.inv)
     ],
+    let total LUnit_Inv_Nat :: Equation = [
+        dir => (Fst.mor #1 Snd.LUnit_Inv_Nat.dir)
+            #2 (Fst.LUnit_Inv_Nat.dir #1 (Unit.ob #0 Snd.mor)),
+        inv => (Fst.LUnit_Inv_Nat.inv #1 (Unit.ob #0 Snd.mor))
+            #2 (Fst.mor #1 Snd.LUnit_Inv_Nat.inv)
+    ],
+    let total RUnit_Inv_Nat :: Equation = [
+        dir => (Fst.mor #1 Snd.RUnit_Inv_Nat.dir)
+            #2 (Fst.RUnit_Inv_Nat.dir #1 (Snd.mor #0 Unit.ob)),
+        inv => (Fst.RUnit_Inv_Nat.inv #1 (Snd.mor #0 Unit.ob))
+            #2 (Fst.mor #1 Snd.RUnit_Inv_Nat.inv)
+    ],
 
     (* Composing = representation of the pair as a single morphism *)
     let total Compose :: Morphism = [
@@ -521,6 +572,7 @@ Sequential_Pair <<= {
         mor => mor,
         DomId => DomId, CodId => CodId,
         LUnit_Nat => LUnit_Nat, RUnit_Nat => RUnit_Nat,
+        LUnit_Inv_Nat => LUnit_Inv_Nat, RUnit_Inv_Nat => RUnit_Inv_Nat
     ]
 },
 
@@ -535,9 +587,9 @@ Parallel_Pair <<= {
     let total DomPair :: Pair = [ Fst => Fst.Dom, Snd => Snd.Dom ],
     let total CodPair :: Pair = [ Fst => Fst.Cod, Snd => Snd.Cod ],
     
-    let total Dom :: Object = 
+    let Dom :: Object = 
         ( map [ Fst => Fst.Dom, Snd => Snd.Dom ] :: Pair).Tensor,
-    let total Cod :: Object = 
+    let Cod :: Object = 
         ( map [ Fst => Fst.Cod, Snd => Snd.Cod ] :: Pair).Tensor,
     
     let mor = (Fst.mor #0 Snd.mor) Cod.id,
@@ -575,6 +627,26 @@ Parallel_Pair <<= {
             #2 ((Fst.Dom.ob #0 Snd.RUnit_Nat.inv) #1 (Fst.mor #0 Snd.Cod.ob) #1 Cod.Idem.inv)
             #2 ((Fst.mor #0 Snd.Dom.ob #0 Unit.ob) #1 (Fst.Cod.ob #0 Snd.mor #0 Unit.ob) #1 (Fst.Cod.ob #0 Snd.Cod.LFrobenius_Bimodule.inv) #1 (Fst.Cod.runit #0 Snd.Cod.ob) #1 (Fst.Cod.ob #0 Snd.Cod.lunit_inv) #1 (Fst.Cod.runit #0 Snd.Cod.ob))
     ],
+        let total LUnit_Inv_Nat :: Equation = [
+        dir => ((Fst.Dom.ob #0 Snd.mor) #1 (Fst.mor #0 Snd.Cod.ob) #1 Cod.Idem.dir #1 (Fst.Cod.lunit_inv #0 Snd.Cod.ob))
+            #2 ((Fst.mor #0 Snd.Dom.ob) #1 (Fst.Cod.ob #0 Snd.mor) #1 Cod.Idem.inv #1 (Fst.Cod.lunit_inv #0 Snd.Cod.ob))
+            #2 ((Fst.Dom.ob #0 Snd.LUnit_Inv_Nat.dir) #1 (Fst.RUnit_Nat.dir #0 Snd.Cod.ob) #1 (Fst.Cod.ob #0 Snd.Cod.lunit_inv) #1 (Fst.Cod.LFrobenius_Bimodule.inv #0 Snd.Cod.ob))
+            #2 ((Fst.Dom.ob #0 Snd.Dom.lunit_inv) #1 (Fst.Dom.runit #0 Snd.Dom.ob) #1 (Fst.LUnit_Inv_Nat.dir #0 Snd.Dom.ob) #1 (Unit.ob #0 Fst.Cod.ob #0 Snd.mor) #1 (Unit.ob #0 Fst.Cod.ob #0 Snd.Cod.lunit_inv) #1 (Unit.ob #0 Fst.Cod.runit #0 Snd.Cod.ob)),
+        inv => ((Fst.Dom.ob #0 Snd.Dom.lunit_inv) #1 (Fst.Dom.runit #0 Snd.Dom.ob) #1 (Fst.LUnit_Inv_Nat.inv #0 Snd.Dom.ob) #1 (Unit.ob #0 Fst.Cod.ob #0 Snd.mor) #1 (Unit.ob #0 Fst.Cod.ob #0 Snd.Cod.lunit_inv) #1 (Unit.ob #0 Fst.Cod.runit #0 Snd.Cod.ob))
+            #2 ((Fst.Dom.ob #0 Snd.LUnit_Inv_Nat.inv) #1 (Fst.RUnit_Nat.inv #0 Snd.Cod.ob) #1 (Fst.Cod.ob #0 Snd.Cod.lunit_inv) #1 (Fst.Cod.LFrobenius_Bimodule.dir #0 Snd.Cod.ob))
+            #2 ((Fst.mor #0 Snd.Dom.ob) #1 (Fst.Cod.ob #0 Snd.mor) #1 Cod.Idem.dir #1 (Fst.Cod.lunit_inv #0 Snd.Cod.ob))
+            #2 ((Fst.Dom.ob #0 Snd.mor) #1 (Fst.mor #0 Snd.Cod.ob) #1 Cod.Idem.inv #1 (Fst.Cod.lunit_inv #0 Snd.Cod.ob))
+    ],
+    let total RUnit_Inv_Nat :: Equation = [
+        dir => ((Fst.Dom.ob #0 Snd.mor) #1 (Fst.mor #0 Snd.Cod.ob) #1 Cod.Idem.dir #1 (Fst.Cod.ob #0 Snd.Cod.runit_inv))
+            #2 ((Fst.mor #0 Snd.Dom.ob) #1 (Fst.Cod.ob #0 Snd.mor) #1 Cod.Idem.inv #1 (Fst.Cod.ob #0 Snd.Cod.runit_inv))
+            #2 ((Fst.Dom.ob #0 Snd.LUnit_Inv_Nat.dir) #1 (Fst.Dom.ob #0 Unit.ob #0 Snd.Cod.Bicomodule.inv) #1 (Fst.RUnit_Nat.dir #0 Unit.ob #0 Snd.Cod.ob #0 Unit.ob) #1 (Fst.Cod.runit #0 Snd.Cod.ob #0 Unit.ob))
+            #2 ((Fst.Dom.ob #0 Snd.Dom.lunit_inv) #1 (Fst.Dom.ob #0 Unit.ob #0 Snd.RUnit_Inv_Nat.dir) #1 (Fst.Dom.ob #0 Unit.ob #0 Snd.Cod.lunit_inv #0 Unit.ob) #1 (Fst.Dom.runit #0 Unit.ob #0 Snd.Cod.ob #0 Unit.ob) #1 (Fst.mor #0 Unit.ob #0 Snd.Cod.ob #0 Unit.ob) #1 (Fst.Cod.runit #0 Snd.Cod.ob #0 Unit.ob)),
+        inv => ((Fst.Dom.ob #0 Snd.Dom.lunit_inv) #1 (Fst.Dom.ob #0 Unit.ob #0 Snd.RUnit_Inv_Nat.inv) #1 (Fst.Dom.ob #0 Unit.ob #0 Snd.Cod.lunit_inv #0 Unit.ob) #1 (Fst.Dom.runit #0 Unit.ob #0 Snd.Cod.ob #0 Unit.ob) #1 (Fst.mor #0 Unit.ob #0 Snd.Cod.ob #0 Unit.ob) #1 (Fst.Cod.runit #0 Snd.Cod.ob #0 Unit.ob))
+            #2 ((Fst.Dom.ob #0 Snd.LUnit_Inv_Nat.inv) #1 (Fst.RUnit_Nat.inv #0 Snd.Cod.ob) #1 (Fst.Cod.ob #0 Snd.Cod.Bicomodule.dir) #1 (Fst.Cod.runit #0 Snd.Cod.ob #0 Unit.ob))
+            #2 ((Fst.mor #0 Snd.Dom.ob) #1 (Fst.Cod.ob #0 Snd.mor) #1 Cod.Idem.dir #1 (Fst.Cod.ob #0 Snd.Cod.runit_inv))
+            #2 ((Fst.Dom.ob #0 Snd.mor) #1 (Fst.mor #0 Snd.Cod.ob) #1 Cod.Idem.inv #1 (Fst.Cod.ob #0 Snd.Cod.runit_inv))
+    ],
 
     (* Tensoring = representation of the pair as a single morphism *)
     let total Tensor :: Morphism = [
@@ -582,6 +654,7 @@ Parallel_Pair <<= {
         Dom => Dom, Cod => Cod,
         mor => mor,
         DomId => DomId, CodId => CodId,
-        LUnit_Nat => LUnit_Nat, RUnit_Nat => RUnit_Nat
+        LUnit_Nat => LUnit_Nat, RUnit_Nat => RUnit_Nat,
+        LUnit_Inv_Nat => LUnit_Inv_Nat, RUnit_Inv_Nat => RUnit_Inv_Nat
     ] 
 }
