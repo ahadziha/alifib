@@ -198,9 +198,6 @@ let right_rfrobenius_from_lfrobenius = ((ob #0 Unit.split) #1 (RUnit.LDomId.inv 
 (* A pair of objects can act as a single object *)
 Pair <<= {
     include Unit,
-    let unit = Unit.ob,
-    let merge = Unit.merge,
-    let split = Unit.split,
 
     attach Fst :: Object along [ Unit => Unit ],
     attach Snd :: Object along [ Unit => Unit ],
