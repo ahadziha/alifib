@@ -539,7 +539,10 @@ fn relocate_errors(result: &mut InterpResult, target: Span) {
 fn expand_body(fb: &ForBlock, values: &[String]) -> String {
     let var_pattern = format!("<{}>", fb.variable.inner);
     let mut expanded = String::new();
-    for value in values {
+    for (i, value) in values.iter().enumerate() {
+        if i > 0 && !expanded.trim_end().ends_with(',') {
+            expanded.push(',');
+        }
         expanded.push_str(&fb.body_text.replace(&var_pattern, value));
     }
     expanded
