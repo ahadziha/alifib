@@ -47,11 +47,11 @@ Object <<= {
     ],
 
     (* Equations for braidings *)
-    attach Over_Under :: Equation along [
+    attach Over_Inversion :: Equation along [
         lhs => over under,
         rhs => (ob lunit_inv) (runit ob)
     ],
-    attach Under_Over :: Equation along [
+    attach Under_Inversion :: Equation along [
         lhs => under over,
         rhs => (ob lunit_inv) (runit ob)
     ],

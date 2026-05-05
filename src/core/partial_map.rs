@@ -147,19 +147,16 @@ impl PartialMap {
     /// Apply partial map f to a diagram by following its paste tree structure.
     pub fn apply(f: &PartialMap, diagram: &Diagram) -> Result<Diagram, Error> {
         let n = diagram.top_dim();
-        let root_tree = match diagram.tree(Sign::Source, n) {
-            Some(t) => t.clone(),
-            None => return Err(Error::new("diagram has no tree")),
+        let Some(root_tree) = diagram.tree(Sign::Source, n) else {
+            return Err(Error::new("diagram has no tree"));
         };
 
-        if let Some(missing) = find_undefined(f, &root_tree) {
+        if let Some(missing) = find_undefined(f, root_tree) {
             return Err(Error::new("diagram value outside of domain of definition")
                 .with_note(format!("tag: {}", missing)));
         }
 
         if f.cellular {
-            // Fast path: since every image is a single cell, we can remap labels in-place
-            // without reconstructing the diagram by pasting.
             let mut cache: HashMap<Tag, Tag> = HashMap::new();
             let new_labels: Vec<Vec<Tag>> = diagram.labels.iter().map(|level| {
                 level.iter().map(|tag| remap_tag(tag, &f.table, &mut cache)).collect()
@@ -174,7 +171,7 @@ impl PartialMap {
 
             Ok(Diagram::make(diagram.shape.clone(), new_labels, new_trees))
         } else {
-            apply_tree(f, &root_tree)
+            apply_tree(f, root_tree)
         }
     }
     /// Compose partial maps: `g` after `f` (`g ∘ f`).
