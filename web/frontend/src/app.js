@@ -243,12 +243,19 @@ function switchTab(tabId) {
   const departing = activeTab();
   if (departing && view) {
     departing.cmState = view.state;
+    const scroller = view.scrollDOM;
+    departing.scrollTop = scroller.scrollTop;
+    departing.scrollLeft = scroller.scrollLeft;
   }
   editorTabs.activeTabId = tabId;
   const arriving = activeTab();
   if (arriving && view) {
     view.setState(arriving.cmState);
     view.dispatch({ effects: themeComp.reconfigure(themeExtensions()) });
+    if (arriving.scrollTop != null) {
+      view.scrollDOM.scrollTop = arriving.scrollTop;
+      view.scrollDOM.scrollLeft = arriving.scrollLeft;
+    }
   }
   renderTabBar();
 }
