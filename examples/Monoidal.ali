@@ -624,7 +624,7 @@ Parallel_Pair <<= {
             #2 ((Fst.Dom.ob #0 Snd.RUnit_Nat.inv) #1 (Fst.mor #0 Snd.Cod.ob) #1 Cod.Idem.inv)
             #2 ((Fst.mor #0 Snd.Dom.ob #0 Unit.ob) #1 (Fst.Cod.ob #0 Snd.mor #0 Unit.ob) #1 (Fst.Cod.ob #0 Snd.Cod.LFrobenius_Bimodule.inv) #1 (Fst.Cod.runit #0 Snd.Cod.ob) #1 (Fst.Cod.ob #0 Snd.Cod.lunit_inv) #1 (Fst.Cod.runit #0 Snd.Cod.ob))
     ],
-        let total LUnit_Inv_Nat :: Equation = [
+    let total LUnit_Inv_Nat :: Equation = [
         dir => ((Fst.Dom.ob #0 Snd.mor) #1 (Fst.mor #0 Snd.Cod.ob) #1 Cod.Idem.dir #1 (Fst.Cod.lunit_inv #0 Snd.Cod.ob))
             #2 ((Fst.mor #0 Snd.Dom.ob) #1 (Fst.Cod.ob #0 Snd.mor) #1 Cod.Idem.inv #1 (Fst.Cod.lunit_inv #0 Snd.Cod.ob))
             #2 ((Fst.Dom.ob #0 Snd.LUnit_Inv_Nat.dir) #1 (Fst.RUnit_Nat.dir #0 Snd.Cod.ob) #1 (Fst.Cod.ob #0 Snd.Cod.lunit_inv) #1 (Fst.Cod.LFrobenius_Bimodule.inv #0 Snd.Cod.ob))
