@@ -38,7 +38,7 @@ fn main() {
 fn build_frontend(frontend: &Path, has_lockfile: bool) -> Result<(), String> {
     let npm = find_npm()?;
 
-    if !frontend.join("node_modules").is_dir() {
+    if needs_install(frontend) {
         // Prefer `npm ci` when a lockfile is committed — reproducible and
         // refuses to mutate package.json.  Fall back to `npm install` for the
         // bootstrap case where the lockfile is being generated.
@@ -52,6 +52,26 @@ fn build_frontend(frontend: &Path, has_lockfile: bool) -> Result<(), String> {
         npm_command(&npm).args(["run", "build"]).current_dir(frontend),
         "npm run build",
     )
+}
+
+/// True when `node_modules` is missing, or when `package-lock.json` is newer
+/// than the `.package-lock.json` marker npm writes on install — the standard
+/// signal that committed deps have drifted from the installed tree.
+fn needs_install(frontend: &Path) -> bool {
+    if !frontend.join("node_modules").is_dir() {
+        return true;
+    }
+    let lockfile = frontend.join("package-lock.json");
+    let marker = frontend.join("node_modules").join(".package-lock.json");
+    match (mtime(&lockfile), mtime(&marker)) {
+        (Some(lock), Some(mark)) => lock > mark,
+        (Some(_), None) => true,
+        _ => false,
+    }
+}
+
+fn mtime(path: &Path) -> Option<std::time::SystemTime> {
+    std::fs::metadata(path).and_then(|m| m.modified()).ok()
 }
 
 fn ensure_stub(path: &Path) {
