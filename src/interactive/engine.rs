@@ -935,7 +935,7 @@ impl RewriteEngine {
                     Some(StoredInfo {
                         type_name: self.type_name().to_owned(),
                         def_name: name.clone(),
-                        expr: self.source_diagram_name().to_owned(),
+                        expr: crate::output::render_diagram(self.source_diagram(), self.type_complex()),
                     })
                 } else {
                     let n = self.source_diagram().top_dim();
