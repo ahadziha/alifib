@@ -3,7 +3,7 @@ import { EditorState, Compartment } from '@codemirror/state';
 import { defaultKeymap, indentWithTab, history as cmHistory, historyKeymap } from '@codemirror/commands';
 import { indentUnit, bracketMatching } from '@codemirror/language';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
-import { search, searchKeymap } from '@codemirror/search';
+import { search, searchKeymap, findNext } from '@codemirror/search';
 import { aliExtensions } from './ali-lang.js';
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -208,6 +208,9 @@ function makeEditorState(doc) {
             tab.cmState = update.state;
             markDirty(tab);
           }
+        }
+        if (update.transactions.some(tr => tr.isUserEvent('input.replace'))) {
+          findNext(update.view);
         }
         for (const tf of update.view.dom.querySelectorAll('.cm-search .cm-textfield:not([autocomplete])')) {
           tf.setAttribute('autocomplete', 'off');

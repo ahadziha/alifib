@@ -302,6 +302,7 @@ header {
   padding: 4px 12px !important;
   cursor: pointer !important;
   text-transform: capitalize !important;
+  margin: 0 3px !important;
 }
 .editor-wrap .cm-button:hover {
   opacity: 0.75 !important;
