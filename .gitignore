@@ -39,3 +39,6 @@ web/frontend/examples/
 
 # Reference papers — kept locally, not tracked
 docs/papers/
+
+# Local development notes
+dev/
