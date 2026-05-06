@@ -203,6 +203,13 @@ fn interpret_type_generator(context: &Context, generator: &ast::Generator) -> In
     };
 
     let module_id = result.context.current_module.clone();
+    if definition_complex.find_map(&name).is_some() {
+        result.add_error(make_error(
+            name_span,
+            &format!("Type name '{name}' collides with an inherited map of the same name"),
+        ));
+        return result;
+    }
     let identity = identity_map(&result.context, &definition_complex);
     definition_complex.add_map(name.clone(), MapDomain::Type(new_id), identity);
 
