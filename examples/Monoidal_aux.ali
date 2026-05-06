@@ -98,33 +98,4 @@ Node_1_to_2 <<= {
         lhs => node (LCod.ob RCod.id),
         rhs => node
     ]
-},
-
-(* Two-input, two-output node *)
-Node_2_to_2 <<= {
-    pt,
-
-    attach LDom :: Wire along [ pt => pt ],
-    attach RDom :: Wire along [ pt => pt ],
-    attach LCod :: Wire along [ pt => pt ],
-    attach RCod :: Wire along [ pt => pt ],
-
-    node: LDom.ob RDom.ob -> LCod.ob RCod.ob,
-
-    attach LDomId :: Equation along [
-        lhs => (LDom.id RDom.ob) node,
-        rhs => node
-    ],
-    attach RDomId :: Equation along [
-        lhs => (LDom.ob RDom.id) node,
-        rhs => node
-    ],
-    attach LCodId :: Equation along [
-        lhs => node (LCod.id RCod.ob),
-        rhs => node
-    ],
-    attach RCodId :: Equation along [
-        lhs => node (LCod.ob RCod.id),
-        rhs => node
-    ]
 }

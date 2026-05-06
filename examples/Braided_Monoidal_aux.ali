@@ -1,0 +1,59 @@
+(* 
+    Auxiliary gadgets for braided and symmetric monoidal categories
+*)
+
+@Type
+include Monoidal as Planar,
+let Equation = Planar.Aux.Equation,
+
+(* Braid-shaped morphism, no braid-specific equations *)
+Braid <<= {
+    include Planar.Unit as Unit,
+    let unit = Unit.ob,
+
+    attach Fst :: Planar.Object along [ Unit => Unit ],
+    attach Snd :: Planar.Object along [ Unit => Unit ],
+
+    braid: Fst.ob Snd.ob -> Snd.ob Fst.ob,
+
+    attach LDomId :: Equation along [
+        lhs => (Fst.id Snd.ob) braid,
+        rhs => braid
+    ],
+    attach RDomId :: Equation along [
+        lhs => (Fst.ob Snd.id) braid,
+        rhs => braid
+    ],
+    attach LCodId :: Equation along [
+        lhs => braid (Snd.id Fst.ob),
+        rhs => braid
+    ],
+    attach RCodId :: Equation along [
+        lhs => braid (Snd.ob Fst.id),
+        rhs => braid
+    ],
+    attach LUnit_Nat :: Equation along [
+        lhs => (unit braid) (Snd.lunit Fst.ob),
+        rhs => (Fst.lunit Snd.ob) braid
+    ],
+    attach RUnit_Nat :: Equation along [
+        lhs => (braid unit) (Snd.ob Fst.runit),
+        rhs => (Fst.ob Snd.runit) braid
+    ],
+    attach LUnit_Inv_Nat :: Equation along [
+        lhs => braid (Snd.lunit_inv Fst.ob),
+        rhs => (Fst.lunit_inv Snd.ob) (unit braid)
+    ],
+    attach RUnit_Inv_Nat :: Equation along [
+        lhs => braid (Snd.ob Fst.runit_inv),
+        rhs => (Fst.ob Snd.runit_inv) (braid unit)
+    ],
+    attach Triangle_Dom :: Equation along [
+        lhs => (Fst.runit Snd.ob) braid,
+        rhs => (Fst.ob Snd.lunit) braid
+    ],
+    attach Triangle_Cod :: Equation along [
+        lhs => braid (Snd.runit_inv Fst.ob),
+        rhs => braid (Snd.ob Fst.lunit_inv)
+    ]
+}
