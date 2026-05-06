@@ -542,9 +542,61 @@ Triple <<= {
         ],
     },
 
-    (* TO DO: Add maps from Pair that tensor the objects pairwise *)
-},
+    (* TODO: pairwise tensors, etc *)
+}
 
+(* Flipping indices pairwise in a triple *)
+@Triple
+let Rev_12 :: Triple = [
+    Fst => Snd, Snd => Fst, Thd => Thd,
+    Fst_Snd => Fst_Snd.Rev, Fst_Thd => Snd_Thd, Snd_Thd => Fst_Thd,
+    Over_YangBaxter_123 => Over_YangBaxter_213,
+    Over_YangBaxter_132 => Over_YangBaxter_231,
+    Over_YangBaxter_213 => Over_YangBaxter_123,
+    Over_YangBaxter_231 => Over_YangBaxter_132,
+    Over_YangBaxter_312 => Over_YangBaxter_321,
+    Over_YangBaxter_321 => Over_YangBaxter_312,
+    Under_YangBaxter_123 => Under_YangBaxter_213,
+    Under_YangBaxter_132 => Under_YangBaxter_231,
+    Under_YangBaxter_213 => Under_YangBaxter_123,
+    Under_YangBaxter_231 => Under_YangBaxter_132,
+    Under_YangBaxter_312 => Under_YangBaxter_321,
+    Under_YangBaxter_321 => Under_YangBaxter_312
+],
+let Rev_13 :: Triple = [
+    Fst => Thd, Snd => Snd, Thd => Fst,
+    Fst_Snd => Snd_Thd.Rev, Fst_Thd => Fst_Thd.Rev, Snd_Thd => Fst_Snd.Rev,
+    Over_YangBaxter_123 => Over_YangBaxter_321,
+    Over_YangBaxter_132 => Over_YangBaxter_312,
+    Over_YangBaxter_213 => Over_YangBaxter_231,
+    Over_YangBaxter_231 => Over_YangBaxter_213,
+    Over_YangBaxter_312 => Over_YangBaxter_132,
+    Over_YangBaxter_321 => Over_YangBaxter_123,
+    Under_YangBaxter_123 => Under_YangBaxter_321,
+    Under_YangBaxter_132 => Under_YangBaxter_312,
+    Under_YangBaxter_213 => Under_YangBaxter_231,
+    Under_YangBaxter_231 => Under_YangBaxter_213,
+    Under_YangBaxter_312 => Under_YangBaxter_132,
+    Under_YangBaxter_321 => Under_YangBaxter_123
+],
+let Rev_23 :: Triple = [
+    Fst => Fst, Snd => Thd, Thd => Snd,
+    Fst_Snd => Fst_Thd, Fst_Thd => Fst_Snd, Snd_Thd => Snd_Thd.Rev,
+    Over_YangBaxter_123 => Over_YangBaxter_132,
+    Over_YangBaxter_132 => Over_YangBaxter_123,
+    Over_YangBaxter_213 => Over_YangBaxter_312,
+    Over_YangBaxter_231 => Over_YangBaxter_321,
+    Over_YangBaxter_312 => Over_YangBaxter_213,
+    Over_YangBaxter_321 => Over_YangBaxter_231,
+    Under_YangBaxter_123 => Under_YangBaxter_132,
+    Under_YangBaxter_132 => Under_YangBaxter_123,
+    Under_YangBaxter_213 => Under_YangBaxter_312,
+    Under_YangBaxter_231 => Under_YangBaxter_321,
+    Under_YangBaxter_312 => Under_YangBaxter_213,
+    Under_YangBaxter_321 => Under_YangBaxter_231
+]
+
+@Type
 (* A morphism is natural with respect to domain and codomain braidings *)
 Morphism <<= {
     include Unit,
@@ -565,7 +617,6 @@ Morphism <<= {
         Dom => Dom.Planar, Cod => Cod.Planar,
         mor => mor
     ],
-
     (* Naturality equations *)
     for Loc in [ Over, Under ] {
         for A in [ Dom, Cod ] {
@@ -616,6 +667,42 @@ Morphism_Nat <<= {
             rhs => Dom_Other.Rev_<Loc>.braid (mor Other.ob)
         ],
     }
+},
+
+(*** Not strictly necessary for presentations
+
+(* A pair of morphisms, sequentially composable *)
+Sequential_Pair <<= {
+    include Unit,
+    let unit = Unit.ob,
+
+    attach Fst :: Morphism along [ Unit => Unit ],
+    attach Snd :: Morphism along [
+        Unit => Unit,
+        Dom => Fst.Cod
+    ],
+
+    let Dom :: Object = Fst.Dom,
+    let Mid :: Object = Fst.Cod,
+    let Cod :: Object = Snd.Cod,
+    let mor = Fst.mor Snd.mor,
+    (* This does not add generators *)
+    attach Planar :: Planar.Sequential_Pair along [
+        Fst => Fst.Planar, Snd => Snd.Planar
+    ],
+    
+    (* Extra braidings *)
+    attach Dom_Cod :: Pair along [ 
+        Fst => Dom, Snd => Cod ],
+    attach Dom_Mid_Cod :: Triple along [
+        Fst => Dom, Snd => Mid, Thd => Cod,
+        Fst_Snd => Fst.Dom_Cod,
+        Fst_Thd => Dom_Cod,
+        Snd_Thd => Snd.Dom_Cod
+    ],
+    (* TO DO: missing naturality between Snd and Dom, 
+    as well as Fst and Cod *)
 }
 
-(* TO DO: sequential and parallel pairs of morphisms *)
+(* TO DO: Parallel pair of morphisms *)
+***)
