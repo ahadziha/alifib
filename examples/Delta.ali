@@ -1,6 +1,6 @@
 (*
     The simplices with face maps up to dimension 5,
-    i.e. the category Delta_0 up to dimension 5.
+    i.e. the category Delta_+ up to dimension 5.
 *)
 
 @Type
