@@ -118,16 +118,14 @@ Object <<= {
     ],
 
     (* The self-braidings *)
-    over: ob ob -> ob ob,
-    under: ob ob -> ob ob,
     attach Over :: Aux.Braid along [
         Fst => Planar, Snd => Planar,
-        braid => over
     ],
     attach Under :: Aux.Braid along [
         Fst => Planar, Snd => Planar,
-        braid => under
     ],
+    let over = Over.braid,
+    let under = Under.braid,
     
     (* Equations for braidings *)
     attach Over_Inversion :: Equation along [
@@ -175,30 +173,26 @@ Pair <<= {
     ],
 
     (* Adding the braidings *)
-    fst_snd_over: Fst.ob Snd.ob -> Snd.ob Fst.ob,
-    fst_snd_under: Fst.ob Snd.ob -> Snd.ob Fst.ob,
-    snd_fst_over: Snd.ob Fst.ob -> Fst.ob Snd.ob,
-    snd_fst_under: Snd.ob Fst.ob -> Fst.ob Snd.ob,
     attach Fst_Snd_Over :: Aux.Braid along [
         Fst => Fst.Planar, Snd => Snd.Planar,
-        braid => fst_snd_over
     ],
     attach Fst_Snd_Under :: Aux.Braid along [
         Fst => Fst.Planar, Snd => Snd.Planar,
-        braid => fst_snd_under
     ],
     attach Snd_Fst_Over :: Aux.Braid along [
         Fst => Snd.Planar, Snd => Fst.Planar,
-        braid => snd_fst_over
     ],
     attach Snd_Fst_Under :: Aux.Braid along [
         Fst => Snd.Planar, Snd => Fst.Planar,
-        braid => snd_fst_under
     ],
     for A in [ Fst, Snd ] {
         let <A>_<A>_Over :: Aux.Braid = <A>.Over,
         let <A>_<A>_Under :: Aux.Braid = <A>.Under,
     },
+    let fst_snd_over = Fst_Snd_Over.braid,
+    let fst_snd_under = Fst_Snd_Under.braid,
+    let snd_fst_over = Snd_Fst_Over.braid,
+    let snd_fst_under = Snd_Fst_Under.braid,
 
     (* A helper: paired planar objects *)
     let Fst_Snd :: Planar.Object = 
@@ -270,18 +264,156 @@ Pair <<= {
         #1 (Fst.under #0 Snd.under)
         #1 (Fst.ob #0 fst_snd_under #0 Snd.ob),
 
-(*
     for Loc in [ Over, Under ] {
-        let <Loc> :: Aux.Node_2_to_2 = [
-            LDom => FstSnd, RDom => FstSnd,
-            LCod => FstSnd, RCod => FstSnd,
-            braid => (Fst.ob #0 Snd_<Loc>_Fst.braid #0 Snd.ob)
+        let <Loc>_id = ((Fst.ob #0 Snd_Fst_<Loc>.LCodId.inv #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.Planar.RUnit_Inversion.inv #0 Snd.ob #0 Snd.ob) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd_Fst_<Loc>.Triangle_Cod.dir #0 Snd.ob) #1 (Fst.<Loc>.RUnit_Nat.inv #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.LUnit_Inv_Nat.inv) #1 (Fst.<Loc>.braid #0 Unit.ob #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.Triangle_Dom.dir #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.ob #0 Fst.ob #0 Snd.Planar.LUnit_Inversion.dir #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.RDomId.dir #0 Snd.ob)),
+        let total <Loc> :: Aux.Braid = [
+            Fst => Fst_Snd, Snd => Fst_Snd,
+            braid => (Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob)
                 #1 (Fst.<Loc>.braid #0 Snd.<Loc>.braid)
-                #1 (Fst.ob #0 Fst_<Loc>_Snd.braid #0 Snd.ob)
-            (* To be finished *)
+                #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob),
+            LDomId.dir => ((Fst.ob #0 Snd_Fst_<Loc>.LUnit_Inv_Nat.inv #0 Snd.ob) #1 (Fst.<Loc>.Triangle_Dom.dir #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.Planar.LUnit_Inversion.dir #0 Snd.ob #0 Snd.ob) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.<Loc>.RDomId.dir #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 <Loc>_id,
+            LDomId.inv => <Loc>_id
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.<Loc>.RDomId.inv #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.Planar.LUnit_Inversion.inv #0 Snd.ob #0 Snd.ob) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.LUnit_Inv_Nat.dir #0 Snd.ob) #1 (Fst.<Loc>.Triangle_Dom.inv #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob)),
+            RDomId.dir => ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd_Fst_<Loc>.RUnit_Nat.inv #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd_Fst_<Loc>.braid #0 Unit.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.Triangle_Dom.dir) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.Planar.LUnit_Inversion.dir) #1 <Loc>_id)
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.RDomId.dir) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob)),
+            RDomId.inv => ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.RDomId.inv) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.Planar.LUnit_Inversion.inv) #1 <Loc>_id)
+                #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd_Fst_<Loc>.braid #0 Unit.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.Triangle_Dom.inv) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd_Fst_<Loc>.RUnit_Nat.dir #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob)),
+            LCodId.dir => ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.LUnit_Inv_Nat.dir #0 Snd.ob) #1 (Fst.runit #0 Snd.ob #0 Fst.ob #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.<Loc>.Triangle_Cod.inv #0 Snd.ob #0 Snd.ob) #1 (Fst.runit #0 Fst.ob #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 (<Loc>_id #1 (Fst.Planar.RUnit_Inversion.dir #0 Snd.ob #0 Fst.ob #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.<Loc>.LCodId.dir #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob)),
+            LCodId.inv => ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.<Loc>.LCodId.inv #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 (<Loc>_id #1 (Fst.Planar.RUnit_Inversion.inv #0 Snd.ob #0 Fst.ob #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.<Loc>.Triangle_Cod.dir #0 Snd.ob #0 Snd.ob) #1 (Fst.runit #0 Fst.ob #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.LUnit_Inv_Nat.inv #0 Snd.ob) #1 (Fst.runit #0 Snd.ob #0 Fst.ob #0 Snd.ob)),
+            RCodId.dir => ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.Triangle_Cod.inv) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Unit.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.RUnit_Nat.dir #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.ob #0 Fst.ob #0 Snd.Planar.RUnit_Inversion.dir #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.RDomId.dir #0 Snd.ob))
+                #2 <Loc>_id,
+            RCodId.inv => <Loc>_id
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.RDomId.inv #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.ob #0 Fst.ob #0 Snd.Planar.RUnit_Inversion.inv #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.Triangle_Cod.dir) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Unit.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.RUnit_Nat.inv #0 Snd.ob)),
+            LUnit_Nat.dir => ((Unit.ob #0 Fst.ob #0 Snd_Fst_<Loc>.LCodId.inv #0 Snd.ob) #1 (Fst.<Loc>.LUnit_Nat.dir #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.ob #0 Fst_Snd_<Loc>.LUnit_Inv_Nat.dir #0 Snd.ob) #1 (Fst.runit #0 Snd.ob #0 Fst.ob #0 Snd.ob))
+                #2 ((Unit.ob #0 Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Unit.ob #0 Fst.ob #0 Fst.Planar.LUnit_Inversion.inv #0 Snd.ob #0 Snd.ob) #1 (Unit.ob #0 Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.lunit #0 Fst.ob #0 Snd.ob #0 Snd.ob) #1 (Fst.<Loc>.Triangle_Cod.inv #0 Snd.ob #0 Snd.ob) #1 (Fst.runit #0 Fst.ob #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.lunit #0 Snd.ob #0 Fst.ob #0 Snd.ob) #1 (Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.ob #0 Fst.lunit_inv #0 Snd.ob #0 Snd.ob) #1 (Fst.<Loc>.Triangle_Dom.inv #0 Snd.ob #0 Snd.ob) #1 (Fst.Planar.RUnit_Inversion.dir #0 Fst.ob #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Unit.ob #0 Fst.ob #0 Snd_Fst_<Loc>.LUnit_Inv_Nat.dir #0 Snd.ob) #1 (Unit.ob #0 Fst.ob #0 Unit.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.lunit #0 Unit.ob #0 Fst.ob #0 Snd.ob #0 Snd.ob) #1 (Fst.runit #0 Fst.ob #0 Snd.ob #0 Snd.ob) #1 (Fst.<Loc>.LCodId.dir #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.lunit #0 Snd.ob #0 Fst.ob #0 Snd.ob) #1 (Fst.ob #0 Snd.lunit_inv #0 Fst.ob #0 Snd.ob) #1 (Fst.runit #0 Snd.ob #0 Fst.ob #0 Snd.ob) #1 <Loc>_id),
+            LUnit_Nat.inv => ((Fst.lunit #0 Snd.ob #0 Fst.ob #0 Snd.ob) #1 (Fst.ob #0 Snd.lunit_inv #0 Fst.ob #0 Snd.ob) #1 (Fst.runit #0 Snd.ob #0 Fst.ob #0 Snd.ob) #1 <Loc>_id)
+                #2 ((Unit.ob #0 Fst.ob #0 Snd_Fst_<Loc>.LUnit_Inv_Nat.inv #0 Snd.ob) #1 (Unit.ob #0 Fst.ob #0 Unit.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.lunit #0 Unit.ob #0 Fst.ob #0 Snd.ob #0 Snd.ob) #1 (Fst.runit #0 Fst.ob #0 Snd.ob #0 Snd.ob) #1 (Fst.<Loc>.LCodId.inv #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.lunit #0 Snd.ob #0 Fst.ob #0 Snd.ob) #1 (Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.ob #0 Fst.lunit_inv #0 Snd.ob #0 Snd.ob) #1 (Fst.<Loc>.Triangle_Dom.dir #0 Snd.ob #0 Snd.ob) #1 (Fst.Planar.RUnit_Inversion.inv #0 Fst.ob #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Unit.ob #0 Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Unit.ob #0 Fst.ob #0 Fst.Planar.LUnit_Inversion.dir #0 Snd.ob #0 Snd.ob) #1 (Unit.ob #0 Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.lunit #0 Fst.ob #0 Snd.ob #0 Snd.ob) #1 (Fst.<Loc>.Triangle_Cod.dir #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Unit.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob) #1 (Fst.runit #0 Snd.ob #0 Fst.ob #0 Snd.ob))
+                #2 ((Unit.ob #0 Fst.ob #0 Snd_Fst_<Loc>.LCodId.dir #0 Snd.ob) #1 (Fst.<Loc>.LUnit_Nat.inv #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.ob #0 Fst_Snd_<Loc>.LUnit_Inv_Nat.inv #0 Snd.ob) #1 (Fst.runit #0 Snd.ob #0 Fst.ob #0 Snd.ob)),
+            RUnit_Nat.dir => ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob #0 Unit.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.RUnit_Nat.dir) #1 (Fst.ob #0 Fst.ob #0 Snd.ob #0 Snd.lunit_inv) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Unit.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.RUnit_Nat.dir #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.Planar.RUnit.CodId.inv) #1 (Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.Triangle_Cod.inv) #1 (Fst.ob #0 Fst.ob #0 Snd.runit #0 Snd.ob) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob #0 Unit.ob) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob #0 Unit.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.ob #0 Snd.runit) #1 (Fst.ob #0 Fst.ob #0 Snd.ob #0 Snd.Planar.LUnit_Inversion.inv) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.ob #0 Fst.ob #0 Snd.Planar.RUnit_Inversion.dir #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.runit) #1 (Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd_Fst_<Loc>.braid #0 Unit.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.Triangle_Dom.inv) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.RDomId.dir #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.runit) #1 (Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd_Fst_<Loc>.RUnit_Nat.dir #0 Snd.ob) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.runit) #1 (Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd.ob #0 Fst.runit #0 Snd.ob) #1 <Loc>_id),
+            RUnit_Nat.inv => ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.runit) #1 (Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd.ob #0 Fst.runit #0 Snd.ob) #1 <Loc>_id)
+                #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.runit) #1 (Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd_Fst_<Loc>.RUnit_Nat.inv #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.runit) #1 (Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd_Fst_<Loc>.braid #0 Unit.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.Triangle_Dom.dir) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.RDomId.inv #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob #0 Unit.ob) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob #0 Unit.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.ob #0 Snd.runit) #1 (Fst.ob #0 Fst.ob #0 Snd.ob #0 Snd.Planar.LUnit_Inversion.dir) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.ob #0 Fst.ob #0 Snd.Planar.RUnit_Inversion.inv #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.Planar.RUnit.CodId.dir) #1 (Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.Triangle_Cod.dir) #1 (Fst.ob #0 Fst.ob #0 Snd.runit #0 Snd.ob) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob #0 Unit.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.RUnit_Nat.inv) #1 (Fst.ob #0 Fst.ob #0 Snd.ob #0 Snd.lunit_inv) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Unit.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.RUnit_Nat.inv #0 Snd.ob)),
+            LUnit_Inv_Nat.dir => ((Fst.ob #0 Snd_Fst_<Loc>.LCodId.inv #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.LUnit_Inv_Nat.dir #0 Snd.ob) #1 (Fst.Planar.LFrobenius_Bimodule.inv #0 Snd.ob #0 Fst.ob #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.Planar.LUnit_Inversion.inv #0 Snd.ob #0 Snd.ob) #1 (Fst.<Loc>.LUnit_Inv_Nat.dir #0 Snd.ob #0 Snd.ob) #1 (Unit.ob #0 Fst.ob #0 Fst.lunit_inv #0 Snd.ob #0 Snd.ob) #1 (Unit.ob #0 Fst.runit #0 Fst.ob #0 Snd.ob #0 Snd.ob) #1 (Unit.ob #0 Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Unit.ob #0 Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.LUnit_Inv_Nat.dir #0 Snd.ob) #1 (Fst.ob #0 Unit.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.ob #0 Fst.lunit #0 Snd.ob #0 Snd.ob) #1 (Fst.lunit_inv #0 Fst.ob #0 Snd.ob #0 Snd.ob) #1 (Unit.ob #0 Fst.<Loc>.Triangle_Cod.inv #0 Snd.ob #0 Snd.ob) #1 (Unit.ob #0 Fst.ob #0 Unit.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob) #1 (Unit.ob #0 Fst.runit #0 Snd.ob #0 Fst.ob #0 Snd.ob))
+                #2 ((Fst.lunit_inv #0 Snd.ob #0 Fst.ob #0 Snd.ob) #1 (Unit.ob #0 Fst.ob #0 Snd.lunit_inv #0 Fst.ob #0 Snd.ob) #1 (Unit.ob #0 Fst.ob #0 Unit.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Unit.ob #0 Fst.<Loc>.Triangle_Dom.inv #0 Snd.ob #0 Snd.ob) #1 (Unit.ob #0 Fst.Planar.RUnit_Inversion.dir #0 Fst.ob #0 Snd.ob #0 Snd.ob) #1 (Unit.ob #0 Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Unit.ob #0 Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd.lunit_inv #0 Fst.ob #0 Snd.ob) #1 (Fst.Planar.LFrobenius_Bimodule.dir #0 Snd.ob #0 Fst.ob #0 Snd.ob) #1 (Unit.ob #0 Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Unit.ob #0 Fst.<Loc>.LCodId.dir #0 Snd.ob #0 Snd.ob) #1 (Unit.ob #0 Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Unit.ob #0 Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd.lunit_inv #0 Fst.ob #0 Snd.ob) #1 (Fst.runit #0 Snd.ob #0 Fst.ob #0 Snd.ob) #1 (Fst.lunit_inv #0 Snd.ob #0 Fst.ob #0 Snd.ob) #1 (Unit.ob #0 <Loc>_id)),
+            LUnit_Inv_Nat.inv => ((Fst.ob #0 Snd.lunit_inv #0 Fst.ob #0 Snd.ob) #1 (Fst.runit #0 Snd.ob #0 Fst.ob #0 Snd.ob) #1 (Fst.lunit_inv #0 Snd.ob #0 Fst.ob #0 Snd.ob) #1 (Unit.ob #0 <Loc>_id))
+                #2 ((Fst.ob #0 Snd.lunit_inv #0 Fst.ob #0 Snd.ob) #1 (Fst.Planar.LFrobenius_Bimodule.inv #0 Snd.ob #0 Fst.ob #0 Snd.ob) #1 (Unit.ob #0 Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Unit.ob #0 Fst.<Loc>.LCodId.inv #0 Snd.ob #0 Snd.ob) #1 (Unit.ob #0 Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Unit.ob #0 Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd.lunit_inv #0 Fst.ob #0 Snd.ob) #1 (Fst.ob #0 Unit.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.ob #0 Unit.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.lunit_inv #0 Unit.ob #0 Fst.ob #0 Snd.ob #0 Snd.ob) #1 (Unit.ob #0 Fst.<Loc>.Triangle_Dom.dir #0 Snd.ob #0 Snd.ob) #1 (Unit.ob #0 Fst.Planar.RUnit_Inversion.inv #0 Fst.ob #0 Snd.ob #0 Snd.ob) #1 (Unit.ob #0 Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.LUnit_Inv_Nat.inv #0 Snd.ob) #1 (Fst.ob #0 Fst.lunit #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.lunit_inv #0 Fst.ob #0 Snd.ob #0 Snd.ob) #1 (Unit.ob #0 Fst.<Loc>.Triangle_Cod.dir #0 Snd.ob #0 Snd.ob) #1 (Unit.ob #0 Fst.ob #0 Unit.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob) #1 (Unit.ob #0 Fst.runit #0 Snd.ob #0 Fst.ob #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.Planar.LUnit_Inversion.dir #0 Snd.ob #0 Snd.ob) #1 (Fst.<Loc>.LUnit_Inv_Nat.inv #0 Snd.ob #0 Snd.ob) #1 (Unit.ob #0 Fst.ob #0 Fst.lunit_inv #0 Snd.ob #0 Snd.ob) #1 (Unit.ob #0 Fst.runit #0 Fst.ob #0 Snd.ob #0 Snd.ob) #1 (Unit.ob #0 Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Unit.ob #0 Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.LCodId.dir #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.LUnit_Inv_Nat.inv #0 Snd.ob) #1 (Fst.Planar.LFrobenius_Bimodule.dir #0 Snd.ob #0 Fst.ob #0 Snd.ob)),
+            RUnit_Inv_Nat.dir => ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.RDomId.inv) #1 (Fst.ob #0 Fst.ob #0 Snd.ob #0 Snd.Planar.Bicomodule.inv) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Unit.ob #0 Snd.ob #0 Unit.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.RUnit_Nat.dir #0 Snd.ob #0 Unit.ob))
+                #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.Planar.LUnit_Inversion.inv) #1 (Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.RUnit_Inv_Nat.dir) #1 (Fst.ob #0 Fst.ob #0 Snd.ob #0 Snd.lunit_inv #0 Unit.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.runit #0 Snd.ob #0 Unit.ob) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob #0 Unit.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob #0 Unit.ob))
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Fst.ob #0 Snd.ob #0 Snd.Planar.RFrobenius_Bimodule.inv) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.Triangle_Cod.inv #0 Unit.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.runit #0 Snd.ob #0 Unit.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob #0 Unit.ob))
+                #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd.ob #0 Fst.ob #0 Unit.ob #0 Snd.runit_inv) #1 (Fst.ob #0 Snd_Fst_<Loc>.braid #0 Unit.ob #0 Snd.ob #0 Unit.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.Triangle_Dom.inv #0 Unit.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.Planar.RUnit_Inversion.dir #0 Snd.ob #0 Unit.ob) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob #0 Unit.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob #0 Unit.ob))
+                #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd_Fst_<Loc>.RUnit_Nat.dir #0 Snd.ob) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.ob #0 Snd.runit_inv) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.LCodId.dir #0 Unit.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob #0 Unit.ob))
+                #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd.ob #0 Fst.ob #0 Unit.ob #0 Snd.runit_inv) #1 (Fst.ob #0 Snd.ob #0 Fst.runit #0 Snd.ob #0 Unit.ob) #1 (<Loc>_id #0 Unit.ob)),
+            RUnit_Inv_Nat.inv => ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd.ob #0 Fst.ob #0 Unit.ob #0 Snd.runit_inv) #1 (Fst.ob #0 Snd.ob #0 Fst.runit #0 Snd.ob #0 Unit.ob) #1 (<Loc>_id #0 Unit.ob))
+                #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd_Fst_<Loc>.RUnit_Nat.inv #0 Snd.ob) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.ob #0 Snd.runit_inv) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.LCodId.inv #0 Unit.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob #0 Unit.ob))
+                #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd.ob #0 Fst.ob #0 Unit.ob #0 Snd.runit_inv) #1 (Fst.ob #0 Snd_Fst_<Loc>.braid #0 Unit.ob #0 Snd.ob #0 Unit.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.Triangle_Dom.dir #0 Unit.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.Planar.RUnit_Inversion.inv #0 Snd.ob #0 Unit.ob) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob #0 Unit.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob #0 Unit.ob))
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Fst.ob #0 Snd.ob #0 Snd.Planar.RFrobenius_Bimodule.dir) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.Triangle_Cod.dir #0 Unit.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.runit #0 Snd.ob #0 Unit.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob #0 Unit.ob))
+                #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.Planar.LUnit_Inversion.dir) #1 (Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.RUnit_Inv_Nat.inv) #1 (Fst.ob #0 Fst.ob #0 Snd.ob #0 Snd.lunit_inv #0 Unit.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.runit #0 Snd.ob #0 Unit.ob) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob #0 Unit.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob #0 Unit.ob))
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.RDomId.dir) #1 (Fst.ob #0 Fst.ob #0 Snd.ob #0 Snd.Planar.Bicomodule.dir) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Unit.ob #0 Snd.ob #0 Unit.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.RUnit_Nat.inv #0 Snd.ob #0 Unit.ob)),
+            Triangle_Dom.dir => ((Fst.ob #0 Snd.runit #0 Fst.ob #0 Snd.ob) #1 (Fst.ob #0 Snd_Fst_<Loc>.LUnit_Inv_Nat.inv #0 Snd.ob) #1 (Fst.ob #0 Unit.ob #0 Fst.ob #0 Snd.<Loc>.RDomId.inv) #1 (Fst.<Loc>.Triangle_Dom.dir #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd.ob #0 Unit.ob #0 Fst.ob #0 Snd.Planar.LUnit_Inversion.inv) #1 (Fst.ob #0 Snd_Fst_<Loc>.Triangle_Dom.dir #0 Snd.ob) #1 (Fst.ob #0 Fst.Planar.LUnit_Inversion.dir #0 Snd.ob #0 Snd.ob) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd.ob #0 Unit.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd.ob #0 Fst.lunit #0 Unit.ob #0 Snd.ob) #1 (Fst.ob #0 Snd_Fst_<Loc>.LCodId.dir #0 Unit.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.Triangle_Dom.inv) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd.ob #0 Fst.lunit #0 Snd.ob) #1 (Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd_Fst_<Loc>.RUnit_Nat.dir #0 Snd.ob) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd.ob #0 Unit.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd.ob #0 Fst.lunit #0 Unit.ob #0 Snd.ob) #1 (Fst.ob #0 Snd.ob #0 Fst.runit #0 Snd.ob) #1 <Loc>_id),
+            Triangle_Dom.inv => ((Fst.ob #0 Snd.ob #0 Fst.lunit #0 Snd.ob) #1 (Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd.ob #0 Fst.runit #0 Snd.ob) #1 <Loc>_id)
+                #2 ((Fst.ob #0 Snd.ob #0 Unit.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd.ob #0 Fst.lunit #0 Unit.ob #0 Snd.ob) #1 (Fst.ob #0 Snd_Fst_<Loc>.RUnit_Nat.inv #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd.ob #0 Fst.lunit #0 Snd.ob) #1 (Fst.ob #0 Snd_Fst_<Loc>.LCodId.inv #0 Snd.ob) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.Triangle_Dom.dir) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd.ob #0 Unit.ob #0 Fst.ob #0 Snd.Planar.LUnit_Inversion.dir) #1 (Fst.ob #0 Snd_Fst_<Loc>.Triangle_Dom.inv #0 Snd.ob) #1 (Fst.ob #0 Fst.Planar.LUnit_Inversion.inv #0 Snd.ob #0 Snd.ob) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd.runit #0 Fst.ob #0 Snd.ob) #1 (Fst.ob #0 Snd_Fst_<Loc>.LUnit_Inv_Nat.dir #0 Snd.ob) #1 (Fst.ob #0 Unit.ob #0 Fst.ob #0 Snd.<Loc>.RDomId.dir) #1 (Fst.<Loc>.Triangle_Dom.inv #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob)),
+            Triangle_Cod.dir => ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.LCodId.inv) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.LUnit_Inv_Nat.dir #0 Snd.ob) #1 (Fst.ob #0 Unit.ob #0 Snd.runit_inv #0 Fst.ob #0 Snd.ob) #1 (Fst.runit #0 Snd.ob #0 Unit.ob #0 Fst.ob #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.<Loc>.Triangle_Cod.inv #0 Snd.ob #0 Snd.ob) #1 (Fst.runit #0 Fst.ob #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.ob #0 Fst.ob #0 Snd.Planar.RUnit_Inversion.inv #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.Triangle_Cod.dir #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.Triangle_Cod.dir) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Unit.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.RUnit_Nat.inv #0 Snd.ob) #1 (Fst.ob #0 Snd.ob #0 Fst.lunit_inv #0 Snd.ob) #1 (Fst.Planar.RUnit_Inversion.dir #0 Snd.ob #0 Unit.ob #0 Fst.ob #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.<Loc>.LCodId.dir #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Snd.ob) #1 (Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd.ob #0 Fst.runit #0 Snd.ob) #1 (Fst.ob #0 Snd.ob #0 Fst.lunit_inv #0 Snd.ob))
+                #2 (<Loc>_id #1 (Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd.ob #0 Fst.runit #0 Snd.ob) #1 (Fst.ob #0 Snd.ob #0 Fst.lunit_inv #0 Snd.ob)),
+            Triangle_Cod.inv => (<Loc>_id #1 (Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd.ob #0 Fst.runit #0 Snd.ob) #1 (Fst.ob #0 Snd.ob #0 Fst.lunit_inv #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.<Loc>.LCodId.inv #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.ob #0 Fst.ob #0 Snd.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Fst_Snd_<Loc>.braid #0 Unit.ob #0 Snd.ob) #1 (Fst.ob #0 Snd.ob #0 Fst.runit #0 Snd.ob) #1 (Fst.ob #0 Snd.ob #0 Fst.lunit_inv #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.Triangle_Cod.inv) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Unit.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.RUnit_Nat.dir #0 Snd.ob) #1 (Fst.ob #0 Snd.ob #0 Fst.lunit_inv #0 Snd.ob) #1 (Fst.Planar.RUnit_Inversion.inv #0 Snd.ob #0 Unit.ob #0 Fst.ob #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.<Loc>.Triangle_Cod.dir #0 Snd.ob #0 Snd.ob) #1 (Fst.runit #0 Fst.ob #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.braid) #1 (Fst.ob #0 Fst.ob #0 Snd.Planar.RUnit_Inversion.dir #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.Triangle_Cod.inv #0 Snd.ob))
+                #2 ((Fst.ob #0 Snd_Fst_<Loc>.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.<Loc>.LCodId.dir) #1 (Fst.<Loc>.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_<Loc>.LUnit_Inv_Nat.inv #0 Snd.ob) #1 (Fst.ob #0 Unit.ob #0 Snd.runit_inv #0 Fst.ob #0 Snd.ob) #1 (Fst.runit #0 Snd.ob #0 Unit.ob #0 Fst.ob #0 Snd.ob))
         ],
     },
-*)    
+
+    let Over_Inversion :: Equation = [
+        dir => ((Fst.ob #0 Snd_Fst_Over.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.Over.braid) #1 (Fst.Over.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_Over_Inversion.dir #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.Under.braid) #1 (Fst.Under.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_Under.braid #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd_Fst_Over.braid #0 Snd.ob) #1 (Fst.Over.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.Over.braid) #1 (Fst.ob #0 Fst.ob #0 Snd.Under.LUnit_Inv_Nat.inv) #1 (Fst.Under.RUnit_Nat.inv #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_Under.braid #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd_Fst_Over.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.Over_Inversion.dir) #1 (Fst.ob #0 Fst.ob #0 Snd.lunit_inv #0 Snd.ob) #1 (Fst.Over_Inversion.dir #0 Unit.ob #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_Under.Triangle_Dom.dir #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd_Fst_Over.RUnit_Nat.dir #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.Planar.LUnit_Inversion.dir #0 Snd.ob) #1 (Fst.ob #0 Fst.lunit_inv #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Unit.ob #0 Fst_Snd_Under.braid #0 Snd.ob) #1 (Fst.runit #0 Snd.ob #0 Fst.ob #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd.ob #0 Fst.runit #0 Snd.ob) #1 (Fst.ob #0 Snd_Fst_Over.LUnit_Inv_Nat.dir #0 Snd.ob) #1 (Fst.ob #0 Unit.ob #0 Fst_Snd_Under.RDomId.dir #0 Snd.ob) #1 (Fst.runit #0 Snd.ob #0 Fst.ob #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd.ob #0 Fst.runit #0 Snd.ob) #1 (Fst.ob #0 Snd.lunit_inv #0 Fst.ob #0 Snd.ob) #1 (Fst.ob #0 Unit.ob #0 Snd_Fst_Over_Inversion.dir #0 Snd.ob) #1 (Fst.runit #0 Snd.ob #0 Fst.ob #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd.ob #0 Fst.runit #0 Snd.ob) #1 (Fst.ob #0 Snd.ob #0 Fst.lunit_inv #0 Snd.ob) #1 (Fst.ob #0 Snd.Planar.LFrobenius_Bimodule.dir #0 Fst.ob #0 Snd.ob) #1 (Fst.runit #0 Snd.ob #0 Fst.ob #0 Snd.ob)),
+        inv => ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd.ob #0 Fst.runit #0 Snd.ob) #1 (Fst.ob #0 Snd.ob #0 Fst.lunit_inv #0 Snd.ob) #1 (Fst.ob #0 Snd.Planar.LFrobenius_Bimodule.inv #0 Fst.ob #0 Snd.ob) #1 (Fst.runit #0 Snd.ob #0 Fst.ob #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd.ob #0 Fst.runit #0 Snd.ob) #1 (Fst.ob #0 Snd.lunit_inv #0 Fst.ob #0 Snd.ob) #1 (Fst.ob #0 Unit.ob #0 Snd_Fst_Over_Inversion.inv #0 Snd.ob) #1 (Fst.runit #0 Snd.ob #0 Fst.ob #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd.ob #0 Fst.runit #0 Snd.ob) #1 (Fst.ob #0 Snd_Fst_Over.LUnit_Inv_Nat.inv #0 Snd.ob) #1 (Fst.ob #0 Unit.ob #0 Fst_Snd_Under.RDomId.inv #0 Snd.ob) #1 (Fst.runit #0 Snd.ob #0 Fst.ob #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd_Fst_Over.RUnit_Nat.inv #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.Planar.LUnit_Inversion.inv #0 Snd.ob) #1 (Fst.ob #0 Fst.lunit_inv #0 Snd.ob #0 Snd.ob) #1 (Fst.runit #0 Fst.ob #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_Under.braid #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd_Fst_Over.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.Over_Inversion.inv) #1 (Fst.ob #0 Fst.ob #0 Snd.lunit_inv #0 Snd.ob) #1 (Fst.Over_Inversion.inv #0 Unit.ob #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_Under.Triangle_Dom.inv #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd_Fst_Over.braid #0 Snd.ob) #1 (Fst.Over.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.Over.braid) #1 (Fst.ob #0 Fst.ob #0 Snd.Under.LUnit_Inv_Nat.dir) #1 (Fst.Under.RUnit_Nat.dir #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_Under.braid #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd_Fst_Over.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.Over.braid) #1 (Fst.Over.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_Over_Inversion.inv #0 Snd.ob) #1 (Fst.Under.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.Under.braid) #1 (Fst.ob #0 Fst_Snd_Under.braid #0 Snd.ob))
+    ],
+    let Under_Inversion :: Equation = [
+        dir => ((Fst.ob #0 Snd_Fst_Under.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.Under.braid) #1 (Fst.Under.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_Under_Inversion.dir #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.Over.braid) #1 (Fst.Over.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_Over.braid #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd_Fst_Under.braid #0 Snd.ob) #1 (Fst.Under.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.Under.braid) #1 (Fst.ob #0 Fst.ob #0 Snd.Over.LUnit_Inv_Nat.inv) #1 (Fst.Over.RUnit_Nat.inv #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_Over.braid #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd_Fst_Under.braid #0 Snd.ob) #1 (Fst.Under_Inversion.dir #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.Under_Inversion.dir) #1 (Fst.ob #0 Fst.ob #0 Snd.lunit_inv #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_Over.Triangle_Dom.dir #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd_Fst_Under.RUnit_Nat.dir #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.Planar.LUnit_Inversion.dir #0 Snd.ob) #1 (Fst.ob #0 Fst.lunit_inv #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Unit.ob #0 Fst_Snd_Over.braid #0 Snd.ob) #1 (Fst.runit #0 Snd.ob #0 Fst.ob #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd.ob #0 Fst.runit #0 Snd.ob) #1 (Fst.ob #0 Snd_Fst_Under.LUnit_Inv_Nat.dir #0 Snd.ob) #1 (Fst.ob #0 Unit.ob #0 Fst_Snd_Over.RDomId.dir #0 Snd.ob) #1 (Fst.runit #0 Snd.ob #0 Fst.ob #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd.ob #0 Fst.runit #0 Snd.ob) #1 (Fst.ob #0 Snd.lunit_inv #0 Fst.ob #0 Snd.ob) #1 (Fst.ob #0 Unit.ob #0 Snd_Fst_Under_Inversion.dir #0 Snd.ob) #1 (Fst.runit #0 Snd.ob #0 Fst.ob #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd.ob #0 Fst.runit #0 Snd.ob) #1 (Fst.ob #0 Snd.ob #0 Fst.lunit_inv #0 Snd.ob) #1 (Fst.ob #0 Snd.Planar.LFrobenius_Bimodule.dir #0 Fst.ob #0 Snd.ob) #1 (Fst.runit #0 Snd.ob #0 Fst.ob #0 Snd.ob)),
+        inv => ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd.ob #0 Fst.runit #0 Snd.ob) #1 (Fst.ob #0 Snd.ob #0 Fst.lunit_inv #0 Snd.ob) #1 (Fst.ob #0 Snd.Planar.LFrobenius_Bimodule.inv #0 Fst.ob #0 Snd.ob) #1 (Fst.runit #0 Snd.ob #0 Fst.ob #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd.ob #0 Fst.runit #0 Snd.ob) #1 (Fst.ob #0 Snd.lunit_inv #0 Fst.ob #0 Snd.ob) #1 (Fst.ob #0 Unit.ob #0 Snd_Fst_Under_Inversion.inv #0 Snd.ob) #1 (Fst.runit #0 Snd.ob #0 Fst.ob #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd.ob #0 Fst.runit #0 Snd.ob) #1 (Fst.ob #0 Snd_Fst_Under.LUnit_Inv_Nat.inv #0 Snd.ob) #1 (Fst.ob #0 Unit.ob #0 Fst_Snd_Over.RDomId.inv #0 Snd.ob) #1 (Fst.runit #0 Snd.ob #0 Fst.ob #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd.ob #0 Fst.ob #0 Snd.lunit_inv) #1 (Fst.ob #0 Snd_Fst_Under.RUnit_Nat.inv #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.Planar.LUnit_Inversion.inv #0 Snd.ob) #1 (Fst.ob #0 Fst.lunit_inv #0 Snd.ob #0 Snd.ob) #1 (Fst.runit #0 Fst.ob #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_Over.braid #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd_Fst_Under.braid #0 Snd.ob) #1 (Fst.Under_Inversion.inv #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.Under_Inversion.inv) #1 (Fst.ob #0 Fst.ob #0 Snd.lunit_inv #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_Over.Triangle_Dom.inv #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd_Fst_Under.braid #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.Under.braid) #1 (Fst.ob #0 Fst.ob #0 Snd.Over.LUnit_Inv_Nat.dir) #1 (Fst.Under.braid #0 Unit.ob #0 Snd.ob #0 Snd.ob) #1 (Fst.Over.RUnit_Nat.dir #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst_Snd_Over.braid #0 Snd.ob))
+            #2 ((Fst.ob #0 Snd_Fst_Under.braid #0 Snd.ob) #1 (Fst.Under.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.Under.braid) #1 (Fst.ob #0 Fst_Snd_Under_Inversion.inv #0 Snd.ob) #1 (Fst.Over.braid #0 Snd.ob #0 Snd.ob) #1 (Fst.ob #0 Fst.ob #0 Snd.Over.braid) #1 (Fst.ob #0 Fst_Snd_Over.braid #0 Snd.ob))
+    ],
+    
+    (* Temporary generators *)
+    Over_id_: over -> over,
+    Under_id_: under -> under,
+
     index thin = 
         [ fst_snd_over, fst_snd_under, snd_fst_over, snd_fst_under ]
 }
