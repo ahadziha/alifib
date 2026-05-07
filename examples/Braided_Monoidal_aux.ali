@@ -11,49 +11,49 @@ Braid <<= {
     include Planar.Unit as Unit,
     let unit = Unit.ob,
 
-    attach Fst :: Planar.Object along [ Unit => Unit ],
-    attach Snd :: Planar.Object along [ Unit => Unit ],
+    attach 1st :: Planar.Object along [ Unit => Unit ],
+    attach 2nd :: Planar.Object along [ Unit => Unit ],
 
-    braid: Fst.ob Snd.ob -> Snd.ob Fst.ob,
+    braid: 1st.ob 2nd.ob -> 2nd.ob 1st.ob,
 
     attach LDomId :: Equation along [
-        lhs => (Fst.id Snd.ob) braid,
+        lhs => (1st.id 2nd.ob) braid,
         rhs => braid
     ],
     attach RDomId :: Equation along [
-        lhs => (Fst.ob Snd.id) braid,
+        lhs => (1st.ob 2nd.id) braid,
         rhs => braid
     ],
     attach LCodId :: Equation along [
-        lhs => braid (Snd.id Fst.ob),
+        lhs => braid (2nd.id 1st.ob),
         rhs => braid
     ],
     attach RCodId :: Equation along [
-        lhs => braid (Snd.ob Fst.id),
+        lhs => braid (2nd.ob 1st.id),
         rhs => braid
     ],
     attach LUnit_Nat :: Equation along [
-        lhs => (unit braid) (Snd.lunit Fst.ob),
-        rhs => (Fst.lunit Snd.ob) braid
+        lhs => (unit braid) (2nd.lunit 1st.ob),
+        rhs => (1st.lunit 2nd.ob) braid
     ],
     attach RUnit_Nat :: Equation along [
-        lhs => (braid unit) (Snd.ob Fst.runit),
-        rhs => (Fst.ob Snd.runit) braid
+        lhs => (braid unit) (2nd.ob 1st.runit),
+        rhs => (1st.ob 2nd.runit) braid
     ],
     attach LUnit_Inv_Nat :: Equation along [
-        lhs => braid (Snd.lunit_inv Fst.ob),
-        rhs => (Fst.lunit_inv Snd.ob) (unit braid)
+        lhs => braid (2nd.lunit_inv 1st.ob),
+        rhs => (1st.lunit_inv 2nd.ob) (unit braid)
     ],
     attach RUnit_Inv_Nat :: Equation along [
-        lhs => braid (Snd.ob Fst.runit_inv),
-        rhs => (Fst.ob Snd.runit_inv) (braid unit)
+        lhs => braid (2nd.ob 1st.runit_inv),
+        rhs => (1st.ob 2nd.runit_inv) (braid unit)
     ],
     attach Triangle_Dom :: Equation along [
-        lhs => (Fst.runit Snd.ob) braid,
-        rhs => (Fst.ob Snd.lunit) braid
+        lhs => (1st.runit 2nd.ob) braid,
+        rhs => (1st.ob 2nd.lunit) braid
     ],
     attach Triangle_Cod :: Equation along [
-        lhs => braid (Snd.runit_inv Fst.ob),
-        rhs => braid (Snd.ob Fst.lunit_inv)
+        lhs => braid (2nd.runit_inv 1st.ob),
+        rhs => braid (2nd.ob 1st.lunit_inv)
     ]
 }

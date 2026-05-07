@@ -18,7 +18,7 @@ Monoid <<= {
 
     (* Monoid multiplication *)
     attach M :: Monoidal.Morphism along [
-        Dom => ( map [ Fst => A, Snd => A ] :: Monoidal.Pair ).Tensor,
+        Dom => ( map [ 1st => A, 2nd => A ] :: Monoidal.Pair ).Tensor,
         Cod => A
     ],
     let m = M.mor,
@@ -59,9 +59,9 @@ Duality <<= {
     let r = R.ob,
 
     let LR :: Monoidal.Object = 
-        ( map [ Fst => L, Snd => R ] :: Monoidal.Pair ).Tensor,
+        ( map [ 1st => L, 2nd => R ] :: Monoidal.Pair ).Tensor,
     let RL :: Monoidal.Object = 
-        ( map [ Fst => R, Snd => L ] :: Monoidal.Pair ).Tensor,
+        ( map [ 1st => R, 2nd => L ] :: Monoidal.Pair ).Tensor,
         
     (* Duality unit *)
     attach Eta :: Monoidal.Morphism along [
