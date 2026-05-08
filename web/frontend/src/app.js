@@ -1,6 +1,6 @@
 import { EditorView, keymap, lineNumbers, drawSelection, highlightActiveLine } from '@codemirror/view';
 import { EditorState, Compartment } from '@codemirror/state';
-import { defaultKeymap, indentWithTab, history as cmHistory, historyKeymap } from '@codemirror/commands';
+import { defaultKeymap, insertTab, indentLess, history as cmHistory, historyKeymap } from '@codemirror/commands';
 import { indentUnit, bracketMatching } from '@codemirror/language';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { search, searchKeymap, findNext } from '@codemirror/search';
@@ -198,7 +198,8 @@ function makeEditorState(doc) {
         ...searchKeymap,
         ...defaultKeymap,
         ...historyKeymap,
-        indentWithTab,
+        { key: 'Tab', run: insertTab },
+        { key: 'Shift-Tab', run: indentLess },
         { key: 'Mod-Enter', run: () => { void evaluateSource(); return true; } },
       ]),
       EditorView.updateListener.of(update => {
