@@ -1,0 +1,1170 @@
+(***
+    A module for symmetric monoidal categories
+***)
+
+@Type
+include Monoidal as Planar,
+include Braided_Monoidal_aux as Aux,
+let Equation = Aux.Equation,
+
+(*** 
+    The unit is the same as the planar monoidal unit,
+    but we can define “braidings” on it
+***)
+Unit <<= {
+    pt,
+    ob: pt -> pt,
+    id: ob -> ob,
+    merge: ob ob -> ob,
+    split: ob -> ob ob,
+
+    attach Planar :: Planar.Unit along [
+        id => id, merge => merge, split => split
+    ],
+    let Merge :: Planar.Aux.Node_2_to_1 = Planar.Merge,
+    let Split :: Planar.Aux.Node_1_to_2 = Planar.Split,
+    let Assoc :: Equation = Planar.Assoc,
+    let Coassoc :: Equation = Planar.Coassoc,
+    let LFrobenius :: Equation = Planar.LFrobenius,
+    let RFrobenius :: Equation = Planar.RFrobenius,
+    let Split_Merge :: Equation = Planar.Split_Merge,
+    
+    let swap = merge split,
+
+    let Swap :: Aux.Braid = [
+        1 => Planar.Object, 2 => Planar.Object,
+        braid => merge split,
+        LDomId.dir => (Merge.LDomId.dir #1 Split.DomId.inv)
+            #2 (Merge.CodId.dir #1 split),
+        LDomId.inv => (Merge.CodId.inv #1 split)
+            #2 (Merge.LDomId.inv #1 Split.DomId.dir),
+        RDomId.dir => (Merge.RDomId.dir #1 Split.DomId.inv)
+            #2 (Merge.CodId.dir #1 split),
+        RDomId.inv => (Merge.CodId.inv #1 split)
+            #2 (Merge.RDomId.inv #1 Split.DomId.dir),
+        LCodId.dir => (Merge.CodId.inv #1 Split.LCodId.dir)
+            #2 (merge #1 Split.DomId.dir),
+        LCodId.inv => (merge #1 Split.DomId.inv)
+            #2 (Merge.CodId.dir #1 Split.LCodId.inv),
+        RCodId.dir => (Merge.CodId.inv #1 Split.RCodId.dir)
+            #2 (merge #1 Split.DomId.dir),
+        RCodId.inv => (merge #1 Split.DomId.inv)
+            #2 (Merge.CodId.dir #1 Split.RCodId.inv),
+        LUnit_Nat.dir => ((ob #0 merge) #1 RFrobenius.dir)
+            #2 (Assoc.inv #1 split),
+        LUnit_Nat.inv => (Assoc.dir #1 split)
+            #2 ((ob #0 merge) #1 RFrobenius.inv),
+        RUnit_Nat.dir => ((merge #0 ob) #1 LFrobenius.dir)
+            #2 (Assoc.dir #1 split),
+        RUnit_Nat.inv => (Assoc.inv #1 split)
+            #2 ((merge #0 ob) #1 LFrobenius.inv),
+        LUnit_Inv_Nat.dir => (merge #1 Coassoc.dir)
+            #2 (LFrobenius.inv #1 (ob #0 split)),
+        LUnit_Inv_Nat.inv => (LFrobenius.dir #1 (ob #0 split))
+            #2 (merge #1 Coassoc.inv),
+        RUnit_Inv_Nat.dir => (merge #1 Coassoc.inv)
+            #2 (RFrobenius.inv #1 (split #0 ob)),
+        RUnit_Inv_Nat.inv => (RFrobenius.dir #1 (split #0 ob))
+            #2 (merge #1 Coassoc.dir),
+        Triangle_Dom.dir => (Assoc.dir #1 Split.DomId.inv)
+            #2 ((ob #0 merge) #1 Merge.CodId.dir #1 split),
+        Triangle_Dom.inv => ((ob #0 merge) #1 Merge.CodId.inv #1 split)
+            #2 (Assoc.inv #1 Split.DomId.dir),
+        Triangle_Cod.dir => (Merge.CodId.inv #1 Coassoc.dir)
+            #2 (merge #1 Split.DomId.dir #1 (ob #0 split)),
+        Triangle_Cod.inv => (merge #1 Split.DomId.inv #1 (ob #0 split))
+            #2 (Merge.CodId.dir #1 Coassoc.inv)
+    ],
+    let Swap_Inversion :: Equation = [
+        dir => (merge #1 Split_Merge.dir #1 split)
+            #2 (merge #1 Split.DomId.dir)
+            #2 RFrobenius.inv,
+        inv => RFrobenius.dir
+            #2 (merge #1 Split.DomId.inv)
+            #2 (merge #1 Split_Merge.inv #1 split)
+    ],
+    let Swap_YangBaxter :: Equation = [
+        dir => ((merge #0 ob) #1 LFrobenius.dir #1 RFrobenius.dir #1 (split #0 ob))
+            #2 (Assoc.dir #1 Split_Merge.dir #1 Coassoc.dir)
+            #2 ((ob #0 merge) #1 merge #1 Split_Merge.inv #1 split #1 (ob #0 split))
+            #2 ((ob #0 merge) #1 RFrobenius.inv #1 LFrobenius.inv #1 (ob #0 split)),
+        inv => ((ob #0 merge) #1 RFrobenius.dir #1 LFrobenius.dir #1 (ob #0 split))
+            #2 ((ob #0 merge) #1 merge #1 Split_Merge.dir #1 split #1 (ob #0 split))
+            #2 (Assoc.inv #1 Split_Merge.inv #1 Coassoc.inv)
+            #2 ((merge #0 ob) #1 LFrobenius.inv #1 RFrobenius.inv #1 (split #0 ob))
+    ]
+},
+
+(*** 
+    A single object comes with a symmetric braiding,
+    Swap
+***)
+Object <<= {
+    include Unit,
+    let unit = Unit.ob,
+    let merge = Unit.merge,
+    let split = Unit.split,
+
+    ob: Unit.pt -> Unit.pt,
+    id: ob -> ob,
+    lunit: unit ob -> ob,
+    lunit_inv: ob -> unit ob,
+    runit: ob unit -> ob,
+    runit_inv: ob -> ob unit,
+    
+    (* Adding all the "planar" equations *)
+    attach Planar :: Planar.Object along [
+        Unit => Unit.Planar.Unit,
+        id => id,
+        lunit => lunit, lunit_inv => lunit_inv,
+        runit => runit, runit_inv => runit_inv
+    ],
+
+    (* The self-braiding *)
+    attach Swap :: Aux.Braid along [
+        1 => Planar, 2 => Planar,
+    ],
+    let swap = Swap.braid,
+    
+    (* Equations for the symmetric braiding *)
+    attach Swap_Inversion :: Equation along [
+        lhs => swap swap,
+        rhs => Planar.Pair.Tensor.id
+    ],
+    attach Swap_YangBaxter :: Equation along [
+        lhs => (swap ob) (ob swap) (swap ob),
+        rhs => (ob swap) (swap ob) (ob swap)
+    ],
+    
+    index thin = [ swap ]
+}
+
+(* The unit is also an object *)
+@Unit
+let total Object :: Object = [
+    Planar => Planar.Object,
+    Swap => Swap,
+    Swap_Inversion => Swap_Inversion,
+    Swap_YangBaxter => Swap_YangBaxter,
+]
+    
+@Type
+(***
+    A pair of objects comes with symmetric braidings between them:
+    Swap from 1 2 to 2 1,
+    Rev_Swap from 2 1 to 1 2
+***)
+Pair <<= {
+    include Unit,
+
+    attach 1 :: Object along [ Unit => Unit ],
+    attach 2 :: Object along [ Unit => Unit ],
+
+    (* This only adds definitions, no extra generators *)
+    attach Planar :: Planar.Pair along [
+        1 => 1.Planar, 2 => 2.Planar
+    ],
+
+    (* Adding the braidings *)
+    attach Swap :: Aux.Braid along [
+        1 => 1.Planar, 2 => 2.Planar,
+    ],
+    attach Rev_Swap :: Aux.Braid along [
+        1 => 2.Planar, 2 => 1.Planar,
+    ],
+    let swap = Swap.braid,
+    let rev_swap = Rev_Swap.braid,
+    
+    (* Equations for braidings *)
+    attach Swap_Inversion :: Equation along [
+        lhs => swap rev_swap,
+        rhs => Planar.Tensor.id
+    ],
+    attach Rev_Swap_Inversion :: Equation along [
+        lhs => rev_swap swap,
+        rhs => Planar.Rev.Tensor.id
+    ],
+    attach Swap_YangBaxter_112 :: Equation along [
+        lhs => (1.Swap.braid 2.ob)
+            (1.ob Swap.braid)
+            (Swap.braid 1.ob),
+        rhs => (1.ob Swap.braid)
+            (Swap.braid 1.ob)
+            (2.ob 1.Swap.braid)
+    ],
+    attach Swap_YangBaxter_121 :: Equation along [
+        lhs => (Swap.braid 1.ob)
+            (2.ob 1.Swap.braid)
+            (Rev_Swap.braid 1.ob),
+        rhs => (1.ob Rev_Swap.braid)
+            (1.Swap.braid 2.ob)
+            (1.ob Swap.braid)
+    ],
+    attach Swap_YangBaxter_122 :: Equation along [
+        lhs => (Swap.braid 2.ob)
+            (2.ob Swap.braid)
+            (2.Swap.braid 1.ob),
+        rhs => (1.ob 2.Swap.braid)
+            (Swap.braid 2.ob)
+            (2.ob Swap.braid)
+    ],
+    attach Swap_YangBaxter_211 :: Equation along [
+        lhs => (Rev_Swap.braid 1.ob)
+            (1.ob Rev_Swap.braid)
+            (1.Swap.braid 2.ob),
+        rhs => (2.ob 1.Swap.braid)
+            (Rev_Swap.braid 1.ob)
+            (1.ob Rev_Swap.braid)
+    ],
+    attach Swap_YangBaxter_212 :: Equation along [
+        lhs => (Rev_Swap.braid 2.ob)
+            (1.ob 2.Swap.braid)
+            (Swap.braid 2.ob),
+        rhs => (2.ob Swap.braid)
+            (2.Swap.braid 1.ob)
+            (2.ob Rev_Swap.braid)
+    ],
+    attach Swap_YangBaxter_221 :: Equation along [
+        lhs => (2.Swap.braid 1.ob)
+            (2.ob Rev_Swap.braid)
+            (Rev_Swap.braid 2.ob),
+        rhs => (2.ob Rev_Swap.braid)
+            (Rev_Swap.braid 2.ob)
+            (1.ob 2.Swap.braid)
+    ],
+
+    index thin = [ swap, rev_swap ]
+}
+
+(* 
+	The "diagonal" pair of an object:
+    A.Pair = “(A, A)”
+*)
+@Object
+let Pair :: Pair = [
+    1 => Object, 2 => Object,
+    Swap => Swap, Rev_Swap => Swap,
+    Swap_Inversion => Swap_Inversion,
+    Rev_Swap_Inversion => Swap_Inversion,
+    Swap_YangBaxter_112 => Swap_YangBaxter,
+    Swap_YangBaxter_121 => Swap_YangBaxter,
+    Swap_YangBaxter_122 => Swap_YangBaxter,
+    Swap_YangBaxter_211 => Swap_YangBaxter,
+    Swap_YangBaxter_212 => Swap_YangBaxter,
+    Swap_YangBaxter_221 => Swap_YangBaxter
+]
+
+(* 
+	The pair of an object with the unit: 
+    A.With_Unit = “(A, Unit)”
+*)
+@Object { (* Start local definitions *)
+    let Swap_With_Unit :: Aux.Braid = [
+        1 => Planar, 2 => Unit.Planar.Object,
+        braid => runit lunit_inv,
+        LDomId.dir => (Planar.RUnit.LDomId.dir #1 Planar.LUnit_Inv.DomId.inv)
+            #2 (Planar.RUnit.CodId.dir #1 lunit_inv),
+        LDomId.inv => (Planar.RUnit.CodId.inv #1 lunit_inv)
+            #2 (Planar.RUnit.LDomId.inv #1 Planar.LUnit_Inv.DomId.dir),
+        RDomId.dir => (Planar.RUnit.RDomId.dir #1 Planar.LUnit_Inv.DomId.inv)
+            #2 (Planar.RUnit.CodId.dir #1 lunit_inv),
+        RDomId.inv => (Planar.RUnit.CodId.inv #1 lunit_inv)
+            #2 (Planar.RUnit.RDomId.inv #1 Planar.LUnit_Inv.DomId.dir),
+        LCodId.dir => (Planar.RUnit.CodId.inv #1 Planar.LUnit_Inv.LCodId.dir)
+            #2 (runit #1 Planar.LUnit_Inv.DomId.dir),
+        LCodId.inv => (runit #1 Planar.LUnit_Inv.DomId.inv)
+            #2 (Planar.RUnit.CodId.dir #1 Planar.LUnit_Inv.LCodId.inv),
+        RCodId.dir => (Planar.RUnit.CodId.inv #1 Planar.LUnit_Inv.RCodId.dir)
+            #2 (runit #1 Planar.LUnit_Inv.DomId.dir),
+        RCodId.inv => (runit #1 Planar.LUnit_Inv.DomId.inv)
+            #2 (Planar.RUnit.CodId.dir #1 Planar.LUnit_Inv.RCodId.inv),
+        LUnit_Nat.dir => ((unit #0 runit) #1 Planar.Left_RFrobenius_Module.dir)
+            #2 (Planar.Bimodule.inv #1 lunit_inv),
+        LUnit_Nat.inv => (Planar.Bimodule.dir #1 lunit_inv)
+            #2 ((unit #0 runit) #1 Planar.Left_RFrobenius_Module.inv),
+        RUnit_Nat.dir => ((runit #0 unit) #1 Planar.LFrobenius_Bimodule.dir)
+            #2 (Planar.Right_Module.dir #1 lunit_inv),
+        RUnit_Nat.inv => (Planar.Right_Module.inv #1 lunit_inv)
+            #2 ((runit #0 unit) #1 Planar.LFrobenius_Bimodule.inv),
+        LUnit_Inv_Nat.dir => (runit #1 Planar.Left_Comodule.dir)
+            #2 (Planar.LFrobenius_Bimodule.inv #1 (unit #0 lunit_inv)),
+        LUnit_Inv_Nat.inv => (Planar.LFrobenius_Bimodule.dir #1 (unit #0 lunit_inv))
+            #2 (runit #1 Planar.Left_Comodule.inv),
+        RUnit_Inv_Nat.dir => (runit #1 Planar.Bicomodule.inv)
+            #2 (Planar.Right_RFrobenius_Module.inv #1 (lunit_inv #0 unit)),
+        RUnit_Inv_Nat.inv => (Planar.Right_RFrobenius_Module.dir #1 (lunit_inv #0 unit))
+            #2 (runit #1 Planar.Bicomodule.dir),
+        Triangle_Dom.dir => (Planar.Right_Module.dir #1 Planar.LUnit_Inv.DomId.inv)
+            #2 ((ob #0 merge) #1 Planar.RUnit.CodId.dir #1 lunit_inv),
+        Triangle_Dom.inv => ((ob #0 merge) #1 Planar.RUnit.CodId.inv #1 lunit_inv)
+            #2 (Planar.Right_Module.inv #1 Planar.LUnit_Inv.DomId.dir),
+        Triangle_Cod.dir => (Planar.RUnit.CodId.inv #1 Planar.Left_Comodule.dir)
+            #2 (runit #1 Planar.LUnit_Inv.DomId.dir #1 (unit #0 lunit_inv)),
+        Triangle_Cod.inv => (runit #1 Planar.LUnit_Inv.DomId.inv #1 (unit #0 lunit_inv))
+            #2 (Planar.RUnit.CodId.dir #1 Planar.Left_Comodule.inv)
+    ],
+    let Rev_Swap_With_Unit :: Aux.Braid = [
+        1 => Unit.Planar.Object, 2 => Planar,
+        braid => lunit runit_inv,
+        LDomId.dir => (Planar.LUnit.LDomId.dir #1 Planar.RUnit_Inv.DomId.inv)
+            #2 (Planar.LUnit.CodId.dir #1 runit_inv),
+        LDomId.inv => (Planar.LUnit.CodId.inv #1 runit_inv)
+            #2 (Planar.LUnit.LDomId.inv #1 Planar.RUnit_Inv.DomId.dir),
+        RDomId.dir => (Planar.LUnit.RDomId.dir #1 Planar.RUnit_Inv.DomId.inv)
+            #2 (Planar.LUnit.CodId.dir #1 runit_inv),
+        RDomId.inv => (Planar.LUnit.CodId.inv #1 runit_inv)
+            #2 (Planar.LUnit.RDomId.inv #1 Planar.RUnit_Inv.DomId.dir),
+        LCodId.dir => (Planar.LUnit.CodId.inv #1 Planar.RUnit_Inv.LCodId.dir)
+            #2 (lunit #1 Planar.RUnit_Inv.DomId.dir),
+        LCodId.inv => (lunit #1 Planar.RUnit_Inv.DomId.inv)
+            #2 (Planar.LUnit.CodId.dir #1 Planar.RUnit_Inv.LCodId.inv),
+        RCodId.dir => (Planar.LUnit.CodId.inv #1 Planar.RUnit_Inv.RCodId.dir)
+            #2 (lunit #1 Planar.RUnit_Inv.DomId.dir),
+        RCodId.inv => (lunit #1 Planar.RUnit_Inv.DomId.inv)
+            #2 (Planar.LUnit.CodId.dir #1 Planar.RUnit_Inv.RCodId.inv),
+        LUnit_Nat.dir => ((unit #0 lunit) #1 Planar.RFrobenius_Bimodule.dir)
+            #2 (Planar.Left_Module.inv #1 runit_inv),
+        LUnit_Nat.inv => (Planar.Left_Module.dir #1 runit_inv)
+            #2 ((unit #0 lunit) #1 Planar.RFrobenius_Bimodule.inv),
+        RUnit_Nat.dir => ((lunit #0 unit) #1 Planar.Right_LFrobenius_Module.dir)
+            #2 (Planar.Bimodule.dir #1 runit_inv),
+        RUnit_Nat.inv => (Planar.Bimodule.inv #1 runit_inv)
+            #2 ((lunit #0 unit) #1 Planar.Right_LFrobenius_Module.inv),
+        LUnit_Inv_Nat.dir => (lunit #1 Planar.Bicomodule.dir)
+            #2 (Planar.Left_LFrobenius_Module.inv #1 (unit #0 runit_inv)),
+        LUnit_Inv_Nat.inv => (Planar.Left_LFrobenius_Module.dir #1 (unit #0 runit_inv))
+            #2 (lunit #1 Planar.Bicomodule.inv),
+        RUnit_Inv_Nat.dir => (lunit #1 Planar.Right_Comodule.inv)
+            #2 (Planar.RFrobenius_Bimodule.inv #1 (runit_inv #0 unit)),
+        RUnit_Inv_Nat.inv => (Planar.RFrobenius_Bimodule.dir #1 (runit_inv #0 unit))
+            #2 (lunit #1 Planar.Right_Comodule.dir),
+        Triangle_Dom.dir => (Planar.Left_Module.dir #1 Planar.RUnit_Inv.DomId.inv)
+            #2 ((unit #0 lunit) #1 Planar.LUnit.CodId.dir #1 runit_inv),
+        Triangle_Dom.inv => ((unit #0 lunit) #1 Planar.LUnit.CodId.inv #1 runit_inv)
+            #2 (Planar.Left_Module.inv #1 Planar.RUnit_Inv.DomId.dir),
+        Triangle_Cod.dir => (Planar.LUnit.CodId.inv #1 Planar.Right_Comodule.dir)
+            #2 (lunit #1 Planar.RUnit_Inv.DomId.dir #1 (ob #0 split)),
+        Triangle_Cod.inv => (lunit #1 Planar.RUnit_Inv.DomId.inv #1 (ob #0 split))
+            #2 (Planar.LUnit.CodId.dir #1 Planar.Right_Comodule.inv)
+    ],
+    let Swap_With_Unit_Inversion :: Equation = [
+        dir => (runit #1 Planar.LUnit_Inversion.dir #1 runit_inv)
+            #2 (Planar.RUnit.CodId.dir #1 runit_inv)
+            #2 Planar.Right_RFrobenius_Module.inv,
+        inv => Planar.Right_RFrobenius_Module.dir
+            #2 (Planar.RUnit.CodId.inv #1 runit_inv)
+            #2 (runit #1 Planar.LUnit_Inversion.inv #1 runit_inv)
+    ],
+    let Rev_Swap_With_Unit_Inversion :: Equation = [
+        dir => (lunit #1 Planar.RUnit_Inversion.dir #1 lunit_inv)
+            #2 (Planar.LUnit.CodId.dir #1 lunit_inv)
+            #2 Planar.Left_RFrobenius_Module.inv,
+        inv => Planar.Left_RFrobenius_Module.dir
+            #2 (Planar.LUnit.CodId.inv #1 lunit_inv)
+            #2 (lunit #1 Planar.RUnit_Inversion.inv #1 lunit_inv)
+    ],
+    let Swap_With_Unit_112 :: Equation = [
+        dir => ((Swap.RDomId.inv #0 Unit.ob) #1 (ob #0 Planar.LFrobenius_Bimodule.inv) #1 (runit #0 ob) #1 (lunit_inv #0 ob))
+            #2 ((ob #0 Planar.LUnit_Inversion.inv #0 Unit.ob) #1 (Swap.Triangle_Cod.inv #0 Unit.ob) #1 (runit #0 ob #0 Unit.ob) #1 (lunit_inv #0 ob #0 Unit.ob) #1 (Unit.ob #0 ob #0 runit))
+            #2 ((ob #0 lunit_inv #0 Unit.ob) #1 (Swap.Triangle_Dom.inv #0 Unit.ob) #1 (Planar.RUnit_Inversion.dir #0 ob #0 Unit.ob) #1 (lunit_inv #0 ob #0 Unit.ob) #1 (Unit.ob #0 ob #0 runit))
+            #2 ((ob #0 lunit_inv #0 Unit.ob) #1 (runit #0 ob #0 Unit.ob) #1 Swap.RUnit_Nat.dir #1 (Planar.LUnit_Inv.DomId.dir #0 ob))
+            #2 ((ob #0 Planar.LFrobenius_Bimodule.dir) #1 (runit #0 ob) #1 Swap.LUnit_Inv_Nat.dir),
+        inv => ((ob #0 Planar.LFrobenius_Bimodule.inv) #1 (runit #0 ob) #1 Swap.LUnit_Inv_Nat.inv)
+            #2 ((ob #0 lunit_inv #0 Unit.ob) #1 (runit #0 ob #0 Unit.ob) #1 Swap.RUnit_Nat.inv #1 (Planar.LUnit_Inv.DomId.inv #0 ob))
+            #2 ((ob #0 lunit_inv #0 Unit.ob) #1 (Swap.Triangle_Dom.dir #0 Unit.ob) #1 (Planar.RUnit_Inversion.inv #0 ob #0 Unit.ob) #1 (lunit_inv #0 ob #0 Unit.ob) #1 (Unit.ob #0 ob #0 runit))
+            #2 ((ob #0 Planar.LUnit_Inversion.dir #0 Unit.ob) #1 (Swap.Triangle_Cod.dir #0 Unit.ob) #1 (ob #0 Unit.ob #0 runit) #1 (runit #0 ob) #1 (lunit_inv #0 ob))
+            #2 ((Swap.RDomId.dir #0 Unit.ob) #1 (ob #0 Planar.LFrobenius_Bimodule.dir) #1 (runit #0 ob) #1 (lunit_inv #0 ob))
+    ],
+    let Swap_With_Unit_121 :: Equation = [
+        dir => ((runit #0 ob) #1 Swap.LUnit_Inv_Nat.inv #1 (lunit #0 ob) #1 (runit_inv #0 ob))
+            #2 ((runit #0 ob) #1 Swap.RCodId.inv #1 (Planar.LUnit_Inversion.dir #0 ob) #1 (runit_inv #0 ob))
+            #2 (Swap.Triangle_Dom.dir #1 (Planar.RUnit_Inv.DomId.dir #0 ob) #1 (ob #0 Unit.ob #0 Planar.RUnit_Inversion.inv))
+            #2 ((ob #0 lunit) #1 Swap.RUnit_Inv_Nat.dir #1 (ob #0 runit) #1 (runit_inv #0 ob))
+            #2 ((ob #0 lunit) #1 (ob #0 runit_inv) #1 (Swap.Triangle_Cod.dir #0 Unit.ob) #1 (ob #0 Unit.ob #0 runit))
+            #2 ((ob #0 lunit) #1 (ob #0 runit_inv) #1 (Swap.braid #0 Unit.ob) #1 (ob #0 Planar.LFrobenius_Bimodule.dir)),
+        inv => ((ob #0 lunit) #1 (ob #0 runit_inv) #1 (Swap.braid #0 Unit.ob) #1 (ob #0 Planar.LFrobenius_Bimodule.inv))
+            #2 ((ob #0 lunit) #1 (ob #0 runit_inv) #1 (Swap.Triangle_Cod.inv #0 Unit.ob) #1 (ob #0 Unit.ob #0 runit))
+            #2 ((ob #0 lunit) #1 Swap.RUnit_Inv_Nat.inv #1 (ob #0 runit) #1 (runit_inv #0 ob))
+            #2 (Swap.Triangle_Dom.inv #1 (Planar.RUnit_Inv.DomId.inv #0 ob) #1 (ob #0 Unit.ob #0 Planar.RUnit_Inversion.dir))
+            #2 ((runit #0 ob) #1 Swap.RCodId.dir #1 (Planar.LUnit_Inversion.inv #0 ob) #1 (runit_inv #0 ob))
+            #2 ((runit #0 ob) #1 Swap.LUnit_Inv_Nat.dir #1 (lunit #0 ob) #1 (runit_inv #0 ob))
+    ],
+    let Swap_With_Unit_211 :: Equation = [
+        dir => ((lunit #0 ob) #1 (runit_inv #0 ob) #1 (ob #0 Planar.RFrobenius_Bimodule.inv) #1 (Swap.RCodId.inv #0 Unit.ob))
+            #2 ((lunit #0 ob) #1 (runit_inv #0 ob) #1 (ob #0 Unit.ob #0 runit_inv) #1 (Swap.Triangle_Dom.inv #0 Unit.ob) #1 (ob #0 Planar.LUnit_Inversion.inv #0 Unit.ob))
+            #2 ((Unit.ob #0 ob #0 runit_inv) #1 (lunit #0 ob #0 Unit.ob) #1 (Planar.RUnit_Inversion.dir #0 ob #0 Unit.ob) #1 (Swap.Triangle_Cod.inv #0 Unit.ob) #1 (ob #0 lunit #0 Unit.ob))
+            #2 ((Planar.LUnit.CodId.dir #0 ob) #1 Swap.RUnit_Inv_Nat.inv #1 (runit_inv #0 ob #0 Unit.ob) #1 (ob #0 lunit #0 Unit.ob))
+            #2 (Swap.LUnit_Nat.inv #1 (runit_inv #0 ob) #1 (ob #0 Planar.RFrobenius_Bimodule.dir)),
+        inv => (Swap.LUnit_Nat.dir #1 (runit_inv #0 ob) #1 (ob #0 Planar.RFrobenius_Bimodule.inv))
+            #2 ((Planar.LUnit.CodId.inv #0 ob) #1 Swap.RUnit_Inv_Nat.dir #1 (runit_inv #0 ob #0 Unit.ob) #1 (ob #0 lunit #0 Unit.ob))
+            #2 ((lunit #0 ob) #1 (Planar.RUnit_Inversion.inv #0 ob) #1 (ob #0 runit_inv) #1 (Swap.Triangle_Cod.dir #0 Unit.ob) #1 (ob #0 lunit #0 Unit.ob))
+            #2 ((Unit.ob #0 ob #0 runit_inv) #1 (lunit #0 ob #0 Unit.ob) #1 (runit_inv #0 ob #0 Unit.ob) #1 (Swap.Triangle_Dom.dir #0 Unit.ob) #1 (ob #0 Planar.LUnit_Inversion.dir #0 Unit.ob))
+            #2 ((lunit #0 ob) #1 (runit_inv #0 ob) #1 (ob #0 Planar.RFrobenius_Bimodule.dir) #1 (Swap.RCodId.dir #0 Unit.ob))
+    ],
+    let Swap_With_Unit_122 :: Equation = [
+        dir => ((runit #0 Unit.ob) #1 Planar.LFrobenius_Bimodule.dir #1 (Unit.ob #0 lunit_inv) #1 (Unit.merge #0 ob) #1 (Unit.split #0 ob))
+            #2 (Planar.Right_Module.dir #1 Planar.Left_Comodule.inv #1 (Unit.merge #0 ob) #1 (Unit.split #0 ob))
+            #2 ((ob #0 Unit.Planar.Merge.CodId.inv) #1 runit #1 lunit_inv #1 (Unit.Planar.Split_Merge.dir #0 ob) #1 (Unit.split #0 ob))
+            #2 ((ob #0 Unit.merge) #1 (ob #0 Unit.Planar.Split_Merge.inv) #1 runit #1 lunit_inv #1 (Unit.Planar.Split.DomId.dir #0 ob))
+            #2 ((ob #0 Unit.merge) #1 (ob #0 Unit.split) #1 Planar.Right_Module.inv #1 Planar.Left_Comodule.dir)
+            #2 ((ob #0 Unit.merge) #1 (ob #0 Unit.split) #1 (runit #0 Unit.ob) #1 Planar.LFrobenius_Bimodule.inv #1 (Unit.ob #0 lunit_inv)),
+        inv => ((ob #0 Unit.merge) #1 (ob #0 Unit.split) #1 (runit #0 Unit.ob) #1 Planar.LFrobenius_Bimodule.dir #1 (Unit.ob #0 lunit_inv))
+            #2 ((ob #0 Unit.merge) #1 (ob #0 Unit.split) #1 Planar.Right_Module.dir #1 Planar.Left_Comodule.inv)
+            #2 ((ob #0 Unit.merge) #1 (ob #0 Unit.Planar.Split_Merge.dir) #1 runit #1 lunit_inv #1 (Unit.Planar.Split.DomId.inv #0 ob))
+            #2 ((ob #0 Unit.Planar.Merge.CodId.dir) #1 runit #1 lunit_inv #1 (Unit.Planar.Split_Merge.inv #0 ob) #1 (Unit.split #0 ob))
+            #2 (Planar.Right_Module.inv #1 Planar.Left_Comodule.dir #1 (Unit.merge #0 ob) #1 (Unit.split #0 ob))
+            #2 ((runit #0 Unit.ob) #1 Planar.LFrobenius_Bimodule.inv #1 (Unit.ob #0 lunit_inv) #1 (Unit.merge #0 ob) #1 (Unit.split #0 ob))
+    ],
+    let Swap_With_Unit_212 :: Equation = [
+        dir => ((lunit #0 Unit.ob) #1 Planar.Right_LFrobenius_Module.dir #1 Planar.Right_RFrobenius_Module.dir #1 (lunit_inv #0 Unit.ob))
+            #2 (Planar.Bimodule.dir #1 Planar.RUnit_Inversion.dir #1 Planar.Bicomodule.dir)
+            #2 ((Unit.ob #0 runit) #1 lunit #1 Planar.LUnit_Inversion.inv #1 lunit_inv #1 (Unit.ob #0 runit_inv))
+            #2 ((Unit.ob #0 runit) #1 Planar.Left_RFrobenius_Module.inv #1 Planar.Left_LFrobenius_Module.inv #1 (Unit.ob #0 runit_inv)),
+        inv => ((Unit.ob #0 runit) #1 Planar.Left_RFrobenius_Module.dir #1 Planar.Left_LFrobenius_Module.dir #1 (Unit.ob #0 runit_inv))
+            #2 (Planar.Bimodule.inv #1 Planar.LUnit_Inversion.dir #1 Planar.Bicomodule.inv)
+            #2 ((lunit #0 Unit.ob) #1 runit #1 Planar.RUnit_Inversion.inv #1 runit_inv #1 (lunit_inv #0 Unit.ob))
+            #2 ((lunit #0 Unit.ob) #1 Planar.Right_LFrobenius_Module.inv #1 Planar.Right_RFrobenius_Module.inv #1 (lunit_inv #0 Unit.ob))
+    ],
+    let Swap_With_Unit_221 :: Equation = [
+        dir => ((Unit.merge #0 ob) #1 (Unit.split #0 ob) #1 (Unit.ob #0 lunit) #1 Planar.RFrobenius_Bimodule.dir #1 (runit_inv #0 Unit.ob))
+            #2 ((Unit.merge #0 ob) #1 (Unit.split #0 ob) #1 Planar.Left_Module.inv #1 Planar.Right_Comodule.dir)
+            #2 ((Unit.merge #0 ob) #1 (Unit.Planar.Split_Merge.dir #0 ob) #1 lunit #1 runit_inv #1 (ob #0 Unit.Planar.Split.DomId.inv))
+            #2 ((Unit.Planar.Merge.CodId.dir #0 ob) #1 lunit #1 runit_inv #1 (ob #0 Unit.Planar.Split_Merge.inv) #1 (ob #0 Unit.split))
+            #2 (Planar.Left_Module.dir #1 Planar.Right_Comodule.inv #1 (ob #0 Unit.merge) #1 (ob #0 Unit.split))
+            #2 ((Unit.ob #0 lunit) #1 Planar.RFrobenius_Bimodule.inv #1 (runit_inv #0 Unit.ob) #1 (ob #0 Unit.merge) #1 (ob #0 Unit.split)),
+        inv => ((Unit.ob #0 lunit) #1 Planar.RFrobenius_Bimodule.dir #1 (runit_inv #0 Unit.ob) #1 (ob #0 Unit.merge) #1 (ob #0 Unit.split))
+            #2 (Planar.Left_Module.inv #1 Planar.Right_Comodule.dir #1 (ob #0 Unit.merge) #1 (ob #0 Unit.split))
+            #2 ((Unit.Planar.Merge.CodId.inv #0 ob) #1 lunit #1 runit_inv #1 (ob #0 Unit.Planar.Split_Merge.dir) #1 (ob #0 Unit.split))
+            #2 ((Unit.merge #0 ob) #1 (Unit.Planar.Split_Merge.inv #0 ob) #1 lunit #1 runit_inv #1 (ob #0 Unit.Planar.Split.DomId.dir))
+            #2 ((Unit.merge #0 ob) #1 (Unit.split #0 ob) #1 Planar.Left_Module.dir #1 Planar.Right_Comodule.inv)
+            #2 ((Unit.merge #0 ob) #1 (Unit.split #0 ob) #1 (Unit.ob #0 lunit) #1 Planar.RFrobenius_Bimodule.inv #1 (runit_inv #0 Unit.ob))
+    ],
+(* End local definitions *) }
+
+let With_Unit :: Pair = [
+    1 => Object, 2 => Unit.Object,
+    Swap => Swap_With_Unit, Rev_Swap => Rev_Swap_With_Unit,
+    Swap_Inversion => Swap_With_Unit_Inversion,
+    Rev_Swap_Inversion => Rev_Swap_With_Unit_Inversion,
+    Swap_YangBaxter_112 => Swap_With_Unit_112,
+    Swap_YangBaxter_121 => Swap_With_Unit_121,
+    Swap_YangBaxter_122 => Swap_With_Unit_122,
+    Swap_YangBaxter_211 => Swap_With_Unit_211,
+    Swap_YangBaxter_212 => Swap_With_Unit_212,
+    Swap_YangBaxter_221 => Swap_With_Unit_221,
+]
+
+(* 
+	Reversing a pair of objects: 
+    “(A, B)”.Rev = “(B, A)” 
+*)
+@Pair
+let Rev :: Pair = [
+    1 => 2, 2 => 1,
+    Swap => Rev_Swap, Rev_Swap => Swap,
+    Swap_Inversion => Rev_Swap_Inversion,
+    Rev_Swap_Inversion => Swap_Inversion,
+    Swap_YangBaxter_112 => Swap_YangBaxter_221,
+    Swap_YangBaxter_121 => Swap_YangBaxter_212,
+    Swap_YangBaxter_122 => Swap_YangBaxter_211,
+    Swap_YangBaxter_211 => Swap_YangBaxter_122,
+    Swap_YangBaxter_212 => Swap_YangBaxter_121,
+    Swap_YangBaxter_221 => Swap_YangBaxter_112
+]
+
+(* 
+	The tensor of a pair: 
+    “(A, B)”.Tensor = A \otimes B 
+*)
+@Pair { (* Start local definitions *)
+    let Pair_Swap_id = ((1.ob #0 Rev_Swap.LCodId.inv #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob))
+        #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.Planar.RUnit_Inversion.inv #0 2.ob #0 2.ob) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 Swap.braid #0 2.ob))
+        #2 ((1.ob #0 Rev_Swap.Triangle_Cod.dir #0 2.ob) #1 (1.Swap.RUnit_Nat.inv #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 Swap.braid #0 2.ob))
+        #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.LUnit_Inv_Nat.inv) #1 (1.Swap.braid #0 Unit.ob #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.Triangle_Dom.dir #0 2.ob))
+        #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 1.ob #0 2.Planar.LUnit_Inversion.dir #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob))
+        #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.RDomId.dir #0 2.ob)),
+    let Pair_Swap :: Aux.Braid = [
+        1 => Planar.Tensor, 2 => Planar.Tensor,
+        braid => (1.ob #0 Rev_Swap.braid #0 2.ob)
+            #1 (1.Swap.braid #0 2.Swap.braid)
+            #1 (1.ob #0 Swap.braid #0 2.ob),
+        LDomId.dir => ((1.ob #0 Rev_Swap.LUnit_Inv_Nat.inv #0 2.ob) #1 (1.Swap.Triangle_Dom.dir #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.Planar.LUnit_Inversion.dir #0 2.ob #0 2.ob) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.Swap.RDomId.dir #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 Pair_Swap_id,
+        LDomId.inv => Pair_Swap_id
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.Swap.RDomId.inv #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.Planar.LUnit_Inversion.inv #0 2.ob #0 2.ob) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.LUnit_Inv_Nat.dir #0 2.ob) #1 (1.Swap.Triangle_Dom.inv #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 Swap.braid #0 2.ob)),
+        RDomId.dir => ((1.ob #0 2.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 Rev_Swap.RUnit_Nat.inv #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 2.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 Rev_Swap.braid #0 Unit.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.Triangle_Dom.dir) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 2.ob #0 1.ob #0 2.Planar.LUnit_Inversion.dir) #1 Pair_Swap_id)
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.RDomId.dir) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob)),
+        RDomId.inv => ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.RDomId.inv) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 2.ob #0 1.ob #0 2.Planar.LUnit_Inversion.inv) #1 Pair_Swap_id)
+            #2 ((1.ob #0 2.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 Rev_Swap.braid #0 Unit.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.Triangle_Dom.inv) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 2.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 Rev_Swap.RUnit_Nat.dir #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob)),
+        LCodId.dir => ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.LUnit_Inv_Nat.dir #0 2.ob) #1 (1.runit #0 2.ob #0 1.ob #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.Swap.Triangle_Cod.inv #0 2.ob #0 2.ob) #1 (1.runit #0 1.ob #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 (Pair_Swap_id #1 (1.Planar.RUnit_Inversion.dir #0 2.ob #0 1.ob #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.Swap.LCodId.dir #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 Swap.braid #0 2.ob)),
+        LCodId.inv => ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.Swap.LCodId.inv #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 (Pair_Swap_id #1 (1.Planar.RUnit_Inversion.inv #0 2.ob #0 1.ob #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.Swap.Triangle_Cod.dir #0 2.ob #0 2.ob) #1 (1.runit #0 1.ob #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.LUnit_Inv_Nat.inv #0 2.ob) #1 (1.runit #0 2.ob #0 1.ob #0 2.ob)),
+        RCodId.dir => ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.Triangle_Cod.inv) #1 (1.Swap.braid #0 2.ob #0 Unit.ob #0 2.ob) #1 (1.ob #0 Swap.RUnit_Nat.dir #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 1.ob #0 2.Planar.RUnit_Inversion.dir #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.RDomId.dir #0 2.ob))
+            #2 Pair_Swap_id,
+        RCodId.inv => Pair_Swap_id
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.RDomId.inv #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 1.ob #0 2.Planar.RUnit_Inversion.inv #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.Triangle_Cod.dir) #1 (1.Swap.braid #0 2.ob #0 Unit.ob #0 2.ob) #1 (1.ob #0 Swap.RUnit_Nat.inv #0 2.ob)),
+        LUnit_Nat.dir => ((Unit.ob #0 1.ob #0 Rev_Swap.LCodId.inv #0 2.ob) #1 (1.Swap.LUnit_Nat.dir #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 Swap.LUnit_Inv_Nat.dir #0 2.ob) #1 (1.runit #0 2.ob #0 1.ob #0 2.ob))
+            #2 ((Unit.ob #0 1.ob #0 Rev_Swap.braid #0 2.ob) #1 (Unit.ob #0 1.ob #0 1.Planar.LUnit_Inversion.inv #0 2.ob #0 2.ob) #1 (Unit.ob #0 1.ob #0 1.ob #0 2.Swap.braid) #1 (1.lunit #0 1.ob #0 2.ob #0 2.ob) #1 (1.Swap.Triangle_Cod.inv #0 2.ob #0 2.ob) #1 (1.runit #0 1.ob #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.lunit #0 2.ob #0 1.ob #0 2.ob) #1 (1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 1.lunit_inv #0 2.ob #0 2.ob) #1 (1.Swap.Triangle_Dom.inv #0 2.ob #0 2.ob) #1 (1.Planar.RUnit_Inversion.dir #0 1.ob #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((Unit.ob #0 1.ob #0 Rev_Swap.LUnit_Inv_Nat.dir #0 2.ob) #1 (Unit.ob #0 1.ob #0 Unit.ob #0 1.ob #0 2.Swap.braid) #1 (1.lunit #0 Unit.ob #0 1.ob #0 2.ob #0 2.ob) #1 (1.runit #0 1.ob #0 2.ob #0 2.ob) #1 (1.Swap.LCodId.dir #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.lunit #0 2.ob #0 1.ob #0 2.ob) #1 (1.ob #0 2.lunit_inv #0 1.ob #0 2.ob) #1 (1.runit #0 2.ob #0 1.ob #0 2.ob) #1 Pair_Swap_id),
+        LUnit_Nat.inv => ((1.lunit #0 2.ob #0 1.ob #0 2.ob) #1 (1.ob #0 2.lunit_inv #0 1.ob #0 2.ob) #1 (1.runit #0 2.ob #0 1.ob #0 2.ob) #1 Pair_Swap_id)
+            #2 ((Unit.ob #0 1.ob #0 Rev_Swap.LUnit_Inv_Nat.inv #0 2.ob) #1 (Unit.ob #0 1.ob #0 Unit.ob #0 1.ob #0 2.Swap.braid) #1 (1.lunit #0 Unit.ob #0 1.ob #0 2.ob #0 2.ob) #1 (1.runit #0 1.ob #0 2.ob #0 2.ob) #1 (1.Swap.LCodId.inv #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.lunit #0 2.ob #0 1.ob #0 2.ob) #1 (1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 1.lunit_inv #0 2.ob #0 2.ob) #1 (1.Swap.Triangle_Dom.dir #0 2.ob #0 2.ob) #1 (1.Planar.RUnit_Inversion.inv #0 1.ob #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((Unit.ob #0 1.ob #0 Rev_Swap.braid #0 2.ob) #1 (Unit.ob #0 1.ob #0 1.Planar.LUnit_Inversion.dir #0 2.ob #0 2.ob) #1 (Unit.ob #0 1.ob #0 1.ob #0 2.Swap.braid) #1 (1.lunit #0 1.ob #0 2.ob #0 2.ob) #1 (1.Swap.Triangle_Cod.dir #0 2.ob #0 2.ob) #1 (1.ob #0 Unit.ob #0 Swap.braid #0 2.ob) #1 (1.runit #0 2.ob #0 1.ob #0 2.ob))
+            #2 ((Unit.ob #0 1.ob #0 Rev_Swap.LCodId.dir #0 2.ob) #1 (1.Swap.LUnit_Nat.inv #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 Swap.LUnit_Inv_Nat.inv #0 2.ob) #1 (1.runit #0 2.ob #0 1.ob #0 2.ob)),
+        RUnit_Nat.dir => ((1.ob #0 Rev_Swap.braid #0 2.ob #0 Unit.ob) #1 (1.ob #0 1.ob #0 2.Swap.RUnit_Nat.dir) #1 (1.ob #0 1.ob #0 2.ob #0 2.lunit_inv) #1 (1.Swap.braid #0 2.ob #0 Unit.ob #0 2.ob) #1 (1.ob #0 Swap.RUnit_Nat.dir #0 2.ob))
+            #2 ((1.ob #0 2.ob #0 1.ob #0 2.Planar.RUnit.CodId.inv) #1 (1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.Triangle_Cod.inv) #1 (1.ob #0 1.ob #0 2.runit #0 2.ob) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob #0 Unit.ob) #1 (1.Swap.braid #0 2.ob #0 2.ob #0 Unit.ob) #1 (1.ob #0 1.ob #0 2.ob #0 2.runit) #1 (1.ob #0 1.ob #0 2.ob #0 2.Planar.LUnit_Inversion.inv) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 1.ob #0 2.Planar.RUnit_Inversion.dir #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 2.ob #0 1.ob #0 2.runit) #1 (1.ob #0 2.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 Rev_Swap.braid #0 Unit.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.Triangle_Dom.inv) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.RDomId.dir #0 2.ob))
+            #2 ((1.ob #0 2.ob #0 1.ob #0 2.runit) #1 (1.ob #0 2.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 Rev_Swap.RUnit_Nat.dir #0 2.ob) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 2.ob #0 1.ob #0 2.runit) #1 (1.ob #0 2.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 2.ob #0 1.runit #0 2.ob) #1 Pair_Swap_id),
+        RUnit_Nat.inv => ((1.ob #0 2.ob #0 1.ob #0 2.runit) #1 (1.ob #0 2.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 2.ob #0 1.runit #0 2.ob) #1 Pair_Swap_id)
+            #2 ((1.ob #0 2.ob #0 1.ob #0 2.runit) #1 (1.ob #0 2.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 Rev_Swap.RUnit_Nat.inv #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 2.ob #0 1.ob #0 2.runit) #1 (1.ob #0 2.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 Rev_Swap.braid #0 Unit.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.Triangle_Dom.dir) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.RDomId.inv #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob #0 Unit.ob) #1 (1.Swap.braid #0 2.ob #0 2.ob #0 Unit.ob) #1 (1.ob #0 1.ob #0 2.ob #0 2.runit) #1 (1.ob #0 1.ob #0 2.ob #0 2.Planar.LUnit_Inversion.dir) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 1.ob #0 2.Planar.RUnit_Inversion.inv #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 2.ob #0 1.ob #0 2.Planar.RUnit.CodId.dir) #1 (1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.Triangle_Cod.dir) #1 (1.ob #0 1.ob #0 2.runit #0 2.ob) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob #0 Unit.ob) #1 (1.ob #0 1.ob #0 2.Swap.RUnit_Nat.inv) #1 (1.ob #0 1.ob #0 2.ob #0 2.lunit_inv) #1 (1.Swap.braid #0 2.ob #0 Unit.ob #0 2.ob) #1 (1.ob #0 Swap.RUnit_Nat.inv #0 2.ob)),
+        LUnit_Inv_Nat.dir => ((1.ob #0 Rev_Swap.LCodId.inv #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.LUnit_Inv_Nat.dir #0 2.ob) #1 (1.Planar.LFrobenius_Bimodule.inv #0 2.ob #0 1.ob #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.Planar.LUnit_Inversion.inv #0 2.ob #0 2.ob) #1 (1.Swap.LUnit_Inv_Nat.dir #0 2.ob #0 2.ob) #1 (Unit.ob #0 1.ob #0 1.lunit_inv #0 2.ob #0 2.ob) #1 (Unit.ob #0 1.runit #0 1.ob #0 2.ob #0 2.ob) #1 (Unit.ob #0 1.ob #0 1.ob #0 2.Swap.braid) #1 (Unit.ob #0 1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.LUnit_Inv_Nat.dir #0 2.ob) #1 (1.ob #0 Unit.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 1.lunit #0 2.ob #0 2.ob) #1 (1.lunit_inv #0 1.ob #0 2.ob #0 2.ob) #1 (Unit.ob #0 1.Swap.Triangle_Cod.inv #0 2.ob #0 2.ob) #1 (Unit.ob #0 1.ob #0 Unit.ob #0 Swap.braid #0 2.ob) #1 (Unit.ob #0 1.runit #0 2.ob #0 1.ob #0 2.ob))
+            #2 ((1.lunit_inv #0 2.ob #0 1.ob #0 2.ob) #1 (Unit.ob #0 1.ob #0 2.lunit_inv #0 1.ob #0 2.ob) #1 (Unit.ob #0 1.ob #0 Unit.ob #0 Rev_Swap.braid #0 2.ob) #1 (Unit.ob #0 1.Swap.Triangle_Dom.inv #0 2.ob #0 2.ob) #1 (Unit.ob #0 1.Planar.RUnit_Inversion.dir #0 1.ob #0 2.ob #0 2.ob) #1 (Unit.ob #0 1.ob #0 1.ob #0 2.Swap.braid) #1 (Unit.ob #0 1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 2.lunit_inv #0 1.ob #0 2.ob) #1 (1.Planar.LFrobenius_Bimodule.dir #0 2.ob #0 1.ob #0 2.ob) #1 (Unit.ob #0 1.ob #0 Rev_Swap.braid #0 2.ob) #1 (Unit.ob #0 1.Swap.LCodId.dir #0 2.ob #0 2.ob) #1 (Unit.ob #0 1.ob #0 1.ob #0 2.Swap.braid) #1 (Unit.ob #0 1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 2.lunit_inv #0 1.ob #0 2.ob) #1 (1.runit #0 2.ob #0 1.ob #0 2.ob) #1 (1.lunit_inv #0 2.ob #0 1.ob #0 2.ob) #1 (Unit.ob #0 Pair_Swap_id)),
+        LUnit_Inv_Nat.inv => ((1.ob #0 2.lunit_inv #0 1.ob #0 2.ob) #1 (1.runit #0 2.ob #0 1.ob #0 2.ob) #1 (1.lunit_inv #0 2.ob #0 1.ob #0 2.ob) #1 (Unit.ob #0 Pair_Swap_id))
+            #2 ((1.ob #0 2.lunit_inv #0 1.ob #0 2.ob) #1 (1.Planar.LFrobenius_Bimodule.inv #0 2.ob #0 1.ob #0 2.ob) #1 (Unit.ob #0 1.ob #0 Rev_Swap.braid #0 2.ob) #1 (Unit.ob #0 1.Swap.LCodId.inv #0 2.ob #0 2.ob) #1 (Unit.ob #0 1.ob #0 1.ob #0 2.Swap.braid) #1 (Unit.ob #0 1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 2.lunit_inv #0 1.ob #0 2.ob) #1 (1.ob #0 Unit.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 Unit.ob #0 1.ob #0 2.Swap.braid) #1 (1.lunit_inv #0 Unit.ob #0 1.ob #0 2.ob #0 2.ob) #1 (Unit.ob #0 1.Swap.Triangle_Dom.dir #0 2.ob #0 2.ob) #1 (Unit.ob #0 1.Planar.RUnit_Inversion.inv #0 1.ob #0 2.ob #0 2.ob) #1 (Unit.ob #0 1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.LUnit_Inv_Nat.inv #0 2.ob) #1 (1.ob #0 1.lunit #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.lunit_inv #0 1.ob #0 2.ob #0 2.ob) #1 (Unit.ob #0 1.Swap.Triangle_Cod.dir #0 2.ob #0 2.ob) #1 (Unit.ob #0 1.ob #0 Unit.ob #0 Swap.braid #0 2.ob) #1 (Unit.ob #0 1.runit #0 2.ob #0 1.ob #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.Planar.LUnit_Inversion.dir #0 2.ob #0 2.ob) #1 (1.Swap.LUnit_Inv_Nat.inv #0 2.ob #0 2.ob) #1 (Unit.ob #0 1.ob #0 1.lunit_inv #0 2.ob #0 2.ob) #1 (Unit.ob #0 1.runit #0 1.ob #0 2.ob #0 2.ob) #1 (Unit.ob #0 1.ob #0 1.ob #0 2.Swap.braid) #1 (Unit.ob #0 1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.LCodId.dir #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.LUnit_Inv_Nat.inv #0 2.ob) #1 (1.Planar.LFrobenius_Bimodule.dir #0 2.ob #0 1.ob #0 2.ob)),
+        RUnit_Inv_Nat.dir => ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.RDomId.inv) #1 (1.ob #0 1.ob #0 2.ob #0 2.Planar.Bicomodule.inv) #1 (1.Swap.braid #0 2.ob #0 Unit.ob #0 2.ob #0 Unit.ob) #1 (1.ob #0 Swap.RUnit_Nat.dir #0 2.ob #0 Unit.ob))
+            #2 ((1.ob #0 2.ob #0 1.ob #0 2.Planar.LUnit_Inversion.inv) #1 (1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.RUnit_Inv_Nat.dir) #1 (1.ob #0 1.ob #0 2.ob #0 2.lunit_inv #0 Unit.ob) #1 (1.ob #0 1.ob #0 2.runit #0 2.ob #0 Unit.ob) #1 (1.Swap.braid #0 2.ob #0 2.ob #0 Unit.ob) #1 (1.ob #0 Swap.braid #0 2.ob #0 Unit.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.ob #0 2.lunit_inv) #1 (1.ob #0 1.ob #0 2.ob #0 2.Planar.RFrobenius_Bimodule.inv) #1 (1.ob #0 1.ob #0 2.Swap.Triangle_Cod.inv #0 Unit.ob) #1 (1.ob #0 1.ob #0 2.runit #0 2.ob #0 Unit.ob) #1 (1.ob #0 Swap.braid #0 2.ob #0 Unit.ob))
+            #2 ((1.ob #0 2.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 2.ob #0 1.ob #0 Unit.ob #0 2.runit_inv) #1 (1.ob #0 Rev_Swap.braid #0 Unit.ob #0 2.ob #0 Unit.ob) #1 (1.ob #0 1.ob #0 2.Swap.Triangle_Dom.inv #0 Unit.ob) #1 (1.ob #0 1.ob #0 2.Planar.RUnit_Inversion.dir #0 2.ob #0 Unit.ob) #1 (1.Swap.braid #0 2.ob #0 2.ob #0 Unit.ob) #1 (1.ob #0 Swap.braid #0 2.ob #0 Unit.ob))
+            #2 ((1.ob #0 2.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 Rev_Swap.RUnit_Nat.dir #0 2.ob) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.ob #0 2.runit_inv) #1 (1.ob #0 1.ob #0 2.Swap.LCodId.dir #0 Unit.ob) #1 (1.ob #0 Swap.braid #0 2.ob #0 Unit.ob))
+            #2 ((1.ob #0 2.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 2.ob #0 1.ob #0 Unit.ob #0 2.runit_inv) #1 (1.ob #0 2.ob #0 1.runit #0 2.ob #0 Unit.ob) #1 (Pair_Swap_id #0 Unit.ob)),
+        RUnit_Inv_Nat.inv => ((1.ob #0 2.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 2.ob #0 1.ob #0 Unit.ob #0 2.runit_inv) #1 (1.ob #0 2.ob #0 1.runit #0 2.ob #0 Unit.ob) #1 (Pair_Swap_id #0 Unit.ob))
+            #2 ((1.ob #0 2.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 Rev_Swap.RUnit_Nat.inv #0 2.ob) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.ob #0 2.runit_inv) #1 (1.ob #0 1.ob #0 2.Swap.LCodId.inv #0 Unit.ob) #1 (1.ob #0 Swap.braid #0 2.ob #0 Unit.ob))
+            #2 ((1.ob #0 2.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 2.ob #0 1.ob #0 Unit.ob #0 2.runit_inv) #1 (1.ob #0 Rev_Swap.braid #0 Unit.ob #0 2.ob #0 Unit.ob) #1 (1.ob #0 1.ob #0 2.Swap.Triangle_Dom.dir #0 Unit.ob) #1 (1.ob #0 1.ob #0 2.Planar.RUnit_Inversion.inv #0 2.ob #0 Unit.ob) #1 (1.Swap.braid #0 2.ob #0 2.ob #0 Unit.ob) #1 (1.ob #0 Swap.braid #0 2.ob #0 Unit.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.ob #0 2.lunit_inv) #1 (1.ob #0 1.ob #0 2.ob #0 2.Planar.RFrobenius_Bimodule.dir) #1 (1.ob #0 1.ob #0 2.Swap.Triangle_Cod.dir #0 Unit.ob) #1 (1.ob #0 1.ob #0 2.runit #0 2.ob #0 Unit.ob) #1 (1.ob #0 Swap.braid #0 2.ob #0 Unit.ob))
+            #2 ((1.ob #0 2.ob #0 1.ob #0 2.Planar.LUnit_Inversion.dir) #1 (1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.RUnit_Inv_Nat.inv) #1 (1.ob #0 1.ob #0 2.ob #0 2.lunit_inv #0 Unit.ob) #1 (1.ob #0 1.ob #0 2.runit #0 2.ob #0 Unit.ob) #1 (1.Swap.braid #0 2.ob #0 2.ob #0 Unit.ob) #1 (1.ob #0 Swap.braid #0 2.ob #0 Unit.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.RDomId.dir) #1 (1.ob #0 1.ob #0 2.ob #0 2.Planar.Bicomodule.dir) #1 (1.Swap.braid #0 2.ob #0 Unit.ob #0 2.ob #0 Unit.ob) #1 (1.ob #0 Swap.RUnit_Nat.inv #0 2.ob #0 Unit.ob)),
+        Triangle_Dom.dir => ((1.ob #0 2.runit #0 1.ob #0 2.ob) #1 (1.ob #0 Rev_Swap.LUnit_Inv_Nat.inv #0 2.ob) #1 (1.ob #0 Unit.ob #0 1.ob #0 2.Swap.RDomId.inv) #1 (1.Swap.Triangle_Dom.dir #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 2.ob #0 Unit.ob #0 1.ob #0 2.Planar.LUnit_Inversion.inv) #1 (1.ob #0 Rev_Swap.Triangle_Dom.dir #0 2.ob) #1 (1.ob #0 1.Planar.LUnit_Inversion.dir #0 2.ob #0 2.ob) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 2.ob #0 Unit.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 2.ob #0 1.lunit #0 Unit.ob #0 2.ob) #1 (1.ob #0 Rev_Swap.LCodId.dir #0 Unit.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.Triangle_Dom.inv) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 2.ob #0 1.lunit #0 2.ob) #1 (1.ob #0 2.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 Rev_Swap.RUnit_Nat.dir #0 2.ob) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 2.ob #0 Unit.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 2.ob #0 1.lunit #0 Unit.ob #0 2.ob) #1 (1.ob #0 2.ob #0 1.runit #0 2.ob) #1 Pair_Swap_id),
+        Triangle_Dom.inv => ((1.ob #0 2.ob #0 1.lunit #0 2.ob) #1 (1.ob #0 2.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 2.ob #0 1.runit #0 2.ob) #1 Pair_Swap_id)
+            #2 ((1.ob #0 2.ob #0 Unit.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 2.ob #0 1.lunit #0 Unit.ob #0 2.ob) #1 (1.ob #0 Rev_Swap.RUnit_Nat.inv #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 2.ob #0 1.lunit #0 2.ob) #1 (1.ob #0 Rev_Swap.LCodId.inv #0 2.ob) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.ob #0 2.lunit_inv) #1 (1.ob #0 1.ob #0 2.Swap.Triangle_Dom.dir) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 2.ob #0 Unit.ob #0 1.ob #0 2.Planar.LUnit_Inversion.dir) #1 (1.ob #0 Rev_Swap.Triangle_Dom.inv #0 2.ob) #1 (1.ob #0 1.Planar.LUnit_Inversion.inv #0 2.ob #0 2.ob) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 2.runit #0 1.ob #0 2.ob) #1 (1.ob #0 Rev_Swap.LUnit_Inv_Nat.dir #0 2.ob) #1 (1.ob #0 Unit.ob #0 1.ob #0 2.Swap.RDomId.dir) #1 (1.Swap.Triangle_Dom.inv #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob)),
+        Triangle_Cod.dir => ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.LCodId.inv) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.LUnit_Inv_Nat.dir #0 2.ob) #1 (1.ob #0 Unit.ob #0 2.runit_inv #0 1.ob #0 2.ob) #1 (1.runit #0 2.ob #0 Unit.ob #0 1.ob #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.Swap.Triangle_Cod.inv #0 2.ob #0 2.ob) #1 (1.runit #0 1.ob #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 1.ob #0 2.Planar.RUnit_Inversion.inv #0 2.ob) #1 (1.ob #0 Swap.Triangle_Cod.dir #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.Triangle_Cod.dir) #1 (1.Swap.braid #0 2.ob #0 Unit.ob #0 2.ob) #1 (1.ob #0 Swap.RUnit_Nat.inv #0 2.ob) #1 (1.ob #0 2.ob #0 1.lunit_inv #0 2.ob) #1 (1.Planar.RUnit_Inversion.dir #0 2.ob #0 Unit.ob #0 1.ob #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.Swap.LCodId.dir #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 Swap.braid #0 2.ob) #1 (1.ob #0 2.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 2.ob #0 1.runit #0 2.ob) #1 (1.ob #0 2.ob #0 1.lunit_inv #0 2.ob))
+            #2 (Pair_Swap_id #1 (1.ob #0 2.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 2.ob #0 1.runit #0 2.ob) #1 (1.ob #0 2.ob #0 1.lunit_inv #0 2.ob)),
+        Triangle_Cod.inv => (Pair_Swap_id #1 (1.ob #0 2.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 2.ob #0 1.runit #0 2.ob) #1 (1.ob #0 2.ob #0 1.lunit_inv #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.Swap.LCodId.inv #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 1.ob #0 2.ob #0 2.lunit_inv) #1 (1.ob #0 Swap.braid #0 Unit.ob #0 2.ob) #1 (1.ob #0 2.ob #0 1.runit #0 2.ob) #1 (1.ob #0 2.ob #0 1.lunit_inv #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.Triangle_Cod.inv) #1 (1.Swap.braid #0 2.ob #0 Unit.ob #0 2.ob) #1 (1.ob #0 Swap.RUnit_Nat.dir #0 2.ob) #1 (1.ob #0 2.ob #0 1.lunit_inv #0 2.ob) #1 (1.Planar.RUnit_Inversion.inv #0 2.ob #0 Unit.ob #0 1.ob #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.Swap.Triangle_Cod.dir #0 2.ob #0 2.ob) #1 (1.runit #0 1.ob #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 1.ob #0 2.Planar.RUnit_Inversion.dir #0 2.ob) #1 (1.ob #0 Swap.Triangle_Cod.inv #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.LCodId.dir) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.LUnit_Inv_Nat.inv #0 2.ob) #1 (1.ob #0 Unit.ob #0 2.runit_inv #0 1.ob #0 2.ob) #1 (1.runit #0 2.ob #0 Unit.ob #0 1.ob #0 2.ob))
+    ],
+    let Pair_Swap_Inversion :: Equation = [
+        dir => ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 Swap_Inversion.dir #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 1.ob #0 2.Swap.LUnit_Inv_Nat.inv) #1 (1.Swap.RUnit_Nat.inv #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap_Inversion.dir) #1 (1.ob #0 1.ob #0 2.lunit_inv #0 2.ob) #1 (1.Swap_Inversion.dir #0 Unit.ob #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.Triangle_Dom.dir #0 2.ob))
+            #2 ((1.ob #0 2.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 Rev_Swap.RUnit_Nat.dir #0 2.ob) #1 (1.ob #0 1.ob #0 2.Planar.LUnit_Inversion.dir #0 2.ob) #1 (1.ob #0 1.lunit_inv #0 2.ob #0 2.ob) #1 (1.ob #0 Unit.ob #0 Swap.braid #0 2.ob) #1 (1.runit #0 2.ob #0 1.ob #0 2.ob))
+            #2 ((1.ob #0 2.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 2.ob #0 1.runit #0 2.ob) #1 (1.ob #0 Rev_Swap.LUnit_Inv_Nat.dir #0 2.ob) #1 (1.ob #0 Unit.ob #0 Swap.RDomId.dir #0 2.ob) #1 (1.runit #0 2.ob #0 1.ob #0 2.ob))
+            #2 ((1.ob #0 2.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 2.ob #0 1.runit #0 2.ob) #1 (1.ob #0 2.lunit_inv #0 1.ob #0 2.ob) #1 (1.ob #0 Unit.ob #0 Rev_Swap_Inversion.dir #0 2.ob) #1 (1.runit #0 2.ob #0 1.ob #0 2.ob))
+            #2 ((1.ob #0 2.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 2.ob #0 1.runit #0 2.ob) #1 (1.ob #0 2.ob #0 1.lunit_inv #0 2.ob) #1 (1.ob #0 2.Planar.LFrobenius_Bimodule.dir #0 1.ob #0 2.ob) #1 (1.runit #0 2.ob #0 1.ob #0 2.ob)),
+        inv => ((1.ob #0 2.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 2.ob #0 1.runit #0 2.ob) #1 (1.ob #0 2.ob #0 1.lunit_inv #0 2.ob) #1 (1.ob #0 2.Planar.LFrobenius_Bimodule.inv #0 1.ob #0 2.ob) #1 (1.runit #0 2.ob #0 1.ob #0 2.ob))
+            #2 ((1.ob #0 2.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 2.ob #0 1.runit #0 2.ob) #1 (1.ob #0 2.lunit_inv #0 1.ob #0 2.ob) #1 (1.ob #0 Unit.ob #0 Rev_Swap_Inversion.inv #0 2.ob) #1 (1.runit #0 2.ob #0 1.ob #0 2.ob))
+            #2 ((1.ob #0 2.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 2.ob #0 1.runit #0 2.ob) #1 (1.ob #0 Rev_Swap.LUnit_Inv_Nat.inv #0 2.ob) #1 (1.ob #0 Unit.ob #0 Swap.RDomId.inv #0 2.ob) #1 (1.runit #0 2.ob #0 1.ob #0 2.ob))
+            #2 ((1.ob #0 2.ob #0 1.ob #0 2.lunit_inv) #1 (1.ob #0 Rev_Swap.RUnit_Nat.inv #0 2.ob) #1 (1.ob #0 1.ob #0 2.Planar.LUnit_Inversion.inv #0 2.ob) #1 (1.ob #0 1.lunit_inv #0 2.ob #0 2.ob) #1 (1.runit #0 1.ob #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap_Inversion.inv) #1 (1.ob #0 1.ob #0 2.lunit_inv #0 2.ob) #1 (1.Swap_Inversion.inv #0 Unit.ob #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.Triangle_Dom.inv #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 1.ob #0 2.Swap.LUnit_Inv_Nat.dir) #1 (1.Swap.RUnit_Nat.dir #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 Swap_Inversion.inv #0 2.ob) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 Swap.braid #0 2.ob))
+    ],
+    let Pair_Swap_YangBaxter :: Equation = [
+        dir => ((1.ob #0 Rev_Swap.braid #0 2.ob #0 1.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid #0 1.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.ob #0 1.ob #0 2.Swap.braid) #1 (1.Swap.braid #0 2.ob #0 1.ob #0 2.ob #0 2.ob) #1 (1.ob #0 Swap_YangBaxter_121.dir #0 2.ob #0 2.ob) #1 (1.Swap.braid #0 2.ob #0 1.ob #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.ob #0 Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid #0 1.ob #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob #0 1.ob #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob #0 1.ob #0 2.ob) #1 (1.ob #0 1.ob #0 Swap_YangBaxter_221.dir #0 2.ob) #1 (1.Swap_YangBaxter.dir #0 2.ob #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 1.ob #0 2.ob #0 2.Swap.braid) #1 (1.ob #0 1.ob #0 Swap_YangBaxter_122.dir #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob #0 1.ob #0 2.ob))
+            #2 ((1.ob #0 2.ob #0 1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 Swap_YangBaxter_211.dir #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 1.ob #0 2.Swap_YangBaxter.dir) #1 (1.Swap.braid #0 1.ob #0 2.ob #0 2.ob #0 2.ob) #1 (1.ob #0 Swap_YangBaxter_112.dir #0 2.ob #0 2.ob) #1 (1.ob #0 2.ob #0 1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 2.ob #0 1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 2.ob #0 1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 2.ob #0 1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 Rev_Swap.braid #0 1.ob #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 Swap_YangBaxter_212.dir #0 2.ob) #1 (1.ob #0 1.ob #0 2.ob #0 1.ob #0 2.Swap.braid) #1 (1.Swap.braid #0 2.ob #0 1.ob #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.braid #0 1.ob #0 2.ob #0 2.ob) #1 (1.ob #0 2.ob #0 1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 2.ob #0 1.ob #0 Swap.braid #0 2.ob)),
+        inv => ((1.ob #0 2.ob #0 1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 2.ob #0 1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 2.ob #0 1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 Rev_Swap.braid #0 1.ob #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 Swap_YangBaxter_212.inv #0 2.ob) #1 (1.ob #0 1.ob #0 2.ob #0 1.ob #0 2.Swap.braid) #1 (1.Swap.braid #0 2.ob #0 1.ob #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.braid #0 1.ob #0 2.ob #0 2.ob) #1 (1.ob #0 2.ob #0 1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 2.ob #0 1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 2.ob #0 1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 Swap_YangBaxter_211.inv #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 1.ob #0 2.Swap_YangBaxter.inv) #1 (1.Swap.braid #0 1.ob #0 2.ob #0 2.ob #0 2.ob) #1 (1.ob #0 Swap_YangBaxter_112.inv #0 2.ob #0 2.ob) #1 (1.ob #0 2.ob #0 1.ob #0 Swap.braid #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob #0 1.ob #0 2.ob) #1 (1.ob #0 1.ob #0 Swap_YangBaxter_221.inv #0 2.ob) #1 (1.Swap_YangBaxter.inv #0 2.ob #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 1.ob #0 2.ob #0 2.Swap.braid) #1 (1.ob #0 1.ob #0 Swap_YangBaxter_122.inv #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob #0 1.ob #0 2.ob))
+            #2 ((1.ob #0 Rev_Swap.braid #0 2.ob #0 1.ob #0 2.ob) #1 (1.Swap.braid #0 2.ob #0 2.ob #0 1.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid #0 1.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 Swap_YangBaxter_121.inv #0 2.ob #0 2.ob) #1 (1.Swap.braid #0 2.ob #0 1.ob #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 1.ob #0 2.ob #0 Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid #0 1.ob #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob #0 1.ob #0 2.ob))
+    ]
+(* End local definitions *) }
+
+let total Tensor :: Object = [
+    Planar => Planar.Tensor,
+    Swap => Pair_Swap,
+    Swap_Inversion => Pair_Swap_Inversion,
+    Swap_YangBaxter => Pair_Swap_YangBaxter
+]
+
+@Type
+(*** 
+    A triple of objects comes with extra Yang--Baxter equations
+***)
+Triple <<= {
+    include Unit,
+    let unit = Unit.ob,
+
+    attach 1 :: Object along [ Unit => Unit ],
+    attach 2 :: Object along [ Unit => Unit ],
+    attach 3 :: Object along [ Unit => Unit ],
+
+    attach 12 :: Pair along [ 1 => 1, 2 => 2 ],
+    attach 13 :: Pair along [ 1 => 1, 2 => 3 ],
+    attach 23 :: Pair along [ 1 => 2, 2 => 3 ],
+
+    attach Swap_YangBaxter_123 :: Equation along [
+        lhs => (12.Swap.braid 3.ob)
+            (2.ob 13.Swap.braid)
+            (23.Swap.braid 1.ob),
+        rhs => (1.ob 23.Swap.braid)
+            (13.Swap.braid 2.ob)
+            (3.ob 12.Swap.braid)
+    ],
+    attach Swap_YangBaxter_132 :: Equation along [
+        lhs => (13.Swap.braid 2.ob)
+            (3.ob 12.Swap.braid)
+            (23.Rev_Swap.braid 1.ob),
+        rhs => (1.ob 23.Rev_Swap.braid)
+            (12.Swap.braid 3.ob)
+            (2.ob 13.Swap.braid)
+    ],
+    attach Swap_YangBaxter_213 :: Equation along [
+        lhs => (12.Rev_Swap.braid 3.ob)
+            (1.ob 23.Swap.braid)
+            (13.Swap.braid 2.ob),
+        rhs => (2.ob 13.Swap.braid)
+            (23.Swap.braid 1.ob)
+            (3.ob 12.Rev_Swap.braid)
+    ],
+    attach Swap_YangBaxter_231 :: Equation along [
+        lhs => (23.Swap.braid 1.ob)
+            (3.ob 12.Rev_Swap.braid)
+            (13.Rev_Swap.braid 2.ob),
+        rhs => (2.ob 13.Rev_Swap.braid)
+            (12.Rev_Swap.braid 3.ob)
+            (1.ob 23.Swap.braid)
+    ],
+    attach Swap_YangBaxter_312 :: Equation along [
+        lhs => (13.Rev_Swap.braid 2.ob)
+            (1.ob 23.Rev_Swap.braid)
+            (12.Swap.braid 3.ob),
+        rhs => (3.ob 12.Swap.braid)
+            (23.Rev_Swap.braid 1.ob)
+            (2.ob 13.Rev_Swap.braid)
+    ],
+    attach Swap_YangBaxter_321 :: Equation along [
+        lhs => (23.Rev_Swap.braid 1.ob)
+            (2.ob 13.Rev_Swap.braid)
+            (12.Rev_Swap.braid 3.ob),
+        rhs => (3.ob 12.Rev_Swap.braid)
+            (13.Rev_Swap.braid 2.ob)
+            (1.ob 23.Rev_Swap.braid)
+    ]
+}
+
+(* 
+	Flipping indices pairwise in a triple:
+    “(A, B, C)”.Rev_12 = “(B, A, C)”,
+    “(A, B, C)”.Rev_23 = “(A, C, B)”,
+    “(A, B, C)”.Rev_13 = “(C, B, A)”
+*)
+@Triple
+let Rev_12 :: Triple = [
+    1 => 2, 2 => 1, 3 => 3,
+    12 => 12.Rev, 13 => 23, 23 => 13,
+    Swap_YangBaxter_123 => Swap_YangBaxter_213,
+    Swap_YangBaxter_132 => Swap_YangBaxter_231,
+    Swap_YangBaxter_213 => Swap_YangBaxter_123,
+    Swap_YangBaxter_231 => Swap_YangBaxter_132,
+    Swap_YangBaxter_312 => Swap_YangBaxter_321,
+    Swap_YangBaxter_321 => Swap_YangBaxter_312
+],
+let Rev_23 :: Triple = [
+    1 => 1, 2 => 3, 3 => 2,
+    12 => 13, 13 => 12, 23 => 23.Rev,
+    Swap_YangBaxter_123 => Swap_YangBaxter_132,
+    Swap_YangBaxter_132 => Swap_YangBaxter_123,
+    Swap_YangBaxter_213 => Swap_YangBaxter_312,
+    Swap_YangBaxter_231 => Swap_YangBaxter_321,
+    Swap_YangBaxter_312 => Swap_YangBaxter_213,
+    Swap_YangBaxter_321 => Swap_YangBaxter_231
+],
+let Rev_13 :: Triple = Rev_23.Rev_12.Rev_23
+
+(* 
+	Turning a pair into a triple by repeating one entry: 
+    “(A, B)”.Triple_112 = “(A, A, B)”,
+    “(A, B)”.Triple_121 = “(A, B, A)”, and so on
+*)
+@Pair
+let Triple_112 :: Triple = [
+    1 => 1, 2 => 1, 3 => 2,
+    12 => 1.Pair, 13 => Pair, 23 => Pair,
+    Swap_YangBaxter_123 => Swap_YangBaxter_112,
+    Swap_YangBaxter_132 => Swap_YangBaxter_121,
+    Swap_YangBaxter_213 => Swap_YangBaxter_112,
+    Swap_YangBaxter_231 => Swap_YangBaxter_121,
+    Swap_YangBaxter_312 => Swap_YangBaxter_211,
+    Swap_YangBaxter_321 => Swap_YangBaxter_211
+],
+let Triple_121 :: Triple = Triple_112.Rev_23,
+let Triple_211 :: Triple = Triple_112.Rev_13,
+let Triple_122 :: Triple = Rev.Triple_211,
+let Triple_212 :: Triple = Rev.Triple_121,
+let Triple_221 :: Triple = Rev.Triple_112
+
+(* 
+	Triplicating an object: 
+    A.Triple = “(A, A, A)” 
+*)
+@Object
+let Triple :: Triple = Pair.Triple_112
+
+(* 
+	Tensoring pairs in a triple:
+    “(A, B, C)”.Tensor_Right = “(A, B \otimes C)”,
+    “(A, B, C)”.Tensor_Left = “(A \otimes B, C)”
+*)
+@Triple { (* Start local definitions *)
+    let Tensor_Right_Swap :: Aux.Braid = [
+        1 => 1.Planar, 2 => 23.Tensor.Planar,
+        braid => (12.Swap.braid #0 3.ob)
+            #1 (2.ob #0 13.Swap.braid),
+        LDomId.dir => ((12.Swap.LDomId.dir #0 3.ob) #1 (2.ob #0 13.Swap.LDomId.inv))
+            #2 ((12.Swap.RCodId.dir #0 3.ob) #1 (2.ob #0 13.Swap.braid)),
+        LDomId.inv => ((12.Swap.RCodId.inv #0 3.ob) #1 (2.ob #0 13.Swap.braid))
+            #2 ((12.Swap.LDomId.inv #0 3.ob) #1 (2.ob #0 13.Swap.LDomId.dir)),
+        RDomId.dir => ((1.ob #0 2.ob #0 3.lunit_inv) #1 (12.Swap.RUnit_Nat.inv #0 3.ob) #1 (2.ob #0 13.Swap.braid))
+            #2 ((1.ob #0 2.ob #0 3.lunit_inv) #1 (12.Swap.braid #0 Unit.ob #0 3.ob) #1 (2.ob #0 13.Swap.Triangle_Dom.dir))
+            #2 ((1.ob #0 2.ob #0 3.Planar.LUnit_Inversion.dir) #1 (12.Swap.braid #0 3.ob) #1 (2.ob #0 13.Swap.braid))
+            #2 ((12.Swap.braid #0 3.ob) #1 (2.ob #0 13.Swap.RDomId.dir)),
+        RDomId.inv => ((12.Swap.braid #0 3.ob) #1 (2.ob #0 13.Swap.RDomId.inv))
+            #2 ((1.ob #0 2.ob #0 3.Planar.LUnit_Inversion.inv) #1 (12.Swap.braid #0 3.ob) #1 (2.ob #0 13.Swap.braid))
+            #2 ((12.Swap.braid #0 3.ob) #1 (2.ob #0 1.ob #0 3.lunit_inv) #1 (2.ob #0 13.Swap.Triangle_Dom.inv))
+            #2 ((1.ob #0 2.ob #0 3.lunit_inv) #1 (12.Swap.RUnit_Nat.dir #0 3.ob) #1 (2.ob #0 13.Swap.braid)),
+        LCodId.dir => ((12.Swap.braid #0 3.ob) #1 (2.ob #0 13.Swap.LUnit_Inv_Nat.dir) #1 (2.runit #0 3.ob #0 1.ob))
+            #2 ((12.Swap.Triangle_Cod.inv #0 3.ob) #1 (2.runit #0 1.ob #0 3.ob) #1 (2.ob #0 13.Swap.braid))
+            #2 ((12.Swap.braid #0 3.ob) #1 (2.Planar.RUnit_Inversion.dir #0 1.ob #0 3.ob) #1 (2.ob #0 13.Swap.braid))
+            #2 ((12.Swap.LCodId.dir #0 3.ob) #1 (2.ob #0 13.Swap.braid)),
+        LCodId.inv => ((12.Swap.LCodId.inv #0 3.ob) #1 (2.ob #0 13.Swap.braid))
+            #2 ((12.Swap.braid #0 3.ob) #1 (2.Planar.RUnit_Inversion.inv #0 1.ob #0 3.ob) #1 (2.ob #0 13.Swap.braid))
+            #2 ((12.Swap.Triangle_Cod.dir #0 3.ob) #1 (2.ob #0 Unit.ob #0 13.Swap.braid) #1 (2.runit #0 3.ob #0 1.ob))
+            #2 ((12.Swap.braid #0 3.ob) #1 (2.ob #0 13.Swap.LUnit_Inv_Nat.inv) #1 (2.runit #0 3.ob #0 1.ob)),
+        RCodId.dir => ((12.Swap.RCodId.inv #0 3.ob) #1 (2.ob #0 13.Swap.RCodId.dir))
+            #2 ((12.Swap.braid #0 3.ob) #1 (2.ob #0 13.Swap.LDomId.dir)),
+        RCodId.inv => ((12.Swap.braid #0 3.ob) #1 (2.ob #0 13.Swap.LDomId.inv))
+            #2 ((12.Swap.RCodId.dir #0 3.ob) #1 (2.ob #0 13.Swap.RCodId.inv)),
+        LUnit_Nat.dir => ((12.Swap.LUnit_Nat.dir #0 3.ob) #1 (2.ob #0 13.Swap.LUnit_Inv_Nat.dir) #1 (2.runit #0 3.ob #0 1.ob))
+            #2 ((1.lunit #0 2.ob #0 3.ob) #1 (12.Swap.Triangle_Cod.inv #0 3.ob) #1 (2.runit #0 1.ob #0 3.ob) #1 (2.ob #0 13.Swap.braid))
+            #2 ((1.lunit #0 2.ob #0 3.ob) #1 (12.Swap.braid #0 3.ob) #1 (2.Planar.RUnit_Inversion.dir #0 1.ob #0 3.ob) #1 (2.ob #0 13.Swap.braid))
+            #2 ((1.lunit #0 2.ob #0 3.ob) #1 (12.Swap.LCodId.dir #0 3.ob) #1 (2.ob #0 13.Swap.braid)),
+        LUnit_Nat.inv => ((1.lunit #0 2.ob #0 3.ob) #1 (12.Swap.LCodId.inv #0 3.ob) #1 (2.ob #0 13.Swap.braid))
+            #2 ((1.lunit #0 2.ob #0 3.ob) #1 (12.Swap.braid #0 3.ob) #1 (2.Planar.RUnit_Inversion.inv #0 1.ob #0 3.ob) #1 (2.ob #0 13.Swap.braid))
+            #2 ((1.lunit #0 2.ob #0 3.ob) #1 (12.Swap.Triangle_Cod.dir #0 3.ob) #1 (2.ob #0 Unit.ob #0 13.Swap.braid) #1 (2.runit #0 3.ob #0 1.ob))
+            #2 ((12.Swap.LUnit_Nat.inv #0 3.ob) #1 (2.ob #0 13.Swap.LUnit_Inv_Nat.inv) #1 (2.runit #0 3.ob #0 1.ob)),
+        RUnit_Nat.dir => ((12.Swap.braid #0 3.ob #0 Unit.ob) #1 (2.ob #0 13.Swap.RUnit_Nat.dir))
+            #2 ((1.ob #0 2.ob #0 3.Planar.RUnit.CodId.inv) #1 (12.Swap.braid #0 3.ob) #1 (2.ob #0 13.Swap.braid))
+            #2 ((12.Swap.braid #0 3.ob #0 Unit.ob) #1 (2.ob #0 1.ob #0 3.runit) #1 (2.ob #0 1.ob #0 3.Planar.LUnit_Inversion.inv) #1 (2.ob #0 13.Swap.braid))
+            #2 ((1.ob #0 2.ob #0 3.runit) #1 (1.ob #0 2.ob #0 3.lunit_inv) #1 (12.Swap.braid #0 Unit.ob #0 3.ob) #1 (2.ob #0 13.Swap.Triangle_Dom.inv))
+            #2 ((1.ob #0 2.ob #0 3.runit) #1 (1.ob #0 2.ob #0 3.lunit_inv) #1 (12.Swap.RUnit_Nat.dir #0 3.ob) #1 (2.ob #0 13.Swap.braid)),
+        RUnit_Nat.inv => ((1.ob #0 2.ob #0 3.runit) #1 (1.ob #0 2.ob #0 3.lunit_inv) #1 (12.Swap.RUnit_Nat.inv #0 3.ob) #1 (2.ob #0 13.Swap.braid))
+            #2 ((1.ob #0 2.ob #0 3.runit) #1 (1.ob #0 2.ob #0 3.lunit_inv) #1 (12.Swap.braid #0 Unit.ob #0 3.ob) #1 (2.ob #0 13.Swap.Triangle_Dom.dir))
+            #2 ((12.Swap.braid #0 3.ob #0 Unit.ob) #1 (2.ob #0 1.ob #0 3.runit) #1 (2.ob #0 1.ob #0 3.Planar.LUnit_Inversion.dir) #1 (2.ob #0 13.Swap.braid))
+            #2 ((1.ob #0 2.ob #0 3.Planar.RUnit.CodId.dir) #1 (12.Swap.braid #0 3.ob) #1 (2.ob #0 13.Swap.braid))
+            #2 ((12.Swap.braid #0 3.ob #0 Unit.ob) #1 (2.ob #0 13.Swap.RUnit_Nat.inv)),
+        LUnit_Inv_Nat.dir => ((12.Swap.braid #0 3.ob) #1 (2.ob #0 13.Swap.LUnit_Inv_Nat.dir) #1 (2.runit #0 3.ob #0 1.ob) #1 (2.lunit_inv #0 3.ob #0 1.ob))
+            #2 ((12.Swap.Triangle_Cod.inv #0 3.ob) #1 (2.runit #0 1.ob #0 3.ob) #1 (2.lunit_inv #0 1.ob #0 3.ob) #1 (Unit.ob #0 2.ob #0 13.Swap.braid))
+            #2 ((12.Swap.braid #0 3.ob) #1 (2.Planar.RUnit_Inversion.dir #0 1.ob #0 3.ob) #1 (2.lunit_inv #0 1.ob #0 3.ob) #1 (Unit.ob #0 2.ob #0 13.Swap.braid))
+            #2 ((12.Swap.LCodId.dir #0 3.ob) #1 (2.ob #0 13.Swap.braid) #1 (2.lunit_inv #0 3.ob #0 1.ob))
+            #2 ((12.Swap.LUnit_Inv_Nat.dir #0 3.ob) #1 (Unit.ob #0 2.ob #0 13.Swap.braid)),
+        LUnit_Inv_Nat.inv => ((12.Swap.LUnit_Inv_Nat.inv #0 3.ob) #1 (Unit.ob #0 2.ob #0 13.Swap.braid))
+            #2 ((12.Swap.braid #0 3.ob) #1 (2.Planar.LUnit_Inv.DomId.inv #0 1.ob #0 3.ob) #1 (Unit.ob #0 2.ob #0 13.Swap.braid))
+            #2 ((12.Swap.braid #0 3.ob) #1 (2.Planar.RUnit_Inversion.inv #0 1.ob #0 3.ob) #1 (2.lunit_inv #0 1.ob #0 3.ob) #1 (Unit.ob #0 2.ob #0 13.Swap.braid))
+            #2 ((12.Swap.Triangle_Cod.dir #0 3.ob) #1 (2.ob #0 Unit.ob #0 13.Swap.braid) #1 (2.runit #0 3.ob #0 1.ob) #1 (2.lunit_inv #0 3.ob #0 1.ob))
+            #2 ((12.Swap.braid #0 3.ob) #1 (2.ob #0 13.Swap.LUnit_Inv_Nat.inv) #1 (2.runit #0 3.ob #0 1.ob) #1 (2.lunit_inv #0 3.ob #0 1.ob)),
+        RUnit_Inv_Nat.dir => ((12.Swap.braid #0 3.ob) #1 (2.ob #0 13.Swap.RDomId.inv) #1 (2.ob #0 3.ob #0 1.runit_inv))
+            #2 ((1.ob #0 2.ob #0 3.Planar.LUnit_Inversion.inv) #1 (12.Swap.braid #0 3.ob) #1 (2.ob #0 13.Swap.braid) #1 (2.ob #0 3.ob #0 1.runit_inv))
+            #2 ((12.Swap.braid #0 3.ob) #1 (2.ob #0 1.ob #0 3.lunit_inv) #1 (2.ob #0 13.Swap.Triangle_Dom.inv) #1 (2.ob #0 3.ob #0 1.runit_inv))
+            #2 ((1.ob #0 2.ob #0 3.lunit_inv) #1 (12.Swap.RUnit_Nat.dir #0 3.ob) #1 (2.ob #0 13.Swap.RUnit_Inv_Nat.dir)),
+        RUnit_Inv_Nat.inv => ((1.ob #0 2.ob #0 3.lunit_inv) #1 (12.Swap.RUnit_Nat.inv #0 3.ob) #1 (2.ob #0 13.Swap.RUnit_Inv_Nat.inv))
+            #2 ((1.ob #0 2.ob #0 3.lunit_inv) #1 (12.Swap.braid #0 Unit.ob #0 3.ob) #1 (2.ob #0 13.Swap.Triangle_Dom.dir) #1 (2.ob #0 3.ob #0 1.runit_inv))
+            #2 ((1.ob #0 2.ob #0 3.Planar.LUnit_Inversion.dir) #1 (12.Swap.braid #0 3.ob) #1 (2.ob #0 13.Swap.braid) #1 (2.ob #0 3.ob #0 1.runit_inv))
+            #2 ((12.Swap.braid #0 3.ob) #1 (2.ob #0 13.Swap.RDomId.dir) #1 (2.ob #0 3.ob #0 1.runit_inv)),
+        Triangle_Dom.dir => ((12.Swap.Triangle_Dom.dir #0 3.ob) #1 (2.ob #0 13.Swap.RDomId.inv))
+            #2 ((1.ob #0 Unit.ob #0 2.ob #0 3.Planar.LUnit_Inversion.inv) #1 (1.ob #0 2.lunit #0 3.ob) #1 (12.Swap.braid #0 3.ob) #1 (2.ob #0 13.Swap.braid))
+            #2 ((1.ob #0 2.lunit #0 3.ob) #1 (12.Swap.braid #0 3.ob) #1 (2.ob #0 1.ob #0 3.lunit_inv) #1 (2.ob #0 13.Swap.Triangle_Dom.inv))
+            #2 ((1.ob #0 Unit.ob #0 2.ob #0 3.lunit_inv) #1 (1.ob #0 2.lunit #0 Unit.ob #0 3.ob) #1 (12.Swap.RUnit_Nat.dir #0 3.ob) #1 (2.ob #0 13.Swap.braid)),
+        Triangle_Dom.inv => ((1.ob #0 2.lunit #0 3.ob) #1 (1.ob #0 2.ob #0 3.lunit_inv) #1 (12.Swap.RUnit_Nat.inv #0 3.ob) #1 (2.ob #0 13.Swap.braid))
+            #2 ((1.ob #0 Unit.ob #0 2.ob #0 3.lunit_inv) #1 (1.ob #0 2.lunit #0 Unit.ob #0 3.ob) #1 (12.Swap.braid #0 Unit.ob #0 3.ob) #1 (2.ob #0 13.Swap.Triangle_Dom.dir))
+            #2 ((1.ob #0 Unit.ob #0 2.ob #0 3.Planar.LUnit_Inversion.dir) #1 (1.ob #0 2.lunit #0 3.ob) #1 (12.Swap.braid #0 3.ob) #1 (2.ob #0 13.Swap.braid))
+            #2 ((12.Swap.Triangle_Dom.inv #0 3.ob) #1 (2.ob #0 13.Swap.RDomId.dir)),
+        Triangle_Cod.dir => ((12.Swap.braid #0 3.ob) #1 (2.ob #0 13.Swap.LUnit_Inv_Nat.dir) #1 (2.ob #0 Unit.ob #0 3.runit_inv #0 1.ob) #1 (2.runit #0 3.ob #0 Unit.ob #0 1.ob))
+            #2 ((12.Swap.Triangle_Cod.inv #0 3.ob) #1 (2.ob #0 Unit.ob #0 13.Swap.Triangle_Cod.dir) #1 (2.runit #0 3.ob #0 Unit.ob #0 1.ob))
+            #2 ((12.Swap.braid #0 3.ob) #1 (2.Planar.RUnit_Inversion.dir #0 1.ob #0 3.ob) #1 (2.ob #0 13.Swap.braid) #1 (2.ob #0 3.ob #0 1.lunit_inv))
+            #2 ((12.Swap.LCodId.dir #0 3.ob) #1 (2.ob #0 13.Swap.braid) #1 (2.ob #0 3.ob #0 1.lunit_inv)),
+        Triangle_Cod.inv => ((12.Swap.LCodId.inv #0 3.ob) #1 (2.ob #0 13.Swap.braid) #1 (2.ob #0 3.ob #0 1.lunit_inv))
+            #2 ((12.Swap.braid #0 3.ob) #1 (2.Planar.RUnit_Inversion.inv #0 1.ob #0 3.ob) #1 (2.ob #0 13.Swap.braid) #1 (2.ob #0 3.ob #0 1.lunit_inv))
+            #2 ((12.Swap.Triangle_Cod.dir #0 3.ob) #1 (2.ob #0 Unit.ob #0 13.Swap.Triangle_Cod.inv) #1 (2.runit #0 3.ob #0 Unit.ob #0 1.ob))
+            #2 ((12.Swap.braid #0 3.ob) #1 (2.ob #0 13.Swap.LUnit_Inv_Nat.inv) #1 (2.runit #0 3.ob #0 1.ob) #1 (2.ob #0 3.runit_inv #0 1.ob))
+    ],
+    let Tensor_Right_Rev_Swap :: Aux.Braid = [
+        1 => 23.Tensor.Planar, 2 => 1.Planar,
+        braid => (2.ob #0 13.Rev_Swap.braid)
+            #1 (12.Rev_Swap.braid #0 3.ob),
+        LDomId.dir => ((2.ob #0 13.Rev_Swap.LUnit_Inv_Nat.inv) #1 (12.Rev_Swap.Triangle_Dom.dir #0 3.ob))
+            #2 ((2.ob #0 13.Rev_Swap.braid) #1 (2.ob #0 1.Planar.LUnit_Inversion.dir #0 3.ob) #1 (12.Rev_Swap.braid #0 3.ob))
+            #2 ((2.ob #0 13.Rev_Swap.braid) #1 (12.Rev_Swap.RDomId.dir #0 3.ob)),
+        LDomId.inv => ((2.ob #0 13.Rev_Swap.braid) #1 (12.Rev_Swap.RDomId.inv #0 3.ob))
+            #2 ((2.ob #0 13.Rev_Swap.braid) #1 (2.ob #0 1.Planar.LUnit_Inversion.inv #0 3.ob) #1 (12.Rev_Swap.braid #0 3.ob))
+            #2 ((2.ob #0 13.Rev_Swap.LUnit_Inv_Nat.dir) #1 (12.Rev_Swap.Triangle_Dom.inv #0 3.ob)),
+        RDomId.dir => ((2.ob #0 13.Rev_Swap.RDomId.dir) #1 (12.Rev_Swap.RDomId.inv #0 3.ob))
+            #2 ((2.ob #0 13.Rev_Swap.LCodId.dir) #1 (12.Rev_Swap.braid #0 3.ob)),
+        RDomId.inv => ((2.ob #0 13.Rev_Swap.LCodId.inv) #1 (12.Rev_Swap.braid #0 3.ob))
+            #2 ((2.ob #0 13.Rev_Swap.RDomId.inv) #1 (12.Rev_Swap.RDomId.dir #0 3.ob)),
+        LCodId.dir => ((2.ob #0 13.Rev_Swap.LCodId.inv) #1 (12.Rev_Swap.LCodId.dir #0 3.ob))
+            #2 ((2.ob #0 13.Rev_Swap.braid) #1 (12.Rev_Swap.RDomId.dir #0 3.ob)),
+        LCodId.inv => ((2.ob #0 13.Rev_Swap.braid) #1 (12.Rev_Swap.RDomId.inv #0 3.ob))
+            #2 ((2.ob #0 13.Rev_Swap.LCodId.dir) #1 (12.Rev_Swap.LCodId.inv #0 3.ob)),
+        RCodId.dir => ((2.ob #0 13.Rev_Swap.Triangle_Cod.inv) #1 (12.Rev_Swap.RUnit_Nat.dir #0 3.ob))
+            #2 ((2.ob #0 13.Rev_Swap.braid) #1 (2.ob #0 1.Planar.RUnit_Inversion.dir #0 3.ob) #1 (12.Rev_Swap.braid #0 3.ob))
+            #2 ((2.ob #0 13.Rev_Swap.braid) #1 (12.Rev_Swap.RDomId.dir #0 3.ob)),
+        RCodId.inv => ((2.ob #0 13.Rev_Swap.braid) #1 (12.Rev_Swap.RDomId.inv #0 3.ob))
+            #2 ((2.ob #0 13.Rev_Swap.braid) #1 (2.ob #0 1.Planar.RUnit_Inversion.inv #0 3.ob) #1 (12.Rev_Swap.braid #0 3.ob))
+            #2 ((2.ob #0 13.Rev_Swap.Triangle_Cod.dir) #1 (12.Rev_Swap.RUnit_Nat.inv #0 3.ob)),
+        LUnit_Nat.dir => ((Unit.ob #0 2.ob #0 13.Rev_Swap.LCodId.inv) #1 (12.Rev_Swap.LUnit_Nat.dir #0 3.ob))
+            #2 ((Unit.ob #0 2.ob #0 13.Rev_Swap.braid) #1 (Unit.ob #0 2.ob #0 1.Planar.LUnit_Inversion.inv #0 3.ob) #1 (2.lunit #0 1.ob #0 3.ob) #1 (12.Rev_Swap.braid #0 3.ob))
+            #2 ((Unit.ob #0 2.ob #0 13.Rev_Swap.LUnit_Inv_Nat.dir) #1 (2.lunit #0 Unit.ob #0 1.ob #0 3.ob) #1 (12.Rev_Swap.Triangle_Dom.inv #0 3.ob)),
+        LUnit_Nat.inv => ((Unit.ob #0 2.ob #0 13.Rev_Swap.LUnit_Inv_Nat.inv) #1 (2.lunit #0 Unit.ob #0 1.ob #0 3.ob) #1 (12.Rev_Swap.Triangle_Dom.dir #0 3.ob))
+            #2 ((2.lunit #0 3.ob #0 1.ob) #1 (2.ob #0 13.Rev_Swap.braid) #1 (2.ob #0 1.Planar.LUnit_Inversion.dir #0 3.ob) #1 (12.Rev_Swap.braid #0 3.ob))
+            #2 ((Unit.ob #0 2.ob #0 13.Rev_Swap.LCodId.dir) #1 (12.Rev_Swap.LUnit_Nat.inv #0 3.ob)),
+        RUnit_Nat.dir => ((2.ob #0 13.Rev_Swap.RUnit_Nat.dir) #1 (2.ob #0 1.ob #0 3.lunit_inv) #1 (12.Rev_Swap.RUnit_Nat.dir #0 3.ob))
+            #2 ((2.ob #0 3.ob #0 1.runit) #1 (2.ob #0 13.Rev_Swap.Triangle_Cod.inv) #1 (2.ob #0 1.runit #0 3.ob) #1 (12.Rev_Swap.braid #0 3.ob))
+            #2 ((2.ob #0 3.ob #0 1.runit) #1 (2.ob #0 13.Rev_Swap.braid) #1 (2.ob #0 1.Planar.RUnit_Inversion.dir #0 3.ob) #1 (12.Rev_Swap.braid #0 3.ob))
+            #2 ((2.ob #0 3.ob #0 1.runit) #1 (2.ob #0 13.Rev_Swap.braid) #1 (12.Rev_Swap.RDomId.dir #0 3.ob)),
+        RUnit_Nat.inv => ((2.ob #0 3.ob #0 1.runit) #1 (2.ob #0 13.Rev_Swap.braid) #1 (12.Rev_Swap.RDomId.inv #0 3.ob))
+            #2 ((2.ob #0 3.ob #0 1.runit) #1 (2.ob #0 13.Rev_Swap.braid) #1 (2.ob #0 1.Planar.RUnit_Inversion.inv #0 3.ob) #1 (12.Rev_Swap.braid #0 3.ob))
+            #2 ((2.ob #0 3.ob #0 1.runit) #1 (2.ob #0 13.Rev_Swap.Triangle_Cod.dir) #1 (2.ob #0 1.runit #0 3.ob) #1 (12.Rev_Swap.braid #0 3.ob))
+            #2 ((2.ob #0 13.Rev_Swap.RUnit_Nat.inv) #1 (2.ob #0 1.ob #0 3.lunit_inv) #1 (12.Rev_Swap.RUnit_Nat.inv #0 3.ob)),
+        LUnit_Inv_Nat.dir => ((2.ob #0 13.Rev_Swap.LCodId.inv) #1 (12.Rev_Swap.braid #0 3.ob) #1 (1.lunit_inv #0 2.ob #0 3.ob))
+            #2 ((2.ob #0 13.Rev_Swap.braid) #1 (2.ob #0 1.Planar.LUnit_Inversion.inv #0 3.ob) #1 (12.Rev_Swap.braid #0 3.ob) #1 (1.lunit_inv #0 2.ob #0 3.ob))
+            #2 ((2.ob #0 13.Rev_Swap.LUnit_Inv_Nat.dir) #1 (12.Rev_Swap.Triangle_Dom.inv #0 3.ob) #1 (1.lunit_inv #0 2.ob #0 3.ob))
+            #2 ((2.ob #0 3.lunit_inv #0 1.ob) #1 (2.runit #0 3.ob #0 1.ob) #1 (2.ob #0 13.Rev_Swap.braid) #1 (12.Rev_Swap.LUnit_Inv_Nat.dir #0 3.ob)),
+        LUnit_Inv_Nat.inv => ((2.ob #0 3.lunit_inv #0 1.ob) #1 (2.ob #0 Unit.ob #0 13.Rev_Swap.braid) #1 (2.runit #0 1.ob #0 3.ob) #1 (12.Rev_Swap.LUnit_Inv_Nat.inv #0 3.ob))
+            #2 ((2.ob #0 13.Rev_Swap.LUnit_Inv_Nat.inv) #1 (12.Rev_Swap.Triangle_Dom.dir #0 3.ob) #1 (1.lunit_inv #0 2.ob #0 3.ob))
+            #2 ((2.ob #0 13.Rev_Swap.braid) #1 (2.ob #0 1.Planar.LUnit_Inversion.dir #0 3.ob) #1 (12.Rev_Swap.braid #0 3.ob) #1 (1.lunit_inv #0 2.ob #0 3.ob))
+            #2 ((2.ob #0 13.Rev_Swap.LCodId.dir) #1 (12.Rev_Swap.braid #0 3.ob) #1 (1.lunit_inv #0 2.ob #0 3.ob)),
+        RUnit_Inv_Nat.dir => ((2.ob #0 13.Rev_Swap.Triangle_Cod.inv) #1 (12.Rev_Swap.RUnit_Nat.dir #0 3.ob) #1 (1.ob #0 2.ob #0 3.runit_inv))
+            #2 ((2.ob #0 13.Rev_Swap.RUnit_Inv_Nat.dir) #1 (2.ob #0 1.Planar.RUnit_Inversion.dir #0 3.ob #0 Unit.ob) #1 (12.Rev_Swap.braid #0 3.ob #0 Unit.ob))
+            #2 ((2.ob #0 3.ob #0 1.runit_inv) #1 (2.ob #0 13.Rev_Swap.LCodId.dir #0 Unit.ob) #1 (12.Rev_Swap.braid #0 3.ob #0 Unit.ob)),
+        RUnit_Inv_Nat.inv => ((2.ob #0 3.ob #0 1.runit_inv) #1 (2.ob #0 13.Rev_Swap.LCodId.inv #0 Unit.ob) #1 (12.Rev_Swap.braid #0 3.ob #0 Unit.ob))
+            #2 ((2.ob #0 13.Rev_Swap.RUnit_Inv_Nat.inv) #1 (2.ob #0 1.Planar.RUnit_Inversion.inv #0 3.ob #0 Unit.ob) #1 (12.Rev_Swap.braid #0 3.ob #0 Unit.ob))
+            #2 ((2.ob #0 13.Rev_Swap.Triangle_Cod.dir) #1 (12.Rev_Swap.RUnit_Nat.inv #0 3.ob) #1 (1.ob #0 2.ob #0 3.runit_inv)),
+        Triangle_Dom.dir => ((2.ob #0 3.runit #0 1.ob) #1 (2.ob #0 13.Rev_Swap.LUnit_Inv_Nat.inv) #1 (12.Rev_Swap.Triangle_Dom.dir #0 3.ob))
+            #2 ((2.ob #0 13.Rev_Swap.Triangle_Dom.dir) #1 (2.ob #0 1.Planar.LUnit_Inversion.dir #0 3.ob) #1 (12.Rev_Swap.braid #0 3.ob))
+            #2 ((2.ob #0 3.ob #0 1.lunit) #1 (2.ob #0 13.Rev_Swap.LCodId.dir) #1 (12.Rev_Swap.braid #0 3.ob)),
+        Triangle_Dom.inv => ((2.ob #0 3.ob #0 1.lunit) #1 (2.ob #0 13.Rev_Swap.LCodId.inv) #1 (12.Rev_Swap.braid #0 3.ob))
+            #2 ((2.ob #0 13.Rev_Swap.Triangle_Dom.inv) #1 (2.ob #0 1.Planar.LUnit_Inversion.inv #0 3.ob) #1 (12.Rev_Swap.braid #0 3.ob))
+            #2 ((2.ob #0 3.runit #0 1.ob) #1 (2.ob #0 13.Rev_Swap.LUnit_Inv_Nat.dir) #1 (12.Rev_Swap.Triangle_Dom.inv #0 3.ob)),
+        Triangle_Cod.dir => ((2.ob #0 13.Rev_Swap.LCodId.inv) #1 (12.Rev_Swap.Triangle_Cod.dir #0 3.ob))
+            #2 ((2.ob #0 13.Rev_Swap.braid) #1 (2.ob #0 1.Planar.RUnit_Inversion.inv #0 3.ob) #1 (12.Rev_Swap.braid #0 3.ob) #1 (1.ob #0 2.lunit_inv #0 3.ob))
+            #2 ((2.ob #0 13.Rev_Swap.Triangle_Cod.dir) #1 (12.Rev_Swap.RUnit_Nat.inv #0 3.ob) #1 (1.ob #0 2.lunit_inv #0 3.ob)),
+        Triangle_Cod.inv => ((2.ob #0 13.Rev_Swap.Triangle_Cod.inv) #1 (12.Rev_Swap.RUnit_Nat.dir #0 3.ob) #1 (1.ob #0 2.lunit_inv #0 3.ob))
+            #2 ((2.ob #0 13.Rev_Swap.braid) #1 (2.ob #0 1.Planar.RUnit_Inversion.dir #0 3.ob) #1 (12.Rev_Swap.Triangle_Cod.inv #0 3.ob))
+            #2 ((2.ob #0 13.Rev_Swap.LCodId.dir) #1 (12.Rev_Swap.braid #0 3.ob) #1 (1.runit_inv #0 2.ob #0 3.ob))
+    ],
+    let Tensor_Right_Swap_112 :: Equation = [
+        dir => ((12.Swap_YangBaxter_112.dir #0 3.ob) #1 (2.ob #0 1.ob #0 13.Swap.braid) #1 (2.ob #0 13.Swap.braid #0 1.ob))
+            #2 ((1.ob #0 12.Swap.braid #0 3.ob) #1 (12.Swap.braid #0 1.ob #0 3.ob) #1 (2.ob #0 13.Swap_YangBaxter_112.dir)),
+        inv => ((1.ob #0 12.Swap.braid #0 3.ob) #1 (12.Swap.braid #0 1.ob #0 3.ob) #1 (2.ob #0 13.Swap_YangBaxter_112.inv))
+            #2 ((12.Swap_YangBaxter_112.inv #0 3.ob) #1 (2.ob #0 1.ob #0 13.Swap.braid) #1 (2.ob #0 13.Swap.braid #0 1.ob)),
+    ],
+    let Tensor_Right_Swap_121 :: Equation = [
+        dir => ((12.Swap.braid #0 3.ob #0 1.ob) #1 (2.ob #0 13.Swap_YangBaxter_121.dir) #1 (12.Rev_Swap.braid #0 3.ob #0 1.ob))
+            #2 ((1.ob #0 2.ob #0 13.Rev_Swap.braid) #1 (12.Swap_YangBaxter_121.dir #0 3.ob) #1 (1.ob #0 2.ob #0 13.Swap.braid)),
+        inv => ((1.ob #0 2.ob #0 13.Rev_Swap.braid) #1 (12.Swap_YangBaxter_121.inv #0 3.ob) #1 (1.ob #0 2.ob #0 13.Swap.braid))
+            #2 ((12.Swap.braid #0 3.ob #0 1.ob) #1 (2.ob #0 13.Swap_YangBaxter_121.inv) #1 (12.Rev_Swap.braid #0 3.ob #0 1.ob))
+    ],
+    let Tensor_Right_Swap_122 :: Equation = [
+        dir => ((12.Swap.braid #0 3.ob #0 2.ob #0 3.ob) #1 (2.ob #0 Swap_YangBaxter_132.dir #0 3.ob) #1 (2.Swap.braid #0 3.ob #0 1.ob #0 3.ob) #1 (2.ob #0 2.ob #0 3.ob #0 13.Swap.braid) #1 (2.ob #0 2.ob #0 3.Swap.braid #0 1.ob) #1 (2.ob #0 23.Swap.braid #0 3.ob #0 1.ob))
+            #2 ((1.ob #0 2.ob #0 23.Rev_Swap.braid #0 3.ob) #1 (12.Swap_YangBaxter_122.dir #0 3.ob #0 3.ob) #1 (2.ob #0 2.ob #0 13.Swap_YangBaxter_122.dir) #1 (2.ob #0 23.Swap.braid #0 3.ob #0 1.ob))
+            #2 ((1.ob #0 2.ob #0 23.Rev_Swap.braid #0 3.ob) #1 (1.ob #0 2.ob #0 2.ob #0 3.Swap.braid) #1 (1.ob #0 2.Swap.braid #0 3.ob #0 3.ob) #1 (12.Swap.braid #0 2.ob #0 3.ob #0 3.ob) #1 (2.ob #0 Swap_YangBaxter_123.dir #0 3.ob) #1 (2.ob #0 3.ob #0 2.ob #0 13.Swap.braid)),
+        inv => ((1.ob #0 2.ob #0 23.Rev_Swap.braid #0 3.ob) #1 (1.ob #0 2.ob #0 2.ob #0 3.Swap.braid) #1 (1.ob #0 2.Swap.braid #0 3.ob #0 3.ob) #1 (12.Swap.braid #0 2.ob #0 3.ob #0 3.ob) #1 (2.ob #0 Swap_YangBaxter_123.inv #0 3.ob) #1 (2.ob #0 3.ob #0 2.ob #0 13.Swap.braid))
+            #2 ((1.ob #0 2.ob #0 23.Rev_Swap.braid #0 3.ob) #1 (12.Swap_YangBaxter_122.inv #0 3.ob #0 3.ob) #1 (2.ob #0 2.ob #0 13.Swap_YangBaxter_122.inv) #1 (2.ob #0 23.Swap.braid #0 3.ob #0 1.ob))
+            #2 ((12.Swap.braid #0 3.ob #0 2.ob #0 3.ob) #1 (2.ob #0 Swap_YangBaxter_132.inv #0 3.ob) #1 (2.ob #0 2.ob #0 3.ob #0 13.Swap.braid) #1 (2.ob #0 2.ob #0 3.Swap.braid #0 1.ob) #1 (2.Swap.braid #0 3.ob #0 3.ob #0 1.ob) #1 (2.ob #0 23.Swap.braid #0 3.ob #0 1.ob))
+    ],
+    let Tensor_Right_Swap_211 :: Equation = [
+        dir => ((2.ob #0 13.Rev_Swap.braid #0 1.ob) #1 (2.ob #0 1.ob #0 13.Rev_Swap.braid) #1 (12.Swap_YangBaxter_211.dir #0 3.ob))
+            #2 ((2.ob #0 13.Swap_YangBaxter_211.dir) #1 (12.Rev_Swap.braid #0 1.ob #0 3.ob) #1 (1.ob #0 12.Rev_Swap.braid #0 3.ob)),
+        inv => ((2.ob #0 13.Swap_YangBaxter_211.inv) #1 (12.Rev_Swap.braid #0 1.ob #0 3.ob) #1 (1.ob #0 12.Rev_Swap.braid #0 3.ob))
+            #2 ((2.ob #0 13.Rev_Swap.braid #0 1.ob) #1 (2.ob #0 1.ob #0 13.Rev_Swap.braid) #1 (12.Swap_YangBaxter_211.inv #0 3.ob))
+    ],
+    let Tensor_Right_Swap_212 :: Equation = [
+        dir => ((2.ob #0 13.Rev_Swap.braid #0 2.ob #0 3.ob) #1 (2.ob #0 1.ob #0 23.Rev_Swap.braid #0 3.ob) #1 (12.Swap_YangBaxter_212.dir #0 3.ob #0 3.ob) #1 (2.ob #0 1.ob #0 2.ob #0 3.Swap.braid) #1 (2.ob #0 1.ob #0 23.Swap.braid #0 3.ob) #1 (2.ob #0 13.Swap.braid #0 2.ob #0 3.ob))
+            #2 ((2.ob #0 Swap_YangBaxter_312.dir #0 3.ob) #1 (2.ob #0 2.ob #0 1.ob #0 3.Swap.braid) #1 (2.Swap.braid #0 1.ob #0 3.ob #0 3.ob) #1 (2.ob #0 Swap_YangBaxter_213.dir #0 3.ob))
+            #2 ((2.ob #0 3.ob #0 12.Swap.braid #0 3.ob) #1 (2.ob #0 23.Rev_Swap.braid #0 1.ob #0 3.ob) #1 (2.ob #0 2.ob #0 13.Swap_YangBaxter_212.dir) #1 (2.Swap.braid #0 3.ob #0 1.ob #0 3.ob) #1 (2.ob #0 23.Swap.braid #0 1.ob #0 3.ob) #1 (2.ob #0 3.ob #0 12.Rev_Swap.braid #0 3.ob)),
+        inv => ((2.ob #0 3.ob #0 12.Swap.braid #0 3.ob) #1 (2.ob #0 23.Rev_Swap.braid #0 1.ob #0 3.ob) #1 (2.ob #0 2.ob #0 13.Swap_YangBaxter_212.inv) #1 (2.Swap.braid #0 3.ob #0 1.ob #0 3.ob) #1 (2.ob #0 23.Swap.braid #0 1.ob #0 3.ob) #1 (2.ob #0 3.ob #0 12.Rev_Swap.braid #0 3.ob))
+            #2 ((2.ob #0 Swap_YangBaxter_312.inv #0 3.ob) #1 (2.Swap.braid #0 1.ob #0 3.ob #0 3.ob) #1 (2.ob #0 2.ob #0 1.ob #0 3.Swap.braid) #1 (2.ob #0 Swap_YangBaxter_213.inv #0 3.ob))
+            #2 ((2.ob #0 13.Rev_Swap.braid #0 2.ob #0 3.ob) #1 (2.ob #0 1.ob #0 23.Rev_Swap.braid #0 3.ob) #1 (12.Swap_YangBaxter_212.inv #0 3.ob #0 3.ob) #1 (2.ob #0 1.ob #0 2.ob #0 3.Swap.braid) #1 (2.ob #0 1.ob #0 23.Swap.braid #0 3.ob) #1 (2.ob #0 13.Swap.braid #0 2.ob #0 3.ob)),
+    ],
+    let Tensor_Right_Swap_221 :: Equation = [
+        dir => ((2.ob #0 23.Rev_Swap.braid #0 3.ob #0 1.ob) #1 (2.ob #0 2.ob #0 3.Swap.braid #0 1.ob) #1 (2.ob #0 2.ob #0 3.ob #0 13.Rev_Swap.braid) #1 (2.Swap.braid #0 3.ob #0 1.ob #0 3.ob) #1 (2.ob #0 Swap_YangBaxter_231.dir #0 3.ob) #1 (12.Rev_Swap.braid #0 3.ob #0 2.ob #0 3.ob))
+            #2 ((2.ob #0 23.Rev_Swap.braid #0 3.ob #0 1.ob) #1 (2.ob #0 2.ob #0 13.Swap_YangBaxter_221.dir) #1 (12.Swap_YangBaxter_221.dir #0 3.ob #0 3.ob) #1 (1.ob #0 2.ob #0 23.Swap.braid #0 3.ob))
+            #2 ((2.ob #0 3.ob #0 2.ob #0 13.Rev_Swap.braid) #1 (2.ob #0 Swap_YangBaxter_321.dir #0 3.ob) #1 (12.Rev_Swap.braid #0 2.ob #0 3.ob #0 3.ob) #1 (1.ob #0 2.Swap.braid #0 3.ob #0 3.ob) #1 (1.ob #0 2.ob #0 2.ob #0 3.Swap.braid) #1 (1.ob #0 2.ob #0 23.Swap.braid #0 3.ob)),
+        inv => ((2.ob #0 3.ob #0 2.ob #0 13.Rev_Swap.braid) #1 (2.ob #0 Swap_YangBaxter_321.inv #0 3.ob) #1 (2.ob #0 1.ob #0 2.ob #0 3.Swap.braid) #1 (12.Rev_Swap.braid #0 2.ob #0 3.ob #0 3.ob) #1 (1.ob #0 2.Swap.braid #0 3.ob #0 3.ob) #1 (1.ob #0 2.ob #0 23.Swap.braid #0 3.ob))
+            #2 ((2.ob #0 23.Rev_Swap.braid #0 3.ob #0 1.ob) #1 (2.ob #0 2.ob #0 13.Swap_YangBaxter_221.inv) #1 (12.Swap_YangBaxter_221.inv #0 3.ob #0 3.ob) #1 (1.ob #0 2.ob #0 23.Swap.braid #0 3.ob))
+            #2 ((2.ob #0 23.Rev_Swap.braid #0 3.ob #0 1.ob) #1 (2.Swap.braid #0 3.ob #0 3.ob #0 1.ob) #1 (2.ob #0 2.ob #0 3.Swap.braid #0 1.ob) #1 (2.ob #0 2.ob #0 3.ob #0 13.Rev_Swap.braid) #1 (2.ob #0 Swap_YangBaxter_231.inv #0 3.ob) #1 (12.Rev_Swap.braid #0 3.ob #0 2.ob #0 3.ob))
+    ],
+    let Tensor_Right_Swap_Inversion :: Equation = [
+        dir => ((12.Swap.braid #0 3.ob) #1 (2.ob #0 13.Swap_Inversion.dir) #1 (12.Rev_Swap.braid #0 3.ob))
+            #2 ((1.ob #0 2.ob #0 3.lunit_inv) #1 (12.Swap.RUnit_Nat.dir #0 3.ob) #1 (12.Rev_Swap.braid #0 3.ob))
+            #2 ((1.ob #0 2.ob #0 3.lunit_inv) #1 (1.ob #0 2.runit #0 3.ob) #1 (12.Swap_Inversion.dir #0 3.ob)),
+        inv => ((1.ob #0 2.ob #0 3.lunit_inv) #1 (1.ob #0 2.runit #0 3.ob) #1 (12.Swap_Inversion.inv #0 3.ob))
+            #2 ((1.ob #0 2.ob #0 3.lunit_inv) #1 (12.Swap.RUnit_Nat.inv #0 3.ob) #1 (12.Rev_Swap.braid #0 3.ob))
+            #2 ((12.Swap.braid #0 3.ob) #1 (2.ob #0 13.Swap_Inversion.inv) #1 (12.Rev_Swap.braid #0 3.ob))
+    ],
+    let Tensor_Right_Rev_Swap_Inversion :: Equation = [
+        dir => ((2.ob #0 13.Rev_Swap.braid) #1 (12.Rev_Swap_Inversion.dir #0 3.ob) #1 (2.ob #0 13.Swap.braid))
+            #2 ((2.ob #0 13.Rev_Swap.braid) #1 (2.ob #0 13.Swap.LUnit_Inv_Nat.inv) #1 (2.runit #0 3.ob #0 1.ob))
+            #2 ((2.ob #0 13.Rev_Swap_Inversion.dir) #1 (2.ob #0 3.lunit_inv #0 1.ob) #1 (2.runit #0 3.ob #0 1.ob)),
+        inv => ((2.ob #0 13.Rev_Swap_Inversion.inv) #1 (2.ob #0 3.lunit_inv #0 1.ob) #1 (2.runit #0 3.ob #0 1.ob))
+            #2 ((2.ob #0 13.Rev_Swap.braid) #1 (2.ob #0 13.Swap.LUnit_Inv_Nat.dir) #1 (2.runit #0 3.ob #0 1.ob))
+            #2 ((2.ob #0 13.Rev_Swap.braid) #1 (12.Rev_Swap_Inversion.inv #0 3.ob) #1 (2.ob #0 13.Swap.braid))
+    ]
+(* End local definitions *) }
+
+let Tensor_Right :: Pair = [
+    1 => 1, 2 => 23.Tensor,
+    Swap => Tensor_Right_Swap,
+    Rev_Swap => Tensor_Right_Rev_Swap,
+    Swap_Inversion => Tensor_Right_Swap_Inversion,
+    Rev_Swap_Inversion => Tensor_Right_Rev_Swap_Inversion,
+    Swap_YangBaxter_112 => Tensor_Right_Swap_112,
+    Swap_YangBaxter_121 => Tensor_Right_Swap_121,
+    Swap_YangBaxter_122 => Tensor_Right_Swap_122,
+    Swap_YangBaxter_211 => Tensor_Right_Swap_211,
+    Swap_YangBaxter_212 => Tensor_Right_Swap_212,
+    Swap_YangBaxter_221 => Tensor_Right_Swap_221
+],
+let Tensor_Left :: Pair = Rev_23.Rev_12.Tensor_Right.Rev
+
+
+@Type
+(*** 
+    A quadruple of objects. 
+    Useful for forming triples that involve tensors
+***)
+Quadruple <<= {
+    include Unit,
+    let unit = Unit.ob,
+
+    attach 1 :: Object along [ Unit => Unit ],
+    attach 2 :: Object along [ Unit => Unit ],
+    attach 3 :: Object along [ Unit => Unit ],
+    attach 4 :: Object along [ Unit => Unit ],
+
+    attach 12 :: Pair along [ 1 => 1, 2 => 2 ],
+    attach 13 :: Pair along [ 1 => 1, 2 => 3 ],
+    attach 14 :: Pair along [ 1 => 1, 2 => 4 ],
+    attach 23 :: Pair along [ 1 => 2, 2 => 3 ],
+    attach 24 :: Pair along [ 1 => 2, 2 => 4 ],
+    attach 34 :: Pair along [ 1 => 3, 2 => 4 ],
+
+    attach 123 :: Triple along [ 
+        1 => 1, 2 => 2, 3 => 3,
+        12 => 12, 13 => 13, 23 => 23 ],
+    attach 124 :: Triple along [
+        1 => 1, 2 => 2, 3 => 4,
+        12 => 12, 13 => 14, 23 => 24 ],
+    attach 134 :: Triple along [
+        1 => 1, 2 => 3, 3 => 4,
+        12 => 13, 13 => 14, 23 => 34 ],
+    attach 234 :: Triple along [
+        1 => 2, 2 => 3, 3 => 4,
+        12 => 23, 13 => 24, 23 => 34 ]
+}
+
+(* 
+	Flipping indices pairwise in a quadruple:
+    “(A, B, C, D)”.Rev_12 = “(B, A, C, D)”, and so on
+*)
+@Quadruple
+let Rev_12 :: Quadruple = [
+	1 => 2, 2 => 1, 3 => 3, 4 => 4,
+    12 => 12.Rev, 13 => 23, 14 => 24,
+    23 => 13, 24 => 14, 34 => 34,
+    123 => 123.Rev_12, 124 => 124.Rev_12,
+    134 => 234, 234 => 134
+],
+let Rev_23 :: Quadruple = [
+	1 => 1, 2 => 3, 3 => 2, 4 => 4,
+    12 => 13, 13 => 12, 14 => 14,
+    23 => 23.Rev, 24 => 34, 34 => 24,
+    123 => 123.Rev_23, 124 => 134,
+    134 => 124, 234 => 234.Rev_12
+],
+let Rev_34 :: Quadruple = [
+	1 => 1, 2 => 2, 3 => 4, 4 => 3,
+    12 => 12, 13 => 14, 14 => 13,
+    23 => 24, 24 => 23, 34 => 34.Rev,
+    123 => 124, 124 => 123,
+    134 => 134.Rev_23, 234 => 234.Rev_23
+],
+let Rev_13 :: Quadruple = Rev_23.Rev_12.Rev_23,
+let Rev_14 :: Quadruple = Rev_12.Rev_34.Rev_23.Rev_12.Rev_34,
+let Rev_24 :: Quadruple = Rev_34.Rev_23.Rev_34
+
+(* 
+	Tensoring pairs in a quadruple: 
+    “(A, B, C, D)”.Tensor_Right = “(A, B, C \otimes D)”,
+    “(A, B, C, D)”.Tensor_Mid = “(A, B \otimes C, D)”,
+    “(A, B, C, D)”.Tensor_Left = “(A \otimes B, C, D)”
+*)
+@Quadruple { (* Start local definitions *)
+    let Tensor_Right_Swap_123 :: Equation = [
+        dir => ((123.Swap_YangBaxter_123.dir #0 4.ob) #1 (3.ob #0 2.ob #0 14.Swap.braid) #1 (3.ob #0 24.Swap.braid #0 1.ob))
+            #2 ((1.ob #0 23.Swap.braid #0 4.ob) #1 (13.Swap.braid #0 2.ob #0 4.ob) #1 (3.ob #0 124.Swap_YangBaxter_123.dir)),
+        inv => ((1.ob #0 23.Swap.braid #0 4.ob) #1 (13.Swap.braid #0 2.ob #0 4.ob) #1 (3.ob #0 124.Swap_YangBaxter_123.inv))
+            #2 ((123.Swap_YangBaxter_123.inv #0 4.ob) #1 (3.ob #0 2.ob #0 14.Swap.braid) #1 (3.ob #0 24.Swap.braid #0 1.ob))
+    ],
+    let Tensor_Right_Swap_132 :: Equation = [
+        dir => ((13.Swap.braid #0 4.ob #0 2.ob) #1 (3.ob #0 124.Swap_YangBaxter_132.dir) #1 (23.Rev_Swap.braid #0 4.ob #0 1.ob))
+            #2 ((1.ob #0 3.ob #0 24.Rev_Swap.braid) #1 (123.Swap_YangBaxter_132.dir #0 4.ob) #1 (2.ob #0 3.ob #0 14.Swap.braid)),
+        inv => ((1.ob #0 3.ob #0 24.Rev_Swap.braid) #1 (123.Swap_YangBaxter_132.inv #0 4.ob) #1 (2.ob #0 3.ob #0 14.Swap.braid))
+            #2 ((13.Swap.braid #0 4.ob #0 2.ob) #1 (3.ob #0 124.Swap_YangBaxter_132.inv) #1 (23.Rev_Swap.braid #0 4.ob #0 1.ob))
+    ],
+    let Tensor_Right_Swap_213 :: Equation = [
+        dir => ((123.Swap_YangBaxter_213.dir #0 4.ob) #1 (3.ob #0 1.ob #0 24.Swap.braid) #1 (3.ob #0 14.Swap.braid #0 2.ob))
+            #2 ((2.ob #0 13.Swap.braid #0 4.ob) #1 (23.Swap.braid #0 1.ob #0 4.ob) #1 (3.ob #0 124.Swap_YangBaxter_213.dir)),
+        inv => ((2.ob #0 13.Swap.braid #0 4.ob) #1 (23.Swap.braid #0 1.ob #0 4.ob) #1 (3.ob #0 124.Swap_YangBaxter_213.inv))
+            #2 ((123.Swap_YangBaxter_213.inv #0 4.ob) #1 (3.ob #0 1.ob #0 24.Swap.braid) #1 (3.ob #0 14.Swap.braid #0 2.ob))
+    ],
+    let Tensor_Right_Swap_231 :: Equation = [
+        dir => ((23.Swap.braid #0 4.ob #0 1.ob) #1 (3.ob #0 124.Swap_YangBaxter_231.dir) #1 (13.Rev_Swap.braid #0 4.ob #0 2.ob))
+            #2 ((2.ob #0 3.ob #0 14.Rev_Swap.braid) #1 (123.Swap_YangBaxter_231.dir #0 4.ob) #1 (1.ob #0 3.ob #0 24.Swap.braid)),
+        inv => ((2.ob #0 3.ob #0 14.Rev_Swap.braid) #1 (123.Swap_YangBaxter_231.inv #0 4.ob) #1 (1.ob #0 3.ob #0 24.Swap.braid))
+            #2 ((23.Swap.braid #0 4.ob #0 1.ob) #1 (3.ob #0 124.Swap_YangBaxter_231.inv) #1 (13.Rev_Swap.braid #0 4.ob #0 2.ob))
+    ],
+    let Tensor_Right_Swap_312 :: Equation = [
+        dir => ((3.ob #0 14.Rev_Swap.braid #0 2.ob) #1 (3.ob #0 1.ob #0 24.Rev_Swap.braid) #1 (123.Swap_YangBaxter_312.dir #0 4.ob))
+            #2 ((3.ob #0 124.Swap_YangBaxter_312.dir) #1 (23.Rev_Swap.braid #0 1.ob #0 4.ob) #1 (2.ob #0 13.Rev_Swap.braid #0 4.ob)),
+        inv => ((3.ob #0 124.Swap_YangBaxter_312.inv) #1 (23.Rev_Swap.braid #0 1.ob #0 4.ob) #1 (2.ob #0 13.Rev_Swap.braid #0 4.ob))
+            #2 ((3.ob #0 14.Rev_Swap.braid #0 2.ob) #1 (3.ob #0 1.ob #0 24.Rev_Swap.braid) #1 (123.Swap_YangBaxter_312.inv #0 4.ob))
+    ],
+    let Tensor_Right_Swap_321 :: Equation = [
+        dir => ((3.ob #0 24.Rev_Swap.braid #0 1.ob) #1 (3.ob #0 2.ob #0 14.Rev_Swap.braid) #1 (123.Swap_YangBaxter_321.dir #0 4.ob))
+            #2 ((3.ob #0 124.Swap_YangBaxter_321.dir) #1 (13.Rev_Swap.braid #0 2.ob #0 4.ob) #1 (1.ob #0 23.Rev_Swap.braid #0 4.ob)),
+        inv => ((3.ob #0 124.Swap_YangBaxter_321.inv) #1 (13.Rev_Swap.braid #0 2.ob #0 4.ob) #1 (1.ob #0 23.Rev_Swap.braid #0 4.ob))
+            #2 ((3.ob #0 24.Rev_Swap.braid #0 1.ob) #1 (3.ob #0 2.ob #0 14.Rev_Swap.braid) #1 (123.Swap_YangBaxter_321.inv #0 4.ob))
+    ]
+(* End local definitions *) }
+
+let Tensor_Right :: Triple = [
+	1 => 1, 2 => 2, 3 => 34.Tensor,
+    12 => 12, 13 => 134.Tensor_Right, 23 => 234.Tensor_Right,
+    Swap_YangBaxter_123 => Tensor_Right_Swap_123,
+    Swap_YangBaxter_132 => Tensor_Right_Swap_132,
+    Swap_YangBaxter_213 => Tensor_Right_Swap_213,
+    Swap_YangBaxter_231 => Tensor_Right_Swap_231,
+    Swap_YangBaxter_312 => Tensor_Right_Swap_312,
+    Swap_YangBaxter_321 => Tensor_Right_Swap_321
+],
+let Tensor_Mid :: Triple = Rev_34.Rev_23.Tensor_Right.Rev_23,
+let Tensor_Left :: Triple = Rev_23.Rev_12.Tensor_Mid.Rev_12
+
+@Type
+(***
+    A morphism is natural with respect to domain and 
+    codomain braidings 
+***)
+Morphism <<= {
+    include Unit,
+
+    attach Dom :: Object along [ Unit => Unit ],
+    let dom = Dom.ob,
+    attach Cod :: Object along [ Unit => Unit ],
+    let cod = Cod.ob,
+    attach Dom_Cod :: Pair along [
+        1 => Dom, 2 => Cod 
+    ],
+    let Dom_Dom :: Pair = Dom.Pair,
+    let Cod_Cod :: Pair = Cod.Pair,
+
+    mor: Dom.ob -> Cod.ob,
+
+    attach Planar :: Planar.Morphism along [
+        Dom => Dom.Planar, Cod => Cod.Planar,
+        mor => mor
+    ],
+    (* Naturality equations *)
+    for A in [ Dom, Cod ] {
+        attach Swap_<A>_Left_Nat :: Equation along [
+            lhs => (mor <A>.ob) <A>_Cod.Rev.Swap.braid,
+            rhs => Dom_<A>.Swap.braid (<A>.ob mor)
+        ],
+        attach Swap_<A>_Right_Nat :: Equation along [
+            lhs => (<A>.ob mor) <A>_Cod.Swap.braid,
+            rhs => Dom_<A>.Rev.Swap.braid (mor <A>.ob)
+        ],
+    }
+},
+
+(***
+    A morphism with an extra object, 
+    for naturality with respect to other braidings 
+***)
+Morphism_Nat <<= {
+    include Unit,
+
+    attach Mor :: Morphism along [ Unit => Unit ],
+    let mor = Mor.mor,
+    attach Other :: Object along [ Unit => Unit ],
+
+    attach Dom_Other :: Pair along [
+        1 => Mor.Dom,
+        2 => Other
+    ],
+    attach Cod_Other :: Pair along [
+        1 => Mor.Cod,
+        2 => Other
+    ],
+    attach Dom_Cod_Other :: Triple along [
+        1 => Mor.Dom, 2 => Mor.Cod, 3 => Other,
+        12 => Mor.Dom_Cod, 13 => Dom_Other,
+        23 => Cod_Other
+    ],
+
+    attach Swap_Left_Nat :: Equation along [
+        lhs => (mor Other.ob) Cod_Other.Swap.braid,
+        rhs => Dom_Other.Swap.braid (Other.ob mor)
+    ],
+    attach Swap_Right_Nat :: Equation along [
+        lhs => (Other.ob mor) Cod_Other.Rev_Swap.braid,
+        rhs => Dom_Other.Rev_Swap.braid (mor Other.ob)
+    ]
+}

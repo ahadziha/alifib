@@ -1,6 +1,8 @@
-(* 
+(***
     A module for (planar) monoidal categories
-*)
+
+	See Monoidal_examples.ali for how to use
+***)
 
 @Type
 include Monoidal_aux as Aux,

@@ -1,6 +1,6 @@
-(* 
+(***
     A module for braided monoidal categories
-*)
+***)
 
 @Type
 include Monoidal as Planar,
@@ -133,11 +133,11 @@ Object <<= {
     (* Equations for braidings *)
     attach Over_Inversion :: Equation along [
         lhs => over under,
-        rhs => (ob lunit_inv) (runit ob)
+        rhs => Pair.Tensor.id
     ],
     attach Under_Inversion :: Equation along [
         lhs => under over,
-        rhs => (ob lunit_inv) (runit ob)
+        rhs => Pair.Tensor.id
     ],
     attach Over_YangBaxter :: Equation along [
         lhs => (over ob) (ob over) (over ob),
@@ -269,8 +269,8 @@ Pair <<= {
 }
 
 (* 
-	The "diagonal" pair of an object A,
-    A.Pair is “(A, A)”
+	The "diagonal" pair of an object:
+    A.Pair = “(A, A)”
 *)
 @Object
 let Pair :: Pair = [
@@ -843,7 +843,10 @@ let Triple_122 :: Triple = Rev.Triple_211,
 let Triple_212 :: Triple = Rev.Triple_121,
 let Triple_221 :: Triple = Rev.Triple_112
 
-(* Triplicating an object: A.Triple = “(A, A, A)” *)
+(* 
+	Triplicating an object: 
+    A.Triple = “(A, A, A)” 
+*)
 @Object
 let Triple :: Triple = Pair.Triple_112
 
