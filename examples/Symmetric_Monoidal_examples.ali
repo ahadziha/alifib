@@ -1,0 +1,152 @@
+(***
+     Examples of symmetric monoidal categories 
+     and equational proofs
+***)
+
+@Type
+include Symmetric_Monoidal as Monoidal,
+let Equation = Monoidal.Aux.Equation,
+
+(* The walking commutative monoid *)
+Commutative_Monoid <<= {
+    include Monoidal.Unit as Unit,
+    let I :: Monoidal.Object = Unit.Object,
+    let i = I.ob,
+
+    (* A single generating object, or sort *)
+    attach A :: Monoidal.Object along [ Unit => Unit ],
+    let a = A.ob,
+
+    (* Monoid multiplication *)
+    attach M :: Monoidal.Morphism along [
+        Dom => A.Pair.Tensor,
+        Cod => A,
+        Dom_Cod => A.Triple.Tensor_Left
+    ],
+    let m = M.mor,
+
+    (* Monoid unit *)
+    attach E :: Monoidal.Morphism along [
+        Dom => I,
+        Cod => A,
+        Dom_Cod => A.With_Unit.Rev
+    ],
+    let e = E.mor,
+
+    (* Associativity of multiplication *)
+    attach Assoc :: Equation along [
+        lhs => (m a) m,
+        rhs => (a m) m
+    ],
+    (* Left unitality *)
+    attach LUnit :: Equation along [
+        lhs => (e a) m,
+        rhs => A.lunit,
+    ],
+    (* Commutativity *)
+    attach Comm :: Equation along [
+    	lhs => A.swap m,
+        rhs => m
+    ]
+}
+
+(* Proof of right unitality from left unitality *)
+@Commutative_Monoid
+let RUnit :: Equation = [
+	dir => ((A.ob #0 E.mor) #1 Comm.inv)
+        #2 (E.Swap_Cod_Right_Nat.dir #1 M.mor)
+        #2 (A.runit #1 A.lunit_inv #1 LUnit.dir)
+        #2 (A.runit #1 A.Planar.LUnit_Inversion.dir)
+        #2 A.Planar.RUnit.CodId.dir,
+	inv => A.Planar.RUnit.CodId.inv
+        #2 (A.runit #1 A.Planar.LUnit_Inversion.inv)
+        #2 (A.runit #1 A.lunit_inv #1 LUnit.inv)
+        #2 (E.Swap_Cod_Right_Nat.inv #1 M.mor)
+        #2 ((A.ob #0 E.mor) #1 Comm.dir)
+]
+
+@Type
+(* The walking commutative comonoid *)
+Commutative_Comonoid <<= {
+    include Monoidal.Unit as Unit,
+    let I :: Monoidal.Object = Unit.Object,
+    let i = I.ob,
+
+    (* A single generating object *)
+    attach A :: Monoidal.Object along [ Unit => Unit ],
+    let a = A.ob,
+
+    (* Comultiplication *)
+    attach C :: Monoidal.Morphism along [
+        Dom => A,
+        Cod => A.Pair.Tensor,
+        Dom_Cod => A.Triple.Tensor_Right
+    ],
+    let c = C.mor,
+
+    (* Monoid unit *)
+    attach D :: Monoidal.Morphism along [
+        Dom => A,
+        Cod => I,
+        Dom_Cod => A.With_Unit
+    ],
+    let d = D.mor,
+
+    (* Coassociativity of comultiplication *)
+    attach Coassoc :: Equation along [
+        lhs => c (c a),
+        rhs => c (a c)
+    ],
+    (* Left counitality *)
+    attach LCounit :: Equation along [
+        lhs => c (d a),
+        rhs => A.lunit_inv,
+    ],
+    (* Commutativity *)
+    attach Comm :: Equation along [
+    	lhs => c A.swap,
+        rhs => c
+    ]
+},
+
+(* 
+	A commutative bimonoid, constructed by assembling
+    together a commutative monoid and comonoid, then adding
+    equations
+*)
+Commutative_Bimonoid <<= {
+	include Monoidal.Unit as Unit,
+    let I :: Monoidal.Object = Unit.Object,
+    let i = I.ob,
+
+    attach A :: Monoidal.Object along [ Unit => Unit ],
+    let a = A.ob,
+
+    attach Monoid :: Commutative_Monoid along [
+    	A => A
+    ],
+    let m = Monoid.m,
+    let e = Monoid.e,
+    attach Comonoid :: Commutative_Comonoid along [
+    	A => A
+    ],
+    let c = Comonoid.c,
+    let d = Comonoid.d,
+
+    attach Bimonoid_M_C :: Equation along [
+    	lhs => m c,
+        rhs => (c #0 c) (a A.swap a) (m #0 m)
+    ],
+    attach Bimonoid_E_C :: Equation along [
+    	lhs => e c,
+        rhs => I.split (e #0 e)
+    ],
+    attach Bimonoid_M_D :: Equation along [
+    	lhs => m d,
+        rhs => (d #0 d) I.merge
+    ],
+    attach Bimonoid_E_D :: Equation along [
+    	lhs => e d,
+        rhs => I.id
+    ]
+}

@@ -1,6 +1,6 @@
-(*
+(***
      Examples of monoidal categories and equational proofs
-*)
+***)
 
 @Type
 include Monoidal,
