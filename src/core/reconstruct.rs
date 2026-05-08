@@ -538,17 +538,24 @@ mod tests {
         assert_reconstruct_all_in_type(&fixture("Magma.ali"), "Magma");
     }
 
-    fn example(name: &str) -> String {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("examples")
-            .join(name)
-            .to_string_lossy()
-            .into_owned()
+    fn load_all_types_from_source(source: &str) -> Vec<(String, Arc<Complex>)> {
+        load_all_types_from_sources(&[("test.ali", source)])
     }
 
-    fn load_all_types(path: &str) -> Vec<(String, Arc<Complex>)> {
-        let loader = Loader::default(vec![]);
-        let file = InterpretedFile::load(&loader, path).ok().expect("should load");
+    fn load_all_types_from_sources(files: &[(&str, &str)]) -> Vec<(String, Arc<Complex>)> {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("alifib_test_{}_{}", std::process::id(), id));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        for (name, content) in files {
+            std::fs::write(dir.join(name), content).expect("write temp file");
+        }
+        let root = files.last().unwrap().0;
+        let root_path = dir.join(root).to_string_lossy().into_owned();
+        let search = dir.to_string_lossy().into_owned();
+        let loader = Loader::default(vec![search]);
+        let file = InterpretedFile::load(&loader, &root_path).ok().expect("should load");
         let store = Arc::clone(&file.state);
         let norm = store.normalize();
         let mut result = Vec::new();
@@ -566,48 +573,198 @@ mod tests {
                 }
             }
         }
+        let _ = std::fs::remove_dir_all(&dir);
         result
+    }
+
+    fn assert_reconstruct_all_types(types: Vec<(String, Arc<Complex>)>) {
+        for (type_name, complex) in types {
+            for (name, _, _) in complex.generators_iter() {
+                if let Some(diag) = complex.classifier(name) {
+                    assert_reconstruct(diag, &complex, &format!("{}.{}", type_name, name));
+                }
+            }
+            for (name, diag) in complex.diagrams_iter() {
+                assert_reconstruct(diag, &complex, &format!("{}.let.{}", type_name, name));
+            }
+        }
     }
 
     #[test]
     fn reconstruct_all_category() {
-        for (type_name, complex) in load_all_types(&example("Category.ali")) {
-            for (name, _, _) in complex.generators_iter() {
-                if let Some(diag) = complex.classifier(name) {
-                    assert_reconstruct(diag, &complex, &format!("{}.{}", type_name, name));
-                }
-            }
-            for (name, diag) in complex.diagrams_iter() {
-                assert_reconstruct(diag, &complex, &format!("{}.let.{}", type_name, name));
-            }
-        }
+        assert_reconstruct_all_types(load_all_types_from_source(
+r#"@Type
+Eq <<= {
+  dom, cod,
+  lhs: dom -> cod, rhs: dom -> cod,
+  dir: lhs -> rhs, inv: rhs -> lhs
+},
+Ob <<= {
+  ob, id: ob -> ob,
+  attach Id_id :: Eq along [ lhs => id id, rhs => id ]
+},
+Mor <<= {
+  attach Dom :: Ob, attach Cod :: Ob,
+  mor: Dom.ob -> Cod.ob,
+  attach Left_id :: Eq along [ lhs => Dom.id mor, rhs => mor ],
+  attach Right_id :: Eq along [ lhs => mor Cod.id, rhs => mor ]
+}
+
+@Ob
+let Id :: Mor = [
+  Dom => Ob, Cod => Ob, mor => id,
+  Left_id => Id_id, Right_id => Id_id
+]
+
+@Type
+Pair <<= {
+  attach Fst :: Mor,
+  attach Snd :: Mor along [ Dom => Fst.Cod ],
+  let Dom :: Ob = Fst.Dom,
+  let Cod :: Ob = Snd.Cod,
+  let mor = Fst.mor Snd.mor,
+  let Left_id :: Eq = [
+    dir => (Fst.Left_id.dir #0 Snd.Left_id.inv) (Fst.Right_id.dir Snd.mor),
+    inv => (Fst.Left_id.inv #0 Snd.Left_id.inv) (Fst.Dom.id Fst.Right_id.dir Snd.mor)
+  ],
+  let Right_id :: Eq = [
+    dir => (Fst.mor (Snd.Right_id.dir Snd.Left_id.inv)) (Fst.Right_id.dir Snd.mor),
+    inv => (Fst.mor (Snd.Right_id.inv (Snd.Left_id.inv Snd.Cod.id)))
+      (Fst.Right_id.dir Snd.mor Snd.Cod.id)
+  ],
+  let Comp :: Mor = [
+    Dom => Dom, Cod => Cod, mor => mor,
+    Left_id => Left_id, Right_id => Right_id
+  ]
+}"#));
     }
 
     #[test]
     fn reconstruct_all_semigroup() {
-        for (type_name, complex) in load_all_types(&example("Semigroup.ali")) {
-            for (name, _, _) in complex.generators_iter() {
-                if let Some(diag) = complex.classifier(name) {
-                    assert_reconstruct(diag, &complex, &format!("{}.{}", type_name, name));
-                }
-            }
-            for (name, diag) in complex.diagrams_iter() {
-                assert_reconstruct(diag, &complex, &format!("{}.let.{}", type_name, name));
-            }
-        }
+        assert_reconstruct_all_types(load_all_types_from_sources(&[
+("Theory.ali",
+r#"@Type
+Equation <<= {
+  pt, dom: pt -> pt, cod: pt -> pt,
+  lhs: dom -> cod, rhs: dom -> cod,
+  dir: lhs -> rhs, inv: rhs -> lhs
+},
+Set <<= {
+  pt, set: pt -> pt, id: set -> set,
+  attach Id_id :: Equation along [ lhs => id id, rhs => id ]
+},
+Function <<= {
+  pt,
+  attach Dom :: Set along [ pt => pt ],
+  attach Cod :: Set along [ pt => pt ],
+  let dom = Dom.set, let cod = Cod.set,
+  fun: dom -> cod,
+  attach Id_fun :: Equation along [ lhs => Dom.id fun, rhs => fun ],
+  attach Fun_id :: Equation along [ lhs => fun Cod.id, rhs => fun ]
+}
+
+@Set
+let Id :: Function = [
+  Dom => Set, Cod => Set, fun => id,
+  Id_fun => Id_id, Fun_id => Id_id
+]"#),
+("Semigroup.ali",
+r#"@Type
+include Theory,
+let Eq = Theory.Equation,
+
+Semigroup <<= {
+  pt,
+  attach Set :: Theory.Set along [ pt => pt ],
+  let set = Set.set, let id = Set.id,
+  merge: set set -> set,
+  attach Assoc :: Eq along [ lhs => (merge set) merge, rhs => (set merge) merge ],
+  attach Left_id_merge :: Eq along [ lhs => (id set) merge, rhs => merge ],
+  attach Right_id_merge :: Eq along [ lhs => (set id) merge, rhs => merge ],
+  attach Merge_id :: Eq along [ lhs => merge id, rhs => merge ]
+},
+Cosemigroup <<= {
+  pt,
+  attach Set :: Theory.Set along [ pt => pt ],
+  let set = Set.set, let id = Set.id,
+  split: set -> set set,
+  attach Assoc :: Eq along [ lhs => split (split set), rhs => split (set split) ],
+  attach Id_split :: Eq along [ lhs => id split, rhs => split ],
+  attach Split_left_id :: Eq along [ lhs => split (id set), rhs => split ],
+  attach Split_right_id :: Eq along [ lhs => split (set id), rhs => split ]
+},
+Left_module <<= {
+  pt,
+  attach Set :: Theory.Set along [ pt => pt ],
+  attach L :: Semigroup along [ pt => pt ],
+  action: L.set Set.set -> Set.set,
+  attach Merge_left_act :: Eq along [
+    lhs => (L.merge Set.set) action, rhs => (L.set action) action
+  ]
+},
+Right_module <<= {
+  pt,
+  attach Set :: Theory.Set along [ pt => pt ],
+  attach R :: Semigroup along [ pt => pt ],
+  action: Set.set R.set -> Set.set,
+  attach Merge_right_act :: Eq along [
+    lhs => (Set.set R.merge) action, rhs => (action R.set) action
+  ]
+},
+Bimodule <<= {
+  pt,
+  attach Set :: Theory.Set along [ pt => pt ],
+  attach L :: Semigroup along [ pt => pt ],
+  attach R :: Semigroup along [ pt => pt ],
+  attach LM :: Left_module along [ Set => Set, L => L ],
+  attach RM :: Right_module along [ Set => Set, R => R ],
+  attach Left_act_right_act :: Eq along [
+    lhs => (LM.action R.set) RM.action, rhs => (L.set RM.action) LM.action
+  ]
+},
+Left_comodule <<= {
+  pt,
+  attach Set :: Theory.Set along [ pt => pt ],
+  attach L :: Cosemigroup along [ pt => pt ],
+  coaction: Set.set -> L.set Set.set,
+  attach Left_coact_split :: Eq along [
+    lhs => coaction (L.split Set.set), rhs => coaction (L.set coaction)
+  ]
+},
+Right_comodule <<= {
+  pt,
+  attach Set :: Theory.Set along [ pt => pt ],
+  attach R :: Cosemigroup along [ pt => pt ],
+  coaction: Set.set -> Set.set R.set,
+  attach Right_coact_split :: Eq along [
+    lhs => coaction (Set.set R.split), rhs => coaction (coaction R.set)
+  ]
+},
+Bicomodule <<= {
+  pt,
+  attach Set :: Theory.Set along [ pt => pt ],
+  attach L :: Cosemigroup along [ pt => pt ],
+  attach R :: Cosemigroup along [ pt => pt ],
+  attach LC :: Left_comodule along [ Set => Set, L => L ],
+  attach RC :: Right_comodule along [ Set => Set, R => R ],
+  attach Right_coact_left_coact :: Eq along [
+    lhs => RC.coaction (LC.coaction R.set), rhs => LC.coaction (L.set RC.coaction)
+  ]
+}"#)]));
     }
 
     #[test]
     fn reconstruct_all_total() {
-        for (type_name, complex) in load_all_types(&example("Total.ali")) {
-            for (name, _, _) in complex.generators_iter() {
-                if let Some(diag) = complex.classifier(name) {
-                    assert_reconstruct(diag, &complex, &format!("{}.{}", type_name, name));
-                }
-            }
-            for (name, diag) in complex.diagrams_iter() {
-                assert_reconstruct(diag, &complex, &format!("{}.let.{}", type_name, name));
-            }
-        }
+        assert_reconstruct_all_types(load_all_types_from_source(
+r#"@Type
+Arrow <<= { s, t, arr : s -> t },
+Graph <<= {
+  attach A :: Arrow,
+  attach B :: Arrow,
+  mid : A.t -> B.s,
+  let total F :: Arrow = [
+    s => A.s, t => B.t, arr => A.arr mid B.arr
+  ]
+}"#));
     }
 }

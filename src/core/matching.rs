@@ -183,6 +183,7 @@ where
         .collect();
 
     let flow_matches = find_path_induced_matches(&p_flow, &tfd.flow, &p_labels, &tfd.labels);
+    let mut seen_positions: Vec<Vec<usize>> = Vec::new();
 
     for vertex_match in &flow_matches {
         let matched_cells: Vec<(usize, usize)> = vertex_match.iter()
@@ -194,6 +195,9 @@ where
             .map(|(_, pos)| *pos)
             .collect();
         image_positions.sort_unstable();
+
+        if seen_positions.contains(&image_positions) { continue; }
+        seen_positions.push(image_positions.clone());
 
         if !intset::is_disjoint(&image_positions, occupied) {
             continue;
