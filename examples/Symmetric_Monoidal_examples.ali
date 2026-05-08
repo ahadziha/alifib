@@ -43,6 +43,11 @@ Commutative_Monoid <<= {
         lhs => (e a) m,
         rhs => A.lunit,
     ],
+    (* Right unitality *)
+    attach RUnit :: Equation along [
+        lhs => (a e) m,
+        rhs => A.runit,
+    ],
     (* Commutativity *)
     attach Comm :: Equation along [
     	lhs => A.swap m,
@@ -52,7 +57,9 @@ Commutative_Monoid <<= {
 
 (* Proof of right unitality from left unitality *)
 @Commutative_Monoid
-let RUnit :: Equation = [
+let RUnit_deriv :: Equation = [
+	lhs => (a e) m,
+    rhs => A.runit,
 	dir => ((A.ob #0 E.mor) #1 Comm.inv)
         #2 (E.Swap_Cod_Right_Nat.dir #1 M.mor)
         #2 (A.runit #1 A.lunit_inv #1 LUnit.dir)
@@ -63,7 +70,7 @@ let RUnit :: Equation = [
         #2 (A.runit #1 A.lunit_inv #1 LUnit.inv)
         #2 (E.Swap_Cod_Right_Nat.inv #1 M.mor)
         #2 ((A.ob #0 E.mor) #1 Comm.dir)
-]
+],
 
 @Type
 (* The walking commutative comonoid *)
@@ -101,6 +108,10 @@ Commutative_Comonoid <<= {
     attach LCounit :: Equation along [
         lhs => c (d a),
         rhs => A.lunit_inv,
+    ],
+    attach RCounit :: Equation along [
+        lhs => c (a d),
+        rhs => A.runit_inv,
     ],
     (* Commutativity *)
     attach Comm :: Equation along [
