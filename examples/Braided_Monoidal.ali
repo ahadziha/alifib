@@ -9,7 +9,7 @@ let Equation = Aux.Equation,
 
 (*** 
     The unit is the same as the planar monoidal unit,
-    but we can define “braidings” (or swaps) on it
+    but we can define “braidings” on it
 ***)
 Unit <<= {
     pt,
@@ -96,7 +96,8 @@ Unit <<= {
 },
 
 (*** 
-    A single object comes with self-braidings 
+    A single object comes with self-braidings,
+    Over & Under
 ***)
 Object <<= {
     include Unit,
@@ -163,7 +164,9 @@ let total Object :: Object = [
     
 @Type
 (***
-    A pair of objects comes with braidings between them
+    A pair of objects comes with braidings between them:
+    Over & Under from 1 2 to 2 1,
+    Rev_Over & Rev_Under from 2 1 to 1 2
 ***)
 Pair <<= {
     include Unit,
@@ -265,7 +268,10 @@ Pair <<= {
     index thin = [ over, under, rev_over, rev_under ]
 }
 
-(* The "diagonal" pair of an object *)
+(* 
+	The "diagonal" pair of an object A,
+    A.Pair is “(A, A)”
+*)
 @Object
 let Pair :: Pair = [
     1 => Object, 2 => Object,
@@ -289,7 +295,10 @@ let Pair :: Pair = [
     Under_YangBaxter_221 => Under_YangBaxter
 ]
 
-(* Defining braids/swaps of an object with the unit, and their pair *)
+(* 
+	The pair of an object with the unit: 
+    A.With_Unit is “(A, Unit)”
+*)
 @Object { (* Start local definitions *)
     let Swap_With_Unit :: Aux.Braid = [
         1 => Planar, 2 => Unit.Planar.Object,
@@ -497,7 +506,7 @@ let With_Unit :: Pair = [
     Under_YangBaxter_221 => Swap_With_Unit_221,
 ]
 
-(* Reversing a pair of objects *)
+(* Reversing a pair of objects: “(A, B)”.Rev is “(B, A)” *)
 @Pair
 let Rev :: Pair = [
     1 => 2, 2 => 1,
@@ -521,7 +530,7 @@ let Rev :: Pair = [
     Under_YangBaxter_221 => Under_YangBaxter_112
 ]
 
-(* Defining the tensor of a pair *)
+(* The tensor of a pair: “(A, B)”.Tensor = A \otimes B *)
 @Pair { (* Start local definitions *)
     for Loc in [ Over, Under ] {
         let Pair_<Loc>_id = ((1.ob #0 Rev_<Loc>.LCodId.inv #0 2.ob) #1 (1.ob #0 1.ob #0 2.<Loc>.braid) #1 (1.<Loc>.braid #0 2.ob #0 2.ob) #1 (1.ob #0 <Loc>.braid #0 2.ob))
@@ -759,7 +768,12 @@ Triple <<= {
     },
 }
 
-(* Flipping indices pairwise in a triple *)
+(* 
+	Flipping indices pairwise in a triple:
+    “(A, B, C)”.Rev_12 = “(B, A, C)”,
+    “(A, B, C)”.Rev_23 = “(A, C, B)”,
+    “(A, B, C)”.Rev_13 = “(C, B, A)”
+*)
 @Triple
 let Rev_12 :: Triple = [
     1 => 2, 2 => 1, 3 => 3,
@@ -795,7 +809,11 @@ let Rev_23 :: Triple = [
 ],
 let Rev_13 :: Triple = Rev_23.Rev_12.Rev_23
 
-(* Turning a pair into a triple by repeating one entry *)
+(* 
+	Turning a pair into a triple by repeating one entry: 
+    “(A, B)”.Triple_112 = “(A, A, B)”,
+    “(A, B)”.Triple_121 = “(A, B, A)”, and so on
+*)
 @Pair
 let Triple_112 :: Triple = [
     1 => 1, 2 => 1, 3 => 2,
@@ -819,11 +837,15 @@ let Triple_122 :: Triple = Rev.Triple_211,
 let Triple_212 :: Triple = Rev.Triple_121,
 let Triple_221 :: Triple = Rev.Triple_112
 
-(* Turning an object into a triple *)
+(* Triplicating an object: A.Triple = “(A, A, A)” *)
 @Object
 let Triple :: Triple = Pair.Triple_112
 
-(* Tensoring pairs in a triple *)
+(* 
+	Tensoring pairs in a triple:
+    “(A, B, C)”.Tensor_Right = “(A, B \otimes C)”,
+    “(A, B, C)”.Tensor_Left = “(A \otimes B, C)”
+*)
 @Triple { (* Start local definitions *)
     for Loc in [ Over, Under ] {
         let Tensor_Right_<Loc> :: Aux.Braid = [
@@ -1108,11 +1130,106 @@ Quadruple <<= {
         12 => 23, 13 => 24, 23 => 34 ]
 }
 
-(* TODO: Tensoring in quadruples *)
+(* 
+	Flipping indices pairwise in a quadruple:
+    “(A, B, C, D)”.Rev_12 = “(B, A, C, D)”, and so on
+*)
+@Quadruple
+let Rev_12 :: Quadruple = [
+	1 => 2, 2 => 1, 3 => 3, 4 => 4,
+    12 => 12.Rev, 13 => 23, 14 => 24,
+    23 => 13, 24 => 14, 34 => 34,
+    123 => 123.Rev_12, 124 => 124.Rev_12,
+    134 => 234, 234 => 134
+],
+let Rev_23 :: Quadruple = [
+	1 => 1, 2 => 3, 3 => 2, 4 => 4,
+    12 => 13, 13 => 12, 14 => 14,
+    23 => 23.Rev, 24 => 34, 34 => 24,
+    123 => 123.Rev_23, 124 => 134,
+    134 => 124, 234 => 234.Rev_12
+],
+let Rev_34 :: Quadruple = [
+	1 => 1, 2 => 2, 3 => 4, 4 => 3,
+    12 => 12, 13 => 14, 14 => 13,
+    23 => 24, 24 => 23, 34 => 34.Rev,
+    123 => 124, 124 => 123,
+    134 => 134.Rev_23, 234 => 234.Rev_23
+],
+let Rev_13 :: Quadruple = Rev_23.Rev_12.Rev_23,
+let Rev_14 :: Quadruple = Rev_12.Rev_34.Rev_23.Rev_12.Rev_34,
+let Rev_24 :: Quadruple = Rev_34.Rev_23.Rev_34
+
+(* 
+	Tensoring pairs in a quadruple: 
+    “(A, B, C, D)”.Tensor_Right = “(A, B, C \otimes D)”,
+    “(A, B, C, D)”.Tensor_Mid = “(A, B \otimes C, D)”,
+    “(A, B, C, D)”.Tensor_Left = “(A \otimes B, C, D)”
+*)
+@Quadruple { (* Start local definitions *)
+	for Loc in [ Over, Under ] {
+    	let Tensor_Right_<Loc>_123 :: Equation = [
+        	dir => ((123.<Loc>_YangBaxter_123.dir #0 4.ob) #1 (3.ob #0 2.ob #0 14.<Loc>.braid) #1 (3.ob #0 24.<Loc>.braid #0 1.ob))
+    			#2 ((1.ob #0 23.<Loc>.braid #0 4.ob) #1 (13.<Loc>.braid #0 2.ob #0 4.ob) #1 (3.ob #0 124.<Loc>_YangBaxter_123.dir)),
+            inv => ((1.ob #0 23.<Loc>.braid #0 4.ob) #1 (13.<Loc>.braid #0 2.ob #0 4.ob) #1 (3.ob #0 124.<Loc>_YangBaxter_123.inv))
+    			#2 ((123.<Loc>_YangBaxter_123.inv #0 4.ob) #1 (3.ob #0 2.ob #0 14.<Loc>.braid) #1 (3.ob #0 24.<Loc>.braid #0 1.ob))
+    	],
+    	let Tensor_Right_<Loc>_132 :: Equation = [
+    		dir => ((13.<Loc>.braid #0 4.ob #0 2.ob) #1 (3.ob #0 124.<Loc>_YangBaxter_132.dir) #1 (23.Rev_<Loc>.braid #0 4.ob #0 1.ob))
+    			#2 ((1.ob #0 3.ob #0 24.Rev_<Loc>.braid) #1 (123.<Loc>_YangBaxter_132.dir #0 4.ob) #1 (2.ob #0 3.ob #0 14.<Loc>.braid)),
+            inv => ((1.ob #0 3.ob #0 24.Rev_<Loc>.braid) #1 (123.<Loc>_YangBaxter_132.inv #0 4.ob) #1 (2.ob #0 3.ob #0 14.<Loc>.braid))
+    			#2 ((13.<Loc>.braid #0 4.ob #0 2.ob) #1 (3.ob #0 124.<Loc>_YangBaxter_132.inv) #1 (23.Rev_<Loc>.braid #0 4.ob #0 1.ob))
+    	],
+        let Tensor_Right_<Loc>_213 :: Equation = [
+    		dir => ((123.<Loc>_YangBaxter_213.dir #0 4.ob) #1 (3.ob #0 1.ob #0 24.<Loc>.braid) #1 (3.ob #0 14.<Loc>.braid #0 2.ob))
+    			#2 ((2.ob #0 13.<Loc>.braid #0 4.ob) #1 (23.<Loc>.braid #0 1.ob #0 4.ob) #1 (3.ob #0 124.<Loc>_YangBaxter_213.dir)),
+            inv => ((2.ob #0 13.<Loc>.braid #0 4.ob) #1 (23.<Loc>.braid #0 1.ob #0 4.ob) #1 (3.ob #0 124.<Loc>_YangBaxter_213.inv))
+    			#2 ((123.<Loc>_YangBaxter_213.inv #0 4.ob) #1 (3.ob #0 1.ob #0 24.<Loc>.braid) #1 (3.ob #0 14.<Loc>.braid #0 2.ob))
+    	],
+        let Tensor_Right_<Loc>_231 :: Equation = [
+    		dir => ((23.<Loc>.braid #0 4.ob #0 1.ob) #1 (3.ob #0 124.<Loc>_YangBaxter_231.dir) #1 (13.Rev_<Loc>.braid #0 4.ob #0 2.ob))
+    			#2 ((2.ob #0 3.ob #0 14.Rev_<Loc>.braid) #1 (123.<Loc>_YangBaxter_231.dir #0 4.ob) #1 (1.ob #0 3.ob #0 24.<Loc>.braid)),
+    		inv => ((2.ob #0 3.ob #0 14.Rev_<Loc>.braid) #1 (123.<Loc>_YangBaxter_231.inv #0 4.ob) #1 (1.ob #0 3.ob #0 24.<Loc>.braid))
+    			#2 ((23.<Loc>.braid #0 4.ob #0 1.ob) #1 (3.ob #0 124.<Loc>_YangBaxter_231.inv) #1 (13.Rev_<Loc>.braid #0 4.ob #0 2.ob))
+    	],
+        let Tensor_Right_<Loc>_312 :: Equation = [
+    		dir => ((3.ob #0 14.Rev_<Loc>.braid #0 2.ob) #1 (3.ob #0 1.ob #0 24.Rev_<Loc>.braid) #1 (123.<Loc>_YangBaxter_312.dir #0 4.ob))
+    			#2 ((3.ob #0 124.<Loc>_YangBaxter_312.dir) #1 (23.Rev_<Loc>.braid #0 1.ob #0 4.ob) #1 (2.ob #0 13.Rev_<Loc>.braid #0 4.ob)),
+            inv => ((3.ob #0 124.<Loc>_YangBaxter_312.inv) #1 (23.Rev_<Loc>.braid #0 1.ob #0 4.ob) #1 (2.ob #0 13.Rev_<Loc>.braid #0 4.ob))
+    			#2 ((3.ob #0 14.Rev_<Loc>.braid #0 2.ob) #1 (3.ob #0 1.ob #0 24.Rev_<Loc>.braid) #1 (123.<Loc>_YangBaxter_312.inv #0 4.ob))
+    	],
+    	let Tensor_Right_<Loc>_321 :: Equation = [
+    		dir => ((3.ob #0 24.Rev_<Loc>.braid #0 1.ob) #1 (3.ob #0 2.ob #0 14.Rev_<Loc>.braid) #1 (123.<Loc>_YangBaxter_321.dir #0 4.ob))
+    			#2 ((3.ob #0 124.<Loc>_YangBaxter_321.dir) #1 (13.Rev_<Loc>.braid #0 2.ob #0 4.ob) #1 (1.ob #0 23.Rev_<Loc>.braid #0 4.ob)),
+            inv => ((3.ob #0 124.<Loc>_YangBaxter_321.inv) #1 (13.Rev_<Loc>.braid #0 2.ob #0 4.ob) #1 (1.ob #0 23.Rev_<Loc>.braid #0 4.ob))
+    			#2 ((3.ob #0 24.Rev_<Loc>.braid #0 1.ob) #1 (3.ob #0 2.ob #0 14.Rev_<Loc>.braid) #1 (123.<Loc>_YangBaxter_321.inv #0 4.ob))
+        ]
+    }
+(* End local definitions *) }
+
+let Tensor_Right :: Triple = [
+	1 => 1, 2 => 2, 3 => 34.Tensor,
+    12 => 12, 13 => 134.Tensor_Right, 23 => 234.Tensor_Right,
+    Over_YangBaxter_123 => Tensor_Right_Over_123,
+    Over_YangBaxter_132 => Tensor_Right_Over_132,
+    Over_YangBaxter_213 => Tensor_Right_Over_213,
+    Over_YangBaxter_231 => Tensor_Right_Over_231,
+    Over_YangBaxter_312 => Tensor_Right_Over_312,
+    Over_YangBaxter_321 => Tensor_Right_Over_321,
+    Under_YangBaxter_123 => Tensor_Right_Under_123,
+    Under_YangBaxter_132 => Tensor_Right_Under_132,
+    Under_YangBaxter_213 => Tensor_Right_Under_213,
+    Under_YangBaxter_231 => Tensor_Right_Under_231,
+    Under_YangBaxter_312 => Tensor_Right_Under_312,
+    Under_YangBaxter_321 => Tensor_Right_Under_321
+],
+let Tensor_Mid :: Triple = Rev_34.Rev_23.Tensor_Right.Rev_23,
+let Tensor_Left :: Triple = Rev_23.Rev_12.Tensor_Mid.Rev_12
 
 @Type
 (***
-    A morphism is natural with respect to domain and codomain braidings 
+    A morphism is natural with respect to domain and 
+    codomain braidings 
 ***)
 Morphism <<= {
     include Unit,
