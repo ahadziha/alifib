@@ -843,9 +843,12 @@ mod tests {
     use std::sync::Arc;
 
     fn load_type_from_source(source: &str, type_name: &str) -> Arc<Complex> {
-        let dir = std::env::temp_dir().join("alifib_test");
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("alifib_test_{}_{}", std::process::id(), id));
         std::fs::create_dir_all(&dir).expect("create temp dir");
-        let path = dir.join(format!("{}_{}.ali", type_name, std::process::id()));
+        let path = dir.join(format!("{}.ali", type_name));
         std::fs::write(&path, source).expect("write temp file");
         let loader = Loader::default(vec![]);
         let file = InterpretedFile::load(&loader, path.to_str().unwrap())
@@ -855,7 +858,7 @@ mod tests {
         let (tag, _) = module.find_generator(type_name).expect("type not found");
         let gid = match tag { Tag::Global(gid) => *gid, _ => panic!("expected global tag") };
         let result = store.find_type(gid).expect("type entry not found").complex.clone();
-        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir_all(&dir);
         result
     }
 
