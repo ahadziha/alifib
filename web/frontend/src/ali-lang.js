@@ -12,6 +12,7 @@ export const aliTags = {
   decoId: Tag.define(),
   typeHead: Tag.define(),
   arrow: Tag.define(),
+  paste: Tag.define(),
   hole: Tag.define(),
   interpolation: Tag.define(),
 };
@@ -64,12 +65,12 @@ const aliMode = {
       return null;
     }
 
-    if (stream.match(/^[0-9]+/)) return 'number';
+    if (stream.match(/^#[0-9]+/)) return 'paste';
 
     if (stream.match('<<=')) return 'arrow';
     if (stream.match('->')) return 'arrow';
     if (stream.match('=>')) return 'arrow';
-    if (stream.match('::')) return 'operator';
+    if (stream.match('::')) return 'arrow';
 
     const ch = stream.next();
     if (ch === '?') return 'hole';
@@ -85,6 +86,7 @@ const aliMode = {
     decoId: aliTags.decoId,
     typeHead: aliTags.typeHead,
     arrow: aliTags.arrow,
+    paste: aliTags.paste,
     hole: aliTags.hole,
     interpolation: aliTags.interpolation,
   },
@@ -98,28 +100,26 @@ export const aliDarkHighlight = HighlightStyle.define([
   { tag: tags.modifier,      color: '#dcdcaa' },
   { tag: aliTags.decoType,   color: '#7c6af2', fontWeight: '600' },
   { tag: aliTags.decoId,     color: '#5fa8d3' },
-  { tag: tags.operator,      color: '#d4d4d8' },
   { tag: aliTags.arrow,      color: '#fbbf24' },
+  { tag: aliTags.paste,      color: '#71717a' },
   { tag: tags.punctuation,   color: '#71717a' },
-  { tag: tags.number,        color: '#b5cea8' },
   { tag: aliTags.hole,          color: '#f87171', fontWeight: '600' },
   { tag: aliTags.typeHead,      color: '#5fa8d3', fontWeight: '600' },
-  { tag: aliTags.interpolation, color: '#e8a862' },
+  { tag: aliTags.interpolation, color: '#6aaa9a' },
 ]);
 
 export const aliLightHighlight = HighlightStyle.define([
-  { tag: tags.blockComment,  color: '#7a8a6b', fontStyle: 'italic' },
-  { tag: tags.keyword,       color: '#8a5070', fontWeight: '600' },
-  { tag: tags.modifier,      color: '#806830' },
-  { tag: aliTags.decoType,   color: '#3a6a6a', fontWeight: '600' },
-  { tag: aliTags.decoId,     color: '#2d5a5a' },
-  { tag: tags.operator,      color: '#4a4740' },
-  { tag: aliTags.arrow,      color: '#8a6018' },
-  { tag: tags.punctuation,   color: '#8a857a' },
-  { tag: tags.number,        color: '#4a7a52' },
-  { tag: aliTags.hole,          color: '#b54a3a', fontWeight: '600' },
-  { tag: aliTags.typeHead,      color: '#2d5a5a', fontWeight: '600' },
-  { tag: aliTags.interpolation, color: '#9a6828' },
+  { tag: tags.blockComment,  color: '#6a8a58', fontStyle: 'italic' },
+  { tag: tags.keyword,       color: '#a03870', fontWeight: '600' },
+  { tag: tags.modifier,      color: '#9a7020' },
+  { tag: aliTags.decoType,   color: '#1a7a7a', fontWeight: '600' },
+  { tag: aliTags.decoId,     color: '#1a6060' },
+  { tag: aliTags.arrow,      color: '#b87000' },
+  { tag: aliTags.paste,      color: '#9a9488' },
+  { tag: tags.punctuation,   color: '#9a9488' },
+  { tag: aliTags.hole,          color: '#c83030', fontWeight: '600' },
+  { tag: aliTags.typeHead,      color: '#1a6060', fontWeight: '600' },
+  { tag: aliTags.interpolation, color: '#3a7a6a' },
 ]);
 
 export function aliExtensions(dark = true) {

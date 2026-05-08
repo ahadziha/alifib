@@ -8,7 +8,6 @@
     { "include": "#keywords" },
     { "include": "#type-definition" },
     { "include": "#operators" },
-    { "include": "#number" },
     { "include": "#hole" },
     { "include": "#interpolation" },
     { "include": "#punctuation" }
@@ -83,6 +82,10 @@
         },
         {
           "name": "keyword.operator.paste.ali",
+          "match": "#[0-9]+"
+        },
+        {
+          "name": "keyword.operator.paste.ali",
           "match": "#"
         },
         {
@@ -90,10 +93,6 @@
           "match": "="
         }
       ]
-    },
-    "number": {
-      "name": "constant.numeric.ali",
-      "match": "\\b[0-9]+\\b"
     },
     "hole": {
       "name": "constant.language.hole.ali",
