@@ -80,6 +80,10 @@ pub struct Position {
     pub col: usize,
 }
 
+fn byte_to_char(source: &str, byte: usize) -> usize {
+    source[..byte.min(source.len())].chars().count()
+}
+
 impl Position {
     pub fn from_byte(source: &str, byte: usize) -> Self {
         let byte = byte.min(source.len());
@@ -129,10 +133,12 @@ pub fn report_errors(errors: &[Error], source: &str, filename: &str) {
             Error::Syntax { message, span } => ("Syntax error", message.as_str(), span, &[]),
             Error::Runtime { message, span, notes } => ("Runtime error", message.as_str(), span, notes),
         };
-        let mut report = Report::build(ReportKind::Error, (filename, span.start..span.end))
+        let char_start = byte_to_char(source, span.start);
+        let char_end   = byte_to_char(source, span.end);
+        let mut report = Report::build(ReportKind::Error, (filename, char_start..char_end))
             .with_message(label)
             .with_label(
-                Label::new((filename, span.start..span.end))
+                Label::new((filename, char_start..char_end))
                     .with_message(message)
                     .with_color(Color::Red),
             );
@@ -189,10 +195,12 @@ mod tests {
 }
 
 pub(crate) fn report_hole(span: Span, message: &str, source: &str, filename: &str) {
+    let char_start = byte_to_char(source, span.start);
+    let char_end   = byte_to_char(source, span.end);
     Report::build(ReportKind::Advice, (filename, span.start..span.end))
         .with_message("Hole")
         .with_label(
-            Label::new((filename, span.start..span.end))
+            Label::new((filename, char_start..char_end))
                 .with_message(message)
                 .with_color(Color::Blue),
         )
