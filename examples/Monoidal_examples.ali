@@ -59,9 +59,9 @@ Duality <<= {
     let r = R.ob,
 
     let LR :: Monoidal.Object = 
-        ( map [ 1st => L, 2nd => R ] :: Monoidal.Pair ).Tensor,
+        ( map [ 1 => L, 2 => R ] :: Monoidal.Pair ).Tensor,
     let RL :: Monoidal.Object = 
-        ( map [ 1st => R, 2nd => L ] :: Monoidal.Pair ).Tensor,
+        ( map [ 1 => R, 2 => L ] :: Monoidal.Pair ).Tensor,
         
     (* Duality unit *)
     attach Eta :: Monoidal.Morphism along [

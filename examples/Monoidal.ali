@@ -197,201 +197,201 @@ let right_rfrobenius_from_lfrobenius = ((ob #0 Unit.split) #1 (RUnit.LDomId.inv 
 Pair <<= {
     include Unit,
 
-    attach 1st :: Object along [ Unit => Unit ],
-    attach 2nd :: Object along [ Unit => Unit ],
+    attach 1 :: Object along [ Unit => Unit ],
+    attach 2 :: Object along [ Unit => Unit ],
 }
 
 (* Defining the tensor of a pair of objects *)
 @Pair { (* Start local definitions *) 
-    let id = (1st.ob 2nd.lunit_inv) (1st.runit 2nd.ob),
+    let id = (1.ob 2.lunit_inv) (1.runit 2.ob),
     let Idem :: Equation = [
-        dir => ((1st.ob #0 2nd.Left_Comodule.inv) #1 (1st.Right_Module.dir #0 2nd.ob))
-            #2 ((1st.ob #0 2nd.lunit_inv) #1 (1st.ob #0 Unit.Split_Merge.dir #0 2nd.ob) #1 (1st.runit #0 2nd.ob))
-            #2 ((1st.ob #0 2nd.LUnit_Inv.LCodId.dir) #1 (1st.runit #0 2nd.ob)),
-        inv => ((1st.ob #0 2nd.LUnit_Inv.LCodId.inv) #1 (1st.runit #0 2nd.ob))
-            #2 ((1st.ob #0 2nd.lunit_inv) #1 (1st.ob #0 Unit.Split_Merge.inv #0 2nd.ob) #1 (1st.runit #0 2nd.ob))
-            #2 ((1st.ob #0 2nd.Left_Comodule.dir) #1 (1st.Right_Module.inv #0 2nd.ob))
+        dir => ((1.ob #0 2.Left_Comodule.inv) #1 (1.Right_Module.dir #0 2.ob))
+            #2 ((1.ob #0 2.lunit_inv) #1 (1.ob #0 Unit.Split_Merge.dir #0 2.ob) #1 (1.runit #0 2.ob))
+            #2 ((1.ob #0 2.LUnit_Inv.LCodId.dir) #1 (1.runit #0 2.ob)),
+        inv => ((1.ob #0 2.LUnit_Inv.LCodId.inv) #1 (1.runit #0 2.ob))
+            #2 ((1.ob #0 2.lunit_inv) #1 (1.ob #0 Unit.Split_Merge.inv #0 2.ob) #1 (1.runit #0 2.ob))
+            #2 ((1.ob #0 2.Left_Comodule.dir) #1 (1.Right_Module.inv #0 2.ob))
     ],
     let Wire :: Aux.Wire = [ id => id, Idem => Idem ],
 
-    let lunit = (1st.lunit 2nd.ob) id,
-    let runit = (1st.ob 2nd.runit) id,
-    let lunit_inv = id (1st.lunit_inv 2nd.ob),
-    let runit_inv = id (1st.ob 2nd.runit_inv),
+    let lunit = (1.lunit 2.ob) id,
+    let runit = (1.ob 2.runit) id,
+    let lunit_inv = id (1.lunit_inv 2.ob),
+    let runit_inv = id (1.ob 2.runit_inv),
 
     let LUnit :: Aux.Node_2_to_1 = [
         LDom => Unit.Wire, RDom => Wire, Cod => Wire,
         node => lunit,
-        LDomId.dir => ((1st.LUnit.LDomId.dir #0 2nd.ob) #1 (1st.ob #0 2nd.LUnit_Inv.LCodId.inv) #1 (1st.RUnit.LDomId.inv #0 2nd.ob))
-            #2 ((1st.LUnit.CodId.dir #0 2nd.ob) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.RUnit.RDomId.dir #0 2nd.ob)),
-        LDomId.inv => ((1st.LUnit.CodId.inv #0 2nd.ob) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.RUnit.RDomId.inv #0 2nd.ob))
-            #2 ((1st.LUnit.LDomId.inv #0 2nd.ob) #1 (1st.ob #0 2nd.LUnit_Inv.LCodId.dir) #1 (1st.RUnit.LDomId.dir #0 2nd.ob)),
-        RDomId.dir => ((Unit.ob #0 1st.ob #0 2nd.lunit_inv) #1 (1st.Bimodule.inv #0 2nd.ob) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.runit #0 2nd.ob))
-            #2 ((1st.lunit #0 2nd.ob) #1 Idem.dir),
-        RDomId.inv => ((1st.lunit #0 2nd.ob) #1 Idem.inv)
-            #2 ((Unit.ob #0 1st.ob #0 2nd.lunit_inv) #1 (1st.Bimodule.dir #0 2nd.ob) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.runit #0 2nd.ob)),
-        CodId.dir => ((1st.LUnit.CodId.inv #0 2nd.ob) #1 Idem.dir)
-            #2 ((1st.lunit #0 2nd.ob) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.RUnit.LDomId.dir #0 2nd.ob)),
-        CodId.inv => ((1st.lunit #0 2nd.ob) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.RUnit.LDomId.inv #0 2nd.ob))
-            #2 ((1st.LUnit.CodId.dir #0 2nd.ob) #1 Idem.inv)
+        LDomId.dir => ((1.LUnit.LDomId.dir #0 2.ob) #1 (1.ob #0 2.LUnit_Inv.LCodId.inv) #1 (1.RUnit.LDomId.inv #0 2.ob))
+            #2 ((1.LUnit.CodId.dir #0 2.ob) #1 (1.ob #0 2.lunit_inv) #1 (1.RUnit.RDomId.dir #0 2.ob)),
+        LDomId.inv => ((1.LUnit.CodId.inv #0 2.ob) #1 (1.ob #0 2.lunit_inv) #1 (1.RUnit.RDomId.inv #0 2.ob))
+            #2 ((1.LUnit.LDomId.inv #0 2.ob) #1 (1.ob #0 2.LUnit_Inv.LCodId.dir) #1 (1.RUnit.LDomId.dir #0 2.ob)),
+        RDomId.dir => ((Unit.ob #0 1.ob #0 2.lunit_inv) #1 (1.Bimodule.inv #0 2.ob) #1 (1.ob #0 2.lunit_inv) #1 (1.runit #0 2.ob))
+            #2 ((1.lunit #0 2.ob) #1 Idem.dir),
+        RDomId.inv => ((1.lunit #0 2.ob) #1 Idem.inv)
+            #2 ((Unit.ob #0 1.ob #0 2.lunit_inv) #1 (1.Bimodule.dir #0 2.ob) #1 (1.ob #0 2.lunit_inv) #1 (1.runit #0 2.ob)),
+        CodId.dir => ((1.LUnit.CodId.inv #0 2.ob) #1 Idem.dir)
+            #2 ((1.lunit #0 2.ob) #1 (1.ob #0 2.lunit_inv) #1 (1.RUnit.LDomId.dir #0 2.ob)),
+        CodId.inv => ((1.lunit #0 2.ob) #1 (1.ob #0 2.lunit_inv) #1 (1.RUnit.LDomId.inv #0 2.ob))
+            #2 ((1.LUnit.CodId.dir #0 2.ob) #1 Idem.inv)
     ],
     let RUnit :: Aux.Node_2_to_1 = [
         LDom => Wire, RDom => Unit.Wire, Cod => Wire,
         node => runit,
-        LDomId.dir => ((1st.ob #0 2nd.LFrobenius_Bimodule.dir) #1 (1st.runit #0 2nd.ob) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.runit #0 2nd.ob))
-            #2 ((1st.ob #0 2nd.runit) #1 Idem.dir),
-        LDomId.inv => ((1st.ob #0 2nd.runit) #1 Idem.inv)
-            #2 ((1st.ob #0 2nd.LFrobenius_Bimodule.inv) #1 (1st.runit #0 2nd.ob) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.runit #0 2nd.ob)),
-        RDomId.dir => ((1st.ob #0 2nd.RUnit.RDomId.dir) #1 (1st.ob #0 2nd.LUnit_Inv.DomId.inv) #1 (1st.RUnit.RDomId.inv #0 2nd.ob))
-            #2 ((1st.ob #0 2nd.RUnit.CodId.dir) #1 (1st.ob #0 2nd.LUnit_Inv.LCodId.dir) #1 (1st.runit #0 2nd.ob)),
-        RDomId.inv => ((1st.ob #0 2nd.RUnit.CodId.inv) #1 (1st.ob #0 2nd.LUnit_Inv.LCodId.inv) #1 (1st.runit #0 2nd.ob))
-            #2 ((1st.ob #0 2nd.RUnit.RDomId.inv) #1 (1st.ob #0 2nd.LUnit_Inv.DomId.dir) #1 (1st.RUnit.RDomId.dir #0 2nd.ob)),
-        CodId.dir => ((1st.ob #0 2nd.RUnit.CodId.inv) #1 Idem.dir)
-            #2 ((1st.ob #0 2nd.runit) #1 (1st.ob #0 2nd.LUnit_Inv.DomId.dir) #1 (1st.runit #0 2nd.ob)),
-        CodId.inv => ((1st.ob #0 2nd.runit) #1 (1st.ob #0 2nd.LUnit_Inv.DomId.inv) #1 (1st.runit #0 2nd.ob))
-            #2 ((1st.ob #0 2nd.RUnit.CodId.dir) #1 Idem.inv)
+        LDomId.dir => ((1.ob #0 2.LFrobenius_Bimodule.dir) #1 (1.runit #0 2.ob) #1 (1.ob #0 2.lunit_inv) #1 (1.runit #0 2.ob))
+            #2 ((1.ob #0 2.runit) #1 Idem.dir),
+        LDomId.inv => ((1.ob #0 2.runit) #1 Idem.inv)
+            #2 ((1.ob #0 2.LFrobenius_Bimodule.inv) #1 (1.runit #0 2.ob) #1 (1.ob #0 2.lunit_inv) #1 (1.runit #0 2.ob)),
+        RDomId.dir => ((1.ob #0 2.RUnit.RDomId.dir) #1 (1.ob #0 2.LUnit_Inv.DomId.inv) #1 (1.RUnit.RDomId.inv #0 2.ob))
+            #2 ((1.ob #0 2.RUnit.CodId.dir) #1 (1.ob #0 2.LUnit_Inv.LCodId.dir) #1 (1.runit #0 2.ob)),
+        RDomId.inv => ((1.ob #0 2.RUnit.CodId.inv) #1 (1.ob #0 2.LUnit_Inv.LCodId.inv) #1 (1.runit #0 2.ob))
+            #2 ((1.ob #0 2.RUnit.RDomId.inv) #1 (1.ob #0 2.LUnit_Inv.DomId.dir) #1 (1.RUnit.RDomId.dir #0 2.ob)),
+        CodId.dir => ((1.ob #0 2.RUnit.CodId.inv) #1 Idem.dir)
+            #2 ((1.ob #0 2.runit) #1 (1.ob #0 2.LUnit_Inv.DomId.dir) #1 (1.runit #0 2.ob)),
+        CodId.inv => ((1.ob #0 2.runit) #1 (1.ob #0 2.LUnit_Inv.DomId.inv) #1 (1.runit #0 2.ob))
+            #2 ((1.ob #0 2.RUnit.CodId.dir) #1 Idem.inv)
     ],
     let LUnit_Inv :: Aux.Node_1_to_2 = [
         Dom => Wire, LCod => Unit.Wire, RCod => Wire,
         node => lunit_inv,
-        DomId.dir => (Idem.dir #1 (1st.LUnit_Inv.DomId.inv #0 2nd.ob))
-            #2 ((1st.ob #0 2nd.lunit_inv) #1 (1st.RUnit.CodId.dir #0 2nd.ob) #1 (1st.lunit_inv #0 2nd.ob)),
-        DomId.inv => ((1st.ob #0 2nd.lunit_inv) #1 (1st.RUnit.CodId.inv #0 2nd.ob) #1 (1st.lunit_inv #0 2nd.ob))
-            #2 (Idem.inv #1 (1st.LUnit_Inv.DomId.dir #0 2nd.ob)),
-        LCodId.dir => ((1st.ob #0 2nd.LUnit_Inv.LCodId.inv) #1 (1st.RUnit.CodId.inv #0 2nd.ob) #1 (1st.LUnit_Inv.LCodId.dir #0 2nd.ob))
-            #2 ((1st.ob #0 2nd.lunit_inv) #1 (1st.RUnit.RDomId.dir #0 2nd.ob) #1 (1st.LUnit_Inv.DomId.dir #0 2nd.ob)),
-        LCodId.inv => ((1st.ob #0 2nd.lunit_inv) #1 (1st.RUnit.RDomId.inv #0 2nd.ob) #1 (1st.LUnit_Inv.DomId.inv #0 2nd.ob))
-            #2 ((1st.ob #0 2nd.LUnit_Inv.LCodId.dir) #1 (1st.RUnit.CodId.dir #0 2nd.ob) #1 (1st.LUnit_Inv.LCodId.inv #0 2nd.ob)),
-        RCodId.dir => ((1st.ob #0 2nd.lunit_inv) #1 (1st.ob #0 Unit.ob #0 2nd.lunit_inv) #1 (1st.runit #0 Unit.ob #0 2nd.ob) #1 (1st.LFrobenius_Bimodule.dir #0 2nd.ob))
-            #2 (Idem.dir #1 (1st.lunit_inv #0 2nd.ob)),
-        RCodId.inv => (Idem.inv #1 (1st.lunit_inv #0 2nd.ob))
-            #2 ((1st.ob #0 2nd.lunit_inv) #1 (1st.runit #0 2nd.ob) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.LFrobenius_Bimodule.inv #0 2nd.ob))
+        DomId.dir => (Idem.dir #1 (1.LUnit_Inv.DomId.inv #0 2.ob))
+            #2 ((1.ob #0 2.lunit_inv) #1 (1.RUnit.CodId.dir #0 2.ob) #1 (1.lunit_inv #0 2.ob)),
+        DomId.inv => ((1.ob #0 2.lunit_inv) #1 (1.RUnit.CodId.inv #0 2.ob) #1 (1.lunit_inv #0 2.ob))
+            #2 (Idem.inv #1 (1.LUnit_Inv.DomId.dir #0 2.ob)),
+        LCodId.dir => ((1.ob #0 2.LUnit_Inv.LCodId.inv) #1 (1.RUnit.CodId.inv #0 2.ob) #1 (1.LUnit_Inv.LCodId.dir #0 2.ob))
+            #2 ((1.ob #0 2.lunit_inv) #1 (1.RUnit.RDomId.dir #0 2.ob) #1 (1.LUnit_Inv.DomId.dir #0 2.ob)),
+        LCodId.inv => ((1.ob #0 2.lunit_inv) #1 (1.RUnit.RDomId.inv #0 2.ob) #1 (1.LUnit_Inv.DomId.inv #0 2.ob))
+            #2 ((1.ob #0 2.LUnit_Inv.LCodId.dir) #1 (1.RUnit.CodId.dir #0 2.ob) #1 (1.LUnit_Inv.LCodId.inv #0 2.ob)),
+        RCodId.dir => ((1.ob #0 2.lunit_inv) #1 (1.ob #0 Unit.ob #0 2.lunit_inv) #1 (1.runit #0 Unit.ob #0 2.ob) #1 (1.LFrobenius_Bimodule.dir #0 2.ob))
+            #2 (Idem.dir #1 (1.lunit_inv #0 2.ob)),
+        RCodId.inv => (Idem.inv #1 (1.lunit_inv #0 2.ob))
+            #2 ((1.ob #0 2.lunit_inv) #1 (1.runit #0 2.ob) #1 (1.ob #0 2.lunit_inv) #1 (1.LFrobenius_Bimodule.inv #0 2.ob))
     ],
     let RUnit_Inv :: Aux.Node_1_to_2 = [
         Dom => Wire, LCod => Wire, RCod => Unit.Wire,
         node => runit_inv,
-        DomId.dir => (Idem.dir #1 (1st.ob #0 2nd.RUnit_Inv.DomId.inv))
-            #2 ((1st.ob #0 2nd.LUnit_Inv.RCodId.dir) #1 (1st.ob #0 Unit.ob #0 2nd.runit_inv) #1 (1st.runit #0 2nd.ob #0 Unit.ob)),
-        DomId.inv => ((1st.ob #0 2nd.LUnit_Inv.RCodId.inv) #1 (1st.ob #0 Unit.ob #0 2nd.runit_inv) #1 (1st.runit #0 2nd.ob #0 Unit.ob))
-            #2 (Idem.inv #1 (1st.ob #0 2nd.RUnit_Inv.DomId.dir)),
-        LCodId.dir => ((1st.ob #0 2nd.lunit_inv) #1 (1st.ob #0 Unit.ob #0 2nd.Bicomodule.dir) #1 (1st.runit #0 Unit.ob #0 2nd.ob #0 Unit.ob) #1 (1st.runit #0 2nd.ob #0 Unit.ob))
-            #2 (Idem.dir #1 (1st.ob #0 2nd.runit_inv)),
-        LCodId.inv => (Idem.inv #1 (1st.ob #0 2nd.runit_inv))
-            #2 ((1st.ob #0 2nd.lunit_inv) #1 (1st.ob #0 Unit.ob #0 2nd.Bicomodule.inv) #1 (1st.runit #0 Unit.ob #0 2nd.ob #0 Unit.ob) #1 (1st.runit #0 2nd.ob #0 Unit.ob)),
-        RCodId.dir => ((1st.ob #0 2nd.LUnit_Inv.RCodId.inv) #1 (1st.ob #0 Unit.ob #0 2nd.RUnit_Inv.RCodId.dir) #1 (1st.RUnit.RDomId.inv #0 2nd.ob #0 Unit.ob))
-            #2 ((1st.ob #0 2nd.LUnit_Inv.LCodId.dir) #1 (1st.ob #0 Unit.ob #0 2nd.RUnit_Inv.DomId.dir) #1 (1st.runit #0 2nd.ob #0 Unit.ob)),
-        RCodId.inv => ((1st.ob #0 2nd.LUnit_Inv.LCodId.inv) #1 (1st.ob #0 Unit.ob #0 2nd.RUnit_Inv.DomId.inv) #1 (1st.runit #0 2nd.ob #0 Unit.ob))
-            #2 ((1st.ob #0 2nd.LUnit_Inv.RCodId.dir) #1 (1st.ob #0 Unit.ob #0 2nd.RUnit_Inv.RCodId.inv) #1 (1st.RUnit.RDomId.dir #0 2nd.ob #0 Unit.ob))
+        DomId.dir => (Idem.dir #1 (1.ob #0 2.RUnit_Inv.DomId.inv))
+            #2 ((1.ob #0 2.LUnit_Inv.RCodId.dir) #1 (1.ob #0 Unit.ob #0 2.runit_inv) #1 (1.runit #0 2.ob #0 Unit.ob)),
+        DomId.inv => ((1.ob #0 2.LUnit_Inv.RCodId.inv) #1 (1.ob #0 Unit.ob #0 2.runit_inv) #1 (1.runit #0 2.ob #0 Unit.ob))
+            #2 (Idem.inv #1 (1.ob #0 2.RUnit_Inv.DomId.dir)),
+        LCodId.dir => ((1.ob #0 2.lunit_inv) #1 (1.ob #0 Unit.ob #0 2.Bicomodule.dir) #1 (1.runit #0 Unit.ob #0 2.ob #0 Unit.ob) #1 (1.runit #0 2.ob #0 Unit.ob))
+            #2 (Idem.dir #1 (1.ob #0 2.runit_inv)),
+        LCodId.inv => (Idem.inv #1 (1.ob #0 2.runit_inv))
+            #2 ((1.ob #0 2.lunit_inv) #1 (1.ob #0 Unit.ob #0 2.Bicomodule.inv) #1 (1.runit #0 Unit.ob #0 2.ob #0 Unit.ob) #1 (1.runit #0 2.ob #0 Unit.ob)),
+        RCodId.dir => ((1.ob #0 2.LUnit_Inv.RCodId.inv) #1 (1.ob #0 Unit.ob #0 2.RUnit_Inv.RCodId.dir) #1 (1.RUnit.RDomId.inv #0 2.ob #0 Unit.ob))
+            #2 ((1.ob #0 2.LUnit_Inv.LCodId.dir) #1 (1.ob #0 Unit.ob #0 2.RUnit_Inv.DomId.dir) #1 (1.runit #0 2.ob #0 Unit.ob)),
+        RCodId.inv => ((1.ob #0 2.LUnit_Inv.LCodId.inv) #1 (1.ob #0 Unit.ob #0 2.RUnit_Inv.DomId.inv) #1 (1.runit #0 2.ob #0 Unit.ob))
+            #2 ((1.ob #0 2.LUnit_Inv.RCodId.dir) #1 (1.ob #0 Unit.ob #0 2.RUnit_Inv.RCodId.inv) #1 (1.RUnit.RDomId.dir #0 2.ob #0 Unit.ob))
     ],
 
     (* The equations *)
     let LUnit_Inversion :: Equation = [
-        dir => ((1st.ob #0 2nd.lunit_inv) #1 (1st.ob #0 Unit.ob #0 2nd.lunit_inv) #1 (1st.runit #0 Unit.ob #0 2nd.ob) #1 (1st.LUnit_Inversion.dir #0 Unit.ob #0 2nd.ob) #1 (1st.runit #0 2nd.ob))
-            #2 ((1st.ob #0 2nd.lunit_inv) #1 (1st.RUnit.CodId.dir #0 2nd.ob) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.runit #0 2nd.ob))
+        dir => ((1.ob #0 2.lunit_inv) #1 (1.ob #0 Unit.ob #0 2.lunit_inv) #1 (1.runit #0 Unit.ob #0 2.ob) #1 (1.LUnit_Inversion.dir #0 Unit.ob #0 2.ob) #1 (1.runit #0 2.ob))
+            #2 ((1.ob #0 2.lunit_inv) #1 (1.RUnit.CodId.dir #0 2.ob) #1 (1.ob #0 2.lunit_inv) #1 (1.runit #0 2.ob))
             #2 Idem.dir,
         inv => Idem.inv
-            #2 ((1st.ob #0 2nd.lunit_inv) #1 (1st.RUnit.CodId.inv #0 2nd.ob) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.runit #0 2nd.ob))
-            #2 ((1st.ob #0 2nd.lunit_inv) #1 (1st.ob #0 Unit.ob #0 2nd.lunit_inv) #1 (1st.runit #0 Unit.ob #0 2nd.ob) #1 (1st.LUnit_Inversion.inv #0 Unit.ob #0 2nd.ob) #1 (1st.runit #0 2nd.ob))
+            #2 ((1.ob #0 2.lunit_inv) #1 (1.RUnit.CodId.inv #0 2.ob) #1 (1.ob #0 2.lunit_inv) #1 (1.runit #0 2.ob))
+            #2 ((1.ob #0 2.lunit_inv) #1 (1.ob #0 Unit.ob #0 2.lunit_inv) #1 (1.runit #0 Unit.ob #0 2.ob) #1 (1.LUnit_Inversion.inv #0 Unit.ob #0 2.ob) #1 (1.runit #0 2.ob))
     ],
     let RUnit_Inversion :: Equation = [
-        dir => ((1st.ob #0 2nd.lunit_inv) #1 (1st.ob #0 Unit.ob #0 2nd.RUnit_Inversion.dir) #1 (1st.ob #0 Unit.ob #0 2nd.lunit_inv) #1 (1st.runit #0 Unit.ob #0 2nd.ob) #1 (1st.runit #0 2nd.ob))
-            #2 ((1st.ob #0 2nd.LUnit_Inv.RCodId.dir) #1 (1st.runit #0 2nd.ob) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.runit #0 2nd.ob))
+        dir => ((1.ob #0 2.lunit_inv) #1 (1.ob #0 Unit.ob #0 2.RUnit_Inversion.dir) #1 (1.ob #0 Unit.ob #0 2.lunit_inv) #1 (1.runit #0 Unit.ob #0 2.ob) #1 (1.runit #0 2.ob))
+            #2 ((1.ob #0 2.LUnit_Inv.RCodId.dir) #1 (1.runit #0 2.ob) #1 (1.ob #0 2.lunit_inv) #1 (1.runit #0 2.ob))
             #2 Idem.dir,
         inv => Idem.inv
-            #2 ((1st.ob #0 2nd.LUnit_Inv.RCodId.inv) #1 (1st.runit #0 2nd.ob) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.runit #0 2nd.ob))
-            #2 ((1st.ob #0 2nd.lunit_inv) #1 (1st.ob #0 Unit.ob #0 2nd.RUnit_Inversion.inv) #1 (1st.ob #0 Unit.ob #0 2nd.lunit_inv) #1 (1st.runit #0 Unit.ob #0 2nd.ob) #1 (1st.runit #0 2nd.ob))
+            #2 ((1.ob #0 2.LUnit_Inv.RCodId.inv) #1 (1.runit #0 2.ob) #1 (1.ob #0 2.lunit_inv) #1 (1.runit #0 2.ob))
+            #2 ((1.ob #0 2.lunit_inv) #1 (1.ob #0 Unit.ob #0 2.RUnit_Inversion.inv) #1 (1.ob #0 Unit.ob #0 2.lunit_inv) #1 (1.runit #0 Unit.ob #0 2.ob) #1 (1.runit #0 2.ob))
     ],
     let Left_Module :: Equation = [
-        dir => ((1st.Left_Module.dir #0 2nd.ob) #1 Idem.inv)
-            #2 ((Unit.ob #0 1st.lunit #0 2nd.ob) #1 (Unit.ob #0 1st.ob #0 2nd.lunit_inv) #1 (1st.Bimodule.dir #0 2nd.ob) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.runit #0 2nd.ob)),
-        inv => ((Unit.ob #0 1st.lunit #0 2nd.ob) #1 (Unit.ob #0 1st.ob #0 2nd.lunit_inv) #1 (1st.Bimodule.inv #0 2nd.ob) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.runit #0 2nd.ob))
-            #2 ((1st.Left_Module.inv #0 2nd.ob) #1 Idem.dir)
+        dir => ((1.Left_Module.dir #0 2.ob) #1 Idem.inv)
+            #2 ((Unit.ob #0 1.lunit #0 2.ob) #1 (Unit.ob #0 1.ob #0 2.lunit_inv) #1 (1.Bimodule.dir #0 2.ob) #1 (1.ob #0 2.lunit_inv) #1 (1.runit #0 2.ob)),
+        inv => ((Unit.ob #0 1.lunit #0 2.ob) #1 (Unit.ob #0 1.ob #0 2.lunit_inv) #1 (1.Bimodule.inv #0 2.ob) #1 (1.ob #0 2.lunit_inv) #1 (1.runit #0 2.ob))
+            #2 ((1.Left_Module.inv #0 2.ob) #1 Idem.dir)
     ],
     let Right_Module :: Equation = [
-        dir => ((1st.ob #0 2nd.runit #0 Unit.ob) #1 (1st.ob #0 2nd.LFrobenius_Bimodule.dir) #1 (1st.runit #0 2nd.ob) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.runit #0 2nd.ob))
-            #2 ((1st.ob #0 2nd.Right_Module.dir) #1 Idem.dir),
-        inv => ((1st.ob #0 2nd.Right_Module.inv) #1 Idem.inv)
-            #2 ((1st.ob #0 2nd.runit #0 Unit.ob) #1 (1st.ob #0 2nd.LFrobenius_Bimodule.inv) #1 (1st.runit #0 2nd.ob) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.runit #0 2nd.ob))
+        dir => ((1.ob #0 2.runit #0 Unit.ob) #1 (1.ob #0 2.LFrobenius_Bimodule.dir) #1 (1.runit #0 2.ob) #1 (1.ob #0 2.lunit_inv) #1 (1.runit #0 2.ob))
+            #2 ((1.ob #0 2.Right_Module.dir) #1 Idem.dir),
+        inv => ((1.ob #0 2.Right_Module.inv) #1 Idem.inv)
+            #2 ((1.ob #0 2.runit #0 Unit.ob) #1 (1.ob #0 2.LFrobenius_Bimodule.inv) #1 (1.runit #0 2.ob) #1 (1.ob #0 2.lunit_inv) #1 (1.runit #0 2.ob))
     ],
     let Left_Comodule :: Equation = [
-        dir => (Idem.inv #1 (1st.Left_Comodule.dir #0 2nd.ob))
-            #2 ((1st.ob #0 2nd.lunit_inv) #1 (1st.runit #0 2nd.ob) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.LFrobenius_Bimodule.inv #0 2nd.ob) #1 (Unit.ob #0 1st.lunit_inv #0 2nd.ob)),
-        inv => ((1st.ob #0 2nd.lunit_inv) #1 (1st.runit #0 2nd.ob) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.LFrobenius_Bimodule.dir #0 2nd.ob) #1 (Unit.ob #0 1st.lunit_inv #0 2nd.ob))
-            #2 (Idem.dir #1 (1st.Left_Comodule.inv #0 2nd.ob))
+        dir => (Idem.inv #1 (1.Left_Comodule.dir #0 2.ob))
+            #2 ((1.ob #0 2.lunit_inv) #1 (1.runit #0 2.ob) #1 (1.ob #0 2.lunit_inv) #1 (1.LFrobenius_Bimodule.inv #0 2.ob) #1 (Unit.ob #0 1.lunit_inv #0 2.ob)),
+        inv => ((1.ob #0 2.lunit_inv) #1 (1.runit #0 2.ob) #1 (1.ob #0 2.lunit_inv) #1 (1.LFrobenius_Bimodule.dir #0 2.ob) #1 (Unit.ob #0 1.lunit_inv #0 2.ob))
+            #2 (Idem.dir #1 (1.Left_Comodule.inv #0 2.ob))
     ],
     let Right_Comodule :: Equation = [
-        dir => ((1st.ob #0 2nd.lunit_inv) #1 (1st.ob #0 Unit.ob #0 2nd.Bicomodule.dir) #1 (1st.ob #0 Unit.ob #0 Unit.ob #0 2nd.runit_inv #0 Unit.ob) #1 (1st.runit #0 Unit.ob #0 2nd.ob #0 Unit.ob #0 Unit.ob) #1 (1st.runit #0 2nd.ob #0 Unit.ob #0 Unit.ob))
-            #2 (Idem.dir #1 (1st.ob #0 2nd.Right_Comodule.dir)),
-        inv => (Idem.inv #1 (1st.ob #0 2nd.Right_Comodule.inv))
-            #2 ((1st.ob #0 2nd.lunit_inv) #1 (1st.ob #0 Unit.ob #0 2nd.Bicomodule.inv) #1 (1st.ob #0 Unit.ob #0 Unit.ob #0 2nd.runit_inv #0 Unit.ob) #1 (1st.runit #0 Unit.ob #0 2nd.ob #0 Unit.ob #0 Unit.ob) #1 (1st.runit #0 2nd.ob #0 Unit.ob #0 Unit.ob))
+        dir => ((1.ob #0 2.lunit_inv) #1 (1.ob #0 Unit.ob #0 2.Bicomodule.dir) #1 (1.ob #0 Unit.ob #0 Unit.ob #0 2.runit_inv #0 Unit.ob) #1 (1.runit #0 Unit.ob #0 2.ob #0 Unit.ob #0 Unit.ob) #1 (1.runit #0 2.ob #0 Unit.ob #0 Unit.ob))
+            #2 (Idem.dir #1 (1.ob #0 2.Right_Comodule.dir)),
+        inv => (Idem.inv #1 (1.ob #0 2.Right_Comodule.inv))
+            #2 ((1.ob #0 2.lunit_inv) #1 (1.ob #0 Unit.ob #0 2.Bicomodule.inv) #1 (1.ob #0 Unit.ob #0 Unit.ob #0 2.runit_inv #0 Unit.ob) #1 (1.runit #0 Unit.ob #0 2.ob #0 Unit.ob #0 Unit.ob) #1 (1.runit #0 2.ob #0 Unit.ob #0 Unit.ob))
     ],
     let Bimodule :: Equation = [
-        dir => ((1st.lunit #0 2nd.ob #0 Unit.ob) #1 (1st.ob #0 2nd.lunit_inv #0 Unit.ob) #1 (1st.ob #0 Unit.ob #0 2nd.runit) #1 (1st.runit #0 2nd.ob) #1 Idem.inv)
-            #2 ((Unit.ob #0 1st.ob #0 2nd.lunit_inv #0 Unit.ob) #1 (Unit.ob #0 1st.ob #0 Unit.ob #0 2nd.LFrobenius_Bimodule.inv) #1 (Unit.ob #0 1st.ob #0 Unit.ob #0 Unit.ob #0 2nd.lunit_inv) #1 (1st.lunit #0 Unit.ob #0 Unit.ob #0 Unit.ob #0 2nd.ob) #1 (1st.runit #0 Unit.ob #0 Unit.ob #0 2nd.ob) #1 (1st.runit #0 Unit.ob #0 2nd.ob) #1 (1st.runit #0 2nd.ob))
-            #2 ((1st.lunit #0 2nd.ob #0 Unit.ob) #1 (Idem.dir #0 Unit.ob) #1 (1st.ob #0 2nd.runit) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.runit #0 2nd.ob))
-            #2 ((Unit.ob #0 1st.ob #0 2nd.LFrobenius_Bimodule.dir) #1 (1st.Bimodule.dir #0 2nd.ob) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.runit #0 2nd.ob)),
-        inv => ((Unit.ob #0 1st.ob #0 2nd.LFrobenius_Bimodule.inv) #1 (1st.Bimodule.inv #0 2nd.ob) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.runit #0 2nd.ob))
-            #2 ((1st.lunit #0 2nd.ob #0 Unit.ob) #1 (Idem.inv #0 Unit.ob) #1 (1st.ob #0 2nd.runit) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.runit #0 2nd.ob))
-            #2 ((1st.lunit #0 2nd.ob #0 Unit.ob) #1 (1st.ob #0 2nd.lunit_inv #0 Unit.ob) #1 (1st.ob #0 Unit.ob #0 2nd.LFrobenius_Bimodule.dir) #1 (1st.ob #0 Unit.ob #0 Unit.ob #0 2nd.lunit_inv) #1 (1st.runit #0 Unit.ob #0 Unit.ob #0 2nd.ob) #1 (1st.runit #0 Unit.ob #0 2nd.ob) #1 (1st.runit #0 2nd.ob))
-            #2 ((Unit.ob #0 1st.ob #0 2nd.lunit_inv #0 Unit.ob) #1 (Unit.ob #0 1st.ob #0 Unit.ob #0 2nd.runit) #1 (1st.lunit #0 Unit.ob #0 2nd.ob) #1 (1st.runit #0 2nd.ob) #1 Idem.dir)
+        dir => ((1.lunit #0 2.ob #0 Unit.ob) #1 (1.ob #0 2.lunit_inv #0 Unit.ob) #1 (1.ob #0 Unit.ob #0 2.runit) #1 (1.runit #0 2.ob) #1 Idem.inv)
+            #2 ((Unit.ob #0 1.ob #0 2.lunit_inv #0 Unit.ob) #1 (Unit.ob #0 1.ob #0 Unit.ob #0 2.LFrobenius_Bimodule.inv) #1 (Unit.ob #0 1.ob #0 Unit.ob #0 Unit.ob #0 2.lunit_inv) #1 (1.lunit #0 Unit.ob #0 Unit.ob #0 Unit.ob #0 2.ob) #1 (1.runit #0 Unit.ob #0 Unit.ob #0 2.ob) #1 (1.runit #0 Unit.ob #0 2.ob) #1 (1.runit #0 2.ob))
+            #2 ((1.lunit #0 2.ob #0 Unit.ob) #1 (Idem.dir #0 Unit.ob) #1 (1.ob #0 2.runit) #1 (1.ob #0 2.lunit_inv) #1 (1.runit #0 2.ob))
+            #2 ((Unit.ob #0 1.ob #0 2.LFrobenius_Bimodule.dir) #1 (1.Bimodule.dir #0 2.ob) #1 (1.ob #0 2.lunit_inv) #1 (1.runit #0 2.ob)),
+        inv => ((Unit.ob #0 1.ob #0 2.LFrobenius_Bimodule.inv) #1 (1.Bimodule.inv #0 2.ob) #1 (1.ob #0 2.lunit_inv) #1 (1.runit #0 2.ob))
+            #2 ((1.lunit #0 2.ob #0 Unit.ob) #1 (Idem.inv #0 Unit.ob) #1 (1.ob #0 2.runit) #1 (1.ob #0 2.lunit_inv) #1 (1.runit #0 2.ob))
+            #2 ((1.lunit #0 2.ob #0 Unit.ob) #1 (1.ob #0 2.lunit_inv #0 Unit.ob) #1 (1.ob #0 Unit.ob #0 2.LFrobenius_Bimodule.dir) #1 (1.ob #0 Unit.ob #0 Unit.ob #0 2.lunit_inv) #1 (1.runit #0 Unit.ob #0 Unit.ob #0 2.ob) #1 (1.runit #0 Unit.ob #0 2.ob) #1 (1.runit #0 2.ob))
+            #2 ((Unit.ob #0 1.ob #0 2.lunit_inv #0 Unit.ob) #1 (Unit.ob #0 1.ob #0 Unit.ob #0 2.runit) #1 (1.lunit #0 Unit.ob #0 2.ob) #1 (1.runit #0 2.ob) #1 Idem.dir)
     ],
     let Bicomodule :: Equation = [
-        dir => (Idem.inv #1 (1st.ob #0 2nd.runit_inv) #1 (1st.ob #0 2nd.lunit_inv #0 Unit.ob) #1 (1st.runit #0 2nd.ob #0 Unit.ob) #1 (1st.lunit_inv #0 2nd.ob #0 Unit.ob))
-            #2 ((1st.ob #0 2nd.lunit_inv) #1 (1st.ob #0 Unit.ob #0 2nd.Bicomodule.inv) #1 (1st.ob #0 Unit.ob #0 Unit.ob #0 2nd.lunit_inv #0 Unit.ob) #1 (1st.runit #0 Unit.ob #0 Unit.ob #0 2nd.ob #0 Unit.ob) #1 (1st.runit #0 Unit.ob #0 2nd.ob #0 Unit.ob) #1 (1st.runit #0 2nd.ob #0 Unit.ob) #1 (1st.lunit_inv #0 2nd.ob #0 Unit.ob))
-            #2 ((1st.ob #0 2nd.lunit_inv) #1 (1st.runit #0 2nd.ob) #1 (1st.ob #0 2nd.runit_inv) #1 (Idem.dir #0 Unit.ob) #1 (1st.lunit_inv #0 2nd.ob #0 Unit.ob))
-            #2 ((1st.ob #0 2nd.lunit_inv) #1 (1st.ob #0 Unit.ob #0 2nd.Bicomodule.dir) #1 (1st.runit #0 Unit.ob #0 2nd.ob #0 Unit.ob) #1 (1st.LFrobenius_Bimodule.inv #0 2nd.ob #0 Unit.ob)),
-        inv => ((1st.ob #0 2nd.lunit_inv) #1 (1st.ob #0 Unit.ob #0 2nd.Bicomodule.inv) #1 (1st.runit #0 Unit.ob #0 2nd.ob #0 Unit.ob) #1 (1st.LFrobenius_Bimodule.dir #0 2nd.ob #0 Unit.ob))
-            #2 ((1st.ob #0 2nd.lunit_inv) #1 (1st.runit #0 2nd.ob) #1 (1st.ob #0 2nd.runit_inv) #1 (Idem.inv #0 Unit.ob) #1 (1st.lunit_inv #0 2nd.ob #0 Unit.ob))
-            #2 ((1st.ob #0 2nd.lunit_inv) #1 (1st.ob #0 Unit.ob #0 2nd.Bicomodule.dir) #1 (1st.ob #0 Unit.ob #0 Unit.ob #0 2nd.lunit_inv #0 Unit.ob) #1 (1st.runit #0 Unit.ob #0 Unit.ob #0 2nd.ob #0 Unit.ob) #1 (1st.runit #0 Unit.ob #0 2nd.ob #0 Unit.ob) #1 (1st.runit #0 2nd.ob #0 Unit.ob) #1 (1st.lunit_inv #0 2nd.ob #0 Unit.ob))
-            #2 (Idem.dir #1 (1st.ob #0 2nd.runit_inv) #1 (1st.ob #0 2nd.lunit_inv #0 Unit.ob) #1 (1st.runit #0 2nd.ob #0 Unit.ob) #1 (1st.lunit_inv #0 2nd.ob #0 Unit.ob))
+        dir => (Idem.inv #1 (1.ob #0 2.runit_inv) #1 (1.ob #0 2.lunit_inv #0 Unit.ob) #1 (1.runit #0 2.ob #0 Unit.ob) #1 (1.lunit_inv #0 2.ob #0 Unit.ob))
+            #2 ((1.ob #0 2.lunit_inv) #1 (1.ob #0 Unit.ob #0 2.Bicomodule.inv) #1 (1.ob #0 Unit.ob #0 Unit.ob #0 2.lunit_inv #0 Unit.ob) #1 (1.runit #0 Unit.ob #0 Unit.ob #0 2.ob #0 Unit.ob) #1 (1.runit #0 Unit.ob #0 2.ob #0 Unit.ob) #1 (1.runit #0 2.ob #0 Unit.ob) #1 (1.lunit_inv #0 2.ob #0 Unit.ob))
+            #2 ((1.ob #0 2.lunit_inv) #1 (1.runit #0 2.ob) #1 (1.ob #0 2.runit_inv) #1 (Idem.dir #0 Unit.ob) #1 (1.lunit_inv #0 2.ob #0 Unit.ob))
+            #2 ((1.ob #0 2.lunit_inv) #1 (1.ob #0 Unit.ob #0 2.Bicomodule.dir) #1 (1.runit #0 Unit.ob #0 2.ob #0 Unit.ob) #1 (1.LFrobenius_Bimodule.inv #0 2.ob #0 Unit.ob)),
+        inv => ((1.ob #0 2.lunit_inv) #1 (1.ob #0 Unit.ob #0 2.Bicomodule.inv) #1 (1.runit #0 Unit.ob #0 2.ob #0 Unit.ob) #1 (1.LFrobenius_Bimodule.dir #0 2.ob #0 Unit.ob))
+            #2 ((1.ob #0 2.lunit_inv) #1 (1.runit #0 2.ob) #1 (1.ob #0 2.runit_inv) #1 (Idem.inv #0 Unit.ob) #1 (1.lunit_inv #0 2.ob #0 Unit.ob))
+            #2 ((1.ob #0 2.lunit_inv) #1 (1.ob #0 Unit.ob #0 2.Bicomodule.dir) #1 (1.ob #0 Unit.ob #0 Unit.ob #0 2.lunit_inv #0 Unit.ob) #1 (1.runit #0 Unit.ob #0 Unit.ob #0 2.ob #0 Unit.ob) #1 (1.runit #0 Unit.ob #0 2.ob #0 Unit.ob) #1 (1.runit #0 2.ob #0 Unit.ob) #1 (1.lunit_inv #0 2.ob #0 Unit.ob))
+            #2 (Idem.dir #1 (1.ob #0 2.runit_inv) #1 (1.ob #0 2.lunit_inv #0 Unit.ob) #1 (1.runit #0 2.ob #0 Unit.ob) #1 (1.lunit_inv #0 2.ob #0 Unit.ob))
     ],
     let LFrobenius_Bimodule :: Equation = [
-        dir => ((1st.ob #0 2nd.LFrobenius_Bimodule.dir) #1 (1st.ob #0 Unit.ob #0 2nd.lunit_inv) #1 (1st.runit #0 Unit.ob #0 2nd.ob) #1 (1st.LFrobenius_Bimodule.dir #0 2nd.ob))
-            #2 ((1st.ob #0 2nd.runit) #1 Idem.dir #1 (1st.lunit_inv #0 2nd.ob))
-            #2 ((1st.ob #0 2nd.runit) #1 Idem.inv #1 (1st.lunit_inv #0 2nd.ob)),
-        inv => ((1st.ob #0 2nd.runit) #1 Idem.dir #1 (1st.lunit_inv #0 2nd.ob))
-            #2 ((1st.ob #0 2nd.runit) #1 Idem.inv #1 (1st.lunit_inv #0 2nd.ob))
-            #2 ((1st.ob #0 2nd.LFrobenius_Bimodule.inv) #1 (1st.runit #0 2nd.ob) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.LFrobenius_Bimodule.inv #0 2nd.ob))
+        dir => ((1.ob #0 2.LFrobenius_Bimodule.dir) #1 (1.ob #0 Unit.ob #0 2.lunit_inv) #1 (1.runit #0 Unit.ob #0 2.ob) #1 (1.LFrobenius_Bimodule.dir #0 2.ob))
+            #2 ((1.ob #0 2.runit) #1 Idem.dir #1 (1.lunit_inv #0 2.ob))
+            #2 ((1.ob #0 2.runit) #1 Idem.inv #1 (1.lunit_inv #0 2.ob)),
+        inv => ((1.ob #0 2.runit) #1 Idem.dir #1 (1.lunit_inv #0 2.ob))
+            #2 ((1.ob #0 2.runit) #1 Idem.inv #1 (1.lunit_inv #0 2.ob))
+            #2 ((1.ob #0 2.LFrobenius_Bimodule.inv) #1 (1.runit #0 2.ob) #1 (1.ob #0 2.lunit_inv) #1 (1.LFrobenius_Bimodule.inv #0 2.ob))
     ],
     let RFrobenius_Bimodule :: Equation = [
-        dir => ((Unit.ob #0 1st.ob #0 2nd.lunit_inv) #1 (Unit.ob #0 1st.ob #0 Unit.ob #0 2nd.Bicomodule.dir) #1 (1st.Bimodule.inv #0 Unit.ob #0 2nd.ob #0 Unit.ob) #1 (1st.runit #0 2nd.ob #0 Unit.ob))
-            #2 ((1st.lunit #0 2nd.ob) #1 Idem.dir #1 (1st.ob #0 2nd.runit_inv))
-            #2 ((1st.lunit #0 2nd.ob) #1 Idem.inv #1 (1st.ob #0 2nd.runit_inv)),
-        inv => ((1st.lunit #0 2nd.ob) #1 Idem.dir #1 (1st.ob #0 2nd.runit_inv))
-            #2 ((1st.lunit #0 2nd.ob) #1 Idem.inv #1 (1st.ob #0 2nd.runit_inv))
-            #2 ((Unit.ob #0 1st.ob #0 2nd.lunit_inv) #1 (Unit.ob #0 1st.ob #0 Unit.ob #0 2nd.Bicomodule.inv) #1 (1st.Bimodule.dir #0 Unit.ob #0 2nd.ob #0 Unit.ob) #1 (1st.runit #0 2nd.ob #0 Unit.ob))
+        dir => ((Unit.ob #0 1.ob #0 2.lunit_inv) #1 (Unit.ob #0 1.ob #0 Unit.ob #0 2.Bicomodule.dir) #1 (1.Bimodule.inv #0 Unit.ob #0 2.ob #0 Unit.ob) #1 (1.runit #0 2.ob #0 Unit.ob))
+            #2 ((1.lunit #0 2.ob) #1 Idem.dir #1 (1.ob #0 2.runit_inv))
+            #2 ((1.lunit #0 2.ob) #1 Idem.inv #1 (1.ob #0 2.runit_inv)),
+        inv => ((1.lunit #0 2.ob) #1 Idem.dir #1 (1.ob #0 2.runit_inv))
+            #2 ((1.lunit #0 2.ob) #1 Idem.inv #1 (1.ob #0 2.runit_inv))
+            #2 ((Unit.ob #0 1.ob #0 2.lunit_inv) #1 (Unit.ob #0 1.ob #0 Unit.ob #0 2.Bicomodule.inv) #1 (1.Bimodule.dir #0 Unit.ob #0 2.ob #0 Unit.ob) #1 (1.runit #0 2.ob #0 Unit.ob))
     ],
     let Left_LFrobenius_Module :: Equation = [
-        dir => ((1st.Left_LFrobenius_Module.dir #0 2nd.ob) #1 (Unit.ob #0 Idem.inv))
-            #2 ((1st.lunit #0 2nd.ob) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.LFrobenius_Bimodule.dir #0 2nd.ob) #1 (Unit.ob #0 1st.ob #0 2nd.lunit_inv) #1 (Unit.ob #0 1st.runit #0 2nd.ob))
-            #2 ((Unit.ob #0 1st.ob #0 2nd.lunit_inv) #1 (Unit.ob #0 1st.ob #0 Unit.ob #0 2nd.lunit_inv) #1 (1st.lunit #0 Unit.ob #0 Unit.ob #0 2nd.ob) #1 (1st.runit #0 Unit.ob #0 2nd.ob) #1 (1st.LFrobenius_Bimodule.dir #0 2nd.ob)),
-        inv => ((1st.lunit #0 2nd.ob) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.ob #0 Unit.ob #0 2nd.lunit_inv) #1 (1st.runit #0 Unit.ob #0 2nd.ob) #1 (1st.LFrobenius_Bimodule.inv #0 2nd.ob))
-            #2 ((Unit.ob #0 1st.ob #0 2nd.lunit_inv) #1 (Unit.ob #0 1st.ob #0 Unit.ob #0 2nd.lunit_inv) #1 (1st.lunit #0 Unit.ob #0 Unit.ob #0 2nd.ob) #1 (1st.LFrobenius_Bimodule.inv #0 Unit.ob #0 2nd.ob) #1 (Unit.ob #0 1st.runit #0 2nd.ob))
-            #2 ((1st.Left_LFrobenius_Module.inv #0 2nd.ob) #1 (Unit.ob #0 Idem.dir))
+        dir => ((1.Left_LFrobenius_Module.dir #0 2.ob) #1 (Unit.ob #0 Idem.inv))
+            #2 ((1.lunit #0 2.ob) #1 (1.ob #0 2.lunit_inv) #1 (1.LFrobenius_Bimodule.dir #0 2.ob) #1 (Unit.ob #0 1.ob #0 2.lunit_inv) #1 (Unit.ob #0 1.runit #0 2.ob))
+            #2 ((Unit.ob #0 1.ob #0 2.lunit_inv) #1 (Unit.ob #0 1.ob #0 Unit.ob #0 2.lunit_inv) #1 (1.lunit #0 Unit.ob #0 Unit.ob #0 2.ob) #1 (1.runit #0 Unit.ob #0 2.ob) #1 (1.LFrobenius_Bimodule.dir #0 2.ob)),
+        inv => ((1.lunit #0 2.ob) #1 (1.ob #0 2.lunit_inv) #1 (1.ob #0 Unit.ob #0 2.lunit_inv) #1 (1.runit #0 Unit.ob #0 2.ob) #1 (1.LFrobenius_Bimodule.inv #0 2.ob))
+            #2 ((Unit.ob #0 1.ob #0 2.lunit_inv) #1 (Unit.ob #0 1.ob #0 Unit.ob #0 2.lunit_inv) #1 (1.lunit #0 Unit.ob #0 Unit.ob #0 2.ob) #1 (1.LFrobenius_Bimodule.inv #0 Unit.ob #0 2.ob) #1 (Unit.ob #0 1.runit #0 2.ob))
+            #2 ((1.Left_LFrobenius_Module.inv #0 2.ob) #1 (Unit.ob #0 Idem.dir))
     ],
     let Right_LFrobenius_Module :: Equation = [
-        dir => ((Idem.inv #0 Unit.ob) #1 (1st.ob #0 2nd.Right_LFrobenius_Module.dir))
-            #2 ((1st.ob #0 2nd.lunit_inv #0 Unit.ob) #1 (1st.ob #0 Unit.ob #0 2nd.LFrobenius_Bimodule.dir) #1 (1st.ob #0 Unit.ob #0 Unit.ob #0 2nd.runit_inv) #1 (1st.runit #0 Unit.ob #0 2nd.ob #0 Unit.ob) #1 (1st.runit #0 2nd.ob #0 Unit.ob))
-            #2 ((1st.ob #0 2nd.LFrobenius_Bimodule.dir) #1 (1st.runit #0 2nd.ob) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.runit #0 2nd.ob) #1 (1st.ob #0 2nd.runit_inv)),
-        inv => ((1st.ob #0 2nd.LFrobenius_Bimodule.inv) #1 (1st.ob #0 Unit.ob #0 2nd.lunit_inv) #1 (1st.ob #0 Unit.ob #0 Unit.ob #0 2nd.runit_inv) #1 (1st.runit #0 Unit.ob #0 2nd.ob #0 Unit.ob) #1 (1st.runit #0 2nd.ob #0 Unit.ob))
-            #2 ((1st.ob #0 2nd.lunit_inv #0 Unit.ob) #1 (1st.ob #0 Unit.ob #0 2nd.LFrobenius_Bimodule.inv) #1 (1st.ob #0 Unit.ob #0 Unit.ob #0 2nd.runit_inv) #1 (1st.runit #0 Unit.ob #0 2nd.ob #0 Unit.ob) #1 (1st.runit #0 2nd.ob #0 Unit.ob))
-            #2 ((Idem.dir #0 Unit.ob) #1 (1st.ob #0 2nd.Right_LFrobenius_Module.inv))
+        dir => ((Idem.inv #0 Unit.ob) #1 (1.ob #0 2.Right_LFrobenius_Module.dir))
+            #2 ((1.ob #0 2.lunit_inv #0 Unit.ob) #1 (1.ob #0 Unit.ob #0 2.LFrobenius_Bimodule.dir) #1 (1.ob #0 Unit.ob #0 Unit.ob #0 2.runit_inv) #1 (1.runit #0 Unit.ob #0 2.ob #0 Unit.ob) #1 (1.runit #0 2.ob #0 Unit.ob))
+            #2 ((1.ob #0 2.LFrobenius_Bimodule.dir) #1 (1.runit #0 2.ob) #1 (1.ob #0 2.lunit_inv) #1 (1.runit #0 2.ob) #1 (1.ob #0 2.runit_inv)),
+        inv => ((1.ob #0 2.LFrobenius_Bimodule.inv) #1 (1.ob #0 Unit.ob #0 2.lunit_inv) #1 (1.ob #0 Unit.ob #0 Unit.ob #0 2.runit_inv) #1 (1.runit #0 Unit.ob #0 2.ob #0 Unit.ob) #1 (1.runit #0 2.ob #0 Unit.ob))
+            #2 ((1.ob #0 2.lunit_inv #0 Unit.ob) #1 (1.ob #0 Unit.ob #0 2.LFrobenius_Bimodule.inv) #1 (1.ob #0 Unit.ob #0 Unit.ob #0 2.runit_inv) #1 (1.runit #0 Unit.ob #0 2.ob #0 Unit.ob) #1 (1.runit #0 2.ob #0 Unit.ob))
+            #2 ((Idem.dir #0 Unit.ob) #1 (1.ob #0 2.Right_LFrobenius_Module.inv))
     ],
     let Left_RFrobenius_Module :: Equation = [
-        dir => ((Unit.ob #0 Idem.inv) #1 (1st.Left_RFrobenius_Module.dir #0 2nd.ob))
-            #2 ((Unit.ob #0 1st.ob #0 2nd.lunit_inv) #1 (Unit.ob #0 1st.ob #0 Unit.ob #0 2nd.lunit_inv) #1 (Unit.ob #0 1st.runit #0 Unit.ob #0 2nd.ob) #1 (1st.Bimodule.inv #0 2nd.ob) #1 (1st.lunit_inv #0 2nd.ob))
-            #2 ((Unit.ob #0 1st.ob #0 2nd.lunit_inv) #1 (1st.Bimodule.inv #0 2nd.ob) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.runit #0 2nd.ob) #1 (1st.lunit_inv #0 2nd.ob)),
-        inv => ((Unit.ob #0 1st.ob #0 2nd.lunit_inv) #1 (1st.Bimodule.dir #0 2nd.ob) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.runit #0 2nd.ob) #1 (1st.lunit_inv #0 2nd.ob))
-            #2 ((Unit.ob #0 1st.ob #0 2nd.lunit_inv) #1 (Unit.ob #0 1st.ob #0 Unit.ob #0 2nd.lunit_inv) #1 (Unit.ob #0 1st.runit #0 Unit.ob #0 2nd.ob) #1 (1st.Bimodule.dir #0 2nd.ob) #1 (1st.lunit_inv #0 2nd.ob))
-            #2 ((Unit.ob #0 Idem.dir) #1 (1st.Left_RFrobenius_Module.inv #0 2nd.ob))
+        dir => ((Unit.ob #0 Idem.inv) #1 (1.Left_RFrobenius_Module.dir #0 2.ob))
+            #2 ((Unit.ob #0 1.ob #0 2.lunit_inv) #1 (Unit.ob #0 1.ob #0 Unit.ob #0 2.lunit_inv) #1 (Unit.ob #0 1.runit #0 Unit.ob #0 2.ob) #1 (1.Bimodule.inv #0 2.ob) #1 (1.lunit_inv #0 2.ob))
+            #2 ((Unit.ob #0 1.ob #0 2.lunit_inv) #1 (1.Bimodule.inv #0 2.ob) #1 (1.ob #0 2.lunit_inv) #1 (1.runit #0 2.ob) #1 (1.lunit_inv #0 2.ob)),
+        inv => ((Unit.ob #0 1.ob #0 2.lunit_inv) #1 (1.Bimodule.dir #0 2.ob) #1 (1.ob #0 2.lunit_inv) #1 (1.runit #0 2.ob) #1 (1.lunit_inv #0 2.ob))
+            #2 ((Unit.ob #0 1.ob #0 2.lunit_inv) #1 (Unit.ob #0 1.ob #0 Unit.ob #0 2.lunit_inv) #1 (Unit.ob #0 1.runit #0 Unit.ob #0 2.ob) #1 (1.Bimodule.dir #0 2.ob) #1 (1.lunit_inv #0 2.ob))
+            #2 ((Unit.ob #0 Idem.dir) #1 (1.Left_RFrobenius_Module.inv #0 2.ob))
     ],
     let Right_RFrobenius_Module :: Equation = [
-        dir => ((1st.ob #0 2nd.Right_RFrobenius_Module.dir) #1 (Idem.inv #0 Unit.ob))
-            #2 ((1st.ob #0 2nd.runit) #1 (1st.ob #0 2nd.Bicomodule.dir) #1 (1st.ob #0 Unit.ob #0 2nd.lunit_inv #0 Unit.ob) #1 (1st.runit #0 Unit.ob #0 2nd.ob #0 Unit.ob) #1 (1st.runit #0 2nd.ob #0 Unit.ob))
-            #2 ((1st.ob #0 2nd.runit) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.ob #0 Unit.ob #0 2nd.Bicomodule.dir) #1 (1st.runit #0 Unit.ob #0 2nd.ob #0 Unit.ob) #1 (1st.runit #0 2nd.ob #0 Unit.ob)),
-        inv => ((1st.ob #0 2nd.runit) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.ob #0 Unit.ob #0 2nd.Bicomodule.inv) #1 (1st.runit #0 Unit.ob #0 2nd.ob #0 Unit.ob) #1 (1st.runit #0 2nd.ob #0 Unit.ob))
-            #2 ((1st.ob #0 2nd.runit) #1 (1st.ob #0 2nd.Bicomodule.inv) #1 (1st.runit #0 2nd.ob #0 Unit.ob) #1 (1st.ob #0 2nd.lunit_inv #0 Unit.ob) #1 (1st.runit #0 2nd.ob #0 Unit.ob))
-            #2 ((1st.ob #0 2nd.Right_RFrobenius_Module.inv) #1 (Idem.dir #0 Unit.ob))
+        dir => ((1.ob #0 2.Right_RFrobenius_Module.dir) #1 (Idem.inv #0 Unit.ob))
+            #2 ((1.ob #0 2.runit) #1 (1.ob #0 2.Bicomodule.dir) #1 (1.ob #0 Unit.ob #0 2.lunit_inv #0 Unit.ob) #1 (1.runit #0 Unit.ob #0 2.ob #0 Unit.ob) #1 (1.runit #0 2.ob #0 Unit.ob))
+            #2 ((1.ob #0 2.runit) #1 (1.ob #0 2.lunit_inv) #1 (1.ob #0 Unit.ob #0 2.Bicomodule.dir) #1 (1.runit #0 Unit.ob #0 2.ob #0 Unit.ob) #1 (1.runit #0 2.ob #0 Unit.ob)),
+        inv => ((1.ob #0 2.runit) #1 (1.ob #0 2.lunit_inv) #1 (1.ob #0 Unit.ob #0 2.Bicomodule.inv) #1 (1.runit #0 Unit.ob #0 2.ob #0 Unit.ob) #1 (1.runit #0 2.ob #0 Unit.ob))
+            #2 ((1.ob #0 2.runit) #1 (1.ob #0 2.Bicomodule.inv) #1 (1.runit #0 2.ob #0 Unit.ob) #1 (1.ob #0 2.lunit_inv #0 Unit.ob) #1 (1.runit #0 2.ob #0 Unit.ob))
+            #2 ((1.ob #0 2.Right_RFrobenius_Module.inv) #1 (Idem.dir #0 Unit.ob))
     ]
 (* End local definitions *) }
 
@@ -416,35 +416,35 @@ let total Tensor :: Object = [
 (* A proof that the dual choice for the identity on a pair is equivalent *)
 @Pair 
 let Id_Flip :: Equation = [
-    dir => ((1st.ob #0 2nd.LUnit_Inv.RCodId.inv) #1 (1st.RUnit.LDomId.inv #0 2nd.ob))
-        #2 ((1st.RUnit_Inversion.inv #0 2nd.ob) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.ob #0 Unit.ob #0 2nd.LUnit_Inversion.inv) #1 (1st.runit #0 2nd.ob))
-        #2 ((1st.ob #0 2nd.Left_Comodule.inv) #1 (1st.ob #0 Unit.ob #0 2nd.lunit) #1 (1st.runit_inv #0 Unit.ob #0 2nd.ob) #1 (1st.Right_Module.dir #0 2nd.ob))
-        #2 ((1st.runit_inv #0 2nd.ob) #1 (1st.ob #0 Unit.ob #0 2nd.lunit_inv) #1 (1st.ob #0 Unit.RFrobenius.dir #0 2nd.ob) #1 (1st.runit #0 Unit.ob #0 2nd.ob) #1 (1st.ob #0 2nd.lunit))
-        #2 ((1st.runit_inv #0 2nd.ob) #1 (1st.ob #0 Unit.ob #0 2nd.lunit_inv) #1 (1st.ob #0 Unit.LFrobenius.inv #0 2nd.ob) #1 (1st.ob #0 Unit.ob #0 2nd.lunit) #1 (1st.runit #0 2nd.ob))
-        #2 ((1st.Right_Comodule.inv #0 2nd.ob) #1 (1st.runit #0 Unit.ob #0 2nd.ob) #1 (1st.ob #0 Unit.ob #0 2nd.lunit_inv) #1 (1st.ob #0 2nd.Left_Module.dir))
-        #2 ((1st.ob #0 2nd.LUnit_Inversion.dir) #1 (1st.runit_inv #0 2nd.ob) #1 (1st.RUnit_Inversion.dir #0 Unit.ob #0 2nd.ob) #1 (1st.ob #0 2nd.lunit))
-        #2 ((1st.RUnit_Inv.LCodId.dir #0 2nd.ob) #1 (1st.ob #0 2nd.LUnit.RDomId.dir)),
-    inv => ((1st.RUnit_Inv.LCodId.inv #0 2nd.ob) #1 (1st.ob #0 2nd.LUnit.RDomId.inv))
-        #2 ((1st.ob #0 2nd.LUnit_Inversion.inv) #1 (1st.runit_inv #0 2nd.ob) #1 (1st.RUnit_Inversion.inv #0 Unit.ob #0 2nd.ob) #1 (1st.ob #0 2nd.lunit))
-        #2 ((1st.Right_Comodule.dir #0 2nd.ob) #1 (1st.runit #0 Unit.ob #0 2nd.ob) #1 (1st.ob #0 Unit.ob #0 2nd.lunit_inv) #1 (1st.ob #0 2nd.Left_Module.inv))
-        #2 ((1st.ob #0 2nd.lunit_inv) #1 (1st.runit_inv #0 Unit.ob #0 2nd.ob) #1 (1st.ob #0 Unit.LFrobenius.dir #0 2nd.ob) #1 (1st.ob #0 Unit.ob #0 2nd.lunit) #1 (1st.runit #0 2nd.ob))
-        #2 ((1st.ob #0 2nd.lunit_inv) #1 (1st.runit_inv #0 Unit.ob #0 2nd.ob) #1 (1st.ob #0 Unit.RFrobenius.inv #0 2nd.ob) #1 (1st.runit #0 Unit.ob #0 2nd.ob) #1 (1st.ob #0 2nd.lunit))
-        #2 ((1st.ob #0 2nd.Left_Comodule.dir) #1 (1st.ob #0 Unit.ob #0 2nd.lunit) #1 (1st.runit_inv #0 Unit.ob #0 2nd.ob) #1 (1st.Right_Module.inv #0 2nd.ob))
-        #2 ((1st.RUnit_Inversion.dir #0 2nd.ob) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.ob #0 Unit.ob #0 2nd.LUnit_Inversion.dir) #1 (1st.runit #0 2nd.ob))
-        #2 ((1st.ob #0 2nd.LUnit_Inv.RCodId.dir) #1 (1st.RUnit.LDomId.dir #0 2nd.ob))
+    dir => ((1.ob #0 2.LUnit_Inv.RCodId.inv) #1 (1.RUnit.LDomId.inv #0 2.ob))
+        #2 ((1.RUnit_Inversion.inv #0 2.ob) #1 (1.ob #0 2.lunit_inv) #1 (1.ob #0 Unit.ob #0 2.LUnit_Inversion.inv) #1 (1.runit #0 2.ob))
+        #2 ((1.ob #0 2.Left_Comodule.inv) #1 (1.ob #0 Unit.ob #0 2.lunit) #1 (1.runit_inv #0 Unit.ob #0 2.ob) #1 (1.Right_Module.dir #0 2.ob))
+        #2 ((1.runit_inv #0 2.ob) #1 (1.ob #0 Unit.ob #0 2.lunit_inv) #1 (1.ob #0 Unit.RFrobenius.dir #0 2.ob) #1 (1.runit #0 Unit.ob #0 2.ob) #1 (1.ob #0 2.lunit))
+        #2 ((1.runit_inv #0 2.ob) #1 (1.ob #0 Unit.ob #0 2.lunit_inv) #1 (1.ob #0 Unit.LFrobenius.inv #0 2.ob) #1 (1.ob #0 Unit.ob #0 2.lunit) #1 (1.runit #0 2.ob))
+        #2 ((1.Right_Comodule.inv #0 2.ob) #1 (1.runit #0 Unit.ob #0 2.ob) #1 (1.ob #0 Unit.ob #0 2.lunit_inv) #1 (1.ob #0 2.Left_Module.dir))
+        #2 ((1.ob #0 2.LUnit_Inversion.dir) #1 (1.runit_inv #0 2.ob) #1 (1.RUnit_Inversion.dir #0 Unit.ob #0 2.ob) #1 (1.ob #0 2.lunit))
+        #2 ((1.RUnit_Inv.LCodId.dir #0 2.ob) #1 (1.ob #0 2.LUnit.RDomId.dir)),
+    inv => ((1.RUnit_Inv.LCodId.inv #0 2.ob) #1 (1.ob #0 2.LUnit.RDomId.inv))
+        #2 ((1.ob #0 2.LUnit_Inversion.inv) #1 (1.runit_inv #0 2.ob) #1 (1.RUnit_Inversion.inv #0 Unit.ob #0 2.ob) #1 (1.ob #0 2.lunit))
+        #2 ((1.Right_Comodule.dir #0 2.ob) #1 (1.runit #0 Unit.ob #0 2.ob) #1 (1.ob #0 Unit.ob #0 2.lunit_inv) #1 (1.ob #0 2.Left_Module.inv))
+        #2 ((1.ob #0 2.lunit_inv) #1 (1.runit_inv #0 Unit.ob #0 2.ob) #1 (1.ob #0 Unit.LFrobenius.dir #0 2.ob) #1 (1.ob #0 Unit.ob #0 2.lunit) #1 (1.runit #0 2.ob))
+        #2 ((1.ob #0 2.lunit_inv) #1 (1.runit_inv #0 Unit.ob #0 2.ob) #1 (1.ob #0 Unit.RFrobenius.inv #0 2.ob) #1 (1.runit #0 Unit.ob #0 2.ob) #1 (1.ob #0 2.lunit))
+        #2 ((1.ob #0 2.Left_Comodule.dir) #1 (1.ob #0 Unit.ob #0 2.lunit) #1 (1.runit_inv #0 Unit.ob #0 2.ob) #1 (1.Right_Module.inv #0 2.ob))
+        #2 ((1.RUnit_Inversion.dir #0 2.ob) #1 (1.ob #0 2.lunit_inv) #1 (1.ob #0 Unit.ob #0 2.LUnit_Inversion.dir) #1 (1.runit #0 2.ob))
+        #2 ((1.ob #0 2.LUnit_Inv.RCodId.dir) #1 (1.RUnit.LDomId.dir #0 2.ob))
 ]
 ***)
 
 (* The "diagonal" pair of an object *)
 @Object
 let Pair :: Pair = [
-    1st => Object, 2nd => Object
+    1 => Object, 2 => Object
 ]
 
 (* Reversing a pair of objects *)
 @Pair
 let Rev :: Pair = [
-    1st => 2nd, 2nd => 1st
+    1 => 2, 2 => 1
 ]
 
 @Type
