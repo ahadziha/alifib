@@ -193,16 +193,18 @@ let right_rfrobenius_from_lfrobenius = ((ob #0 Unit.split) #1 (RUnit.LDomId.inv 
 ***)
 
 @Type
-(* A pair of objects can act as a single object *)
+(* A pair of objects *)
 Pair <<= {
     include Unit,
 
     attach 1st :: Object along [ Unit => Unit ],
     attach 2nd :: Object along [ Unit => Unit ],
+}
 
-    let ob = 1st.ob 2nd.ob,
+(* Defining the tensor of a pair of objects *)
+@Pair { (* Start local definitions *) 
     let id = (1st.ob 2nd.lunit_inv) (1st.runit 2nd.ob),
-    let total Idem :: Equation = [
+    let Idem :: Equation = [
         dir => ((1st.ob #0 2nd.Left_Comodule.inv) #1 (1st.Right_Module.dir #0 2nd.ob))
             #2 ((1st.ob #0 2nd.lunit_inv) #1 (1st.ob #0 Unit.Split_Merge.dir #0 2nd.ob) #1 (1st.runit #0 2nd.ob))
             #2 ((1st.ob #0 2nd.LUnit_Inv.LCodId.dir) #1 (1st.runit #0 2nd.ob)),
@@ -210,7 +212,7 @@ Pair <<= {
             #2 ((1st.ob #0 2nd.lunit_inv) #1 (1st.ob #0 Unit.Split_Merge.inv #0 2nd.ob) #1 (1st.runit #0 2nd.ob))
             #2 ((1st.ob #0 2nd.Left_Comodule.dir) #1 (1st.Right_Module.inv #0 2nd.ob))
     ],
-    let total Wire :: Aux.Wire = [ id => id, Idem => Idem ],
+    let Wire :: Aux.Wire = [ id => id, Idem => Idem ],
 
     let lunit = (1st.lunit 2nd.ob) id,
     let runit = (1st.ob 2nd.runit) id,
@@ -390,26 +392,25 @@ Pair <<= {
         inv => ((1st.ob #0 2nd.runit) #1 (1st.ob #0 2nd.lunit_inv) #1 (1st.ob #0 Unit.ob #0 2nd.Bicomodule.inv) #1 (1st.runit #0 Unit.ob #0 2nd.ob #0 Unit.ob) #1 (1st.runit #0 2nd.ob #0 Unit.ob))
             #2 ((1st.ob #0 2nd.runit) #1 (1st.ob #0 2nd.Bicomodule.inv) #1 (1st.runit #0 2nd.ob #0 Unit.ob) #1 (1st.ob #0 2nd.lunit_inv #0 Unit.ob) #1 (1st.runit #0 2nd.ob #0 Unit.ob))
             #2 ((1st.ob #0 2nd.Right_RFrobenius_Module.inv) #1 (Idem.dir #0 Unit.ob))
-    ],
-
-    (* Tensoring = representation of the pair as a single object *)
-    let total Tensor :: Object = [
-        Wire => Wire, Unit => Unit,
-        LUnit => LUnit, RUnit => RUnit,
-        LUnit_Inv => LUnit_Inv, RUnit_Inv => RUnit_Inv,
-        LUnit_Inversion => LUnit_Inversion, 
-        RUnit_Inversion => RUnit_Inversion,
-        Left_Module => Left_Module, Right_Module => Right_Module,
-        Left_Comodule => Left_Comodule, Right_Comodule => Right_Comodule,
-        Bimodule => Bimodule, Bicomodule => Bicomodule,
-        LFrobenius_Bimodule => LFrobenius_Bimodule,
-        RFrobenius_Bimodule => RFrobenius_Bimodule,
-        Left_LFrobenius_Module => Left_LFrobenius_Module,
-        Right_LFrobenius_Module => Right_LFrobenius_Module,
-        Left_RFrobenius_Module => Left_RFrobenius_Module,
-        Right_RFrobenius_Module => Right_RFrobenius_Module
     ]
-},
+(* End local definitions *) }
+
+let total Tensor :: Object = [
+    Wire => Wire, Unit => Unit,
+    LUnit => LUnit, RUnit => RUnit,
+    LUnit_Inv => LUnit_Inv, RUnit_Inv => RUnit_Inv,
+    LUnit_Inversion => LUnit_Inversion, 
+    RUnit_Inversion => RUnit_Inversion,
+    Left_Module => Left_Module, Right_Module => Right_Module,
+    Left_Comodule => Left_Comodule, Right_Comodule => Right_Comodule,
+    Bimodule => Bimodule, Bicomodule => Bicomodule,
+    LFrobenius_Bimodule => LFrobenius_Bimodule,
+    RFrobenius_Bimodule => RFrobenius_Bimodule,
+    Left_LFrobenius_Module => Left_LFrobenius_Module,
+    Right_LFrobenius_Module => Right_LFrobenius_Module,
+    Left_RFrobenius_Module => Left_RFrobenius_Module,
+    Right_RFrobenius_Module => Right_RFrobenius_Module
+]
 
 (*** 
 (* A proof that the dual choice for the identity on a pair is equivalent *)

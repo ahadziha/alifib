@@ -18,7 +18,7 @@ Monoid <<= {
 
     (* Monoid multiplication *)
     attach M :: Monoidal.Morphism along [
-        Dom => ( map [ 1st => A, 2nd => A ] :: Monoidal.Pair ).Tensor,
+        Dom => A.Pair.Tensor,
         Cod => A
     ],
     let m = M.mor,
