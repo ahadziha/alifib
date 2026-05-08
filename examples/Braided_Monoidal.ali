@@ -297,7 +297,7 @@ let Pair :: Pair = [
 
 (* 
 	The pair of an object with the unit: 
-    A.With_Unit is “(A, Unit)”
+    A.With_Unit = “(A, Unit)”
 *)
 @Object { (* Start local definitions *)
     let Swap_With_Unit :: Aux.Braid = [
@@ -506,7 +506,10 @@ let With_Unit :: Pair = [
     Under_YangBaxter_221 => Swap_With_Unit_221,
 ]
 
-(* Reversing a pair of objects: “(A, B)”.Rev is “(B, A)” *)
+(* 
+	Reversing a pair of objects: 
+    “(A, B)”.Rev = “(B, A)” 
+*)
 @Pair
 let Rev :: Pair = [
     1 => 2, 2 => 1,
@@ -530,7 +533,10 @@ let Rev :: Pair = [
     Under_YangBaxter_221 => Under_YangBaxter_112
 ]
 
-(* The tensor of a pair: “(A, B)”.Tensor = A \otimes B *)
+(* 
+	The tensor of a pair: 
+    “(A, B)”.Tensor = A \otimes B 
+*)
 @Pair { (* Start local definitions *)
     for Loc in [ Over, Under ] {
         let Pair_<Loc>_id = ((1.ob #0 Rev_<Loc>.LCodId.inv #0 2.ob) #1 (1.ob #0 1.ob #0 2.<Loc>.braid) #1 (1.<Loc>.braid #0 2.ob #0 2.ob) #1 (1.ob #0 <Loc>.braid #0 2.ob))

@@ -198,7 +198,8 @@ let right_rfrobenius_from_lfrobenius = ((ob #0 Unit.split) #1 (RUnit.LDomId.inv 
 
 @Type
 (*** 
-    A pair of objects 
+    A pair of objects:
+    “(A, B)”.1 = A, “(A, B)”.2 = B
 ***)
 Pair <<= {
     include Unit,
@@ -207,7 +208,10 @@ Pair <<= {
     attach 2 :: Object along [ Unit => Unit ],
 }
 
-(* Defining the tensor of a pair of objects *)
+(* 
+	The tensor of a pair: 
+    “(A, B)”.Tensor = A \otimes B 
+*)
 @Pair { (* Start local definitions *) 
     let id = (1.ob 2.lunit_inv) (1.runit 2.ob),
     let Idem :: Equation = [
@@ -441,13 +445,28 @@ let Id_Flip :: Equation = [
 ]
 ***)
 
-(* The "diagonal" pair of an object *)
+(* 
+	The pair of an object with the unit: 
+    A.With_Unit = “(A, Unit)”
+*)
+@Object
+let With_Unit :: Pair = [
+	1 => Object, 2 => Unit.Object
+]
+
+(* 
+	The "diagonal" pair of an object A,
+    A.Pair = “(A, A)”
+*)
 @Object
 let Pair :: Pair = [
     1 => Object, 2 => Object
 ]
 
-(* Reversing a pair of objects *)
+(* 
+	Reversing a pair of objects: 
+    “(A, B)”.Rev = “(B, A)” 
+*)
 @Pair
 let Rev :: Pair = [
     1 => 2, 2 => 1
