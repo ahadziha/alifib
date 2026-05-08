@@ -1291,7 +1291,12 @@ async function handleCommand(raw) {
       const code = `\n\n@${s.type_name}\nlet ${s.def_name} = ${s.expr}`;
       const doc = view.state.doc;
       const trimmed = doc.toString().trimEnd();
-      view.dispatch({ changes: { from: 0, to: doc.length, insert: trimmed + code + '\n' } });
+      const newText = trimmed + code + '\n';
+      view.dispatch({
+        changes: { from: 0, to: doc.length, insert: newText },
+        selection: { anchor: newText.length },
+        scrollIntoView: true,
+      });
       await refreshAccordion();
     }
   }
