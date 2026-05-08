@@ -193,19 +193,19 @@ Pair <<= {
     (* Equations for braidings *)
     attach Over_Inversion :: Equation along [
         lhs => over rev_under,
-        rhs => Planar.id
+        rhs => Planar.Tensor.id
     ],
     attach Under_Inversion :: Equation along [
         lhs => under rev_over,
-        rhs => Planar.id
+        rhs => Planar.Tensor.id
     ],
     attach Rev_Over_Inversion :: Equation along [
         lhs => rev_over under,
-        rhs => Planar.Rev.id
+        rhs => Planar.Rev.Tensor.id
     ],
     attach Rev_Under_Inversion :: Equation along [
         lhs => rev_under over,
-        rhs => Planar.Rev.id
+        rhs => Planar.Rev.Tensor.id
     ],
     for Loc in [ Over, Under ] {
         attach <Loc>_YangBaxter_112 :: Equation along [
