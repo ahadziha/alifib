@@ -777,22 +777,6 @@ let Rev_12 :: Triple = [
     Under_YangBaxter_312 => Under_YangBaxter_321,
     Under_YangBaxter_321 => Under_YangBaxter_312
 ],
-let Rev_13 :: Triple = [
-    1 => 3, 2 => 2, 3 => 1,
-    12 => 23.Rev, 13 => 13.Rev, 23 => 12.Rev,
-    Over_YangBaxter_123 => Over_YangBaxter_321,
-    Over_YangBaxter_132 => Over_YangBaxter_312,
-    Over_YangBaxter_213 => Over_YangBaxter_231,
-    Over_YangBaxter_231 => Over_YangBaxter_213,
-    Over_YangBaxter_312 => Over_YangBaxter_132,
-    Over_YangBaxter_321 => Over_YangBaxter_123,
-    Under_YangBaxter_123 => Under_YangBaxter_321,
-    Under_YangBaxter_132 => Under_YangBaxter_312,
-    Under_YangBaxter_213 => Under_YangBaxter_231,
-    Under_YangBaxter_231 => Under_YangBaxter_213,
-    Under_YangBaxter_312 => Under_YangBaxter_132,
-    Under_YangBaxter_321 => Under_YangBaxter_123
-],
 let Rev_23 :: Triple = [
     1 => 1, 2 => 3, 3 => 2,
     12 => 13, 13 => 12, 23 => 23.Rev,
@@ -808,7 +792,8 @@ let Rev_23 :: Triple = [
     Under_YangBaxter_231 => Under_YangBaxter_321,
     Under_YangBaxter_312 => Under_YangBaxter_213,
     Under_YangBaxter_321 => Under_YangBaxter_231
-]
+],
+let Rev_13 :: Triple = Rev_23.Rev_12.Rev_23
 
 (* Turning a pair into a triple by repeating one entry *)
 @Pair
@@ -1090,8 +1075,8 @@ let Tensor_Left :: Pair = Rev_23.Rev_12.Tensor_Right.Rev
 
 @Type
 (*** 
-    A quadruple of objects. Used for forming triples in which
-    one object is a tensor
+    A quadruple of objects. 
+    Useful for forming triples that involve tensors
 ***)
 Quadruple <<= {
     include Unit,

@@ -6,7 +6,9 @@
 include Monoidal_aux as Aux,
 let Equation = Aux.Equation,
 
-(* Monoidal unit *)
+(*** 
+    Monoidal unit 
+***)
 Unit <<= {
     pt,
 
@@ -55,7 +57,9 @@ Unit <<= {
     ]
 },
 
-(* A single object *)
+(*** 
+    A single object 
+***)
 Object <<= {
     include Unit,
     let unit = Unit.ob,
@@ -193,7 +197,9 @@ let right_rfrobenius_from_lfrobenius = ((ob #0 Unit.split) #1 (RUnit.LDomId.inv 
 ***)
 
 @Type
-(* A pair of objects *)
+(*** 
+    A pair of objects 
+***)
 Pair <<= {
     include Unit,
 
@@ -448,7 +454,9 @@ let Rev :: Pair = [
 ]
 
 @Type
-(* A morphism *)
+(*** 
+    A morphism 
+***)
 Morphism <<= {
     include Unit,
     let unit = Unit.ob,
