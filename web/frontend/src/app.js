@@ -202,6 +202,7 @@ function makeEditorState(doc) {
         { key: 'Shift-Tab', run: indentLess },
         { key: 'Mod-Enter', run: () => { void evaluateSource(); return true; } },
       ]),
+      EditorState.languageData.of(() => [{ commentTokens: { block: { open: '(*', close: '*)' } } }]),
       EditorView.updateListener.of(update => {
         if (update.docChanged) {
           const tab = activeTab();
