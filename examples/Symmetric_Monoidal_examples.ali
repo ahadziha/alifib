@@ -149,4 +149,22 @@ Commutative_Bimonoid <<= {
     	lhs => e d,
         rhs => I.id
     ]
+},
+
+(* 
+	A commutative Hopf monoid is a commutative
+    bimonoid with an antipode
+*)
+Commutative_Hopf_Monoid <<= Commutative_Bimonoid {
+	attach S :: Monoidal.Morphism along [
+    	Dom => A,
+        Cod => A,
+        Dom_Cod => A.Pair
+    ],
+    let s = S.mor,
+
+    attach Antipode :: Equation along [
+    	lhs => c (s a) m,
+        rhs => d e
+    ]
 }
