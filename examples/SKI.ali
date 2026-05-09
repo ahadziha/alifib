@@ -59,6 +59,20 @@ SKI <<= {
 let SKK = split (unit split)
 	(S #0 K #0 K) 
     (apply a) apply,
+(* 
+	T := S(K(SI))K,
+    Txy --> yx
+*)
+let T = split (unit split) (unit unit split) (unit unit unit split)
+	(S #0 K #0 S #0 I #0 K)
+    (a a apply a) (a apply a) (apply a) apply,
+(*
+	U := SII
+    SIIx --> xx
+*)
+let U = split (unit split)
+	(S #0 I #0 I)
+    (apply a) apply,
 (*  
 	B := S(KS)K,
     Bxyz --> x(yz)
@@ -67,12 +81,38 @@ let B = split (unit split) (unit unit split)
 	(S #0 K #0 S #0 K)
     (a apply a) (apply a) apply,
 (* 
-	Rev := S(K(SI))K,
-    (Rev)xy --> yx
+	C := S(BBS)(KK),
+    Cxyz --> xzy
 *)
-let Rev = split (unit split) (unit unit split) (unit unit unit split)
-	(S #0 K #0 S #0 I #0 K)
-    (a a apply a) (a apply a) (apply a) apply,
+let C = split (unit split) (unit unit split) (unit unit unit split) (unit unit unit unit split)
+	(S #0 B #0 B #0 S #0 K #0 K)
+    (a #0 ((apply a) apply) #0 apply) (apply a) apply,
+(*
+	W := SS(SK),
+    Wxy --> xyy
+*)
+let W = split (unit split) (unit unit split)
+	(S #0 S #0 S #0 K)
+    (a a apply) (apply a) apply,
+(*
+	Y := BU(CBU),
+    Yx -> x(Yx)
+*)
+let Y = split (unit split) (unit unit split) (unit unit unit split)
+	(B #0 U #0 C #0 B #0 U)
+    (a a apply a) (a a apply) (apply a) apply,
+(* 
+	Church numerals.
+    Succ := S(S(KS)K),
+    Zero := KI
+*)
+let Succ = split (unit split) (unit unit split) (unit unit unit split)
+	(S #0 S #0 K #0 S #0 K)
+    (a a apply a) (a apply a) (a apply) apply,
+let Zero = split (K #0 I) apply,
+let One = split (Succ #0 Zero) apply,
+let Two = split (Succ #0 One) apply,
+let Three = split (Succ #0 Two) apply,
 
 
 @Type
