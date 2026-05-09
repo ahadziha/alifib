@@ -1,0 +1,75 @@
+(* 
+    Auxiliary gadgets for term rewriting systems 
+*)
+
+@Type
+(* Wire with identity *)
+Wire <<= {
+    pt,
+
+    wire: pt -> pt,
+
+    id: wire -> wire,
+
+    Idem: id id -> id
+},
+
+(* One-input, one-output node *)
+Node_1_to_1 <<= {
+    pt,
+
+    attach Dom :: Wire along [ pt => pt ],
+    attach Cod :: Wire along [ pt => pt ],
+
+    node: Dom.wire -> Cod.wire,
+
+    DomId: Dom.id node -> node,
+    CodId: node Cod.id -> node
+},
+
+(* Two-input, one-output node *)
+Node_2_to_1 <<= {
+    pt,
+
+    attach LDom :: Wire along [ pt => pt ],
+    attach RDom :: Wire along [ pt => pt ],
+    attach Cod :: Wire along [ pt => pt ],
+
+    node: LDom.wire RDom.wire -> Cod.wire,
+
+    LDomId: (LDom.id RDom.wire) node -> node,
+    RDomId: (LDom.wire RDom.id) node -> node,
+    CodId: node Cod.id -> node
+},
+
+(* One-input, two-output node *)
+Node_1_to_2 <<= {
+    pt,
+
+    attach Dom :: Wire along [ pt => pt ],
+    attach LCod :: Wire along [ pt => pt ],
+    attach RCod :: Wire along [ pt => pt ],
+
+    node: Dom.wire -> LCod.wire RCod.wire,
+
+	DomId: Dom.id node -> node,
+    LCodId: node (LCod.id RCod.wire) -> node,
+    RCodId: node (LCod.wire RCod.id) -> node
+},
+
+(* Two-input, two-output node *)
+Node_2_to_2 <<= {
+    pt,
+
+    attach LDom :: Wire along [ pt => pt ],
+    attach RDom :: Wire along [ pt => pt ],
+    attach LCod :: Wire along [ pt => pt ],
+    attach RCod :: Wire along [ pt => pt ],
+
+    node: LDom.wire RDom.wire -> LCod.wire RCod.wire,
+
+	LDomId: (LDom.id RDom.wire) node -> node,
+    RDomId: (LDom.wire RDom.id) node -> node,
+    LCodId: node (LCod.id RCod.wire) -> node,
+    RCodId: node (LCod.wire RCod.id) -> node
+}
