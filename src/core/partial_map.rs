@@ -75,6 +75,11 @@ impl PartialMap {
             .ok_or_else(|| Error::new("not in the domain of definition"))
     }
 
+    /// Return the cell data for `tag`, if it is in the domain of this partial map.
+    pub fn cell_data(&self, tag: &Tag) -> Option<&CellData> {
+        self.table.get(tag).map(|e| &e.cell_data)
+    }
+
     /// Return all (dim, tags) pairs sorted by dimension, tags in insertion order.
     pub fn domain_by_dim(&self) -> Vec<(usize, Vec<Tag>)> {
         let mut result: Vec<(usize, Vec<Tag>)> = self.by_dim.iter()

@@ -6,7 +6,7 @@ use alifib::output::{render_solved_hole, Store};
 
 fn example_path(name: &str) -> String {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("examples")
+        .join("legacy/examples")
         .join(name)
         .to_string_lossy()
         .into_owned()

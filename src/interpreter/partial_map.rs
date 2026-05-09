@@ -257,14 +257,25 @@ pub fn interpret_pmap_def(
 
 /// Produce the starting map for an extension block.
 ///
-/// If a prefix map is given, evaluate it; otherwise start from the empty map on the domain.
+/// If a prefix map is given, evaluate it and reinterpret it as a partial map
+/// from `ctx.domain`, validating that all its entries are in the domain.
+/// Otherwise start from the empty map on the domain.
 fn initial_eval_map(ctx: &PartialMapCtx<'_>, prefix: &Option<Box<Spanned<ast::PartialMap>>>) -> Step<EvalMap> {
+    let domain = Arc::new(ctx.domain.clone());
     match prefix {
         None => (
-            Some(EvalMap { map: PartialMap::empty(), domain: Arc::new(ctx.domain.clone()) }),
+            Some(EvalMap { map: PartialMap::empty(), domain }),
             InterpResult::ok(ctx.context.clone()),
         ),
-        Some(prefix) => interpret_partial_map(ctx.context, ctx.scope, ctx.domain, prefix),
+        Some(prefix) => {
+            let (eval_opt, result) = interpret_partial_map(ctx.context, ctx.scope, ctx.domain, prefix);
+            let Some(eval) = eval_opt else { return (None, result); };
+            let result = validate_map_as_source(
+                &eval.map, &eval.domain, ctx.domain, prefix.span, result,
+            );
+            if result.has_errors() { return (None, result); }
+            (Some(EvalMap { map: eval.map, domain }), result)
+        }
     }
 }
 
@@ -295,6 +306,55 @@ fn eval_pmap_clauses(
     (Some(map), result)
 }
 
+/// Check that every entry in `map` is defined on a generator of `source`, and
+/// that local cells have compatible boundary data.
+fn validate_map_as_source(
+    map: &PartialMap,
+    map_domain: &Complex,
+    source: &Complex,
+    span: Span,
+    mut result: InterpResult,
+) -> InterpResult {
+    for (_, tags) in map.domain_by_dim() {
+        for tag in &tags {
+            if source.find_generator_by_tag(tag).is_none() {
+                let name = map_domain.find_generator_by_tag(tag)
+                    .map(String::as_str).unwrap_or("?");
+                result.add_error(make_error(span,
+                    format!("Map defined on `{}` which is not in the specified domain", name)));
+                return result;
+            }
+            if let Tag::Local(local_name) = tag {
+                match (source.find_local_cell(local_name), map.cell_data(tag)) {
+                    (Some(source_data), Some(map_data)) => {
+                        if !cell_data_compatible(source_data, map_data) {
+                            result.add_error(make_error(span,
+                                "Local cell mismatch between map and specified domain"));
+                            return result;
+                        }
+                    }
+                    _ => {
+                        result.add_error(make_error(span,
+                            "Local cell mismatch between map and specified domain"));
+                        return result;
+                    }
+                }
+            }
+        }
+    }
+    result
+}
+
+fn cell_data_compatible(lhs: &CellData, rhs: &CellData) -> bool {
+    match (lhs, rhs) {
+        (CellData::Zero, CellData::Zero) => true,
+        (CellData::Boundary { boundary_in: in_l, boundary_out: out_l },
+         CellData::Boundary { boundary_in: in_r, boundary_out: out_r }) =>
+            Diagram::isomorphic(in_l, in_r) && Diagram::isomorphic(out_l, out_r),
+        _ => false,
+    }
+}
+
 /// Interpret an extension-style partial map (`{ prefix? clause* }`).
 ///
 /// Evaluates the optional prefix, then each clause in order, enriching any holes
@@ -305,16 +365,15 @@ fn interpret_partial_map_ext(ctx: &PartialMapCtx<'_>, ext: &PartialMapExt) -> St
         return (None, prefix_result);
     };
 
-    let effective_domain = Arc::clone(&initial.domain);
-    let clauses_ctx = PartialMapCtx { context: &prefix_result.context, domain: &effective_domain, ..*ctx };
+    let clauses_ctx = PartialMapCtx { context: &prefix_result.context, domain: &initial.domain, ..*ctx };
     let (map_opt, clause_result) = eval_pmap_clauses(&clauses_ctx, initial.map, &ext.clauses);
     let Some(current_map) = map_opt else {
         return (None, prefix_result.merge(clause_result));
     };
 
     let mut result = prefix_result.merge(clause_result);
-    enrich_holes(&mut result, ctx.scope, &effective_domain, &current_map);
-    (Some(EvalMap { map: current_map, domain: effective_domain }), result)
+    enrich_holes(&mut result, ctx.scope, &initial.domain, &current_map);
+    (Some(EvalMap { map: current_map, domain: initial.domain }), result)
 }
 
 /// Tag all holes added since `prev_hole_count` with the source cell tag, so that

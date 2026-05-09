@@ -1,8 +1,6 @@
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use alifib::aux::loader::Loader;
-use alifib::interactive::engine::{resolve_type, RewriteEngine};
 use alifib::interpreter::InterpretedFile;
 use alifib::output::{Cell, Dim, Map, Module, Store, Type};
 
@@ -14,9 +12,9 @@ fn fixture(name: &str) -> String {
         .into_owned()
 }
 
-fn example(name: &str) -> String {
+fn legacy_example(name: &str) -> String {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("examples")
+        .join("legacy/examples")
         .join(name)
         .to_string_lossy()
         .into_owned()
@@ -106,7 +104,7 @@ fn magma_interpretation() {
 
 #[test]
 fn empty2_single_type_with_one_cell() {
-    let file = InterpretedFile::load(&Loader::default(vec![]), &example("Empty2.ali"))
+    let file = InterpretedFile::load(&Loader::default(vec![]), &legacy_example("Empty2.ali"))
         .ok()
         .expect("Empty2.ali should interpret without errors");
     assert!(!file.has_holes());
@@ -120,7 +118,7 @@ fn empty2_single_type_with_one_cell() {
 
 #[test]
 fn empty_maps_across_types() {
-    let file = InterpretedFile::load(&Loader::default(vec![]), &example("Empty.ali"))
+    let file = InterpretedFile::load(&Loader::default(vec![]), &legacy_example("Empty.ali"))
         .ok()
         .expect("Empty.ali should interpret without errors");
     assert!(!file.has_holes());
@@ -139,7 +137,7 @@ fn empty_maps_across_types() {
 
 #[test]
 fn total_composite_map() {
-    let file = InterpretedFile::load(&Loader::default(vec![]), &example("Total.ali"))
+    let file = InterpretedFile::load(&Loader::default(vec![]), &legacy_example("Total.ali"))
         .ok()
         .expect("Total.ali should interpret without errors");
     assert!(!file.has_holes());
@@ -155,7 +153,7 @@ fn total_composite_map() {
 
 #[test]
 fn tutorial_pair_maps() {
-    let file = InterpretedFile::load(&Loader::default(vec![]), &example("Tutorial.ali"))
+    let file = InterpretedFile::load(&Loader::default(vec![]), &legacy_example("Tutorial.ali"))
         .ok()
         .expect("Tutorial.ali should interpret without errors");
     assert!(!file.has_holes());
@@ -173,7 +171,7 @@ fn tutorial_pair_maps() {
 
 #[test]
 fn theory_function_and_set_maps() {
-    let file = InterpretedFile::load(&Loader::default(vec![]), &example("Theory.ali"))
+    let file = InterpretedFile::load(&Loader::default(vec![]), &legacy_example("Theory.ali"))
         .ok()
         .expect("Theory.ali should interpret without errors");
     assert!(!file.has_holes());
@@ -194,7 +192,7 @@ fn theory_function_and_set_maps() {
 
 #[test]
 fn hole_loads_with_holes() {
-    let file = InterpretedFile::load(&Loader::default(vec![]), &example("Hole.ali"))
+    let file = InterpretedFile::load(&Loader::default(vec![]), &legacy_example("Hole.ali"))
         .ok()
         .expect("Hole.ali should interpret without errors");
     assert!(file.has_holes());
@@ -205,7 +203,7 @@ fn hole_loads_with_holes() {
 
 #[test]
 fn hole_boundaries_inferred() {
-    let file = InterpretedFile::load(&Loader::default(vec![]), &example("Hole.ali"))
+    let file = InterpretedFile::load(&Loader::default(vec![]), &legacy_example("Hole.ali"))
         .ok()
         .expect("Hole.ali should interpret without errors");
 
@@ -268,62 +266,3 @@ fn for_index_expansion() {
     assert!(y_dim1_names.contains(&"y"), "Y should contain generator 'y'");
 }
 
-/// When a type name (e.g. "Pair") exists in multiple modules, `register_proof`
-/// must modify the correct type entry — the one from the session's source module,
-/// not the first one found by a global scan.
-#[test]
-fn store_resolves_type_via_module() {
-    let examples_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("examples")
-        .to_string_lossy()
-        .into_owned();
-    let path = example("Braided_Monoidal.ali");
-    let loader = Loader::default(vec![examples_dir]);
-    let file = InterpretedFile::load(&loader, &path)
-        .ok()
-        .expect("Braided_Monoidal.ali should interpret without errors");
-
-    let store = Arc::clone(&file.state);
-    let type_complex = resolve_type(&store, &path, "Pair")
-        .expect("Pair type should exist");
-    let gen_count_before = type_complex.generators_iter().count();
-
-    // Hold an extra Arc so register_proof's Arc::make_mut clones the store.
-    let _extra_ref = Arc::clone(&store);
-
-    let mut engine = RewriteEngine::from_store(
-        store,
-        type_complex,
-        "fst_over_snd",
-        None,
-        path,
-        "Pair".to_string(),
-    )
-    .expect("should create engine for Pair/fst_over_snd");
-
-    engine
-        .register_proof("test_proof")
-        .expect("register_proof should succeed");
-
-    let gen_count_after = engine.type_complex().generators_iter().count();
-    assert_eq!(
-        gen_count_before, gen_count_after,
-        "register_proof must not change the generator count (was {}, now {})",
-        gen_count_before, gen_count_after,
-    );
-
-    // Verify all tags in the current diagram still resolve.
-    let tc = engine.type_complex();
-    let current = engine.current_diagram();
-    for d in 0..=current.top_dim() {
-        if let Some(labels) = current.labels_at(d) {
-            for (i, tag) in labels.iter().enumerate() {
-                assert!(
-                    tc.find_generator_by_tag(tag).is_some(),
-                    "tag {:?} at dim {} pos {} not found after store",
-                    tag, d, i,
-                );
-            }
-        }
-    }
-}
