@@ -34,7 +34,9 @@ SKI <<= {
     let I = I_comb.node,
     
     attach Apply :: Binary along [ 
-        LDom => A, RDom => A, Cod => A
+        LDom => A, RDom => A, Cod => A,
+        LDom_RDom => A.Pair, LDom_Cod => A.Pair,
+        RDom_Cod => A.Pair
     ],
     let apply = Apply.node,
 
