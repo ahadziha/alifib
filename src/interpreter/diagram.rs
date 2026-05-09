@@ -290,6 +290,11 @@ pub fn interpret_dcomponent(
             (eval_map_opt.map(|em| Component::Value(Term::Map(em))), result)
         }
         DComponent::PartialMap(PartialMapBasic::Paren(inner_pmap)) => {
+            if let ast::PartialMap::Basic(PartialMapBasic::Name(name)) = &inner_pmap.inner {
+                if let Some(diagram) = scope.find_diagram(name) {
+                    return (Some(Component::Value(Term::Diag(diagram.clone()))), InterpResult::ok(context.clone()));
+                }
+            }
             let (eval_map_opt, result) = super::partial_map::interpret_partial_map(context, scope, scope, inner_pmap);
             (eval_map_opt.map(|em| Component::Value(Term::Map(em))), result)
         }
