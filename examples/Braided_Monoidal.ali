@@ -133,11 +133,11 @@ Object <<= {
     (* Equations for braidings *)
     attach Over_Inversion :: Equation along [
         lhs => over under,
-        rhs => Pair.Tensor.id
+        rhs => Planar.Pair.Tensor.id
     ],
     attach Under_Inversion :: Equation along [
         lhs => under over,
-        rhs => Pair.Tensor.id
+        rhs => Planar.Pair.Tensor.id
     ],
     attach Over_YangBaxter :: Equation along [
         lhs => (over ob) (ob over) (over ob),
