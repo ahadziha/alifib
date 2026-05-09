@@ -1,7 +1,7 @@
-(*
+(***
     The simplices with face maps up to dimension 5,
-    i.e. the category Delta_+ up to dimension 5.
-*)
+    that is the category Delta_+ up to dimension 5.
+***)
 
 @Type
 0Simplex <<= {
@@ -269,7 +269,7 @@
 }
 
 (* 
-    Simplicial identities: 
+    Some simplicial identities:
     d_i . d_{j-1} = d_j . d_i if i < j
 *)
 @5Simplex

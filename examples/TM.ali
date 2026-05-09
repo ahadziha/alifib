@@ -1,71 +1,111 @@
+(***
+	A module for the simulation of Turing machines.
+***)
+
+(* 
+	A common base for Turing machines.
+
+    A well-formed input is of the form
+    	start INIT <input> end
+
+    We use the convention that symbols in cells to the left
+    of the pointer are decorated with a final underscore.
+*)
 @Type
 TM <<= {
-    start,
+	before,
     left,
     right,
-    end,
+    after,
 
-    (* Tape left and right markers *)
-    L: start -> left,
-    R: right -> end,
+    (* Tape start and end boundaries *)
+    start: before -> left,
+	end: right -> after,
 
     (* Blanks *)
-    blank_L: left -> left,
-    blank: right -> right,
+    __: left -> left,
+    _: right -> right,
 
-    (* Blank absorption *)
-    absorb_L: L blank_L -> L,
-    absorb_R: blank R -> R,
+    (* Boundary blank elimination *)
+    absorb_start: start __ -> start,
+    absorb_end: _ end -> end,
 
-    (* Initial state *)
-    INIT: left -> right
+    (* Pointer in initial state *)
+    INIT: left -> right,
+
+    index thin = [ 
+    	before, left, 
+        right, after, 
+        start, end, __, _, 
+        absorb_start, absorb_end
+    ]
 },
 
 (* 
-    Encoding a machine accepting a^n b^n.
-    Run on L INIT <input> R.
+    	Instructions of the form 
+        (STATE, x) -> (NEW_STATE, y, R)
+        are simulated as rewrites
+        
+        	STATE_x: STATE x -> y_ NEW_STATE
+        
+        Instructions of the form
+        (STATE, x) -> (NEW_STATE, y, L)
+        as families of rewrites
+        
+        	for char in alphabet {
+            	<char>_STATE_x: 
+                	<char>_ STATE x -> NEW_STATE <char> y
+            }
+            
+        We can allow instructions of the form
+        (STATE, x) -> (NEW_STATE, y, N)
+        (not moving) and simulate them as 2-cells
+        
+        	STATE_x: STATE x -> NEW_STATE y
 *)
+    
+(***
+    Encoding a machine accepting the language 
+    {a^n b^n | n >= 0}.
+***)
+
 AnBn <<= TM {
     (* Tape alphabet *)
-    a_L: left -> left,
-    a: right -> right,
-    b_L: left -> left,
-    b: right -> right,
+    index alphabet = [ a, b, aX, bX ],
 
-    mark_L: left -> left,
-    mark: right -> right,
-    match_L: left -> left,
-    match: right -> right,
+    for char in alphabet {
+    	<char>_: left -> left,
+        <char>: right -> right
+    },
 
     (* Non-initial states *)
-    SEARCH: left -> right,
-    BACK: left -> right,
-    CHECK: left -> right,
-    ACCEPT: left -> right,
-    REJECT: left -> right,
+    index states = [ SEARCH, BACK, CHECK, ACCEPT, REJECT ],
 
-    (* Transitions *)
-    INIT_a: INIT a -> mark_L SEARCH,
+    for state in states {
+    	<state>: left -> right
+    },
+
+	(* Instructions *)
+    INIT_a: INIT a -> aX_ SEARCH,
     INIT_b: INIT b -> REJECT b,
-    INIT_mark: INIT mark -> mark_L INIT,
-    INIT_match: INIT match -> match_L CHECK,
-    INIT_R: INIT R -> ACCEPT R,
+    INIT_aX: INIT aX -> aX_ INIT,
+    INIT_bX: INIT bX -> bX_ CHECK,
+    INIT_end: INIT end -> ACCEPT end,
 
-    SEARCH_a: SEARCH a -> a_L SEARCH,
-    SEARCH_b: SEARCH b -> BACK match,
-    SEARCH_mark: SEARCH mark -> REJECT mark,
-    SEARCH_match: SEARCH match -> match_L SEARCH,
-    SEARCH_R: SEARCH R -> REJECT R,
+    SEARCH_a: SEARCH a -> a_ SEARCH,
+    SEARCH_b: SEARCH b -> BACK bX,
+    SEARCH_aX: SEARCH aX -> REJECT aX,
+    SEARCH_bX: SEARCH bX -> bX_ SEARCH,
+    SEARCH_end: SEARCH end -> REJECT end,
 
-    L_BACK: L BACK -> L INIT,
-        a_BACK: a_L BACK -> BACK a,
-        b_BACK: b_L BACK -> BACK b,
-        mark_BACK: mark_L BACK -> BACK mark,
-        match_BACK: match_L BACK -> BACK match,
+    start_BACK: start BACK -> start INIT,
+    for char in alphabet {
+        <char>_BACK: <char>_ BACK -> BACK <char>
+    },
 
     CHECK_a: CHECK a -> REJECT a,
     CHECK_b: CHECK b -> REJECT b,
-    CHECK_mark: CHECK mark -> REJECT mark,
-    CHECK_match: CHECK match -> match_L CHECK,
-    CHECK_R: CHECK R -> ACCEPT R
+    CHECK_aX: CHECK aX -> REJECT aX,
+    CHECK_bX: CHECK bX -> bX_ CHECK,
+    CHECK_end: CHECK end -> ACCEPT end
 }
