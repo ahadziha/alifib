@@ -91,14 +91,17 @@ AnBn <<= TM {
     INIT_aX: INIT aX -> aX_ INIT,
     INIT_bX: INIT bX -> bX_ CHECK,
     INIT_end: INIT end -> ACCEPT end,
+    INIT__: INIT _ -> ACCEPT _,
 
     SEARCH_a: SEARCH a -> a_ SEARCH,
     SEARCH_b: SEARCH b -> BACK bX,
     SEARCH_aX: SEARCH aX -> REJECT aX,
     SEARCH_bX: SEARCH bX -> bX_ SEARCH,
     SEARCH_end: SEARCH end -> REJECT end,
+    SEARCH__: SEARCH _ -> REJECT _,
 
     start_BACK: start BACK -> start INIT,
+    __BACK: __ BACK -> __ INIT,
     for char in alphabet {
         <char>_BACK: <char>_ BACK -> BACK <char>
     },
@@ -107,5 +110,6 @@ AnBn <<= TM {
     CHECK_b: CHECK b -> REJECT b,
     CHECK_aX: CHECK aX -> REJECT aX,
     CHECK_bX: CHECK bX -> bX_ CHECK,
-    CHECK_end: CHECK end -> ACCEPT end
+    CHECK_end: CHECK end -> ACCEPT end,
+    CHECK__: CHECK _ -> ACCEPT _
 }
