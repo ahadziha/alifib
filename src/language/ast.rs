@@ -166,7 +166,11 @@ pub enum DExpr {
 }
 
 pub enum DComponent {
-    PartialMap(PartialMapBasic),
+    Name(String),
+    AnonMap {
+        def: Box<Spanned<PartialMapDef>>,
+        target: Spanned<Complex>,
+    },
     In,
     Out,
     Paren(Box<Spanned<Diagram>>),

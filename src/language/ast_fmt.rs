@@ -29,7 +29,8 @@ impl fmt::Display for FmtAddress<'_> {
 impl fmt::Display for DComponent {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::PartialMap(basic) => write!(f, "{}", basic),
+            Self::Name(n) => f.write_str(n),
+            Self::AnonMap { .. } => f.write_str("(map ...)"),
             Self::In => f.write_str("in"),
             Self::Out => f.write_str("out"),
             Self::Paren(d) => write!(f, "({})", d.inner),

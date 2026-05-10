@@ -32,9 +32,7 @@ enum DiagRepr {
 fn repr_to_ast(d: DiagRepr) -> ast::Diagram {
     match d {
         DiagRepr::Cell(name) => ast::Diagram::PrincipalPaste(vec![syn(
-            ast::DExpr::Component(ast::DComponent::PartialMap(
-                ast::PartialMapBasic::Name(name),
-            )),
+            ast::DExpr::Component(ast::DComponent::Name(name)),
         )]),
         DiagRepr::Seq(parts) => ast::Diagram::PrincipalPaste(
             parts.into_iter().map(|p| syn(repr_to_dexpr(p))).collect(),
@@ -50,9 +48,7 @@ fn repr_to_ast(d: DiagRepr) -> ast::Diagram {
 /// Convert a `DiagRepr` to a single `ast::DExpr`, parenthesising if compound.
 fn repr_to_dexpr(d: DiagRepr) -> ast::DExpr {
     match d {
-        DiagRepr::Cell(name) => ast::DExpr::Component(ast::DComponent::PartialMap(
-            ast::PartialMapBasic::Name(name),
-        )),
+        DiagRepr::Cell(name) => ast::DExpr::Component(ast::DComponent::Name(name)),
         other => ast::DExpr::Component(ast::DComponent::Paren(Box::new(syn(repr_to_ast(other))))),
     }
 }

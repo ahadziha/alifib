@@ -307,21 +307,13 @@ fn build_diagram<'tokens, 'src: 'tokens>() -> RDiagram<'tokens, 'src> {
             .then_ignore(t(Token::DColon))
             .then(complex)
             .then_ignore(t(Token::RParen))
-            .map(|(def, target)| {
-                DComponent::PartialMap(PartialMapBasic::AnonMap {
-                    def: Box::new(def),
-                    target,
-                })
+            .map(|(def, target)| DComponent::AnonMap {
+                def: Box::new(def),
+                target,
             });
-
-        let paren_pmap_dcomp = partial_map
-            .clone()
-            .delimited_by(t(Token::LParen), t(Token::RParen))
-            .map(|p| DComponent::PartialMap(PartialMapBasic::Paren(Box::new(p))));
 
         let dcomponent = choice((
             anon_map_dcomp,
-            paren_pmap_dcomp,
             diagram
                 .clone()
                 .delimited_by(t(Token::LParen), t(Token::RParen))
@@ -330,8 +322,8 @@ fn build_diagram<'tokens, 'src: 'tokens>() -> RDiagram<'tokens, 'src> {
             t(Token::Out).map(|_| DComponent::Out),
             t(Token::Question).map(|_| DComponent::Hole),
             select_ref! {
-                Token::Ident(s) => DComponent::PartialMap(PartialMapBasic::Name(s.to_string())),
-                Token::Nat(s) => DComponent::PartialMap(PartialMapBasic::Name(s.to_string())),
+                Token::Ident(s) => DComponent::Name(s.to_string()),
+                Token::Nat(s) => DComponent::Name(s.to_string()),
             },
         ))
         .map_with(|v, e| sp(v, cspan(e.span())));

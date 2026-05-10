@@ -328,7 +328,14 @@ impl Printer {
 
     fn dcomponent(&mut self, dc: &DComponent) {
         match dc {
-            DComponent::PartialMap(pmb) => self.partial_map_basic(pmb),
+            DComponent::Name(n) => self.s(n),
+            DComponent::AnonMap { def, target } => {
+                self.s("(map ");
+                self.partial_map_def(&def.inner);
+                self.s(" :: ");
+                self.complex(&target.inner);
+                self.s(")");
+            }
             DComponent::In => self.s("in"),
             DComponent::Out => self.s("out"),
             DComponent::Hole => self.s("?"),

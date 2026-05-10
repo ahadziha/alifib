@@ -105,7 +105,7 @@
 <Diagram> ::= <DPrincipal> | <Diagram> "#" <Nat> <DPrincipal>
 <DPrincipal> ::= <DExpr> | <DPrincipal> <DExpr>
 <DExpr> ::= <DComponent> | <DExpr> "." <DComponent>
-<DComponent> ::= <PMapBasic> | <Bd> | "(" <Diagram> ")" | "?"
+<DComponent> ::= <Name> | <AnonMap> | <Bd> | "(" <Diagram> ")" | "?"
 <Bd> ::= "in" | "out"
 
 -- A general _partial map_ is a dotted sequence of basic partial maps.

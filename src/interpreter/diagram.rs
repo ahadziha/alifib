@@ -9,18 +9,18 @@ use crate::core::{
     diagram::{CellData, Diagram, Sign as DiagramSign},
     partial_map::PartialMap,
 };
-use crate::language::ast::{self, DComponent, DExpr, PartialMapBasic, Span, Spanned};
+use crate::language::ast::{self, DComponent, DExpr, Span, Spanned};
 use std::sync::Arc;
 
 // ---- Helpers ----
 
 fn try_dotted_name(expr: &DExpr) -> Option<String> {
     match expr {
-        DExpr::Component(DComponent::PartialMap(PartialMapBasic::Name(s))) => Some(s.clone()),
+        DExpr::Component(DComponent::Name(s)) => Some(s.clone()),
         DExpr::Dot { base, field } => {
             let prefix = try_dotted_name(&base.inner)?;
             match &field.inner {
-                DComponent::PartialMap(PartialMapBasic::Name(s)) => Some(format!("{}.{}", prefix, s)),
+                DComponent::Name(s) => Some(format!("{}.{}", prefix, s)),
                 _ => None,
             }
         }
@@ -277,7 +277,7 @@ pub fn interpret_dcomponent(
     span: Span,
 ) -> (Option<Component>, InterpResult) {
     match d_comp {
-        DComponent::PartialMap(PartialMapBasic::Name(name)) => {
+        DComponent::Name(name) => {
             if let Some(diagram) = scope.find_diagram(name) {
                 return (Some(Component::Value(Term::Diag(diagram.clone()))), InterpResult::ok(context.clone()));
             }
@@ -288,24 +288,15 @@ pub fn interpret_dcomponent(
             }
             fail(context, span, format!("Name `{}` not found", name))
         }
-        DComponent::PartialMap(PartialMapBasic::AnonMap { def, target }) => {
+        DComponent::AnonMap { def, target } => {
             let (eval_map_opt, result) = super::partial_map::interpret_anon_map_component(context, scope, target, def);
-            (eval_map_opt.map(|em| Component::Value(Term::Map(em))), result)
-        }
-        DComponent::PartialMap(PartialMapBasic::Paren(inner_pmap)) => {
-            if let ast::PartialMap::Basic(PartialMapBasic::Name(name)) = &inner_pmap.inner {
-                if let Some(diagram) = scope.find_diagram(name) {
-                    return (Some(Component::Value(Term::Diag(diagram.clone()))), InterpResult::ok(context.clone()));
-                }
-            }
-            let (eval_map_opt, result) = super::partial_map::interpret_partial_map(context, scope, scope, inner_pmap);
             (eval_map_opt.map(|em| Component::Value(Term::Map(em))), result)
         }
         DComponent::In => (Some(Component::Bd(DiagramSign::Source)), InterpResult::ok(context.clone())),
         DComponent::Out => (Some(Component::Bd(DiagramSign::Target)), InterpResult::ok(context.clone())),
         DComponent::Paren(inner_diag) => {
-            let (d_opt, result) = interpret_diagram(context, scope, inner_diag);
-            (d_opt.map(|d| Component::Value(Term::Diag(d))), result)
+            let (term_opt, result) = interpret_diagram_as_term(context, scope, inner_diag);
+            (term_opt.map(Component::Value), result)
         }
         DComponent::Hole => (Some(Component::Hole), InterpResult::ok(context.clone())),
     }
