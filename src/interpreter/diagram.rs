@@ -111,7 +111,10 @@ fn boundary_term_from_diagram(
     span: Span,
     mut result: InterpResult,
 ) -> (Option<Term>, InterpResult) {
-    let boundary_dim = diagram.top_dim().saturating_sub(1);
+    let Some(boundary_dim) = diagram.top_dim().checked_sub(1) else {
+        result.add_error(make_error(span, "diagram has no principal boundary"));
+        return (None, result);
+    };
     match Diagram::boundary(sign, boundary_dim, diagram) {
         Ok(boundary) => (Some(Term::Diag(boundary)), result),
         Err(error) => {
@@ -592,31 +595,33 @@ fn interpret_sequence_as_term(
                     // Source boundary: paste with left at min(left, hole) - 1.
                     if let (Some(left_diag), Some(&first_id)) =
                         (&hole_block_left, block_hole_ids.first()) {
-                        let k_left = left_diag.top_dim().min(n_hole).saturating_sub(1);
-                        if let Ok(out_bd) =
-                            Diagram::boundary_normal(DiagramSign::Target, k_left, left_diag) {
-                            result.constraints.push(Constraint::BoundaryEq {
-                                hole: first_id,
-                                slot: BdSlot { sign: DiagramSign::Source, dim: k_left },
-                                diagram: out_bd,
-                                scope: scope_arc.clone(),
-                                origin: ConstraintOrigin::Paste { paste_dim: k_left },
-                            });
+                        if let Some(k_left) = left_diag.top_dim().min(n_hole).checked_sub(1) {
+                            if let Ok(out_bd) =
+                                Diagram::boundary_normal(DiagramSign::Target, k_left, left_diag) {
+                                result.constraints.push(Constraint::BoundaryEq {
+                                    hole: first_id,
+                                    slot: BdSlot { sign: DiagramSign::Source, dim: k_left },
+                                    diagram: out_bd,
+                                    scope: scope_arc.clone(),
+                                    origin: ConstraintOrigin::Paste { paste_dim: k_left },
+                                });
+                            }
                         }
                     }
 
                     // Target boundary: paste with right at min(hole, right) - 1.
                     if let Some(&last_id) = block_hole_ids.last() {
-                        let k_right = n_hole.min(d_right.top_dim()).saturating_sub(1);
-                        if let Ok(in_bd) =
-                            Diagram::boundary_normal(DiagramSign::Source, k_right, &d_right) {
-                            result.constraints.push(Constraint::BoundaryEq {
-                                hole: last_id,
-                                slot: BdSlot { sign: DiagramSign::Target, dim: k_right },
-                                diagram: in_bd,
-                                scope: scope_arc.clone(),
-                                origin: ConstraintOrigin::Paste { paste_dim: k_right },
-                            });
+                        if let Some(k_right) = n_hole.min(d_right.top_dim()).checked_sub(1) {
+                            if let Ok(in_bd) =
+                                Diagram::boundary_normal(DiagramSign::Source, k_right, &d_right) {
+                                result.constraints.push(Constraint::BoundaryEq {
+                                    hole: last_id,
+                                    slot: BdSlot { sign: DiagramSign::Target, dim: k_right },
+                                    diagram: in_bd,
+                                    scope: scope_arc.clone(),
+                                    origin: ConstraintOrigin::Paste { paste_dim: k_right },
+                                });
+                            }
                         }
                     }
 
@@ -626,12 +631,14 @@ fn interpret_sequence_as_term(
                         Some(left_diag) => left_diag.top_dim(),
                         None => d_right.top_dim(),
                     };
-                    for &id in &block_hole_ids {
-                        result.constraints.push(Constraint::DimEq {
-                            hole: id,
-                            dim: n_infer,
-                            origin: ConstraintOrigin::Paste { paste_dim: n_infer.saturating_sub(1) },
-                        });
+                    if let Some(paste_k) = n_infer.checked_sub(1) {
+                        for &id in &block_hole_ids {
+                            result.constraints.push(Constraint::DimEq {
+                                hole: id,
+                                dim: n_infer,
+                                origin: ConstraintOrigin::Paste { paste_dim: paste_k },
+                            });
+                        }
                     }
 
                     last_hole_block_start = None;
@@ -641,9 +648,10 @@ fn interpret_sequence_as_term(
                 let acc = if has_holes { &mut right_acc } else { &mut left_acc };
                 let next = match acc.take() {
                     None => Ok(d_right),
-                    Some(prev) => {
-                        let k = prev.top_dim().min(d_right.top_dim()).saturating_sub(1);
-                        Diagram::paste(k, &prev, &d_right)
+                    Some(prev) => match prev.top_dim().min(d_right.top_dim()).checked_sub(1) {
+                        None => Err(crate::aux::Error::new(
+                            "principal paste dimension is below 0")),
+                        Some(k) => Diagram::paste(k, &prev, &d_right),
                     }
                 };
                 match next {
@@ -662,28 +670,28 @@ fn interpret_sequence_as_term(
     // neighbour; inner holes in the block are unconstrained on that side.
     if let Some(start) = last_hole_block_start
         && let Some(ref left_diag) = hole_block_left {
-        let k = left_diag.top_dim().saturating_sub(1);
         let n = left_diag.top_dim();
         let scope_arc = Arc::new(scope.clone());
         let trailing_ids: Vec<HoleId> = result.holes[start..].iter().map(|h| h.id).collect();
-        if let (Ok(out_bd), Some(&first_id)) =
-            (Diagram::boundary_normal(DiagramSign::Target, k, left_diag), trailing_ids.first())
-        {
-            result.constraints.push(Constraint::BoundaryEq {
-                hole: first_id,
-                slot: BdSlot { sign: DiagramSign::Source, dim: k },
-                diagram: out_bd,
-                scope: scope_arc.clone(),
-                origin: ConstraintOrigin::Paste { paste_dim: k },
-            });
-        }
-        // Dimension constraint from left neighbour for trailing holes.
-        for &id in &trailing_ids {
-            result.constraints.push(Constraint::DimEq {
-                hole: id,
-                dim: n,
-                origin: ConstraintOrigin::Paste { paste_dim: k },
-            });
+        if let Some(k) = n.checked_sub(1) {
+            if let (Ok(out_bd), Some(&first_id)) =
+                (Diagram::boundary_normal(DiagramSign::Target, k, left_diag), trailing_ids.first())
+            {
+                result.constraints.push(Constraint::BoundaryEq {
+                    hole: first_id,
+                    slot: BdSlot { sign: DiagramSign::Source, dim: k },
+                    diagram: out_bd,
+                    scope: scope_arc.clone(),
+                    origin: ConstraintOrigin::Paste { paste_dim: k },
+                });
+            }
+            for &id in &trailing_ids {
+                result.constraints.push(Constraint::DimEq {
+                    hole: id,
+                    dim: n,
+                    origin: ConstraintOrigin::Paste { paste_dim: k },
+                });
+            }
         }
     }
 
