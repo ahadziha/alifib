@@ -147,7 +147,7 @@ SKI_var <<= SKI {
 (* Example of partial variable assignment *)
 @SKI_var {
 	(* This map is only defined locally to this block *)
-	let Assign :: SKI_var = [ SKI => SKI,
+	let Assign :: SKI_var = SKI [
     	f => B, x => x, y => y, z => z
     ]
 }

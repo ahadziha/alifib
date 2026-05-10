@@ -1,0 +1,296 @@
+(***
+	An implementation of the lambda-sigma calculus
+    (Abadi, Cardelli, Curien, Lévy)
+***)
+
+@Type
+include TRS,
+
+LambdaSigma <<= {
+	include TRS.Unit as Unit,
+    let unit = Unit.wire,
+    let merge = Unit.merge,
+    let split = Unit.split,
+
+    (* Two sorts: terms and substitutions *)
+    attach Term :: TRS.Sort along [ Unit => Unit ],
+    attach Subst :: TRS.Sort along [ Unit => Unit ],
+    attach Term_Subst :: TRS.Pair along
+    	[ 1 => Term, 2 => Subst ],
+    let term = Term.wire,
+    let subst = Subst.wire,
+
+	(* Constants: Var, Id, Shift *)
+	attach Var :: TRS.Constant along [ Cod => Term ],
+	let var = Var.node,
+    	(* Missing naturality *)
+		attach Var_Subst :: TRS.Constant_Nat along [
+    		Constant => Var, Other => Subst,
+        	Cod_Other => Term_Subst
+    	],
+    attach Id :: TRS.Constant along [ Cod => Subst ],
+    let id = Id.node,
+    attach Shift :: TRS.Constant along [ Cod => Subst ],
+    let shift = Shift.node,
+    	(* Missing naturalities *) 
+    	for const in [ Id, Shift ] {
+    		attach <const>_Term :: TRS.Constant_Nat along [
+        		Constant => <const>, Other => Term,
+            	Cod_Other => Term_Subst.Rev
+        	]
+    	}, 
+
+	(* Unary operator: Lambda *)
+    attach Lambda :: TRS.Unary along [ 
+    	Dom => Term, Cod => Term,
+        Dom_Cod => Term.Pair 
+    ],
+    let lambda = Lambda.node,
+    	(* Missing naturality *)
+    	attach Lambda_Subst :: TRS.Unary_Nat along [
+    		Unary => Lambda, Other => Subst,
+        	Dom_Other => Term_Subst, Cod_Other => Term_Subst
+    	],
+
+	(* Binary operators: Clos, App, Cons, Comp *)
+    attach Clos :: TRS.Binary along [
+    	LDom => Term, RDom => Subst, Cod => Term,
+        LDom_RDom => Term_Subst, LDom_Cod => Term.Pair,
+        RDom_Cod => Term_Subst.Rev
+    ],
+    let clos = Clos.node,
+    attach App :: TRS.Binary along [
+    	LDom => Term, RDom => Term, Cod => Term,
+        LDom_RDom => Term.Pair, LDom_Cod => Term.Pair,
+        RDom_Cod => Term.Pair
+    ],
+    let app = App.node,
+    	(* Missing naturality *)
+    	attach App_Subst :: TRS.Binary_Nat along [
+    		Binary => App, Other => Subst,
+        	LDom_Other => Term_Subst, RDom_Other => Term_Subst,
+        	Cod_Other => Term_Subst
+    	],
+    attach Cons :: TRS.Binary along [
+    	LDom => Term, RDom => Subst, Cod => Subst,
+        LDom_RDom => Term_Subst, LDom_Cod => Term_Subst,
+        RDom_Cod => Subst.Pair
+    ],
+    let cons = Cons.node,
+    attach Comp :: TRS.Binary along [
+    	LDom => Subst, RDom => Subst, Cod => Subst,
+        LDom_RDom => Subst.Pair, LDom_Cod => Subst.Pair,
+        RDom_Cod => Subst.Pair
+    ],
+    let comp = Comp.node,
+    	(* Missing naturality *)
+    	attach Comp_Term :: TRS.Binary_Nat along [
+    		Binary => Comp, Other => Term,
+        	LDom_Other => Term_Subst.Rev, RDom_Other => Term_Subst.Rev,
+        	Cod_Other => Term_Subst.Rev
+    	],
+
+	(* Reduction rules *)
+	Beta: (lambda term) app 
+    	-> (term Term.runit_inv) (term term id) (term cons) clos,
+    Clos_Var: (var #0 cons) clos
+    	-> (unit term Subst.discard) (unit Term.runit) Term.lunit,
+    Clos_Clos: (clos subst) clos 
+    	-> (term comp) clos,
+    Clos_Lambda: (lambda subst) clos
+    	-> (Term.runit_inv #0 Subst.runit_inv) 
+        	(term #0 var #0 subst #0 shift)
+        	(term term comp) (term cons) clos lambda,
+    Clos_App: (app subst) clos
+    	-> (term term Subst.copy) (term Term_Subst.swap subst)
+        	(clos #0 clos) app,
+    Clos_Id: (term id) clos
+    	-> Term.runit,
+    Comp_Id_L: (id subst) comp
+    	-> Subst.lunit,
+    Comp_Id_R: (subst id) comp
+    	-> Subst.runit,
+    Comp_Shift: (shift #0 cons) comp
+    	-> (unit Term.discard subst) (merge subst) Subst.lunit,
+    Comp_Cons: (cons subst) comp
+    	-> (term subst Subst.copy) (term Subst.swap subst)
+        	(clos #0 comp) cons,
+    Comp_Comp: (comp subst) comp 
+    	-> (subst comp) comp,
+    Var_Shift: (var #0 shift) cons
+    	-> merge id
+},
+
+@LambdaSigma
+(* The first few De Bruijn indices *)
+let one = var,
+let two = split (var #0 shift) clos,
+let three = split (unit split)
+	(var #0 shift #0 shift) (term comp) clos,
+let four = split (unit split) (unit unit split)
+	(var #0 shift #0 shift #0 shift) 
+	(term subst comp) (term comp) clos,
+
+@Type
+(***
+	This extends LambdaSigma with named variables (modelled as
+    fresh constants with no non-structural rewrite rules);
+    
+    add variables to the indices as needed
+***)
+LambdaSigma_var <<= LambdaSigma {
+	index Term_variables = [ M, N, P ],
+    index Subst_variables = [ s, t, u ],
+
+    for var in Term_variables {
+    	attach <var>_term:: TRS.Constant along [ Cod => Term ],
+        attach <var>_term_Subst :: TRS.Constant_Nat along [
+        	Constant => <var>_term, Other => Subst,
+        	Cod_Other => Term_Subst
+        ],
+        let <var> = <var>_term.node
+    },
+    for var in Subst_variables {
+    	attach <var>_subst :: TRS.Constant along [ Cod => Subst ],
+        attach <var>_subst_Term :: TRS.Constant_Nat along [
+        	Constant => <var>_subst, Other => Term,
+        	Cod_Other => Term_Subst.Rev
+        ],
+        let <var> = <var>_subst.node
+    }
+}
+
+(***
+	Some example terms
+***)
+@LambdaSigma_var
+(* 
+	(λ (1 1))[↑] 
+    --> λ (1 1)
+*)
+let example_1 =
+	split (unit split)
+	(one #0 one #0 shift)
+    (app subst)
+    (lambda subst)
+    clos,
+(*
+	((λ λ (1 2)) (λ 1))[id]
+    --> λ (1 (λ 1))
+*)
+let example_2 = 
+	split (unit split) (unit unit split)
+	(one #0 two #0 one #0 id)
+    (app #0 lambda #0 subst)
+    (lambda term subst)
+    (lambda term subst)
+    (app subst)
+    clos,
+(*
+	1[M · (N · ↑)] [P · id]
+    --> M[P · id]
+*)
+let example_3 =
+	split (unit split) (unit unit split) 
+    (unit unit unit split) (unit unit unit unit split)
+    (one #0 M #0 N #0 shift #0 P #0 id)
+    (term #0 term #0 cons #0 cons)
+    (term cons subst)
+    (clos subst)
+    clos,
+(*
+	(λ 1)[M · s] N
+	--> N
+*)
+let example_4 = 
+	split (unit split) (unit unit split)
+    (one #0 M #0 s #0 N)
+    (lambda #0 cons #0 term)
+    (clos term)
+    app,
+(*
+	((λ λ 1) M)[N · id]
+    --> λ 1
+*)
+let example_5 =
+	split (unit split) (unit unit split)
+    (one #0 M #0 N #0 id)
+    ((lambda lambda) #0 term #0 cons)
+    (app subst)
+    clos,
+(*
+	1[(M · id) ∘ (N · id)]
+    --> M[N · id]
+*)
+let example_6 = 
+	split (unit split) (unit unit split) (unit unit unit split)
+    (one #0 M #0 id #0 N #0 id)
+    (term #0 cons #0 cons)
+    (term comp)
+    clos,
+(*
+	(λ (1 2))[M · id]
+    --> λ (1 M[↑])
+*)
+let example_7 =
+	split (unit split) (unit unit split)
+    (one #0 two #0 M #0 id)
+    (app #0 cons)
+    (lambda subst)
+    clos,
+(*
+	((λ M)[s])[t]
+    --> λ M[1 · ((s ∘ t) ∘ ↑)]
+*)
+let example_8 = 
+	split (unit split)
+    (M #0 s #0 t)
+    (lambda subst subst)
+    (clos subst)
+    clos,
+(*
+	(λ ((λ (2 1)) 1))[M · id]
+    --> λ (1 1)
+*)
+let example_9 =
+	split (unit split) (unit unit split) (unit unit unit split)
+    (two #0 one #0 one #0 M #0 id)
+    (app #0 term #0 cons)
+    (lambda #0 term #0 subst)
+    (app subst)
+    (lambda subst)
+    clos,
+(*
+	1[id ∘ (M · ↑)] [N · id]
+    --> M[N · id]
+*)
+let example_10 = 
+	split (unit split) (unit unit split) 
+    (unit unit unit split) (unit unit unit unit split)
+    (one #0 id #0 M #0 shift #0 N #0 id)
+    (term #0 subst #0 cons #0 cons)
+    (term comp subst)
+    (clos subst)
+    clos,
+(*
+	(λ λ λ (3 (2 1)))[M · (N · id)]
+    --> λ λ λ (3 (2 1))
+*)
+let example_11 = 
+	split (unit split) (unit unit split) 
+    (unit unit unit split) (unit unit unit unit split)
+    (three #0 two #0 one #0 M #0 N #0 id)
+    (term #0 app #0 term #0 cons)
+    (app #0 cons)
+    ((lambda lambda lambda) subst)
+    clos,
+(*
+	((M N)[s])[P · t]
+    --> M[s ∘ (P · t)] N[s ∘ (P · t)]
+*)
+let example_12 = 
+	split (unit split) (unit unit split) (unit unit unit split)
+    (M #0 N #0 s #0 P #0 t)
+    (app #0 subst #0 cons)
+    (clos subst)
+    clos

@@ -153,7 +153,8 @@ let Pair :: Pair = [
 *)
 @Pair
 let Rev :: Pair = [
-    1 => 2, 2 => 1
+    1 => 2, 2 => 1,
+    Swap => Rev_Swap, Rev_Swap => Swap
 ]
 
 @Type
