@@ -1,0 +1,108 @@
+(* 
+    Some auxiliary gadgets for bicategories 
+*)
+
+@Type
+(* Equation between 2-morphisms *)
+Equation <<= {
+    s0,
+    t0,
+    
+    s1: s0 -> t0,
+    t1: s0 -> t0,
+
+    lhs: s1 -> t1,
+    rhs: s1 -> t1,
+
+    dir: lhs -> rhs,
+    inv: rhs -> lhs,
+
+    index thin = [ dir, inv ]
+},
+
+(* Arrow with identity *)
+Arrow <<= {
+    0,
+    1,
+
+    arr: 0 -> 1,
+
+    id: arr -> arr,
+
+    attach Idem :: Equation along [
+        lhs => id id,
+        rhs => id
+    ]
+},
+
+(* One-input, one-output 2-arrow *)
+2Arrow_1_to_1 <<= {
+    0,
+    1,
+
+    attach Src :: Arrow along [ 0 => 0, 1 => 1 ],
+    attach Tgt :: Arrow along [ 0 => 0, 1 => 1 ],
+
+    2arr: Src.arr -> Tgt.arr,
+
+    attach SrcId :: Equation along [
+        lhs => Src.id 2arr,
+        rhs => 2arr
+    ],
+    attach TgtId :: Equation along [
+        lhs => 2arr Tgt.id,
+        rhs => 2arr
+    ]
+},
+
+(* Two-input, one-output 2arr *)
+2Arrow_2_to_1 <<= {
+    0,
+    1,
+    2,
+
+    attach LSrc :: Arrow along [ 0 => 0, 1 => 1 ],
+    attach RSrc :: Arrow along [ 0 => 1, 1 => 2 ],
+    attach Tgt :: Arrow along [ 0 => 0, 1 => 2 ],
+
+    2arr: LSrc.arr RSrc.arr -> Tgt.arr,
+
+    attach LSrcId :: Equation along [
+        lhs => (LSrc.id RSrc.arr) 2arr,
+        rhs => 2arr
+    ],
+    attach RSrcId :: Equation along [
+        lhs => (LSrc.arr RSrc.id) 2arr,
+        rhs => 2arr
+    ],
+    attach TgtId :: Equation along [
+        lhs => 2arr Tgt.id,
+        rhs => 2arr
+    ]
+},
+
+(* One-input, two-output 2arr *)
+2Arrow_1_to_2 <<= {
+    0,
+    1,
+    2,
+
+    attach Src :: Arrow along [ 0 => 0, 1 => 2 ],
+    attach LTgt :: Arrow along [ 0 => 0, 1 => 1 ],
+    attach RTgt :: Arrow along [ 0 => 1, 1 => 2 ],
+
+    2arr: Src.arr -> LTgt.arr RTgt.arr,
+
+    attach SrcId :: Equation along [
+        lhs => Src.id 2arr,
+        rhs => 2arr
+    ],
+    attach LTgtId :: Equation along [
+        lhs => 2arr (LTgt.id RTgt.arr),
+        rhs => 2arr
+    ],
+    attach RTgtId :: Equation along [
+        lhs => 2arr (LTgt.arr RTgt.id),
+        rhs => 2arr
+    ]
+}

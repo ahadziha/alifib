@@ -1,0 +1,114 @@
+(***
+     Examples of bicategories
+***)
+
+@Type
+include Bicategory,
+let Equation = Bicategory.Aux.Equation,
+
+(* 
+	The walking invertible 2-morphism 
+*)
+Invertible <<= {
+	attach Src :: Bicategory.Morphism,
+    attach Tgt :: Bicategory.Morphism along 
+    	[ Src => Src.Src, Tgt => Src.Tgt ],
+    
+	attach Dir :: Bicategory.2Morphism along 
+    	[ Src => Src, Tgt => Tgt ],
+    attach Inv :: Bicategory.2Morphism along 
+    	[ Src => Tgt, Tgt => Src ],
+    
+    attach Dir_Inversion :: Equation along [
+    	lhs => Dir.2mor Inv.2mor,
+        rhs => Src.id
+    ],
+    attach Inv_Inversion :: Equation along [
+    	lhs => Inv.2mor Dir.2mor,
+        rhs => Tgt.id
+    ]
+},
+
+(* 
+	The walking adjoint pair  
+*)
+Adjunction <<= {
+    attach X :: Bicategory.Object,
+    attach Y :: Bicategory.Object,
+
+    attach L :: Bicategory.Morphism along 
+    	[ Src => X, Tgt => Y ],
+    attach R :: Bicategory.Morphism along 
+    	[ Src => Y, Tgt => X ],
+
+    let LR :: Bicategory.Morphism = 
+        ( map [ 1 => L, 2 => R ] :: Bicategory.Pair ).Comp,
+    let RL :: Bicategory.Morphism = 
+        ( map [ 1 => R, 2 => L ] :: Bicategory.Pair ).Comp,
+
+	(* Adjunction unit *)
+    attach Eta :: Bicategory.2Morphism along [
+        Src => X.Id,
+        Tgt => LR
+    ],
+    (* Adjunction counit *)
+    attach Eps :: Bicategory.2Morphism along [
+        Src => RL,
+        Tgt => Y.Id
+    ],
+
+    (* Triangle equations *)
+    attach LTriangle :: Equation along [
+        lhs => (Eta.2mor L.mor) (L.mor Eps.2mor),
+        rhs => L.lunit L.runit_inv
+    ],
+    attach RTriangle :: Equation along [
+        lhs => (R.mor Eta.2mor) (Eps.2mor R.mor),
+        rhs => R.runit R.lunit_inv
+    ]
+},
+
+(* 
+	The walking equivalence
+
+    `homology Equivalence` shows H_2 = Z,
+    exhibiting non-coherence
+*)
+Equivalence <<= {
+	attach X :: Bicategory.Object,
+    attach Y :: Bicategory.Object,
+
+    attach Dir :: Bicategory.Morphism along 
+    	[ Src => X, Tgt => Y ],
+    attach Inv :: Bicategory.Morphism along 
+    	[ Src => Y, Tgt => X ],
+
+    let DirInv :: Bicategory.Morphism = 
+        ( map [ 1 => Dir, 2 => Inv ] :: Bicategory.Pair ).Comp,
+    let InvDir :: Bicategory.Morphism = 
+        ( map [ 1 => Inv, 2 => Dir ] :: Bicategory.Pair ).Comp,
+
+    attach RInvertor :: Invertible along [
+    	Src => DirInv,
+        Tgt => X.Id
+    ],
+    attach LInvertor :: Invertible along [
+    	Src => InvDir,
+        Tgt => Y.Id
+    ]
+},
+
+(* 
+	The walking adjoint equivalence, 
+    produced by attaching a copy of Adjunction to Equivalence
+
+    This is coherent: 
+    `homology AdjointEquivalence` shows H_2 = 0
+*)
+AdjointEquivalence <<= Equivalence {
+	attach Adjunction :: Adjunction along [
+    	L => Dir, R => Inv,
+        Eta => RInvertor.Inv,
+        Eps => LInvertor.Dir
+    ]
+}

@@ -1,0 +1,455 @@
+(***
+    A module for bicategories
+***)
+
+@Type
+include Bicategory_aux as Aux,
+let Equation = Aux.Equation,
+
+(*** 
+    An object
+***)
+Object <<= {
+    ob,
+
+    id: ob -> ob,
+
+    2id: id -> id,
+    (* Exhibiting idempotence of the identity *)
+    merge: id id -> id,
+    split: id -> id id,
+
+    attach IdArrow :: Aux.Arrow along [ id => 2id ],
+    let Idem :: Equation = IdArrow.Idem,
+    
+    attach Merge :: Aux.2Arrow_2_to_1 along [
+        LSrc => IdArrow, RSrc => IdArrow, Tgt => IdArrow,
+        2arr => merge
+    ],
+    attach Split :: Aux.2Arrow_1_to_2 along [
+        Src => IdArrow, LTgt => IdArrow, RTgt => IdArrow,
+        2arr => split
+    ],
+    
+    attach Assoc :: Equation along [
+        lhs => (merge id) merge,
+        rhs => (id merge) merge
+    ],
+    attach Coassoc :: Equation along [
+        lhs => split (split id),
+        rhs => split (id split)
+    ],
+    attach LFrobenius :: Equation along [
+        lhs => (split id) (id merge),
+        rhs => merge split
+    ],
+    attach RFrobenius :: Equation along [
+        lhs => (id split) (merge id),
+        rhs => merge split
+    ],
+    attach Split_Merge :: Equation along [
+        lhs => split merge,
+        rhs => 2id
+    ],
+
+    index thin = [
+        id, 2id, merge, split
+    ]
+},
+
+(*** 
+    A morphism 
+***)
+Morphism <<= {
+    attach Src :: Object,
+    attach Tgt :: Object,
+
+    mor: Src.ob -> Tgt.ob,
+    id: mor -> mor,
+
+    attach Arrow :: Aux.Arrow along [ id => id ],
+    let Idem :: Equation = Arrow.Idem,
+    
+    (* Left and right unitors, and their inverses *)
+    lunit: Src.id mor -> mor,
+    lunit_inv: mor -> Src.id mor,
+    runit: mor Tgt.id -> mor,
+    runit_inv: mor -> mor Tgt.id,
+    attach LUnit :: Aux.2Arrow_2_to_1 along [
+        LSrc => Src.IdArrow, RSrc => Arrow, Tgt => Arrow,
+        2arr => lunit
+    ],
+    attach RUnit :: Aux.2Arrow_2_to_1 along [
+        LSrc => Arrow, RSrc => Tgt.IdArrow, Tgt => Arrow,
+        2arr => runit
+    ],
+    attach LUnit_Inv :: Aux.2Arrow_1_to_2 along [
+        Src => Arrow, LTgt => Src.IdArrow, RTgt => Arrow,
+        2arr => lunit_inv
+    ],
+    attach RUnit_Inv :: Aux.2Arrow_1_to_2 along [
+        Src => Arrow, LTgt => Arrow, RTgt => Tgt.IdArrow,
+        2arr => runit_inv
+    ],
+
+    attach LUnit_Inversion :: Equation along [
+        lhs => lunit_inv lunit,
+        rhs => id
+    ],
+    attach RUnit_Inversion :: Equation along [
+        lhs => runit_inv runit,
+        rhs => id
+    ],
+    attach Left_Module :: Equation along [
+        lhs => (Src.merge mor) lunit,
+        rhs => (Src.id lunit) lunit
+    ],
+    attach Right_Module :: Equation along [
+        lhs => (runit Tgt.id) runit,
+        rhs => (mor Tgt.merge) runit
+    ],
+    attach Left_Comodule :: Equation along [
+        lhs => lunit_inv (Src.split mor),
+        rhs => lunit_inv (Src.id lunit_inv)
+    ],
+    attach Right_Comodule :: Equation along [
+        lhs => runit_inv (runit_inv Tgt.id),
+        rhs => runit_inv (mor Tgt.split)
+    ],
+    attach Bimodule :: Equation along [
+        lhs => (lunit Tgt.id) runit,
+        rhs => (Src.id runit) lunit
+    ],
+    attach Bicomodule :: Equation along [
+        lhs => runit_inv (lunit_inv Tgt.id),
+        rhs => lunit_inv (Src.id runit_inv)
+    ],
+    attach LFrobenius_Bimodule :: Equation along [
+        lhs => (lunit_inv Tgt.id) (Src.id runit),
+        rhs => runit lunit_inv
+    ],
+    attach RFrobenius_Bimodule :: Equation along [
+        lhs => (Src.id runit_inv) (lunit Tgt.id),
+        rhs => lunit runit_inv
+    ],
+    attach Left_LFrobenius_Module :: Equation along [
+        lhs => (Src.split mor) (Src.id lunit),
+        rhs => lunit lunit_inv,
+    ],
+    attach Right_LFrobenius_Module :: Equation along [
+        lhs => (runit_inv Tgt.id) (mor Tgt.merge),
+        rhs => runit runit_inv
+    ],
+    attach Left_RFrobenius_Module :: Equation along [
+        lhs => (Src.id lunit_inv) (Src.merge mor),
+        rhs => lunit lunit_inv,
+    ],
+    attach Right_RFrobenius_Module :: Equation along [
+        lhs => (mor Tgt.split) (runit Tgt.id),
+        rhs => runit runit_inv
+    ],
+
+    index thin = [ id, lunit, lunit_inv, runit, runit_inv ]
+}
+
+(* The identity morphism *)
+@Object
+let total Id :: Morphism = [
+    Src => Object, Tgt => Object, Arrow => IdArrow,
+    LUnit => Merge, RUnit => Merge,
+    LUnit_Inv => Split, RUnit_Inv => Split,
+    LUnit_Inversion => Split_Merge, RUnit_Inversion => Split_Merge,
+    Left_Module => Assoc, Right_Module => Assoc,
+    Left_Comodule => Coassoc, Right_Comodule => Coassoc,
+    Bimodule => Assoc, Bicomodule => Coassoc,
+    LFrobenius_Bimodule => LFrobenius,
+    RFrobenius_Bimodule => RFrobenius,
+    Left_LFrobenius_Module => LFrobenius,
+    Right_LFrobenius_Module => LFrobenius,
+    Left_RFrobenius_Module => RFrobenius, 
+    Right_RFrobenius_Module => RFrobenius
+]
+
+@Type
+(*** 
+    A composable pair of morphisms:
+    “(f, g)”.1 = f, “(f, g)”.2 = g
+***)
+Pair <<= {
+    attach Src :: Object,
+    attach Mid :: Object,
+    attach Tgt :: Object,
+
+    attach 1 :: Morphism along [ Src => Src, Tgt => Mid ],
+    attach 2 :: Morphism along [ Src => Mid, Tgt => Tgt ]
+}
+
+(* 
+	The composite of a pair of morphisms: 
+    “(f, g)”.Comp = f ; g
+*)
+@Pair { (* Start local definitions *) 
+    let id = (1.mor 2.lunit_inv) (1.runit 2.mor),
+    let Idem :: Equation = [
+        dir => ((1.mor #0 2.Left_Comodule.inv) #1 (1.Right_Module.dir #0 2.mor))
+            #2 ((1.mor #0 2.lunit_inv) #1 (1.mor #0 Mid.Split_Merge.dir #0 2.mor) #1 (1.runit #0 2.mor))
+            #2 ((1.mor #0 2.LUnit_Inv.LTgtId.dir) #1 (1.runit #0 2.mor)),
+        inv => ((1.mor #0 2.LUnit_Inv.LTgtId.inv) #1 (1.runit #0 2.mor))
+            #2 ((1.mor #0 2.lunit_inv) #1 (1.mor #0 Mid.Split_Merge.inv #0 2.mor) #1 (1.runit #0 2.mor))
+            #2 ((1.mor #0 2.Left_Comodule.dir) #1 (1.Right_Module.inv #0 2.mor))
+    ],
+    let Arrow :: Aux.Arrow = [ id => id, Idem => Idem ],
+
+    let lunit = (1.lunit 2.mor) id,
+    let runit = (1.mor 2.runit) id,
+    let lunit_inv = id (1.lunit_inv 2.mor),
+    let runit_inv = id (1.mor 2.runit_inv),
+
+    let LUnit :: Aux.2Arrow_2_to_1 = [
+        LSrc => Src.IdArrow, RSrc => Arrow, Tgt => Arrow,
+        2arr => lunit,
+        LSrcId.dir => ((1.LUnit.LSrcId.dir #0 2.mor) #1 (1.mor #0 2.LUnit_Inv.LTgtId.inv) #1 (1.RUnit.LSrcId.inv #0 2.mor))
+            #2 ((1.LUnit.TgtId.dir #0 2.mor) #1 (1.mor #0 2.lunit_inv) #1 (1.RUnit.RSrcId.dir #0 2.mor)),
+        LSrcId.inv => ((1.LUnit.TgtId.inv #0 2.mor) #1 (1.mor #0 2.lunit_inv) #1 (1.RUnit.RSrcId.inv #0 2.mor))
+            #2 ((1.LUnit.LSrcId.inv #0 2.mor) #1 (1.mor #0 2.LUnit_Inv.LTgtId.dir) #1 (1.RUnit.LSrcId.dir #0 2.mor)),
+        RSrcId.dir => ((Src.id #0 1.mor #0 2.lunit_inv) #1 (1.Bimodule.inv #0 2.mor) #1 (1.mor #0 2.lunit_inv) #1 (1.runit #0 2.mor))
+            #2 ((1.lunit #0 2.mor) #1 Idem.dir),
+        RSrcId.inv => ((1.lunit #0 2.mor) #1 Idem.inv)
+            #2 ((Src.id #0 1.mor #0 2.lunit_inv) #1 (1.Bimodule.dir #0 2.mor) #1 (1.mor #0 2.lunit_inv) #1 (1.runit #0 2.mor)),
+        TgtId.dir => ((1.LUnit.TgtId.inv #0 2.mor) #1 Idem.dir)
+            #2 ((1.lunit #0 2.mor) #1 (1.mor #0 2.lunit_inv) #1 (1.RUnit.LSrcId.dir #0 2.mor)),
+        TgtId.inv => ((1.lunit #0 2.mor) #1 (1.mor #0 2.lunit_inv) #1 (1.RUnit.LSrcId.inv #0 2.mor))
+            #2 ((1.LUnit.TgtId.dir #0 2.mor) #1 Idem.inv)
+    ],
+    let RUnit :: Aux.2Arrow_2_to_1 = [
+        LSrc => Arrow, RSrc => Tgt.IdArrow, Tgt => Arrow,
+        2arr => runit,
+        LSrcId.dir => ((1.mor #0 2.LFrobenius_Bimodule.dir) #1 (1.runit #0 2.mor) #1 (1.mor #0 2.lunit_inv) #1 (1.runit #0 2.mor))
+            #2 ((1.mor #0 2.runit) #1 Idem.dir),
+        LSrcId.inv => ((1.mor #0 2.runit) #1 Idem.inv)
+            #2 ((1.mor #0 2.LFrobenius_Bimodule.inv) #1 (1.runit #0 2.mor) #1 (1.mor #0 2.lunit_inv) #1 (1.runit #0 2.mor)),
+        RSrcId.dir => ((1.mor #0 2.RUnit.RSrcId.dir) #1 (1.mor #0 2.LUnit_Inv.SrcId.inv) #1 (1.RUnit.RSrcId.inv #0 2.mor))
+            #2 ((1.mor #0 2.RUnit.TgtId.dir) #1 (1.mor #0 2.LUnit_Inv.LTgtId.dir) #1 (1.runit #0 2.mor)),
+        RSrcId.inv => ((1.mor #0 2.RUnit.TgtId.inv) #1 (1.mor #0 2.LUnit_Inv.LTgtId.inv) #1 (1.runit #0 2.mor))
+            #2 ((1.mor #0 2.RUnit.RSrcId.inv) #1 (1.mor #0 2.LUnit_Inv.SrcId.dir) #1 (1.RUnit.RSrcId.dir #0 2.mor)),
+        TgtId.dir => ((1.mor #0 2.RUnit.TgtId.inv) #1 Idem.dir)
+            #2 ((1.mor #0 2.runit) #1 (1.mor #0 2.LUnit_Inv.SrcId.dir) #1 (1.runit #0 2.mor)),
+        TgtId.inv => ((1.mor #0 2.runit) #1 (1.mor #0 2.LUnit_Inv.SrcId.inv) #1 (1.runit #0 2.mor))
+            #2 ((1.mor #0 2.RUnit.TgtId.dir) #1 Idem.inv)
+    ],
+    let LUnit_Inv :: Aux.2Arrow_1_to_2 = [
+        Src => Arrow, LTgt => Src.IdArrow, RTgt => Arrow,
+        2arr => lunit_inv,
+        SrcId.dir => (Idem.dir #1 (1.LUnit_Inv.SrcId.inv #0 2.mor))
+            #2 ((1.mor #0 2.lunit_inv) #1 (1.RUnit.TgtId.dir #0 2.mor) #1 (1.lunit_inv #0 2.mor)),
+        SrcId.inv => ((1.mor #0 2.lunit_inv) #1 (1.RUnit.TgtId.inv #0 2.mor) #1 (1.lunit_inv #0 2.mor))
+            #2 (Idem.inv #1 (1.LUnit_Inv.SrcId.dir #0 2.mor)),
+        LTgtId.dir => ((1.mor #0 2.LUnit_Inv.LTgtId.inv) #1 (1.RUnit.TgtId.inv #0 2.mor) #1 (1.LUnit_Inv.LTgtId.dir #0 2.mor))
+            #2 ((1.mor #0 2.lunit_inv) #1 (1.RUnit.RSrcId.dir #0 2.mor) #1 (1.LUnit_Inv.SrcId.dir #0 2.mor)),
+        LTgtId.inv => ((1.mor #0 2.lunit_inv) #1 (1.RUnit.RSrcId.inv #0 2.mor) #1 (1.LUnit_Inv.SrcId.inv #0 2.mor))
+            #2 ((1.mor #0 2.LUnit_Inv.LTgtId.dir) #1 (1.RUnit.TgtId.dir #0 2.mor) #1 (1.LUnit_Inv.LTgtId.inv #0 2.mor)),
+        RTgtId.dir => ((1.mor #0 2.lunit_inv) #1 (1.mor #0 Mid.id #0 2.lunit_inv) #1 (1.runit #0 Mid.id #0 2.mor) #1 (1.LFrobenius_Bimodule.dir #0 2.mor))
+            #2 (Idem.dir #1 (1.lunit_inv #0 2.mor)),
+        RTgtId.inv => (Idem.inv #1 (1.lunit_inv #0 2.mor))
+            #2 ((1.mor #0 2.lunit_inv) #1 (1.runit #0 2.mor) #1 (1.mor #0 2.lunit_inv) #1 (1.LFrobenius_Bimodule.inv #0 2.mor))
+    ],
+    let RUnit_Inv :: Aux.2Arrow_1_to_2 = [
+        Src => Arrow, LTgt => Arrow, RTgt => Tgt.IdArrow,
+        2arr => runit_inv,
+        SrcId.dir => (Idem.dir #1 (1.mor #0 2.RUnit_Inv.SrcId.inv))
+            #2 ((1.mor #0 2.LUnit_Inv.RTgtId.dir) #1 (1.mor #0 Mid.id #0 2.runit_inv) #1 (1.runit #0 2.mor #0 Tgt.id)),
+        SrcId.inv => ((1.mor #0 2.LUnit_Inv.RTgtId.inv) #1 (1.mor #0 Mid.id #0 2.runit_inv) #1 (1.runit #0 2.mor #0 Tgt.id))
+            #2 (Idem.inv #1 (1.mor #0 2.RUnit_Inv.SrcId.dir)),
+        LTgtId.dir => ((1.mor #0 2.lunit_inv) #1 (1.mor #0 Mid.id #0 2.Bicomodule.dir) #1 (1.runit #0 Mid.id #0 2.mor #0 Tgt.id) #1 (1.runit #0 2.mor #0 Tgt.id))
+            #2 (Idem.dir #1 (1.mor #0 2.runit_inv)),
+        LTgtId.inv => (Idem.inv #1 (1.mor #0 2.runit_inv))
+            #2 ((1.mor #0 2.lunit_inv) #1 (1.mor #0 Mid.id #0 2.Bicomodule.inv) #1 (1.runit #0 Mid.id #0 2.mor #0 Tgt.id) #1 (1.runit #0 2.mor #0 Tgt.id)),
+        RTgtId.dir => ((1.mor #0 2.LUnit_Inv.RTgtId.inv) #1 (1.mor #0 Mid.id #0 2.RUnit_Inv.RTgtId.dir) #1 (1.RUnit.RSrcId.inv #0 2.mor #0 Tgt.id))
+            #2 ((1.mor #0 2.LUnit_Inv.LTgtId.dir) #1 (1.mor #0 Mid.id #0 2.RUnit_Inv.SrcId.dir) #1 (1.runit #0 2.mor #0 Tgt.id)),
+        RTgtId.inv => ((1.mor #0 2.LUnit_Inv.LTgtId.inv) #1 (1.mor #0 Mid.id #0 2.RUnit_Inv.SrcId.inv) #1 (1.runit #0 2.mor #0 Tgt.id))
+            #2 ((1.mor #0 2.LUnit_Inv.RTgtId.dir) #1 (1.mor #0 Mid.id #0 2.RUnit_Inv.RTgtId.inv) #1 (1.RUnit.RSrcId.dir #0 2.mor #0 Tgt.id))
+    ],
+
+    (* The equations *)
+    let LUnit_Inversion :: Equation = [
+        dir => ((1.mor #0 2.lunit_inv) #1 (1.mor #0 Mid.id #0 2.lunit_inv) #1 (1.runit #0 Mid.id #0 2.mor) #1 (1.LUnit_Inversion.dir #0 Mid.id #0 2.mor) #1 (1.runit #0 2.mor))
+            #2 ((1.mor #0 2.lunit_inv) #1 (1.RUnit.TgtId.dir #0 2.mor) #1 (1.mor #0 2.lunit_inv) #1 (1.runit #0 2.mor))
+            #2 Idem.dir,
+        inv => Idem.inv
+            #2 ((1.mor #0 2.lunit_inv) #1 (1.RUnit.TgtId.inv #0 2.mor) #1 (1.mor #0 2.lunit_inv) #1 (1.runit #0 2.mor))
+            #2 ((1.mor #0 2.lunit_inv) #1 (1.mor #0 Mid.id #0 2.lunit_inv) #1 (1.runit #0 Mid.id #0 2.mor) #1 (1.LUnit_Inversion.inv #0 Mid.id #0 2.mor) #1 (1.runit #0 2.mor))
+    ],
+    let RUnit_Inversion :: Equation = [
+        dir => ((1.mor #0 2.lunit_inv) #1 (1.mor #0 Mid.id #0 2.RUnit_Inversion.dir) #1 (1.mor #0 Mid.id #0 2.lunit_inv) #1 (1.runit #0 Mid.id #0 2.mor) #1 (1.runit #0 2.mor))
+            #2 ((1.mor #0 2.LUnit_Inv.RTgtId.dir) #1 (1.runit #0 2.mor) #1 (1.mor #0 2.lunit_inv) #1 (1.runit #0 2.mor))
+            #2 Idem.dir,
+        inv => Idem.inv
+            #2 ((1.mor #0 2.LUnit_Inv.RTgtId.inv) #1 (1.runit #0 2.mor) #1 (1.mor #0 2.lunit_inv) #1 (1.runit #0 2.mor))
+            #2 ((1.mor #0 2.lunit_inv) #1 (1.mor #0 Mid.id #0 2.RUnit_Inversion.inv) #1 (1.mor #0 Mid.id #0 2.lunit_inv) #1 (1.runit #0 Mid.id #0 2.mor) #1 (1.runit #0 2.mor))
+    ],
+    let Left_Module :: Equation = [
+        dir => ((1.Left_Module.dir #0 2.mor) #1 Idem.inv)
+            #2 ((Src.id #0 1.lunit #0 2.mor) #1 (Src.id #0 1.mor #0 2.lunit_inv) #1 (1.Bimodule.dir #0 2.mor) #1 (1.mor #0 2.lunit_inv) #1 (1.runit #0 2.mor)),
+        inv => ((Src.id #0 1.lunit #0 2.mor) #1 (Src.id #0 1.mor #0 2.lunit_inv) #1 (1.Bimodule.inv #0 2.mor) #1 (1.mor #0 2.lunit_inv) #1 (1.runit #0 2.mor))
+            #2 ((1.Left_Module.inv #0 2.mor) #1 Idem.dir)
+    ],
+    let Right_Module :: Equation = [
+        dir => ((1.mor #0 2.runit #0 Tgt.id) #1 (1.mor #0 2.LFrobenius_Bimodule.dir) #1 (1.runit #0 2.mor) #1 (1.mor #0 2.lunit_inv) #1 (1.runit #0 2.mor))
+            #2 ((1.mor #0 2.Right_Module.dir) #1 Idem.dir),
+        inv => ((1.mor #0 2.Right_Module.inv) #1 Idem.inv)
+            #2 ((1.mor #0 2.runit #0 Tgt.id) #1 (1.mor #0 2.LFrobenius_Bimodule.inv) #1 (1.runit #0 2.mor) #1 (1.mor #0 2.lunit_inv) #1 (1.runit #0 2.mor))
+    ],
+    let Left_Comodule :: Equation = [
+        dir => (Idem.inv #1 (1.Left_Comodule.dir #0 2.mor))
+            #2 ((1.mor #0 2.lunit_inv) #1 (1.runit #0 2.mor) #1 (1.mor #0 2.lunit_inv) #1 (1.LFrobenius_Bimodule.inv #0 2.mor) #1 (Src.id #0 1.lunit_inv #0 2.mor)),
+        inv => ((1.mor #0 2.lunit_inv) #1 (1.runit #0 2.mor) #1 (1.mor #0 2.lunit_inv) #1 (1.LFrobenius_Bimodule.dir #0 2.mor) #1 (Src.id #0 1.lunit_inv #0 2.mor))
+            #2 (Idem.dir #1 (1.Left_Comodule.inv #0 2.mor))
+    ],
+    let Right_Comodule :: Equation = [
+        dir => ((1.mor #0 2.lunit_inv) #1 (1.mor #0 Mid.id #0 2.Bicomodule.dir) #1 (1.mor #0 Mid.id #0 Mid.id #0 2.runit_inv #0 Tgt.id) #1 (1.runit #0 Mid.id #0 2.mor #0 Tgt.id #0 Tgt.id) #1 (1.runit #0 2.mor #0 Tgt.id #0 Tgt.id))
+            #2 (Idem.dir #1 (1.mor #0 2.Right_Comodule.dir)),
+        inv => (Idem.inv #1 (1.mor #0 2.Right_Comodule.inv))
+            #2 ((1.mor #0 2.lunit_inv) #1 (1.mor #0 Mid.id #0 2.Bicomodule.inv) #1 (1.mor #0 Mid.id #0 Mid.id #0 2.runit_inv #0 Tgt.id) #1 (1.runit #0 Mid.id #0 2.mor #0 Tgt.id #0 Tgt.id) #1 (1.runit #0 2.mor #0 Tgt.id #0 Tgt.id))
+    ],
+    let Bimodule :: Equation = [
+        dir => ((1.lunit #0 2.mor #0 Tgt.id) #1 (1.mor #0 2.lunit_inv #0 Tgt.id) #1 (1.mor #0 Mid.id #0 2.runit) #1 (1.runit #0 2.mor) #1 Idem.inv)
+            #2 ((Src.id #0 1.mor #0 2.lunit_inv #0 Tgt.id) #1 (Src.id #0 1.mor #0 Mid.id #0 2.LFrobenius_Bimodule.inv) #1 (Src.id #0 1.mor #0 Mid.id #0 Mid.id #0 2.lunit_inv) #1 (1.lunit #0 Mid.id #0 Mid.id #0 Mid.id #0 2.mor) #1 (1.runit #0 Mid.id #0 Mid.id #0 2.mor) #1 (1.runit #0 Mid.id #0 2.mor) #1 (1.runit #0 2.mor))
+            #2 ((1.lunit #0 2.mor #0 Tgt.id) #1 (Idem.dir #0 Tgt.id) #1 (1.mor #0 2.runit) #1 (1.mor #0 2.lunit_inv) #1 (1.runit #0 2.mor))
+            #2 ((Src.id #0 1.mor #0 2.LFrobenius_Bimodule.dir) #1 (1.Bimodule.dir #0 2.mor) #1 (1.mor #0 2.lunit_inv) #1 (1.runit #0 2.mor)),
+        inv => ((Src.id #0 1.mor #0 2.LFrobenius_Bimodule.inv) #1 (1.Bimodule.inv #0 2.mor) #1 (1.mor #0 2.lunit_inv) #1 (1.runit #0 2.mor))
+            #2 ((1.lunit #0 2.mor #0 Tgt.id) #1 (Idem.inv #0 Tgt.id) #1 (1.mor #0 2.runit) #1 (1.mor #0 2.lunit_inv) #1 (1.runit #0 2.mor))
+            #2 ((1.lunit #0 2.mor #0 Tgt.id) #1 (1.mor #0 2.lunit_inv #0 Tgt.id) #1 (1.mor #0 Mid.id #0 2.LFrobenius_Bimodule.dir) #1 (1.mor #0 Mid.id #0 Mid.id #0 2.lunit_inv) #1 (1.runit #0 Mid.id #0 Mid.id #0 2.mor) #1 (1.runit #0 Mid.id #0 2.mor) #1 (1.runit #0 2.mor))
+            #2 ((Src.id #0 1.mor #0 2.lunit_inv #0 Tgt.id) #1 (Src.id #0 1.mor #0 Mid.id #0 2.runit) #1 (1.lunit #0 Mid.id #0 2.mor) #1 (1.runit #0 2.mor) #1 Idem.dir)
+    ],
+    let Bicomodule :: Equation = [
+        dir => (Idem.inv #1 (1.mor #0 2.runit_inv) #1 (1.mor #0 2.lunit_inv #0 Tgt.id) #1 (1.runit #0 2.mor #0 Tgt.id) #1 (1.lunit_inv #0 2.mor #0 Tgt.id))
+            #2 ((1.mor #0 2.lunit_inv) #1 (1.mor #0 Mid.id #0 2.Bicomodule.inv) #1 (1.mor #0 Mid.id #0 Mid.id #0 2.lunit_inv #0 Tgt.id) #1 (1.runit #0 Mid.id #0 Mid.id #0 2.mor #0 Tgt.id) #1 (1.runit #0 Mid.id #0 2.mor #0 Tgt.id) #1 (1.runit #0 2.mor #0 Tgt.id) #1 (1.lunit_inv #0 2.mor #0 Tgt.id))
+            #2 ((1.mor #0 2.lunit_inv) #1 (1.runit #0 2.mor) #1 (1.mor #0 2.runit_inv) #1 (Idem.dir #0 Tgt.id) #1 (1.lunit_inv #0 2.mor #0 Tgt.id))
+            #2 ((1.mor #0 2.lunit_inv) #1 (1.mor #0 Mid.id #0 2.Bicomodule.dir) #1 (1.runit #0 Mid.id #0 2.mor #0 Tgt.id) #1 (1.LFrobenius_Bimodule.inv #0 2.mor #0 Tgt.id)),
+        inv => ((1.mor #0 2.lunit_inv) #1 (1.mor #0 Mid.id #0 2.Bicomodule.inv) #1 (1.runit #0 Mid.id #0 2.mor #0 Tgt.id) #1 (1.LFrobenius_Bimodule.dir #0 2.mor #0 Tgt.id))
+            #2 ((1.mor #0 2.lunit_inv) #1 (1.runit #0 2.mor) #1 (1.mor #0 2.runit_inv) #1 (Idem.inv #0 Tgt.id) #1 (1.lunit_inv #0 2.mor #0 Tgt.id))
+            #2 ((1.mor #0 2.lunit_inv) #1 (1.mor #0 Mid.id #0 2.Bicomodule.dir) #1 (1.mor #0 Mid.id #0 Mid.id #0 2.lunit_inv #0 Tgt.id) #1 (1.runit #0 Mid.id #0 Mid.id #0 2.mor #0 Tgt.id) #1 (1.runit #0 Mid.id #0 2.mor #0 Tgt.id) #1 (1.runit #0 2.mor #0 Tgt.id) #1 (1.lunit_inv #0 2.mor #0 Tgt.id))
+            #2 (Idem.dir #1 (1.mor #0 2.runit_inv) #1 (1.mor #0 2.lunit_inv #0 Tgt.id) #1 (1.runit #0 2.mor #0 Tgt.id) #1 (1.lunit_inv #0 2.mor #0 Tgt.id))
+    ],
+    let LFrobenius_Bimodule :: Equation = [
+        dir => ((1.mor #0 2.LFrobenius_Bimodule.dir) #1 (1.mor #0 Mid.id #0 2.lunit_inv) #1 (1.runit #0 Mid.id #0 2.mor) #1 (1.LFrobenius_Bimodule.dir #0 2.mor))
+            #2 ((1.mor #0 2.runit) #1 Idem.dir #1 (1.lunit_inv #0 2.mor))
+            #2 ((1.mor #0 2.runit) #1 Idem.inv #1 (1.lunit_inv #0 2.mor)),
+        inv => ((1.mor #0 2.runit) #1 Idem.dir #1 (1.lunit_inv #0 2.mor))
+            #2 ((1.mor #0 2.runit) #1 Idem.inv #1 (1.lunit_inv #0 2.mor))
+            #2 ((1.mor #0 2.LFrobenius_Bimodule.inv) #1 (1.runit #0 2.mor) #1 (1.mor #0 2.lunit_inv) #1 (1.LFrobenius_Bimodule.inv #0 2.mor))
+    ],
+    let RFrobenius_Bimodule :: Equation = [
+        dir => ((Src.id #0 1.mor #0 2.lunit_inv) #1 (Src.id #0 1.mor #0 Mid.id #0 2.Bicomodule.dir) #1 (1.Bimodule.inv #0 Mid.id #0 2.mor #0 Tgt.id) #1 (1.runit #0 2.mor #0 Tgt.id))
+            #2 ((1.lunit #0 2.mor) #1 Idem.dir #1 (1.mor #0 2.runit_inv))
+            #2 ((1.lunit #0 2.mor) #1 Idem.inv #1 (1.mor #0 2.runit_inv)),
+        inv => ((1.lunit #0 2.mor) #1 Idem.dir #1 (1.mor #0 2.runit_inv))
+            #2 ((1.lunit #0 2.mor) #1 Idem.inv #1 (1.mor #0 2.runit_inv))
+            #2 ((Src.id #0 1.mor #0 2.lunit_inv) #1 (Src.id #0 1.mor #0 Mid.id #0 2.Bicomodule.inv) #1 (1.Bimodule.dir #0 Mid.id #0 2.mor #0 Tgt.id) #1 (1.runit #0 2.mor #0 Tgt.id))
+    ],
+    let Left_LFrobenius_Module :: Equation = [
+        dir => ((1.Left_LFrobenius_Module.dir #0 2.mor) #1 (Src.id #0 Idem.inv))
+            #2 ((1.lunit #0 2.mor) #1 (1.mor #0 2.lunit_inv) #1 (1.LFrobenius_Bimodule.dir #0 2.mor) #1 (Src.id #0 1.mor #0 2.lunit_inv) #1 (Src.id #0 1.runit #0 2.mor))
+            #2 ((Src.id #0 1.mor #0 2.lunit_inv) #1 (Src.id #0 1.mor #0 Mid.id #0 2.lunit_inv) #1 (1.lunit #0 Mid.id #0 Mid.id #0 2.mor) #1 (1.runit #0 Mid.id #0 2.mor) #1 (1.LFrobenius_Bimodule.dir #0 2.mor)),
+        inv => ((1.lunit #0 2.mor) #1 (1.mor #0 2.lunit_inv) #1 (1.mor #0 Mid.id #0 2.lunit_inv) #1 (1.runit #0 Mid.id #0 2.mor) #1 (1.LFrobenius_Bimodule.inv #0 2.mor))
+            #2 ((Src.id #0 1.mor #0 2.lunit_inv) #1 (Src.id #0 1.mor #0 Mid.id #0 2.lunit_inv) #1 (1.lunit #0 Mid.id #0 Mid.id #0 2.mor) #1 (1.LFrobenius_Bimodule.inv #0 Mid.id #0 2.mor) #1 (Src.id #0 1.runit #0 2.mor))
+            #2 ((1.Left_LFrobenius_Module.inv #0 2.mor) #1 (Src.id #0 Idem.dir))
+    ],
+    let Right_LFrobenius_Module :: Equation = [
+        dir => ((Idem.inv #0 Tgt.id) #1 (1.mor #0 2.Right_LFrobenius_Module.dir))
+            #2 ((1.mor #0 2.lunit_inv #0 Tgt.id) #1 (1.mor #0 Mid.id #0 2.LFrobenius_Bimodule.dir) #1 (1.mor #0 Mid.id #0 Mid.id #0 2.runit_inv) #1 (1.runit #0 Mid.id #0 2.mor #0 Tgt.id) #1 (1.runit #0 2.mor #0 Tgt.id))
+            #2 ((1.mor #0 2.LFrobenius_Bimodule.dir) #1 (1.runit #0 2.mor) #1 (1.mor #0 2.lunit_inv) #1 (1.runit #0 2.mor) #1 (1.mor #0 2.runit_inv)),
+        inv => ((1.mor #0 2.LFrobenius_Bimodule.inv) #1 (1.mor #0 Mid.id #0 2.lunit_inv) #1 (1.mor #0 Mid.id #0 Mid.id #0 2.runit_inv) #1 (1.runit #0 Mid.id #0 2.mor #0 Tgt.id) #1 (1.runit #0 2.mor #0 Tgt.id))
+            #2 ((1.mor #0 2.lunit_inv #0 Tgt.id) #1 (1.mor #0 Mid.id #0 2.LFrobenius_Bimodule.inv) #1 (1.mor #0 Mid.id #0 Mid.id #0 2.runit_inv) #1 (1.runit #0 Mid.id #0 2.mor #0 Tgt.id) #1 (1.runit #0 2.mor #0 Tgt.id))
+            #2 ((Idem.dir #0 Tgt.id) #1 (1.mor #0 2.Right_LFrobenius_Module.inv))
+    ],
+    let Left_RFrobenius_Module :: Equation = [
+        dir => ((Src.id #0 Idem.inv) #1 (1.Left_RFrobenius_Module.dir #0 2.mor))
+            #2 ((Src.id #0 1.mor #0 2.lunit_inv) #1 (Src.id #0 1.mor #0 Mid.id #0 2.lunit_inv) #1 (Src.id #0 1.runit #0 Mid.id #0 2.mor) #1 (1.Bimodule.inv #0 2.mor) #1 (1.lunit_inv #0 2.mor))
+            #2 ((Src.id #0 1.mor #0 2.lunit_inv) #1 (1.Bimodule.inv #0 2.mor) #1 (1.mor #0 2.lunit_inv) #1 (1.runit #0 2.mor) #1 (1.lunit_inv #0 2.mor)),
+        inv => ((Src.id #0 1.mor #0 2.lunit_inv) #1 (1.Bimodule.dir #0 2.mor) #1 (1.mor #0 2.lunit_inv) #1 (1.runit #0 2.mor) #1 (1.lunit_inv #0 2.mor))
+            #2 ((Src.id #0 1.mor #0 2.lunit_inv) #1 (Src.id #0 1.mor #0 Mid.id #0 2.lunit_inv) #1 (Src.id #0 1.runit #0 Mid.id #0 2.mor) #1 (1.Bimodule.dir #0 2.mor) #1 (1.lunit_inv #0 2.mor))
+            #2 ((Src.id #0 Idem.dir) #1 (1.Left_RFrobenius_Module.inv #0 2.mor))
+    ],
+    let Right_RFrobenius_Module :: Equation = [
+        dir => ((1.mor #0 2.Right_RFrobenius_Module.dir) #1 (Idem.inv #0 Tgt.id))
+            #2 ((1.mor #0 2.runit) #1 (1.mor #0 2.Bicomodule.dir) #1 (1.mor #0 Mid.id #0 2.lunit_inv #0 Tgt.id) #1 (1.runit #0 Mid.id #0 2.mor #0 Tgt.id) #1 (1.runit #0 2.mor #0 Tgt.id))
+            #2 ((1.mor #0 2.runit) #1 (1.mor #0 2.lunit_inv) #1 (1.mor #0 Mid.id #0 2.Bicomodule.dir) #1 (1.runit #0 Mid.id #0 2.mor #0 Tgt.id) #1 (1.runit #0 2.mor #0 Tgt.id)),
+        inv => ((1.mor #0 2.runit) #1 (1.mor #0 2.lunit_inv) #1 (1.mor #0 Mid.id #0 2.Bicomodule.inv) #1 (1.runit #0 Mid.id #0 2.mor #0 Tgt.id) #1 (1.runit #0 2.mor #0 Tgt.id))
+            #2 ((1.mor #0 2.runit) #1 (1.mor #0 2.Bicomodule.inv) #1 (1.runit #0 2.mor #0 Tgt.id) #1 (1.mor #0 2.lunit_inv #0 Tgt.id) #1 (1.runit #0 2.mor #0 Tgt.id))
+            #2 ((1.mor #0 2.Right_RFrobenius_Module.inv) #1 (Idem.dir #0 Tgt.id))
+    ]
+(* End local definitions *) }
+
+let total Comp :: Morphism = [
+    Src => Src, Tgt => Tgt,
+    LUnit => LUnit, RUnit => RUnit,
+    LUnit_Inv => LUnit_Inv, RUnit_Inv => RUnit_Inv,
+    LUnit_Inversion => LUnit_Inversion, 
+    RUnit_Inversion => RUnit_Inversion,
+    Left_Module => Left_Module, Right_Module => Right_Module,
+    Left_Comodule => Left_Comodule, Right_Comodule => Right_Comodule,
+    Bimodule => Bimodule, Bicomodule => Bicomodule,
+    LFrobenius_Bimodule => LFrobenius_Bimodule,
+    RFrobenius_Bimodule => RFrobenius_Bimodule,
+    Left_LFrobenius_Module => Left_LFrobenius_Module,
+    Right_LFrobenius_Module => Right_LFrobenius_Module,
+    Left_RFrobenius_Module => Left_RFrobenius_Module,
+    Right_RFrobenius_Module => Right_RFrobenius_Module
+]
+
+@Type
+(*** 
+    A 2-morphism 
+***)
+2Morphism <<= {
+	attach 0Src :: Object,
+    attach 0Tgt :: Object,
+    
+    attach Src :: Morphism along [ Src => 0Src, Tgt => 0Tgt ],
+    attach Tgt :: Morphism along [ Src => 0Src, Tgt => 0Tgt ],
+
+    2mor: Src.mor -> Tgt.mor,
+
+    attach SrcId :: Equation along [
+        lhs => Src.id 2mor,
+        rhs => 2mor
+    ],
+    attach TgtId :: Equation along [
+        lhs => 2mor Tgt.id,
+        rhs => 2mor
+    ],
+    attach LUnit_Nat :: Equation along [
+        lhs => (0Src.id 2mor) Tgt.lunit,
+        rhs => Src.lunit 2mor
+    ],
+    attach RUnit_Nat :: Equation along [
+        lhs => (2mor 0Tgt.id) Tgt.runit,
+        rhs => Src.runit 2mor
+    ],
+    attach LUnit_Inv_Nat :: Equation along [
+        lhs => 2mor Tgt.lunit_inv,
+        rhs => Src.lunit_inv (0Src.id 2mor)
+    ],
+    attach RUnit_Inv_Nat :: Equation along [
+        lhs => 2mor Tgt.runit_inv,
+        rhs => Src.runit_inv (2mor 0Tgt.id)
+    ]
+}
+
+(* The identity 2-morphism *)
+@Morphism
+let Id :: 2Morphism = [
+	0Src => Src, 0Tgt => Tgt,
+    Src => Morphism, Tgt => Morphism,
+    2mor => id,
+    SrcId => Idem, TgtId => Idem,
+    LUnit_Nat.dir => LUnit.RSrcId.dir LUnit.TgtId.inv,
+    LUnit_Nat.inv => LUnit.TgtId.dir LUnit.RSrcId.inv,
+    RUnit_Nat.dir => RUnit.LSrcId.dir RUnit.TgtId.inv,
+    RUnit_Nat.inv => RUnit.TgtId.dir RUnit.LSrcId.inv,
+    LUnit_Inv_Nat.dir => LUnit_Inv.SrcId.dir LUnit_Inv.RTgtId.inv,
+    LUnit_Inv_Nat.inv => LUnit_Inv.RTgtId.dir LUnit_Inv.SrcId.inv,
+    RUnit_Inv_Nat.dir => RUnit_Inv.SrcId.dir RUnit_Inv.LTgtId.inv,
+    RUnit_Inv_Nat.inv => RUnit_Inv.LTgtId.dir RUnit_Inv.SrcId.inv
+]
