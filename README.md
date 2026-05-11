@@ -123,6 +123,7 @@ Key commands:
 | `start <t> <s> [<g>]` | Start a rewrite session (target optional) |
 | `apply <n>` | Apply rewrite at index `n` (alias `a`) |
 | `undo` | Undo last step (alias `u`) |
+| `redo` | Redo last undone step |
 | `rules` | List available rewrite rules (alias `r`) |
 | `proof` | Show the running proof diagram (alias `p`) |
 | `store <name>` | Register proof as a first-class generator |
@@ -153,6 +154,7 @@ Key requests:
 {"command":"init","source_file":"...","type_name":"...","source_diagram":"..."}
 {"command":"step","choice":0}
 {"command":"undo"}
+{"command":"redo"}
 {"command":"store","name":"myproof"}
 {"command":"types"}
 {"command":"type","name":"Idem"}

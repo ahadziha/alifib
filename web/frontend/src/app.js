@@ -1282,7 +1282,7 @@ async function handleCommand(raw) {
     const rendered = renderCommandResult(cmd, result.data);
     appendReplEntry(raw, rendered);
     // Only update the session diagram display for state-changing commands.
-    const stateCommands = ['apply', 'a', 'auto', 'undo', 'u', 'restart', 'show', 'status', 'store', 'parallel'];
+    const stateCommands = ['apply', 'a', 'auto', 'undo', 'u', 'redo', 'restart', 'show', 'status', 'store', 'parallel'];
     if (sessionActive && stateCommands.includes(cmd)) {
       await updateVisInfo(result.data);
     }
@@ -1668,6 +1668,8 @@ Session commands (require active session):
   undo (u)            undo last step
   undo <n>            undo back to step n
   undo all            undo all steps
+  redo                redo last undone step
+  redo <n>            redo forward to step n
   restart             same as undo all
   show / status       show current state
   rules (r)           list all rewrite rules

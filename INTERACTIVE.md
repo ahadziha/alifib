@@ -50,6 +50,8 @@ start Mor 'comp #(f, comp #(g, h))' 'comp #(comp #(f, g), h)'
 | `undo` | `u` | Undo the last step |
 | `undo <n>` | `u <n>` | Undo back to step `n` (0 = reset to source) |
 | `undo all` / `restart` | | Reset to source diagram |
+| `redo` | | Redo the last undone step |
+| `redo <n>` | | Redo forward to step `n` |
 | `show` / `status` | | Redisplay current diagram and available rewrites |
 | `rules` | `r` | List rewrite rules at current dimension |
 | `history` | `h` | Show the sequence of moves applied so far |
@@ -60,7 +62,11 @@ start Mor 'comp #(f, comp #(g, h))' 'comp #(comp #(f, g), h)'
 
 ### Display
 
-After each `apply` or `undo`, the current diagram and available rewrites are
+Undo preserves a redo buffer: undone steps can be redone until a new rewrite
+choice is made, which discards the buffer. There is no need to track the full
+tree of histories — only the most recent linear history is kept.
+
+After each `apply`, `undo`, or `redo`, the current diagram and available rewrites are
 printed automatically. Bracket notation shows where in the current diagram each
 rule matches:
 
@@ -151,6 +157,8 @@ Otherwise the daemon starts blank and waits for an `init` request.
 {"command":"step","choice":0}
 {"command":"undo"}
 {"command":"undo_to","step":2}
+{"command":"redo"}
+{"command":"redo_to","step":4}
 {"command":"show"}
 {"command":"save","path":"..."}
 {"command":"list_rules"}
@@ -178,7 +186,8 @@ The `data` object includes:
 
 | Field | Description |
 |-------|-------------|
-| `step_count` | Number of steps applied |
+| `step_count` | Number of active steps applied |
+| `can_redo` | Whether undone steps can be redone |
 | `current` | Current diagram (`DiagramInfo`) |
 | `source` | Source diagram (`DiagramInfo`) |
 | `target` | Target diagram (omitted if not set) |
