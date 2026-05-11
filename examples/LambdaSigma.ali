@@ -20,7 +20,11 @@ LambdaSigma <<= {
     let term = Term.wire,
     let subst = Subst.wire,
 
-	(* Constants: Var, Id, Shift *)
+	(* Constants: 
+    	Var ( 1 : Term ), 
+        Id ( id : Subst ), 
+        Shift ( ↑ : Subst )
+    *)
 	attach Var :: TRS.Constant along [ Cod => Term ],
 	let var = Var.node,
     	(* Missing naturality *)
@@ -40,7 +44,9 @@ LambdaSigma <<= {
         	]
     	}, 
 
-	(* Unary operator: Lambda *)
+	(* Unary operator: 
+    	Lambda ( λ _ : Term -> Term )
+    *)
     attach Lambda :: TRS.Unary along [ 
     	Dom => Term, Cod => Term,
         Dom_Cod => Term.Pair 
@@ -52,7 +58,12 @@ LambdaSigma <<= {
         	Dom_Other => Term_Subst, Cod_Other => Term_Subst
     	],
 
-	(* Binary operators: Clos, App, Cons, Comp *)
+	(* Binary operators: 
+    	Clos ( _[_] : Term × Subst -> Term ),
+        App ( _ _ : Term × Term -> Term ),
+        Cons ( _ . _ : Term × Subst -> Subst ), 
+        Comp ( _ ∘ _ : Subst × Subst -> Subst )
+    *)
     attach Clos :: TRS.Binary along [
     	LDom => Term, RDom => Subst, Cod => Term,
         LDom_RDom => Term_Subst, LDom_Cod => Term.Pair,
@@ -91,32 +102,68 @@ LambdaSigma <<= {
     	],
 
 	(* Reduction rules *)
+    (* 
+    	(λ M) N --> M[N . id] 
+    *)
 	Beta: (lambda term) app 
     	-> (term Term.runit_inv) (term term id) (term cons) clos,
+    (*
+    	1[M . s] --> M
+    *)
     Clos_Var: (var #0 cons) clos
     	-> (unit term Subst.discard) (unit Term.runit) Term.lunit,
+    (*
+    	M[s][t] --> M[s ◦ t]
+    *)
     Clos_Clos: (clos subst) clos 
     	-> (term comp) clos,
+    (* 
+    	(λ M)[s] --> λ (M[1 . (s ◦ ↑)])
+    *)
     Clos_Lambda: (lambda subst) clos
     	-> (Term.runit_inv #0 Subst.runit_inv) 
         	(term #0 var #0 subst #0 shift)
         	(term term comp) (term cons) clos lambda,
+    (*
+    	(M N)[s] --> M[s] N[s]
+    *)
     Clos_App: (app subst) clos
     	-> (term term Subst.copy) (term Term_Subst.swap subst)
         	(clos #0 clos) app,
+    (*
+    	1[id] --> 1
+    *)
     Clos_Id: (term id) clos
     	-> Term.runit,
+    (*
+    	id ◦ s --> s
+    *)
     Comp_Id_L: (id subst) comp
     	-> Subst.lunit,
+    (*
+    	s ◦ id --> s
+    *)
     Comp_Id_R: (subst id) comp
     	-> Subst.runit,
+    (*
+    	↑ ◦ (M . s) --> s
+    *)
     Comp_Shift: (shift #0 cons) comp
     	-> (unit Term.discard subst) (merge subst) Subst.lunit,
+    (*
+    	(M . s) ◦ t --> M[t] . (s ◦ t)
+    *)
     Comp_Cons: (cons subst) comp
     	-> (term subst Subst.copy) (term Subst.swap subst)
         	(clos #0 comp) cons,
+    (*
+    	(s ◦ t) ◦ u --> s ◦ (t ◦ u)
+    *)
     Comp_Comp: (comp subst) comp 
     	-> (subst comp) comp,
+    (*
+    	1 . ↑ --> id
+    *)
     Var_Shift: (var #0 shift) cons
     	-> merge id
 },
@@ -187,8 +234,8 @@ let example_2 =
     (app subst)
     clos,
 (*
-	1[M · (N · ↑)] [P · id]
-    --> M[P · id]
+	1[M . (N . ↑)] [P . id]
+    --> M[P . id]
 *)
 let example_3 =
 	split (unit split) (unit unit split) 
@@ -199,7 +246,7 @@ let example_3 =
     (clos subst)
     clos,
 (*
-	(λ 1)[M · s] N
+	(λ 1)[M . s] N
 	--> N
 *)
 let example_4 = 
@@ -209,7 +256,7 @@ let example_4 =
     (clos term)
     app,
 (*
-	((λ λ 1) M)[N · id]
+	((λ λ 1) M)[N . id]
     --> λ 1
 *)
 let example_5 =
@@ -219,8 +266,8 @@ let example_5 =
     (app subst)
     clos,
 (*
-	1[(M · id) ∘ (N · id)]
-    --> M[N · id]
+	1[(M . id) ∘ (N . id)]
+    --> M[N . id]
 *)
 let example_6 = 
 	split (unit split) (unit unit split) (unit unit unit split)
@@ -229,7 +276,7 @@ let example_6 =
     (term comp)
     clos,
 (*
-	(λ (1 2))[M · id]
+	(λ (1 2))[M . id]
     --> λ (1 M[↑])
 *)
 let example_7 =
@@ -240,7 +287,7 @@ let example_7 =
     clos,
 (*
 	((λ M)[s])[t]
-    --> λ M[1 · ((s ∘ t) ∘ ↑)]
+    --> λ M[1 . ((s ∘ t) ∘ ↑)]
 *)
 let example_8 = 
 	split (unit split)
@@ -249,7 +296,7 @@ let example_8 =
     (clos subst)
     clos,
 (*
-	(λ ((λ (2 1)) 1))[M · id]
+	(λ ((λ (2 1)) 1))[M . id]
     --> λ (1 1)
 *)
 let example_9 =
@@ -261,8 +308,8 @@ let example_9 =
     (lambda subst)
     clos,
 (*
-	1[id ∘ (M · ↑)] [N · id]
-    --> M[N · id]
+	1[id ∘ (M . ↑)] [N . id]
+    --> M[N . id]
 *)
 let example_10 = 
 	split (unit split) (unit unit split) 
@@ -273,7 +320,7 @@ let example_10 =
     (clos subst)
     clos,
 (*
-	(λ λ λ (3 (2 1)))[M · (N · id)]
+	(λ λ λ (3 (2 1)))[M . (N . id)]
     --> λ λ λ (3 (2 1))
 *)
 let example_11 = 
@@ -285,8 +332,8 @@ let example_11 =
     ((lambda lambda lambda) subst)
     clos,
 (*
-	((M N)[s])[P · t]
-    --> M[s ∘ (P · t)] N[s ∘ (P · t)]
+	((M N)[s])[P . t]
+    --> M[s ∘ (P . t)] N[s ∘ (P . t)]
 *)
 let example_12 = 
 	split (unit split) (unit unit split) (unit unit unit split)

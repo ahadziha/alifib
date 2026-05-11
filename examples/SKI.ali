@@ -5,19 +5,15 @@
 
 @Type
 include TRS,
-let Unit = TRS.Unit,
-let Sort = TRS.Sort,
-let Constant = TRS.Constant,
-let Binary = TRS.Binary,
 
 SKI <<= {
-	include Unit as Unit,
+	include TRS.Unit as Unit,
     let unit = Unit.wire,
     let merge = Unit.merge,
     let split = Unit.split,
 
     (* SKI is single-sorted *)
-    attach A :: Sort along [ Unit => Unit ],
+    attach A :: TRS.Sort along [ Unit => Unit ],
     
     let a = A.wire,
     let lunit = A.lunit,
@@ -26,24 +22,36 @@ SKI <<= {
     let copy = A.copy,
     let discard = A.discard,
 
-    attach S_comb :: Constant along [ Cod => A ],
+	(* The three combinators are constants: S, K, I *)
+    attach S_comb :: TRS.Constant along [ Cod => A ],
     let S = S_comb.node,
-    attach K_comb :: Constant along [ Cod => A ],
+    attach K_comb :: TRS.Constant along [ Cod => A ],
     let K = K_comb.node,
-    attach I_comb :: Constant along [ Cod => A ],
+    attach I_comb :: TRS.Constant along [ Cod => A ],
     let I = I_comb.node,
-    
-    attach Apply :: Binary along [ 
+
+    (* One binary operator: application *)
+    attach Apply :: TRS.Binary along [ 
         LDom => A, RDom => A, Cod => A,
         LDom_RDom => A.Pair, LDom_Cod => A.Pair,
         RDom_Cod => A.Pair
     ],
     let apply = Apply.node,
 
+	(* Reduction rules *)
+    (* 
+    	Sxyz --> xz(yz)
+    *)
 	S_rule: (S a a a) (apply a a) (apply a) apply
         -> (lunit a a) (a a copy) (a swap a) (apply a a) (a apply) apply,
+    (*
+    	Kxy --> x
+    *)
     K_rule: (K a a) (apply a) apply
         -> (lunit a) (a discard) runit,
+    (*
+    	Ix --> x
+    *)
     I_rule: (I a) apply 
     	-> lunit
 },
@@ -126,7 +134,7 @@ SKI_var <<= SKI {
 	index variables = [ x, y, z, f ],
 
     for var in variables {
-    	attach <var>_var :: Constant along [ Cod => A ],
+    	attach <var>_var :: TRS.Constant along [ Cod => A ],
         let <var> = <var>_var.node
     },
 
