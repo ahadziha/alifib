@@ -143,7 +143,7 @@ LambdaSigma_var <<= LambdaSigma {
     index Subst_variables = [ s, t, u ],
 
     for var in Term_variables {
-    	attach <var>_term:: TRS.Constant along [ Cod => Term ],
+    	attach <var>_term :: TRS.Constant along [ Cod => Term ],
         attach <var>_term_Subst :: TRS.Constant_Nat along [
         	Constant => <var>_term, Other => Subst,
         	Cod_Other => Term_Subst
