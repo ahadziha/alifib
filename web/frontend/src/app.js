@@ -1336,6 +1336,9 @@ function buildCommand(cmd, arg, raw) {
       if (arg === 'all') return JSON.stringify({ command: 'undo_to', step: 0 });
       if (arg) return JSON.stringify({ command: 'undo_to', step: parseInt(arg, 10) });
       return '{"command":"undo"}';
+    case 'redo':
+      if (arg) return JSON.stringify({ command: 'redo_to', step: parseInt(arg, 10) });
+      return '{"command":"redo"}';
     case 'apply':
     case 'a': {
       const nums = arg.trim().split(/\s+/).map(s => parseInt(s, 10));
@@ -1940,8 +1943,9 @@ async function showSessionDiagram(data) {
   let html = '';
   let buttons = '';
   if (data.target) buttons += `<button id="btn-target-vis" class="btn-target-vis btn-secondary" title="Show target diagram">Target</button>`;
-  if (data.step_count > 0) buttons += `<button id="btn-undo-vis" class="btn-undo-vis btn-secondary" title="Undo">&#x21A9;</button>`;
-  if (buttons) html += `<div class="infobox-actions">${buttons}</div>`;
+  buttons += `<button id="btn-undo-vis" class="btn-undo-vis btn-secondary" title="Undo"${data.step_count === 0 ? ' disabled' : ''}>&#x21A9;</button>`;
+  buttons += `<button id="btn-redo-vis" class="btn-redo-vis btn-secondary" title="Redo"${!data.can_redo ? ' disabled' : ''}>&#x21AA;</button>`;
+  html += `<div class="infobox-actions">${buttons}</div>`;
   html += `<span class="infobox-qual">Current diagram</span>`;
   html += `<div class="infobox-name">${hi(data.current.label || '—')} <span class="acc-dim">dim ${data.current.dim}, step ${data.step_count}</span></div>`;
   if (data.target) {
@@ -1953,6 +1957,8 @@ async function showSessionDiagram(data) {
   infoboxText.innerHTML = html;
   const btnUndo = document.getElementById('btn-undo-vis');
   if (btnUndo) btnUndo.addEventListener('click', () => { void performUndo(); });
+  const btnRedo = document.getElementById('btn-redo-vis');
+  if (btnRedo) btnRedo.addEventListener('click', () => { void performRedo(); });
   const btnTarget = document.getElementById('btn-target-vis');
   if (btnTarget) {
     btnTarget.addEventListener('mousedown', (e) => {
@@ -2187,6 +2193,19 @@ async function performUndo() {
     return;
   }
   appendReplEntry('undo', renderState(result.data));
+  selectedRewrite = null;
+  previewActive = false;
+  await showSessionDiagram(result.data);
+}
+
+async function performRedo() {
+  if (!repl) return;
+  const result = await parseReplResponse(repl.run_command('{"command":"redo"}'));
+  if (result.status === 'error') {
+    appendReplMsg('Redo error: ' + result.message, 'repl-result err');
+    return;
+  }
+  appendReplEntry('redo', renderState(result.data));
   selectedRewrite = null;
   previewActive = false;
   await showSessionDiagram(result.data);

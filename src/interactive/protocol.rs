@@ -71,6 +71,12 @@ pub enum Request {
     UndoTo {
         step: usize,
     },
+    /// Redo the last undone step.
+    Redo,
+    /// Redo forward to a specific step count.
+    RedoTo {
+        step: usize,
+    },
     /// Return the current state (no mutation).
     Show,
     /// Save the current session to a file (for `resume`).
@@ -133,6 +139,7 @@ impl Response {
 #[derive(Debug, Serialize)]
 pub struct ResponseData {
     pub step_count: usize,
+    pub can_redo: bool,
     pub current: DiagramInfo,
     pub source: DiagramInfo,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -469,6 +476,7 @@ pub fn build_response(engine: &RewriteEngine, include_history: bool) -> Response
 
     ResponseData {
         step_count: engine.step_count(),
+        can_redo: engine.can_redo(),
         current: diagram_info(current, scope),
         source: diagram_info(engine.source_diagram(), scope),
         target: engine.target_diagram().map(|t| diagram_info(t, scope)),

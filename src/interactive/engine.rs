@@ -38,8 +38,12 @@ pub struct RewriteEngine {
     current_diagram: Diagram,
     /// The individual (n+1)-dimensional rewrite steps applied so far.
     /// The full proof diagram is only built on demand — see [`assemble_proof`].
+    /// Entries beyond `active_len` form the redo buffer.
     steps: Vec<Diagram>,
     history: Vec<HistoryEntry>,
+    /// How many entries in `steps`/`history` are active. The rest are the
+    /// redo buffer, discarded only when a genuinely new step is applied.
+    active_len: usize,
     rewrites: Vec<MatchResult>,
     parallel: bool,
 
@@ -295,6 +299,7 @@ impl RewriteEngine {
             current_diagram: source_diagram.clone(),
             steps: Vec::new(),
             history: Vec::new(),
+            active_len: 0,
             rewrites,
             parallel: true,
             rule_patterns,
@@ -331,6 +336,7 @@ impl RewriteEngine {
             current_diagram: source_diagram.clone(),
             steps: Vec::new(),
             history: Vec::new(),
+            active_len: 0,
             rewrites,
             parallel: true,
             rule_patterns,
@@ -409,10 +415,12 @@ impl RewriteEngine {
             &type_complex, &rule_patterns, &current,
         )?;
 
+        let active_len = steps.len();
         Ok(Self {
             current_diagram: current,
             steps,
             history,
+            active_len,
             rewrites,
             parallel: true,
             rule_patterns,
@@ -450,8 +458,14 @@ impl RewriteEngine {
         self.rewrites.len()
     }
 
+    /// Discard the redo buffer, keeping only the active prefix.
+    fn truncate_redo(&mut self) {
+        self.steps.truncate(self.active_len);
+        self.history.truncate(self.active_len);
+    }
+
     /// Apply the rewrite at index `choice`. Records the step and advances
-    /// the current diagram.
+    /// the current diagram. Discards any redo buffer.
     pub fn step(&mut self, choice: usize) -> Result<&str, String> {
         let total = self.total_choices();
         if choice >= total {
@@ -473,12 +487,14 @@ impl RewriteEngine {
         let new_current = Diagram::boundary(Sign::Target, n, &step)
             .map_err(|e| format!("target boundary failed: {}", e))?;
 
+        self.truncate_redo();
         self.current_diagram = new_current;
         self.steps.push(step);
 
         self.history.push(HistoryEntry {
             mov: Move { choice: Some(choice), choices: None, rule_name: rule_name.clone(), parallel: false },
         });
+        self.active_len = self.steps.len();
 
         self.refresh_rewrites()?;
 
@@ -488,7 +504,7 @@ impl RewriteEngine {
     /// Apply multiple rewrites in parallel by their indices.
     ///
     /// Checks that the selected matches are pairwise disjoint, then builds a
-    /// combined parallel step via multi-pushout.
+    /// combined parallel step via multi-pushout. Discards any redo buffer.
     pub fn step_multi(&mut self, choices: &[usize]) -> Result<&str, String> {
         let total = self.total_choices();
         for &c in choices {
@@ -533,6 +549,7 @@ impl RewriteEngine {
         let new_current = Diagram::boundary(Sign::Target, n, &pr.step)
             .map_err(|e| format!("target boundary failed: {}", e))?;
 
+        self.truncate_redo();
         self.current_diagram = new_current;
         self.steps.push(pr.step);
         self.history.push(HistoryEntry {
@@ -543,39 +560,61 @@ impl RewriteEngine {
                 parallel: true,
             },
         });
+        self.active_len = self.steps.len();
 
         self.refresh_rewrites()?;
 
         Ok(&self.history.last().unwrap().mov.rule_name)
     }
 
-    /// Undo the last applied step, restoring the previous diagram state.
-    ///
-    /// Returns an error if there are no moves to undo.
-    pub fn undo(&mut self) -> Result<(), String> {
-        self.history.pop().ok_or("nothing to undo")?;
-        self.steps.pop();
-        self.current_diagram = if self.steps.is_empty() {
+    /// Move the cursor to `target` and restore the corresponding diagram.
+    fn seek(&mut self, target: usize) -> Result<(), String> {
+        self.active_len = target;
+        self.current_diagram = if target == 0 {
             self.source_diagram.clone()
         } else {
-            self.diagram_after_step(self.steps.len() - 1)?
+            self.diagram_after_step(target - 1)?
         };
-        self.refresh_rewrites()?;
-        Ok(())
+        self.refresh_rewrites()
+    }
+
+    /// Undo the last applied step. The undone step is kept in the redo buffer.
+    pub fn undo(&mut self) -> Result<(), String> {
+        if self.active_len == 0 { return Err("nothing to undo".to_owned()); }
+        self.seek(self.active_len - 1)
     }
 
     /// Undo all steps, resetting to the source diagram.
     pub fn undo_all(&mut self) -> Result<(), String> {
-        self.undo_to(0)
+        self.seek(0)
+    }
+
+    /// Redo the last undone step.
+    pub fn redo(&mut self) -> Result<(), String> {
+        if self.active_len >= self.history.len() { return Err("nothing to redo".to_owned()); }
+        self.seek(self.active_len + 1)
+    }
+
+    /// Redo forward to the given step index.
+    pub fn redo_to(&mut self, target_step: usize) -> Result<(), String> {
+        if target_step > self.history.len() {
+            return Err(format!(
+                "cannot redo to step {}: only {} step(s) in history",
+                target_step, self.history.len(),
+            ));
+        }
+        if target_step <= self.active_len { return Ok(()); }
+        self.seek(target_step)
     }
 
     /// Apply up to `max_steps` rewrites automatically, always picking the
-    /// first available candidate.
+    /// first available candidate. Discards any redo buffer.
     ///
     /// In parallel mode, uses a greedy algorithm to find a compatible family
     /// and apply it in one step.  In non-parallel mode, applies the first
     /// confirmed individual match.
     pub fn auto(&mut self, max_steps: usize) -> Result<(usize, Option<&'static str>), String> {
+        self.truncate_redo();
         let mut applied = 0usize;
         let stop_reason: Option<&'static str>;
 
@@ -627,30 +666,23 @@ impl RewriteEngine {
             applied += 1;
         }
 
+        self.active_len = self.steps.len();
         self.refresh_rewrites()?;
 
         Ok((applied, stop_reason))
     }
 
     /// Undo back to (but not past) the given step index (0 = fully undone,
-    /// 1 = after step 1, etc.).
+    /// 1 = after step 1, etc.). Undone steps are kept in the redo buffer.
     pub fn undo_to(&mut self, target_step: usize) -> Result<(), String> {
-        if target_step > self.history.len() {
+        if target_step > self.active_len {
             return Err(format!(
                 "cannot undo to step {}: only {} step(s) applied",
-                target_step, self.history.len(),
+                target_step, self.active_len,
             ));
         }
-        if target_step == self.history.len() { return Ok(()); }
-        self.history.truncate(target_step);
-        self.steps.truncate(target_step);
-        self.current_diagram = if target_step == 0 {
-            self.source_diagram.clone()
-        } else {
-            self.diagram_after_step(target_step - 1)?
-        };
-        self.refresh_rewrites()?;
-        Ok(())
+        if target_step == self.active_len { return Ok(()); }
+        self.seek(target_step)
     }
 
     /// Toggle parallel rewrite mode on or off. Only affects `auto()`.
@@ -662,8 +694,11 @@ impl RewriteEngine {
 // ── Read-only accessors ───────────────────────────────────────────────────────
 
 impl RewriteEngine {
-    /// Number of rewrite steps applied so far.
-    pub fn step_count(&self) -> usize { self.history.len() }
+    /// Number of active rewrite steps (excludes the redo buffer).
+    pub fn step_count(&self) -> usize { self.active_len }
+
+    /// Whether there are undone steps that can be redone.
+    pub fn can_redo(&self) -> bool { self.active_len < self.history.len() }
 
     /// The n-diagram being actively rewritten (changes after each [`step`](Self::step)).
     pub fn current_diagram(&self) -> &Diagram { &self.current_diagram }
@@ -674,12 +709,12 @@ impl RewriteEngine {
     /// The declared goal diagram, or `None` if no target was specified.
     pub fn target_diagram(&self) -> Option<&Diagram> { self.target_diagram.as_ref() }
 
-    /// The individual (n+1)-dimensional rewrite steps applied so far, in order.
+    /// The active (n+1)-dimensional rewrite steps, in order.
     ///
     /// Each step is a single rewrite — they are *not* pasted together here.
     /// Use [`assemble_proof`](Self::assemble_proof) to build the full proof
     /// diagram (only done when storing or typechecking).
-    pub fn steps(&self) -> &[Diagram] { &self.steps }
+    pub fn steps(&self) -> &[Diagram] { &self.steps[..self.active_len] }
 
     /// Paste the recorded rewrite steps together into the full (n+1)-dimensional
     /// proof diagram.  Returns `Ok(None)` if no steps have been taken.
@@ -689,7 +724,8 @@ impl RewriteEngine {
     /// or rendering the final proof label).
     pub fn assemble_proof(&self) -> Result<Option<Diagram>, String> {
         let n = self.source_diagram.top_dim();
-        let mut iter = self.steps.iter();
+        let active = &self.steps[..self.active_len];
+        let mut iter = active.iter();
         let Some(first) = iter.next() else { return Ok(None); };
         let mut acc = first.clone();
         for step in iter {
@@ -717,9 +753,9 @@ impl RewriteEngine {
     /// The type complex whose (n+1)-generators are the rewrite rules.
     pub fn type_complex(&self) -> &Complex { &self.type_complex }
 
-    /// Iterate over the moves in history order without materialising a [`SessionFile`].
+    /// Iterate over the active moves in history order.
     pub fn history_moves(&self) -> impl Iterator<Item = &Move> {
-        self.history.iter().map(|e| &e.mov)
+        self.history[..self.active_len].iter().map(|e| &e.mov)
     }
 
     /// Canonical path to the `.ali` source file for this session.
@@ -747,7 +783,7 @@ impl RewriteEngine {
     /// at least one rewrite step has been applied.  Regular directed complexes
     /// have no identities, so source == target at the start is never a valid proof.
     pub fn target_reached(&self) -> bool {
-        !self.steps.is_empty()
+        self.active_len > 0
             && self.target_diagram.as_ref()
                 .map(|t| Diagram::isomorphic(&self.current_diagram, t))
                 .unwrap_or(false)
@@ -870,7 +906,7 @@ impl RewriteEngine {
             type_name: self.type_name.clone(),
             source_diagram: self.source_diagram_name.clone(),
             target_diagram: self.target_diagram_name.clone(),
-            moves: self.history.iter().map(|e| e.mov.clone()).collect(),
+            moves: self.history[..self.active_len].iter().map(|e| e.mov.clone()).collect(),
         }
     }
 
@@ -920,6 +956,10 @@ impl RewriteEngine {
             Request::Undo => self.undo().map(|_| build_response(self, false)),
             Request::UndoTo { step } => {
                 self.undo_to(*step).map(|_| build_response(self, false))
+            }
+            Request::Redo => self.redo().map(|_| build_response(self, false)),
+            Request::RedoTo { step } => {
+                self.redo_to(*step).map(|_| build_response(self, false))
             }
             Request::Show => Ok(build_response(self, false)),
             Request::History => Ok(build_response(self, true)),

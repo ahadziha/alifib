@@ -191,7 +191,7 @@ header {
 .btn-secondary { background: var(--border); color: var(--text); }
 .btn-primary:hover  { opacity: 0.85; }
 .btn-secondary:hover { opacity: 0.75; }
-.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-primary:disabled, .btn-secondary:disabled { opacity: 0.3; cursor: not-allowed; }
 
 /* ── File pane ── */
 .pane-actions {
@@ -731,7 +731,7 @@ header {
   display: flex;
   gap: 4px;
 }
-.btn-target-vis, .btn-undo-vis {
+.btn-target-vis, .btn-undo-vis, .btn-redo-vis {
   font-size: 11px;
   line-height: 1;
   padding: 3px 8px;
@@ -739,7 +739,8 @@ header {
   user-select: none;
 }
 .btn-target-vis:active { background: var(--accent); color: #fff; }
-.btn-undo-vis { font-size: 14px; }
+.btn-undo-vis, .btn-redo-vis { font-size: 14px; }
+.btn-undo-vis:disabled, .btn-redo-vis:disabled { cursor: not-allowed; }
 .infobox-text { position: relative; }
 
 .infobox-label {

@@ -5,7 +5,7 @@
 //! - **No session** — file is loaded.  Non-session commands work: `types`,
 //!   `type`, `homology`, `status`, `print`.  Use `start <type> <source>
 //!   [<target>]` to begin a rewrite session.
-//! - **Session active** — engine running; `apply`, `undo`, `undo all`,
+//! - **Session active** — engine running; `apply`, `undo`, `redo`,
 //!   `restart`, `stop`, `show`, `history`, `proof`, `save`, `load`, etc.
 //!
 //! All human-readable output flows through a single [`Display`] value.
@@ -33,6 +33,8 @@
 //! undo             Undo the last step                    (alias: u)
 //! undo <n>         Undo back to step <n>
 //! undo all         Reset to source diagram               (= restart)
+//! redo             Redo the last undone step
+//! redo <n>         Redo forward to step <n>
 //! rules            List rewrite rules at current dimension  (alias: r)
 //! history          Show the move history                 (alias: h)
 //! proof            Show the running proof diagram        (alias: p)
@@ -696,6 +698,18 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
                 Err(e) => display.error(&e),
             }
         }
+        Cmd::Redo(None) => {
+            match engine.redo() {
+                Ok(()) => show_state(engine, display),
+                Err(e) => display.error(&e),
+            }
+        }
+        Cmd::Redo(Some(target)) => {
+            match engine.redo_to(target) {
+                Ok(()) => show_state(engine, display),
+                Err(e) => display.error(&e),
+            }
+        }
         Cmd::Rules => {
             let n = engine.current_diagram().top_dim();
             dispatch_rules(engine.type_complex(), engine.store(), Some(n + 1), display);
@@ -784,6 +798,8 @@ fn print_help(display: &Display) {
          \x20 undo                Undo the last step                    (alias: u)\n\
          \x20 undo <n>            Undo back to step <n>\n\
          \x20 undo all            Reset to source diagram               (= restart)\n\
+         \x20 redo                Redo the last undone step\n\
+         \x20 redo <n>            Redo forward to step <n>\n\
          \x20 rules               List rewrite rules at current dimension  (alias: r)\n\
          \x20 history             Show the move history                 (alias: h)\n\
          \x20 proof               Show the running proof diagram        (alias: p)\n\
@@ -816,6 +832,8 @@ enum Cmd {
     Undo(Option<usize>),
     /// `undo all` — undo all steps.
     UndoAll,
+    /// `redo [<n>]` — redo the last undone step, or redo forward to step n.
+    Redo(Option<usize>),
     /// `restart` — alias for `undo all`.
     Restart,
     /// `stop` — destroy engine and type selection, return to no-session mode.
@@ -923,6 +941,16 @@ fn parse_command(line: &str) -> Cmd {
                 match rest.parse::<usize>() {
                     Ok(n) => Cmd::Undo(Some(n)),
                     Err(_) => Cmd::UsageError("undo  |  undo <n>  |  undo all".to_owned()),
+                }
+            }
+        }
+        "redo" => {
+            if rest.is_empty() {
+                Cmd::Redo(None)
+            } else {
+                match rest.parse::<usize>() {
+                    Ok(n) => Cmd::Redo(Some(n)),
+                    Err(_) => Cmd::UsageError("redo  |  redo <n>".to_owned()),
                 }
             }
         }
