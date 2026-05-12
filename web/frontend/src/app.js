@@ -2678,12 +2678,6 @@ function renderStrDiag(ctx, L, cw, ch) {
     ctx.lineWidth = WIRE_W;
     ctx.lineCap = 'round';
     strokeWirePaths(wi);
-    if (!wireThin) {
-      ctx.beginPath();
-      ctx.arc(px[wi].x, px[wi].y, WIRE_R, 0, Math.PI * 2);
-      ctx.fillStyle = wireColor;
-      ctx.fill();
-    }
   }
 
   if (L.depthEdges.length > 0) {
