@@ -2321,10 +2321,7 @@ async function refreshInfobox() {
                    : item.kind === 'diagram'   ? 'Diagram at'
                    : 'Map at';
   let displayName;
-  if (isBoundary && mapHasGen) {
-    const signLabel = bdSign === 'output' ? 'Output' : 'Input';
-    displayName = `${signLabel} ${bdDim}-boundary of ${item.name}.${currentMapGen}`;
-  } else if (isBoundary) {
+  if (isBoundary && !mapHasGen) {
     const signLabel = bdSign === 'output' ? 'Output' : 'Input';
     displayName = `${signLabel} ${bdDim}-boundary of ${item.name}`;
   } else {
