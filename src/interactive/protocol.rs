@@ -68,6 +68,10 @@ pub enum Request {
     Auto {
         max_steps: usize,
     },
+    /// Apply randomly selected available rewrite.
+    Random {
+        max_steps: usize,
+    },
     /// Undo the last step.
     Undo,
     /// Undo back to a specific step count (0 = reset to source).

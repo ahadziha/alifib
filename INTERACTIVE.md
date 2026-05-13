@@ -46,6 +46,7 @@ start Mor 'comp #(f, comp #(g, h))' 'comp #(comp #(f, g), h)'
 |---------|---------|-------------|
 | `apply <n> [<n2> ...]` | `a` | Apply rewrite(s) at given indices |
 | `auto <n>` | | Apply up to `n` rewrites automatically |
+| `random <n>` | | Apply randomly selected rewrites automatically |
 | `parallel [on\|off]` | | Show or toggle parallel rewrite mode (default: on) |
 | `undo` | `u` | Undo the last step |
 | `undo <n>` | `u <n>` | Undo back to step `n` (0 = reset to source) |

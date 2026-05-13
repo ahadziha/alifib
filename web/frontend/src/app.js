@@ -1309,7 +1309,7 @@ async function handleCommand(raw) {
     const rendered = renderCommandResult(cmd, result.data);
     appendReplEntry(raw, rendered);
     // Only update the session diagram display for state-changing commands.
-    const stateCommands = ['apply', 'a', 'auto', 'undo', 'u', 'redo', 'restart', 'show', 'status', 'store', 'parallel'];
+    const stateCommands = ['apply', 'a', 'auto', 'random', 'undo', 'u', 'redo', 'restart', 'show', 'status', 'store', 'parallel'];
     if (sessionActive && stateCommands.includes(cmd)) {
       await updateVisInfo(result.data);
     }
@@ -1381,6 +1381,10 @@ function buildCommand(cmd, arg, raw) {
       if (isNaN(n) || n < 0) { appendReplEntry(raw, formatError('usage: auto <n>')); return null; }
       return JSON.stringify({ command: 'auto', max_steps: n });
     }
+    case 'random':
+      const n = parseInt(arg, 10);
+      if (isNaN(n) || n < 0) { appendReplEntry(raw, formatError('usage: random <n>')); return null; }
+      return JSON.stringify({ command: 'random', max_steps: n });
     case 'restart':  return JSON.stringify({ command: 'undo_to', step: 0 });
     case 'rules':
     case 'r':        return '{"command":"list_rules"}';
@@ -1703,6 +1707,7 @@ Session commands (require active session):
   apply <n> [<n2>..]  apply rewrite(s) at given indices     (alias: a)
   auto <n>            apply up to n rewrites automatically
   parallel [on|off]   show or toggle parallel rewrite mode  (default: on)
+  random <n>          apply up to n randomly selected rewrites
   undo (u)            undo last step
   undo <n>            undo back to step n
   undo all            undo all steps

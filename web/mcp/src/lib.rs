@@ -177,7 +177,7 @@ fn tool_descriptors() -> Vec<Value> {
         }),
         json!({
             "name": "run_command",
-            "description": "Send a daemon-protocol command. The arguments object IS the command — set `command` to one of: step, auto, undo, undo_to, show, list_rules, history, store, types, type, cell, homology, and supply that command's fields alongside (e.g. `{command:'step', choice:0}`). Alternatively pass `{command_json: '<raw>'}` to forward an arbitrary JSON body.",
+            "description": "Send a daemon-protocol command. The arguments object IS the command — set `command` to one of: step, random, auto, undo, undo_to, show, list_rules, history, store, types, type, cell, homology, and supply that command's fields alongside (e.g. `{command:'step', choice:0}`). Alternatively pass `{command_json: '<raw>'}` to forward an arbitrary JSON body.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

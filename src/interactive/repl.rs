@@ -30,6 +30,7 @@
 //! ```text
 //! apply <n>        Apply rewrite at index <n>            (alias: a)
 //! auto <n>         Apply up to <n> rewrites automatically, always picking index 0
+//! random <n>       Apply randomly selected rewrites automatically
 //! undo             Undo the last step                    (alias: u)
 //! undo <n>         Undo back to step <n>
 //! undo all         Reset to source diagram               (= restart)
@@ -708,6 +709,19 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
                 Err(e) => display.error(&e),
             }
         }
+        Cmd::Random(n) => {
+            match engine.random(n) {
+                Ok((applied, stop_reason)) => {
+                    let tail = stop_reason.map(|r| format!(" ({})", r)).unwrap_or_default();
+                    display.meta(&format!(
+                        "Applied {} step{}{}.",
+                        applied, if applied == 1 { "" } else { "s" }, tail,
+                    ));
+                    show_state(engine, display);
+                }
+                Err(e) => display.error(&e),
+            }
+        }
         Cmd::Undo(None) => {
             match engine.undo() {
                 Ok(()) => show_state(engine, display),
@@ -831,6 +845,7 @@ fn print_help(display: &Display) {
          Session commands (require active session):\n\
          \x20 apply <n> [<n2>..]  Apply rewrite(s) at given indices    (alias: a)\n\
          \x20 auto <n>            Apply up to <n> rewrites automatically\n\
+         \x20 random <n>          Apply randomly selected rewrites\n\
          \x20 parallel [on|off]   Show or toggle parallel rewrite mode  (default: on)\n\
          \x20 undo                Undo the last step                    (alias: u)\n\
          \x20 undo <n>            Undo back to step <n>\n\
@@ -865,6 +880,8 @@ enum Cmd {
     /// `auto <n>` — apply up to `n` rewrites automatically, always picking the
     /// first available candidate each step.
     Auto(usize),
+    /// `random` — apply one randomly selected candidate rewrite.
+    Random(usize),
     /// `undo [<n>]` — undo the last step, or undo back to step n.
     Undo(Option<usize>),
     /// `undo all` — undo all steps.
@@ -969,6 +986,12 @@ fn parse_command(line: &str) -> Cmd {
             match rest.parse::<usize>() {
                 Ok(n) => Cmd::Auto(n),
                 Err(_) => Cmd::UsageError("auto <n>".to_owned()),
+            }
+        }
+        "random" => {
+            match rest.parse::<usize>() {
+                Ok(n) => Cmd::Random(n),
+                Err(_) => Cmd::UsageError("random".to_owned()),
             }
         }
         "undo" | "u" => {
