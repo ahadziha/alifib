@@ -16,7 +16,8 @@ use serde::Serialize;
 use crate::aux::Tag;
 use crate::aux::loader::{LoadFileError, Loader};
 use crate::core::complex::Complex;
-use crate::core::diagram::CellData;
+use crate::core::diagram::{CellData, Diagram, Sign};
+use crate::core::strdiag::StrDiag;
 use crate::interpreter::{GlobalStore, InterpretedFile, LoadResult};
 use crate::language::error::Diagnostic;
 
@@ -24,7 +25,8 @@ use super::engine::{RewriteEngine, resolve_type};
 use super::protocol::{
     Request, Response, build_homology_response, build_map_entries, build_map_image_strdiag,
     build_response, build_strdiag_response, build_types_from_store, build_type_detail_from_store,
-    resolve_domain_complex, step_target_strdiag_json, strdiag_json_from_diagram, tag_to_json,
+    resolve_domain_complex, step_target_strdiag_json, strdiag_json_from_diagram,
+    strdiag_to_json, tag_to_json,
 };
 
 pub const WEB_SOURCE_PATH: &str = "source.ali";
@@ -66,6 +68,10 @@ impl State {
     }
 
     fn engine(&self) -> Option<&RewriteEngine> {
+        if let State::Active { engine, .. } = self { Some(engine) } else { None }
+    }
+
+    fn engine_mut(&mut self) -> Option<&mut RewriteEngine> {
         if let State::Active { engine, .. } = self { Some(engine) } else { None }
     }
 }
@@ -356,6 +362,60 @@ impl WebRepl {
                 Err(msg) => err_json(&msg),
             }
         })
+    }
+
+    /// Enable or disable proof view (incremental proof caching).
+    pub fn set_proof_view(&mut self, on: bool) -> String {
+        let Some(engine) = self.state.engine_mut() else {
+            return err_json("no session active; call init_session first");
+        };
+        if on {
+            match engine.enable_proof_cache() {
+                Ok(()) => ok_json(serde_json::json!({ "proof_view": true })),
+                Err(msg) => err_json(&msg),
+            }
+        } else {
+            engine.disable_proof_cache();
+            ok_json(serde_json::json!({ "proof_view": false }))
+        }
+    }
+
+    /// Return the proof string diagram for the current session state.
+    ///
+    /// Returns the proof StrDiag at dimension `n + 1` (where `n` is the source
+    /// dimension), plus an `output_boundary_map` for wire highlighting.
+    ///
+    /// At step 0 the proof is the n-dimensional source; extracting at `n + 1`
+    /// naturally yields 0 nodes and all n-cells as wires.
+    pub fn get_proof_strdiag(&mut self) -> String {
+        let Some(engine) = self.state.engine_mut() else {
+            return err_json("no session active; call init_session first");
+        };
+
+        let proof = match engine.proof_diagram() {
+            Ok(d) => d,
+            Err(msg) => return err_json(&msg),
+        };
+
+        let scope = engine.type_complex();
+        let step_count = engine.step_count();
+        let n = engine.source_diagram().top_dim();
+        let current = engine.current_diagram().clone();
+
+        let sd = StrDiag::from_diagram_at_dim(&proof, scope, n + 1);
+
+        let boundary_map = match Diagram::boundary_correspondence(
+            Sign::Target, n, &proof, &current,
+        ) {
+            Ok(m) => serde_json::json!(m),
+            Err(e) => return err_json(&format!("boundary map: {}", e)),
+        };
+
+        ok_json(serde_json::json!({
+            "strdiag": strdiag_to_json(&sd),
+            "step_count": step_count,
+            "output_boundary_map": boundary_map,
+        }))
     }
 
     fn need_engine<F: FnOnce(&RewriteEngine) -> String>(&self, f: F) -> String {

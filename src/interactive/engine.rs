@@ -21,6 +21,16 @@ struct HistoryEntry {
     mov: Move,
 }
 
+/// Cached assembled proof diagram at a known step count.
+///
+/// When proof view is active the frontend needs the (n+1)-dimensional proof
+/// diagram at every step.  Rather than rebuilding from scratch each time,
+/// we cache the last assembled proof and extend it incrementally.
+pub struct ProofCache {
+    pub snapshot: Diagram,
+    pub at_step: usize,
+}
+
 /// Stateful rewrite session engine.
 ///
 /// Load once with [`RewriteEngine::init`] or [`RewriteEngine::from_session`];
@@ -52,6 +62,9 @@ pub struct RewriteEngine {
     /// reused for every [`find_matches`] call so that rule-side boundary
     /// traversal and normalisation aren't redone on every step.
     rule_patterns: HashMap<String, RulePattern>,
+
+    /// Incremental proof cache, active only while proof view is enabled.
+    proof_cache: Option<ProofCache>,
 
     // Metadata (for session file persistence)
     source_file: String,
@@ -303,6 +316,7 @@ impl RewriteEngine {
             rewrites,
             parallel: true,
             rule_patterns,
+            proof_cache: None,
             source_file,
             type_name,
             source_diagram_name: source_diagram_name.to_owned(),
@@ -340,6 +354,7 @@ impl RewriteEngine {
             rewrites,
             parallel: true,
             rule_patterns,
+            proof_cache: None,
             store,
             type_complex,
             source_diagram,
@@ -424,6 +439,7 @@ impl RewriteEngine {
             rewrites,
             parallel: true,
             rule_patterns,
+            proof_cache: None,
             source_file: session.source_file.clone(),
             type_name: session.type_name.clone(),
             source_diagram_name: session.source_diagram.clone(),
@@ -462,6 +478,11 @@ impl RewriteEngine {
     fn truncate_redo(&mut self) {
         self.steps.truncate(self.active_len);
         self.history.truncate(self.active_len);
+        if let Some(ref cache) = self.proof_cache {
+            if cache.at_step > self.active_len {
+                self.proof_cache = None;
+            }
+        }
     }
 
     /// Apply the rewrite at index `choice`. Records the step and advances
@@ -779,6 +800,96 @@ impl RewriteEngine {
         Ok(())
     }
 
+    // ── Proof cache ──────────────────────────────────────────────────────
+
+    /// Enable the proof cache, building the initial snapshot at the current step.
+    pub fn enable_proof_cache(&mut self) -> Result<(), String> {
+        match self.assemble_proof()? {
+            Some(proof) => {
+                self.proof_cache = Some(ProofCache {
+                    snapshot: proof,
+                    at_step: self.active_len,
+                });
+            }
+            None => {
+                self.proof_cache = Some(ProofCache {
+                    snapshot: self.source_diagram.clone(),
+                    at_step: 0,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    pub fn disable_proof_cache(&mut self) {
+        self.proof_cache = None;
+    }
+
+    pub fn proof_cache(&self) -> Option<&ProofCache> {
+        self.proof_cache.as_ref()
+    }
+
+    pub fn proof_cache_active(&self) -> bool {
+        self.proof_cache.is_some()
+    }
+
+    /// Return the assembled proof diagram, using the cache if available.
+    /// At step 0, returns the source diagram.
+    pub fn proof_diagram(&mut self) -> Result<Diagram, String> {
+        if self.active_len == 0 {
+            if let Some(ref mut cache) = self.proof_cache {
+                cache.snapshot = self.source_diagram.clone();
+                cache.at_step = 0;
+            }
+            return Ok(self.source_diagram.clone());
+        }
+        if let Some(ref cache) = self.proof_cache {
+            if cache.at_step == self.active_len {
+                return Ok(cache.snapshot.clone());
+            }
+        }
+        self.sync_proof_cache()?;
+        Ok(self.proof_cache.as_ref().unwrap().snapshot.clone())
+    }
+
+    /// Bring the proof cache up to date with the current active step.
+    fn sync_proof_cache(&mut self) -> Result<(), String> {
+        if self.proof_cache.is_none() { return Ok(()); }
+
+        if self.active_len == 0 {
+            self.proof_cache = Some(ProofCache {
+                snapshot: self.source_diagram.clone(),
+                at_step: 0,
+            });
+            return Ok(());
+        }
+
+        let cache_step = self.proof_cache.as_ref().unwrap().at_step;
+        if cache_step == self.active_len {
+            return Ok(());
+        }
+
+        let n = self.source_diagram.top_dim();
+
+        let proof = if cache_step < self.active_len && cache_step > 0 {
+            let mut acc = self.proof_cache.as_ref().unwrap().snapshot.clone();
+            for step in &self.steps[cache_step..self.active_len] {
+                acc = Diagram::paste(n, &acc, step)
+                    .map_err(|e| format!("proof cache extend failed: {}", e))?;
+            }
+            acc
+        } else {
+            self.assemble_proof()?
+                .unwrap_or_else(|| self.source_diagram.clone())
+        };
+
+        self.proof_cache = Some(ProofCache {
+            snapshot: proof,
+            at_step: self.active_len,
+        });
+        Ok(())
+    }
+
     /// Returns true only if the current diagram is isomorphic to the target AND
     /// at least one rewrite step has been applied.  Regular directed complexes
     /// have no identities, so source == target at the start is never a valid proof.
@@ -867,8 +978,15 @@ impl RewriteEngine {
     /// Returns `(updated_store, updated_type_complex)` so the caller can resync
     /// its own `Arc` references.
     pub fn register_proof(&mut self, name: &str) -> Result<(Arc<GlobalStore>, Arc<Complex>), String> {
-        let diagram = self.assemble_proof()?
-            .unwrap_or_else(|| self.source_diagram.clone());
+        let diagram = if let Some(ref cache) = self.proof_cache {
+            if cache.at_step == self.active_len {
+                cache.snapshot.clone()
+            } else {
+                self.assemble_proof()?.unwrap_or_else(|| self.source_diagram.clone())
+            }
+        } else {
+            self.assemble_proof()?.unwrap_or_else(|| self.source_diagram.clone())
+        };
 
         if self.type_complex.name_in_use(name) || self.type_complex.find_generator(name).is_some() {
             return Err(format!("name '{}' is already in use", name));

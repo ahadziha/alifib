@@ -134,4 +134,14 @@ impl WasmRepl {
     pub fn get_rewrite_preview_strdiag(&self, choice: usize) -> String {
         self.inner.get_rewrite_preview_strdiag(choice)
     }
+
+    /// Enable or disable proof view (incremental proof caching).
+    pub fn set_proof_view(&mut self, on: bool) -> String {
+        self.inner.set_proof_view(on)
+    }
+
+    /// Return the proof string diagram for the current session state.
+    pub fn get_proof_strdiag(&mut self) -> String {
+        self.inner.get_proof_strdiag()
+    }
 }

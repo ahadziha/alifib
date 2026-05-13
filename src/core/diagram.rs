@@ -207,6 +207,34 @@ impl Diagram {
         Ok(Diagram::make(shape_norm, pulled_labels, new_history))
     }
 
+    /// Map cell positions from `boundary_diag` to their positions in `parent`
+    /// at dimension `k`, where `boundary_diag` is the `(sign, k)`-boundary of
+    /// `parent` but may have been independently computed (different cell ordering).
+    ///
+    /// Finds the isomorphism between `boundary_diag` and the extracted boundary,
+    /// then composes with the boundary embedding into `parent`.
+    pub(crate) fn boundary_correspondence(
+        sign: Sign,
+        k: usize,
+        parent: &Diagram,
+        boundary_diag: &Diagram,
+    ) -> Result<Vec<usize>, Error> {
+        let ek = if parent.shape.dim < 0 { 0 } else { k.min(parent.shape.dim as usize) };
+        let (_, bd_emb) = ogposet::boundary_traverse(sign.as_ogposet_sign(), ek, &parent.shape);
+        let iso = ogposet::find_isomorphism(&boundary_diag.shape, &bd_emb.dom)?;
+
+        let iso_fwd = iso.map.get(ek).map(|v| v.as_slice()).unwrap_or(&[]);
+        let bd_fwd = bd_emb.map.get(ek).map(|v| v.as_slice()).unwrap_or(&[]);
+
+        let num = boundary_diag.shape.sizes().get(ek).copied().unwrap_or(0);
+        let mut result = Vec::with_capacity(num);
+        for i in 0..num {
+            let bd_cell = iso_fwd.get(i).copied().unwrap_or(0);
+            result.push(bd_fwd.get(bd_cell).copied().unwrap_or(0));
+        }
+        Ok(result)
+    }
+
     /// Return the normalised version of this diagram (reorder cells canonically).
     pub fn normal(d: &Diagram) -> Diagram {
         if d.is_normal() {

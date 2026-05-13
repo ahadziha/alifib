@@ -21,6 +21,9 @@ let splitterDrag = null;
 const thinTags = new Set();
 const tagFaces = new Map();
 const fullyThinTags = new Set();
+let proofView = false;
+let proofLayout = null;
+let proofBoundaryMap = null;
 
 // ── Theme ────────────────────────────────────────────────────────────────────
 
@@ -400,6 +403,14 @@ class WasmBackend {
   async get_map_image_strdiag(typeName, mapName, genName, boundaryDim, boundarySign) {
     return this.inner.get_map_image_strdiag(typeName, mapName, genName, boundaryDim, boundarySign);
   }
+
+  async set_proof_view(on) {
+    return this.inner.set_proof_view(on);
+  }
+
+  async get_proof_strdiag() {
+    return this.inner.get_proof_strdiag();
+  }
 }
 
 class HttpBackend {
@@ -463,6 +474,14 @@ class HttpBackend {
       boundary_dim: boundaryDim,
       boundary_sign: boundarySign,
     });
+  }
+
+  async set_proof_view(on) {
+    return this.post('/api/set_proof_view', { on });
+  }
+
+  async get_proof_strdiag() {
+    return this.post('/api/get_proof_strdiag', {});
   }
 
   async post(path, body) {
@@ -1210,6 +1229,9 @@ function resetSession() {
   sessionStrdiag = null;
   selectedRewrite = null;
   previewActive = false;
+  proofView = false;
+  proofLayout = null;
+  proofBoundaryMap = null;
   infoboxText.innerHTML = '';
   rewriteList.innerHTML = '';
   infobox.hidden = true;
@@ -1938,6 +1960,18 @@ async function showSessionDiagram(data) {
 
   sessionStrdiag = strResult.data;
 
+  if (proofView) {
+    try {
+      const proofResult = await parseReplResponse(repl.get_proof_strdiag());
+      if (proofResult.status === 'ok') {
+        proofLayout = layoutStrDiag(proofResult.data.strdiag, selOrientation.value);
+        proofBoundaryMap = proofResult.data.output_boundary_map;
+      }
+    } catch (e) {
+      console.error('proof strdiag fetch failed:', e);
+    }
+  }
+
   // Show infobox with session info.
   infobox.hidden = false;
   boundaryControls.hidden = true;
@@ -1947,6 +1981,8 @@ async function showSessionDiagram(data) {
   if (data.target) buttons += `<button id="btn-target-vis" class="btn-target-vis btn-secondary" title="Show target diagram">Target</button>`;
   buttons += `<button id="btn-undo-vis" class="btn-undo-vis btn-secondary" title="Undo"${data.step_count === 0 ? ' disabled' : ''}>&#x21A9;</button>`;
   buttons += `<button id="btn-redo-vis" class="btn-redo-vis btn-secondary" title="Redo"${!data.can_redo ? ' disabled' : ''}>&#x21AA;</button>`;
+  const viewLabel = proofView ? 'Step view' : 'Proof view';
+  buttons += `<button id="btn-view-toggle" class="btn-view-toggle" title="${viewLabel}">${viewLabel}</button>`;
   html += `<div class="infobox-actions">${buttons}</div>`;
   html += `<span class="infobox-qual">Current diagram</span>`;
   html += `<div class="infobox-name">${hi(data.current.label || '—')} <span class="acc-dim">dim ${data.current.dim}, step ${data.step_count}</span></div>`;
@@ -1976,10 +2012,14 @@ async function showSessionDiagram(data) {
       if (previewActive) { previewActive = false; endRewritePreview(); }
     });
   }
+  const btnViewToggle = document.getElementById('btn-view-toggle');
+  if (btnViewToggle) btnViewToggle.addEventListener('click', () => { void toggleProofView(); });
 
   // Render the string diagram.
   resetZoom();
-  currentLayout = layoutStrDiag(sessionStrdiag, selOrientation.value);
+  currentLayout = proofView && proofLayout
+    ? proofLayout
+    : layoutStrDiag(sessionStrdiag, selOrientation.value);
   visContainer.hidden = false;
   visControls.hidden = false;
   if (data.target_reached) {
@@ -1998,6 +2038,26 @@ async function showSessionDiagram(data) {
   lastParallelMode = !!data.parallel;
   buildRewriteList(data.rewrites || []);
   syncAnalysisLayout();
+}
+
+async function toggleProofView() {
+  if (!repl) return;
+  proofView = !proofView;
+  try {
+    if (proofView) {
+      await parseReplResponse(repl.set_proof_view(true));
+    } else {
+      await parseReplResponse(repl.set_proof_view(false));
+      proofLayout = null;
+      proofBoundaryMap = null;
+    }
+  } catch (e) {
+    console.error('set_proof_view failed:', e);
+  }
+  const result = await parseReplResponse(repl.run_command('{"command":"show"}'));
+  if (result.status === 'ok' && result.data) {
+    await showSessionDiagram(result.data);
+  }
 }
 
 function buildRewriteList(rewrites) {
@@ -2047,7 +2107,14 @@ function buildRewriteList(rewrites) {
       if (previewActive) return;
       selectedRewrite = -1;
       if (currentLayout) {
-        currentLayout._highlightPositions = [...bunchPositions];
+        const positions = [...bunchPositions];
+        if (proofView && proofBoundaryMap) {
+          currentLayout._highlightPositions = null;
+          currentLayout._highlightWires = positions.map(p => proofBoundaryMap[p]).filter(w => w != null);
+        } else {
+          currentLayout._highlightPositions = positions;
+          currentLayout._highlightWires = null;
+        }
         resizeAndRender();
       }
     });
@@ -2056,6 +2123,7 @@ function buildRewriteList(rewrites) {
       selectedRewrite = null;
       if (currentLayout) {
         currentLayout._highlightPositions = null;
+        currentLayout._highlightWires = null;
         resizeAndRender();
       }
     });
@@ -2100,24 +2168,25 @@ function buildRewriteList(rewrites) {
       actions.appendChild(btnBunch);
     }
 
-    const btnPreview = document.createElement('button');
-    btnPreview.className = 'rw-btn-preview';
-    btnPreview.textContent = 'Preview';
-    btnPreview.addEventListener('mousedown', (e) => {
-      e.stopPropagation();
-      previewActive = true;
-      void showRewritePreview(i);
-    });
-    btnPreview.addEventListener('mouseup', () => {
-      previewActive = false;
-      endRewritePreview();
-    });
-    btnPreview.addEventListener('mouseleave', () => {
-      if (previewActive) { previewActive = false; endRewritePreview(); }
-    });
-    btnPreview.addEventListener('click', (e) => e.stopPropagation());
-
-    actions.appendChild(btnPreview);
+    if (!proofView) {
+      const btnPreview = document.createElement('button');
+      btnPreview.className = 'rw-btn-preview';
+      btnPreview.textContent = 'Preview';
+      btnPreview.addEventListener('mousedown', (e) => {
+        e.stopPropagation();
+        previewActive = true;
+        void showRewritePreview(i);
+      });
+      btnPreview.addEventListener('mouseup', () => {
+        previewActive = false;
+        endRewritePreview();
+      });
+      btnPreview.addEventListener('mouseleave', () => {
+        if (previewActive) { previewActive = false; endRewritePreview(); }
+      });
+      btnPreview.addEventListener('click', (e) => e.stopPropagation());
+      actions.appendChild(btnPreview);
+    }
     row.appendChild(actions);
 
     // Click: in bunch mode, add to bunch. Otherwise apply.
@@ -2136,7 +2205,13 @@ function buildRewriteList(rewrites) {
       if (previewActive) return;
       selectedRewrite = i;
       if (currentLayout) {
-        currentLayout._highlightPositions = r.match_positions;
+        if (proofView && proofBoundaryMap) {
+          currentLayout._highlightPositions = null;
+          currentLayout._highlightWires = (r.match_positions || []).map(p => proofBoundaryMap[p]).filter(w => w != null);
+        } else {
+          currentLayout._highlightPositions = r.match_positions;
+          currentLayout._highlightWires = null;
+        }
         resizeAndRender();
       }
     });
@@ -2145,6 +2220,7 @@ function buildRewriteList(rewrites) {
       selectedRewrite = null;
       if (currentLayout) {
         currentLayout._highlightPositions = null;
+        currentLayout._highlightWires = null;
         resizeAndRender();
       }
     });
@@ -2181,7 +2257,14 @@ function endRewritePreview() {
     currentLayout = savedLayoutBeforePreview;
     savedLayoutBeforePreview = null;
     if (selectedRewrite !== null && lastRewriteData && lastRewriteData[selectedRewrite]) {
-      currentLayout._highlightPositions = lastRewriteData[selectedRewrite].match_positions;
+      const positions = lastRewriteData[selectedRewrite].match_positions;
+      if (proofView && proofBoundaryMap) {
+        currentLayout._highlightPositions = null;
+        currentLayout._highlightWires = (positions || []).map(p => proofBoundaryMap[p]).filter(w => w != null);
+      } else {
+        currentLayout._highlightPositions = positions;
+        currentLayout._highlightWires = null;
+      }
     }
     resizeAndRender();
   }
@@ -2648,7 +2731,7 @@ function renderStrDiag(ctx, L, cw, ch) {
   const BORDER_W = 6;
   const WIRE_W = 2;
 
-  function strokeWirePaths(wi) {
+  function wirePathParts(wi) {
     const wp = px[wi];
     const sources = L.hPred[wi].length > 0
       ? L.hPred[wi].map(pi => px[pi])
@@ -2656,6 +2739,11 @@ function renderStrDiag(ctx, L, cw, ch) {
     const targets = L.hAdj[wi].length > 0
       ? L.hAdj[wi].map(si => px[si])
       : [entryPoint(wp, o, 'output', cw, ch)];
+    return { wp, sources, targets };
+  }
+
+  function strokeWirePaths(wi) {
+    const { wp, sources, targets } = wirePathParts(wi);
     for (const src of sources) {
       for (const tgt of targets) {
         const q0 = isVert ? { x: wp.x, y: src.y } : { x: src.x, y: wp.y };
@@ -2669,12 +2757,36 @@ function renderStrDiag(ctx, L, cw, ch) {
     }
   }
 
+  function strokeWireOutputHalf(wi) {
+    const { wp, targets } = wirePathParts(wi);
+    for (const tgt of targets) {
+      const q1 = isVert ? { x: wp.x, y: tgt.y } : { x: tgt.x, y: wp.y };
+      ctx.beginPath();
+      ctx.moveTo(wp.x, wp.y);
+      ctx.quadraticCurveTo(q1.x, q1.y, tgt.x, tgt.y);
+      ctx.stroke();
+    }
+  }
+
+  const hlWires = L._highlightWires ? new Set(L._highlightWires) : null;
+
   function drawWire(wi) {
     const wireThin = L.verts[wi].tag != null && thinTags.has(L.verts[wi].tag);
     ctx.strokeStyle = wireThin ? thinColor : wireColor;
     ctx.lineWidth = WIRE_W;
     ctx.lineCap = 'round';
     strokeWirePaths(wi);
+  }
+
+  function drawWireHighlight(wi) {
+    ctx.save();
+    ctx.shadowColor = C.hlShadow;
+    ctx.shadowBlur = 10;
+    ctx.strokeStyle = C.hlFill;
+    ctx.lineWidth = WIRE_W + 2;
+    ctx.lineCap = 'round';
+    strokeWireOutputHalf(wi);
+    ctx.restore();
   }
 
   if (L.depthEdges.length > 0) {
@@ -2701,9 +2813,15 @@ function renderStrDiag(ctx, L, cw, ch) {
         ctx.restore();
       }
       for (const wi of levels[lv]) drawWire(wi);
+      if (hlWires) {
+        for (const wi of levels[lv]) { if (hlWires.has(wi)) drawWireHighlight(wi); }
+      }
     }
   } else {
     for (let wi = 0; wi < L.numWires; wi++) drawWire(wi);
+    if (hlWires) {
+      for (let wi = 0; wi < L.numWires; wi++) { if (hlWires.has(wi)) drawWireHighlight(wi); }
+    }
   }
 
   // Draw nodes

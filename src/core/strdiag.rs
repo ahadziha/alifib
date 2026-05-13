@@ -60,8 +60,17 @@ impl StrDiag {
     /// The diagram provides the shape (ogposet) and cell labels; the complex
     /// maps labels to generator names.
     pub fn from_diagram(diagram: &Diagram, complex: &Complex) -> Self {
+        let dim = diagram.shape.dim.max(0) as usize;
+        Self::from_diagram_at_dim(diagram, complex, dim)
+    }
+
+    /// Extract string diagram data at an explicit dimension.
+    ///
+    /// Nodes are `dim`-cells, wires are `(dim-1)`-cells. When `dim` exceeds
+    /// the diagram's own dimension the node set is empty — used for proof
+    /// view at step 0 where the source diagram is viewed one dimension up.
+    pub fn from_diagram_at_dim(diagram: &Diagram, complex: &Complex, dim: usize) -> Self {
         let shape = &diagram.shape;
-        let dim = shape.dim.max(0) as usize;
         let sizes = shape.sizes();
 
         let num_nodes = sizes.get(dim).copied().unwrap_or(0);

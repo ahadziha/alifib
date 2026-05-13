@@ -741,6 +741,23 @@ header {
 .btn-target-vis:active { background: var(--accent); color: #fff; }
 .btn-undo-vis, .btn-redo-vis { font-size: 14px; }
 .btn-undo-vis:disabled, .btn-redo-vis:disabled { cursor: not-allowed; }
+.btn-view-toggle {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 10px;
+  cursor: pointer;
+  letter-spacing: 0.03em;
+  transition: color 0.15s, border-color 0.15s;
+}
+.btn-view-toggle:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
 .infobox-text { position: relative; }
 
 .infobox-label {

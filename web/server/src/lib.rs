@@ -152,6 +152,14 @@ fn handle_connection(
             )
         }
 
+        ("POST", "/api/set_proof_view") => {
+            let body: SetProofViewBody = parse_json_body(&request.body)?;
+            write_json_response(stream, 200, repl.set_proof_view(body.on))
+        }
+        ("POST", "/api/get_proof_strdiag") => {
+            write_json_response(stream, 200, repl.get_proof_strdiag())
+        }
+
         ("POST", _) if path.starts_with("/api/") => write_json_response(
             stream,
             404,
@@ -320,4 +328,9 @@ struct MapImageStrdiagBody {
     boundary_dim: Option<usize>,
     #[serde(default)]
     boundary_sign: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct SetProofViewBody {
+    on: bool,
 }
