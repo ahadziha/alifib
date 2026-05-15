@@ -689,9 +689,8 @@ pub fn build_list_rules_response(engine: &RewriteEngine) -> ResponseData {
     let n = engine.current_diagram().top_dim();
 
     let rules: Vec<RuleInfo> = scope
-        .generators_iter()
-        .filter(|(_, _, dim)| *dim == n + 1)
-        .filter_map(|(name, tag, _)| {
+        .generators_iter_by_dim(n + 1)
+        .filter_map(|(name, tag)| {
             match store.cell_data_for_tag(scope, tag)? {
                 CellData::Boundary { boundary_in, boundary_out } => Some(RuleInfo {
                     name: name.clone(),
