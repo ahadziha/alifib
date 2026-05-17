@@ -1058,10 +1058,11 @@ function buildModuleAccordion(types, container) {
     }
     groups[idx].types.push(t);
   }
-  for (const g of groups) {
+  for (let i = 0; i < groups.length; i++) {
+    const g = groups[i];
     const details = document.createElement('details');
     details.className = 'acc-module';
-    details.open = g.module === 'source';
+    details.open = i === groups.length - 1;
     const summary = document.createElement('summary');
     summary.innerHTML = esc(displayModuleName(g.module)) + ` <span class="acc-count">${g.types.length}</span>`;
     details.appendChild(summary);
