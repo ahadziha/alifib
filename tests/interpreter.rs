@@ -284,3 +284,26 @@ fn submodule_in_same_named_directory() {
         "Magma should be defined in SubMod.ali");
 }
 
+#[test]
+fn virtual_loader_subdirectory_resolution() {
+    use std::collections::HashMap;
+
+    let files: HashMap<String, String> = [
+        ("source.ali".into(), "@Type\ninclude A,\ninclude B,\nX <<= { attach OA :: A.Aux.Ob, attach OB :: B.Aux.Ob }".into()),
+        ("A.ali".into(), "@Type\ninclude Aux,\nAType <<= { attach Ob :: Aux.Ob }".into()),
+        ("A/Aux.ali".into(), "@Type\nOb <<= { pt, ob: pt -> pt }".into()),
+        ("B.ali".into(), "@Type\ninclude Aux,\nBType <<= { attach Ob :: Aux.Ob }".into()),
+        ("B/Aux.ali".into(), "@Type\nOb <<= { pt, ob: pt -> pt }".into()),
+    ].into_iter().collect();
+
+    let loader = Loader::with_virtual_files(files);
+    let file = InterpretedFile::load(&loader, "source.ali")
+        .ok()
+        .expect("virtual loader should resolve Aux in subdirectories A/ and B/");
+
+    assert!(!file.has_holes());
+    let norm = file.state.normalize();
+    assert!(norm.modules.iter().any(|m| m.types.iter().any(|t| t.name == "AType")));
+    assert!(norm.modules.iter().any(|m| m.types.iter().any(|t| t.name == "BType")));
+}
+

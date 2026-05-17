@@ -1,0 +1,136 @@
+(***
+    Binary natural numbers as a term rewriting system.
+
+    Representation (MSB first):
+        bit0(x) = 2x, bit1(x) = 2x+1, zero = 0.
+    E.g. 5 = bit1(bit0(bit1(zero))) = zero bit1 bit0 bit1.
+***)
+
+@Type
+include TRS,
+
+BinaryNat <<= {
+    include TRS.Unit as Unit,
+    let unit = Unit.wire,
+    let merge = Unit.merge,
+    let split = Unit.split,
+
+    attach Nat :: TRS.Sort along [ Unit => Unit ],
+    let nat = Nat.wire,
+    let lunit = Nat.lunit,
+    let runit = Nat.runit,
+    let copy = Nat.copy,
+    let discard = Nat.discard,
+
+    (* Constants *)
+    attach Zero :: TRS.Constant along [ Cod => Nat ],
+    let zero = Zero.node,
+
+    (* Unary: bit0 (x -> 2x), bit1 (x -> 2x+1), succ (x -> x+1) *)
+    attach Bit0 :: TRS.Unary along [
+        Dom => Nat, Cod => Nat, Dom_Cod => Nat.Pair
+    ],
+    let bit0 = Bit0.node,
+
+    attach Bit1 :: TRS.Unary along [
+        Dom => Nat, Cod => Nat, Dom_Cod => Nat.Pair
+    ],
+    let bit1 = Bit1.node,
+
+    attach Succ :: TRS.Unary along [
+        Dom => Nat, Cod => Nat, Dom_Cod => Nat.Pair
+    ],
+    let succ = Succ.node,
+
+    (* Binary: add, cadd (add-with-carry), mul *)
+    attach Add :: TRS.Binary along [
+        LDom => Nat, RDom => Nat, Cod => Nat,
+        LDom_RDom => Nat.Pair, LDom_Cod => Nat.Pair,
+        RDom_Cod => Nat.Pair
+    ],
+    let add = Add.node,
+
+    attach CAdd :: TRS.Binary along [
+        LDom => Nat, RDom => Nat, Cod => Nat,
+        LDom_RDom => Nat.Pair, LDom_Cod => Nat.Pair,
+        RDom_Cod => Nat.Pair
+    ],
+    let cadd = CAdd.node,
+
+    attach Mul :: TRS.Binary along [
+        LDom => Nat, RDom => Nat, Cod => Nat,
+        LDom_RDom => Nat.Pair, LDom_Cod => Nat.Pair,
+        RDom_Cod => Nat.Pair
+    ],
+    let mul = Mul.node,
+
+    (* --- Successor --- *)
+    Succ_Zero: zero succ -> zero bit1,
+    Succ_Bit0: bit0 succ -> bit1,
+    Succ_Bit1: bit1 succ -> succ bit0,
+
+    (* --- Addition --- *)
+    Add_Zero_Zero: (zero #0 zero) add -> merge zero,
+    Add_Zero_R: (zero nat) add -> lunit,
+    Add_Zero_L: (nat zero) add -> runit,
+
+    Add_00: (bit0 #0 bit0) add -> add bit0,
+    Add_01: (bit0 #0 bit1) add -> add bit1,
+    Add_10: (bit1 #0 bit0) add -> add bit1,
+    Add_11: (bit1 #0 bit1) add -> cadd bit0,
+
+    (* --- Addition with carry --- *)
+    CAdd_Zero_Zero: (zero #0 zero) cadd -> merge zero bit1,
+    CAdd_Zero_R: (zero nat) cadd -> lunit succ,
+    CAdd_Zero_L: (nat zero) cadd -> runit succ,
+
+    CAdd_00: (bit0 #0 bit0) cadd -> add bit1,
+    CAdd_01: (bit0 #0 bit1) cadd -> cadd bit0,
+    CAdd_10: (bit1 #0 bit0) cadd -> cadd bit0,
+    CAdd_11: (bit1 #0 bit1) cadd -> cadd bit1,
+
+    (* --- Multiplication --- *)
+    Mul_Zero_Zero: (zero #0 zero) mul -> merge zero,
+    Mul_Zero_L: (zero nat) mul -> (unit discard) merge zero,
+    Mul_Zero_R: (nat zero) mul -> (discard unit) merge zero,
+
+    (* mul(2x, y) = 2 * mul(x, y) *)
+    Mul_Bit0: (bit0 nat) mul -> mul bit0,
+    (* mul(2x+1, y) = add(2 * mul(x, y), y) *)
+    Mul_Bit1: (bit1 nat) mul
+        -> (nat copy) (mul nat) (bit0 nat) add
+},
+
+(***
+    Number constants
+***)
+@BinaryNat
+let n0 = zero,
+let n1 = zero bit1,
+let n2 = zero bit1 bit0,
+let n3 = zero bit1 bit1,
+let n4 = zero bit1 bit0 bit0,
+let n5 = zero bit1 bit0 bit1,
+let n6 = zero bit1 bit1 bit0,
+let n7 = zero bit1 bit1 bit1,
+let n8 = zero bit1 bit0 bit0 bit0,
+let n9 = zero bit1 bit0 bit0 bit1,
+let n10 = zero bit1 bit0 bit1 bit0,
+
+(***
+    Example computations.
+    These construct the "problem" as a diagram;
+    once strategies and `run` are implemented,
+    they would reduce to the expected normal forms.
+***)
+@BinaryNat
+(* 2 + 3 = 5 *)
+let two_plus_three = split (n2 #0 n3) add,
+(* 3 * 3 = 9 *)
+let three_times_three = split (n3 #0 n3) mul,
+(* succ(7) = 8 *)
+let succ_seven = n7 succ,
+(* (2 + 3) * 2 = 10 *)
+let five_times_two = split (unit split)
+    (n2 #0 n3 #0 n2)
+    (add nat) mul

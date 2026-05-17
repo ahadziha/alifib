@@ -126,11 +126,10 @@ impl Loader {
     /// same name may therefore resolve to different files — the closest directory
     /// wins.  Duplicate paths are removed by `normalize_search_paths`.
     fn with_parent_dir(&self, file_path: &str) -> Loader {
-        if self.is_virtual { return self.clone(); }
         let file = std::path::Path::new(file_path);
         let parent = file.parent()
             .and_then(|p| p.to_str())
-            .map(path::canonicalize)
+            .map(|p| if self.is_virtual { p.to_owned() } else { path::canonicalize(p) })
             .unwrap_or_else(|| file_path.to_owned());
         let mut desired = vec![parent];
         if let Some(stem) = file.file_stem().and_then(|s| s.to_str()) {
@@ -138,15 +137,20 @@ impl Loader {
                 .map(|p| p.join(stem))
                 .and_then(|p| p.to_str().map(|s| s.to_owned()));
             if let Some(subdir) = subdir {
-                desired.push(path::canonicalize(&subdir));
+                desired.push(if self.is_virtual { subdir } else { path::canonicalize(&subdir) });
             }
         }
         desired.extend(self.search_paths.iter().cloned());
-        let normalized = path::normalize_search_paths(desired);
+        let normalized = if self.is_virtual {
+            let mut seen = HashSet::new();
+            desired.into_iter().filter(|p| seen.insert(p.clone())).collect()
+        } else {
+            path::normalize_search_paths(desired)
+        };
         if normalized == self.search_paths {
             self.clone()
         } else {
-            Loader { search_paths: normalized, read_file: self.read_file.clone(), is_virtual: false }
+            Loader { search_paths: normalized, read_file: self.read_file.clone(), is_virtual: self.is_virtual }
         }
     }
 
@@ -275,28 +279,31 @@ impl ModuleStore {
 fn find_file(loader: &Loader, module_name: &str) -> Result<(String, String), LoadFileError> {
     let filename = format!("{}.ali", module_name);
     if loader.is_virtual {
-        // Virtual loaders have no filesystem search paths; look up the module
-        // file directly in the in-memory map by `<Name>.ali`.
-        return match (loader.read_file)(&filename) {
-            Ok(contents) => Ok((filename, contents)),
-            Err(LoadError::NotFound) => Err(LoadFileError::ModuleNotFound {
-                module_name: module_name.to_owned(),
-            }),
-            Err(LoadError::IoError(reason)) => {
-                Err(LoadFileError::ModuleIoError { path: filename, reason })
+        for dir in &loader.search_paths {
+            let candidate = if dir.is_empty() {
+                filename.clone()
+            } else {
+                format!("{}/{}", dir, filename)
+            };
+            match (loader.read_file)(&candidate) {
+                Ok(contents) => return Ok((candidate, contents)),
+                Err(LoadError::NotFound) => continue,
+                Err(LoadError::IoError(reason)) => {
+                    return Err(LoadFileError::ModuleIoError { path: candidate, reason });
+                }
             }
-        };
+        }
+        return Err(LoadFileError::ModuleNotFound {
+            module_name: module_name.to_owned(),
+        });
     }
     for dir in &loader.search_paths {
         let candidate = format!("{}/{}", dir, filename);
-        // Canonicalize first: this confirms the file exists and resolves symlinks.
-        // If the file doesn't exist we skip to the next search directory.
         let canonical = match path::canonicalize_existing(&candidate) {
             Ok(c) => c,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
             Err(e) => return Err(LoadFileError::ModuleIoError { path: candidate, reason: e.to_string() }),
         };
-        // File confirmed to exist; now read its contents via the canonical path.
         match (loader.read_file)(&canonical) {
             Ok(contents) => return Ok((canonical, contents)),
             Err(LoadError::NotFound) => continue,

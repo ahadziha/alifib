@@ -7,7 +7,7 @@
 ***)
 
 @Type
-include TRS_aux as Aux,
+include Aux,
 
 (*** 
     Unit

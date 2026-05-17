@@ -3,7 +3,7 @@
 ***)
 
 @Type
-include Bicategory_aux as Aux,
+include Aux,
 let Equation = Aux.Equation,
 
 (*** 

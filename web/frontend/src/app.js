@@ -964,7 +964,8 @@ async function evaluateSource() {
   const previousType = selType.value;
 
   await repl.reset();
-  const modules = await collectIncludeModules(src);
+  const tab = activeTab();
+  const modules = await collectIncludeModules(src, tab ? tab.name : null);
   const result = await parseReplResponse(repl.load_source(src, modules));
 
   if (result.status === 'error') {
@@ -1752,36 +1753,62 @@ async function populateExamples() {
   }
 }
 
-async function fetchExample(name) {
-  if (EXAMPLE_CONTENTS.has(name)) return EXAMPLE_CONTENTS.get(name);
-  const relPath = EXAMPLES_INDEX && EXAMPLES_INDEX[name];
+async function fetchExampleByKey(key) {
+  if (EXAMPLE_CONTENTS.has(key)) return EXAMPLE_CONTENTS.get(key);
+  const relPath = EXAMPLES_INDEX && EXAMPLES_INDEX[key];
   if (!relPath) return null;
-  // Each path segment is already identifier-only (server validates, deploy
-  // enforces), so no URL escaping is needed beyond `/` staying as-is.
   const resp = await fetch(`${EXAMPLES_BASE}/${relPath}`, { cache: 'no-store' });
   if (!resp.ok) return null;
   const text = await resp.text();
-  EXAMPLE_CONTENTS.set(name, text);
+  EXAMPLE_CONTENTS.set(key, text);
   return text;
 }
 
-// Collects `include <Name>` references in the given source, fetches the
-// matching examples (and their transitive includes), and returns a
-// `<Name>.ali → content` map ready for load_source_with_modules.
-async function collectIncludeModules(source) {
+function resolveIncludeKey(stem, parentKey) {
+  if (!EXAMPLES_INDEX) return null;
+  const parts = parentKey ? parentKey.split('/') : [];
+  const parentDir = parts.slice(0, -1).join('/');
+  const parentStem = parts[parts.length - 1] || '';
+  const candidates = [];
+  candidates.push(parentDir ? `${parentDir}/${stem}` : stem);
+  if (parentStem) {
+    candidates.push(parentDir ? `${parentDir}/${parentStem}/${stem}` : `${parentStem}/${stem}`);
+  }
+  if (parentDir) candidates.push(stem);
+  for (const c of candidates) {
+    if (EXAMPLES_INDEX[c]) return c;
+  }
+  return null;
+}
+
+async function collectIncludeModules(source, parentKey) {
   const map = {};
-  const pending = collectDirectIncludes(source);
+  const pending = [{ src: source, parent: parentKey || null }];
   const seen = new Set();
   while (pending.length) {
-    const name = pending.pop();
-    if (seen.has(name)) continue;
-    seen.add(name);
-    const tab = editorTabs.tabs.find(t => t.name === name);
-    const content = tab ? tab.cmState.doc.toString() : await fetchExample(name);
-    if (content === null) continue;
-    map[`${name}.ali`] = content;
-    for (const next of collectDirectIncludes(content)) {
-      if (!seen.has(next)) pending.push(next);
+    const { src, parent } = pending.pop();
+    for (const stem of collectDirectIncludes(src)) {
+      const tab = editorTabs.tabs.find(t =>
+        t.name === stem || t.name.split('/').pop() === stem
+      );
+      if (tab) {
+        const filePath = `${stem}.ali`;
+        if (seen.has(filePath)) continue;
+        seen.add(filePath);
+        const content = tab.cmState.doc.toString();
+        map[filePath] = content;
+        pending.push({ src: content, parent: tab.name });
+        continue;
+      }
+      const key = resolveIncludeKey(stem, parent);
+      if (!key) continue;
+      const relPath = EXAMPLES_INDEX[key];
+      if (seen.has(relPath)) continue;
+      seen.add(relPath);
+      const content = await fetchExampleByKey(key);
+      if (content === null) continue;
+      map[relPath] = content;
+      pending.push({ src: content, parent: key });
     }
   }
   return map;
@@ -1805,7 +1832,7 @@ selExamples.addEventListener('change', async () => {
     switchTab(existing.id);
     return;
   }
-  const content = await fetchExample(name);
+  const content = await fetchExampleByKey(name);
   if (content === null) {
     appendReplMsg(`Failed to fetch example: ${name}`, 'repl-result err');
     return;

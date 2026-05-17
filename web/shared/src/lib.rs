@@ -6,15 +6,12 @@
 //!
 //! # Naming model
 //!
-//! A file's **stem** (e.g. `Theory` for `Theory.ali`) is its canonical
-//! identifier — that's what `include <name>` sees.  Subdirectories are pure
-//! UI/organization: `topics/braided/YangBaxter.ali` and `YangBaxter.ali`
-//! would both be the single module `YangBaxter`.
+//! Each example is identified by its POSIX-relative path minus the `.ali`
+//! suffix: `Theory` for `Theory.ali`, `TRS/Aux` for `TRS/Aux.ali`.  This
+//! is the key in `/examples/index.json` and the label shown in the dropdown.
 //!
-//! **Stems are globally unique within the root.**  If two `.ali` files share
-//! a stem (case-insensitively), [`ExampleSet::scan`] returns an error listing
-//! every offender — the server serves an error for `/examples/index.json`,
-//! the deploy workflow fails the build.  No silent shadowing.
+//! Multiple files may share the same stem (e.g. `TRS/Aux.ali` and
+//! `Bicategory/Aux.ali`) — the subdirectory prefix disambiguates them.
 //!
 //! Every path segment (directory and file stem) must match the language's
 //! identifier rule `[A-Za-z_][A-Za-z0-9_]*`.  Anything else is skipped with
@@ -25,7 +22,6 @@
 //! The scan recurses through subdirectories.  It is re-run on every call,
 //! so the server picks up filesystem edits without restarting.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 pub struct ExampleSet {
@@ -34,18 +30,16 @@ pub struct ExampleSet {
 
 #[derive(Debug)]
 pub struct ExampleEntry {
-    /// Bare stem — the value of `include <name>`.
+    /// Display name: relative path without the `.ali` suffix.
+    /// E.g. `Theory` for top-level, `TRS/Aux` for subdirectory files.
     pub name: String,
-    /// POSIX-separated path relative to the root, e.g. `topics/braided/YangBaxter.ali`.
-    /// This is what the frontend `fetch`es under `/examples/`.
+    /// POSIX-separated path relative to the root, e.g. `TRS/Aux.ali`.
     pub path: String,
     pub content: String,
 }
 
 #[derive(Debug)]
 pub enum ScanError {
-    /// Two or more files share a stem (case-insensitive).  `paths` is sorted.
-    DuplicateStem { name: String, paths: Vec<String> },
     /// Filesystem I/O failure while walking the tree.
     Io(String),
 }
@@ -59,41 +53,17 @@ impl ExampleSet {
         &self.dir
     }
 
-    /// Full recursive scan.  Returns `Err` iff duplicate stems are present or
-    /// the root cannot be read; individual `.ali` files with invalid segments
-    /// are *skipped* (not errored), since they're inert — they can never be
-    /// referenced by `include`.
+    /// Full recursive scan.  Returns `Err` only on I/O failure; individual
+    /// `.ali` files with invalid path segments are *skipped* (not errored),
+    /// since they're inert — they can never be `include`d.
     pub fn scan(&self) -> Result<Vec<ExampleEntry>, ScanError> {
-        // Group path lists by case-folded stem so we can detect duplicates.
-        let mut by_stem: HashMap<String, Vec<ExampleEntry>> = HashMap::new();
+        let mut entries = Vec::new();
         walk(&self.dir, &self.dir, &mut |entry| {
-            by_stem
-                .entry(entry.name.to_ascii_lowercase())
-                .or_default()
-                .push(entry);
+            entries.push(entry);
         })
         .map_err(|e| ScanError::Io(e.to_string()))?;
-
-        // Sort stems deterministically; sort each group's paths so the error
-        // output (and the success order) is stable across runs/filesystems.
-        let mut sorted: Vec<(String, Vec<ExampleEntry>)> = by_stem.into_iter().collect();
-        sorted.sort_by(|a, b| a.0.cmp(&b.0));
-        for (_, entries) in sorted.iter_mut() {
-            entries.sort_by(|a, b| a.path.cmp(&b.path));
-        }
-
-        // Find any stem with >1 file and report the first one we see.
-        if let Some((_, entries)) = sorted.iter().find(|(_, v)| v.len() > 1) {
-            return Err(ScanError::DuplicateStem {
-                name: entries[0].name.clone(),
-                paths: entries.iter().map(|e| e.path.clone()).collect(),
-            });
-        }
-
-        // Unique stems only — flatten and sort by name.
-        let mut out: Vec<ExampleEntry> = sorted.into_iter().flat_map(|(_, v)| v).collect();
-        out.sort_by(|a, b| a.name.cmp(&b.name));
-        Ok(out)
+        entries.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(entries)
     }
 
     /// JSON payload for `GET /examples/index.json`.
@@ -140,11 +110,6 @@ impl ExampleSet {
 
 fn format_scan_error(err: &ScanError) -> String {
     match err {
-        ScanError::DuplicateStem { name, paths } => format!(
-            "duplicate example stem `{}`: {} — rename one of them",
-            name,
-            paths.join(", ")
-        ),
         ScanError::Io(msg) => format!("scanning examples directory failed: {}", msg),
     }
 }
@@ -195,6 +160,7 @@ fn walk(
                 continue;
             }
             let rel = relative_posix(root, &path);
+            let name = rel.strip_suffix(".ali").unwrap_or(&rel).to_owned();
             let content = match std::fs::read_to_string(&path) {
                 Ok(c) => c,
                 Err(e) => {
@@ -203,7 +169,7 @@ fn walk(
                 }
             };
             visit(ExampleEntry {
-                name: stem.to_owned(),
+                name,
                 path: rel,
                 content,
             });
@@ -289,12 +255,12 @@ mod tests {
 
         let set = ExampleSet::new(&dir);
         let entries = set.scan().unwrap();
-        let by_name: HashMap<_, _> = entries.iter().map(|e| (e.name.as_str(), e.path.as_str())).collect();
+        let by_name: std::collections::HashMap<_, _> =
+            entries.iter().map(|e| (e.name.as_str(), e.path.as_str())).collect();
         assert_eq!(by_name["Theory"], "Theory.ali");
-        assert_eq!(by_name["Frobenius"], "topics/Frobenius.ali");
-        assert_eq!(by_name["YangBaxter"], "topics/braided/YangBaxter.ali");
+        assert_eq!(by_name["topics/Frobenius"], "topics/Frobenius.ali");
+        assert_eq!(by_name["topics/braided/YangBaxter"], "topics/braided/YangBaxter.ali");
 
-        // Server can read each entry by its relative path.
         assert_eq!(set.read_path("Theory.ali").as_deref(), Some("a"));
         assert_eq!(set.read_path("topics/braided/YangBaxter.ali").as_deref(), Some("c"));
 
@@ -302,35 +268,17 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_stems_error_loudly() {
+    fn duplicate_stems_in_different_dirs_allowed() {
         let dir = tempdir("dup");
         std::fs::create_dir_all(dir.join("a")).unwrap();
         std::fs::create_dir_all(dir.join("b")).unwrap();
         std::fs::write(dir.join("a/Foo.ali"), "x").unwrap();
         std::fs::write(dir.join("b/Foo.ali"), "y").unwrap();
 
-        let err = ExampleSet::new(&dir).scan().unwrap_err();
-        match err {
-            ScanError::DuplicateStem { name, paths } => {
-                assert_eq!(name, "Foo");
-                assert_eq!(paths, vec!["a/Foo.ali".to_string(), "b/Foo.ali".to_string()]);
-            }
-            e => panic!("unexpected error: {:?}", e),
-        }
+        let entries = ExampleSet::new(&dir).scan().unwrap();
+        let names: Vec<_> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, vec!["a/Foo", "b/Foo"]);
 
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn case_insensitive_dups_caught() {
-        let dir = tempdir("case");
-        std::fs::create_dir_all(dir.join("a")).unwrap();
-        std::fs::create_dir_all(dir.join("b")).unwrap();
-        std::fs::write(dir.join("a/Foo.ali"), "").unwrap();
-        std::fs::write(dir.join("b/foo.ali"), "").unwrap();
-
-        let err = ExampleSet::new(&dir).scan().unwrap_err();
-        assert!(matches!(err, ScanError::DuplicateStem { .. }));
         std::fs::remove_dir_all(&dir).ok();
     }
 

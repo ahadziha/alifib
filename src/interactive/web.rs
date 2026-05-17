@@ -496,10 +496,7 @@ fn type_summaries_json(store: &GlobalStore) -> Vec<serde_json::Value> {
     let types_with_modules: Vec<_> = norm.modules
         .iter()
         .flat_map(|m| {
-            let module_name = std::path::Path::new(&m.path)
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or(&m.path);
+            let module_name = m.path.strip_suffix(".ali").unwrap_or(&m.path);
             let module_path = m.path.as_str();
             m.types.iter().map(move |t| (module_name, module_path, t))
         })

@@ -4,8 +4,9 @@
 
 @Type
 include Monoidal as Planar,
-include Braided_Monoidal_aux as Aux,
-let Equation = Aux.Equation,
+include Braid,
+let Equation = Planar.Aux.Equation,
+let Braid = Braid.Braid,
 
 (*** 
     The unit is the same as the planar monoidal unit,
@@ -31,7 +32,7 @@ Unit <<= {
     
     let swap = merge split,
 
-    let Swap :: Aux.Braid = [
+    let Swap :: Braid = [
         1 => Planar.Object, 2 => Planar.Object,
         braid => merge split,
         LDomId.dir => (Merge.LDomId.dir #1 Split.DomId.inv)
@@ -121,7 +122,7 @@ Object <<= {
     ],
 
     (* The self-braiding *)
-    attach Swap :: Aux.Braid along [
+    attach Swap :: Braid along [
         1 => Planar, 2 => Planar,
     ],
     let swap = Swap.braid,
@@ -166,10 +167,10 @@ Pair <<= {
     ],
 
     (* Adding the braidings *)
-    attach Swap :: Aux.Braid along [
+    attach Swap :: Braid along [
         1 => 1.Planar, 2 => 2.Planar,
     ],
-    attach Rev_Swap :: Aux.Braid along [
+    attach Rev_Swap :: Braid along [
         1 => 2.Planar, 2 => 1.Planar,
     ],
     let swap = Swap.braid,
@@ -259,7 +260,7 @@ let Pair :: Pair = [
     A.With_Unit = “(A, Unit)”
 *)
 @Object { (* Start local definitions *)
-    let Swap_With_Unit :: Aux.Braid = [
+    let Swap_With_Unit :: Braid = [
         1 => Planar, 2 => Unit.Planar.Object,
         braid => runit lunit_inv,
         LDomId.dir => (Planar.RUnit.LDomId.dir #1 Planar.LUnit_Inv.DomId.inv)
@@ -303,7 +304,7 @@ let Pair :: Pair = [
         Triangle_Cod.inv => (runit #1 Planar.LUnit_Inv.DomId.inv #1 (unit #0 lunit_inv))
             #2 (Planar.RUnit.CodId.dir #1 Planar.Left_Comodule.inv)
     ],
-    let Rev_Swap_With_Unit :: Aux.Braid = [
+    let Rev_Swap_With_Unit :: Braid = [
         1 => Unit.Planar.Object, 2 => Planar,
         braid => lunit runit_inv,
         LDomId.dir => (Planar.LUnit.LDomId.dir #1 Planar.RUnit_Inv.DomId.inv)
@@ -483,7 +484,7 @@ let Rev :: Pair = [
         #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.LUnit_Inv_Nat.inv) #1 (1.Swap.braid #0 Unit.ob #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.Triangle_Dom.dir #0 2.ob))
         #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.ob #0 1.ob #0 2.Planar.LUnit_Inversion.dir #0 2.ob) #1 (1.ob #0 Swap.braid #0 2.ob))
         #2 ((1.ob #0 Rev_Swap.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.Swap.braid) #1 (1.Swap.braid #0 2.ob #0 2.ob) #1 (1.ob #0 Swap.RDomId.dir #0 2.ob)),
-    let Pair_Swap :: Aux.Braid = [
+    let Pair_Swap :: Braid = [
         1 => Planar.Tensor, 2 => Planar.Tensor,
         braid => (1.ob #0 Rev_Swap.braid #0 2.ob)
             #1 (1.Swap.braid #0 2.Swap.braid)
@@ -752,7 +753,7 @@ let Triple :: Triple = Pair.Triple_112
     “(A, B, C)”.Tensor_Left = “(A \otimes B, C)”
 *)
 @Triple { (* Start local definitions *)
-    let Tensor_Right_Swap :: Aux.Braid = [
+    let Tensor_Right_Swap :: Braid = [
         1 => 1.Planar, 2 => 23.Tensor.Planar,
         braid => (12.Swap.braid #0 3.ob)
             #1 (2.ob #0 13.Swap.braid),
@@ -833,7 +834,7 @@ let Triple :: Triple = Pair.Triple_112
             #2 ((12.Swap.Triangle_Cod.dir #0 3.ob) #1 (2.ob #0 Unit.ob #0 13.Swap.Triangle_Cod.inv) #1 (2.runit #0 3.ob #0 Unit.ob #0 1.ob))
             #2 ((12.Swap.braid #0 3.ob) #1 (2.ob #0 13.Swap.LUnit_Inv_Nat.inv) #1 (2.runit #0 3.ob #0 1.ob) #1 (2.ob #0 3.runit_inv #0 1.ob))
     ],
-    let Tensor_Right_Rev_Swap :: Aux.Braid = [
+    let Tensor_Right_Rev_Swap :: Braid = [
         1 => 23.Tensor.Planar, 2 => 1.Planar,
         braid => (2.ob #0 13.Rev_Swap.braid)
             #1 (12.Rev_Swap.braid #0 3.ob),

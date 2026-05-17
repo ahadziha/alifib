@@ -4,8 +4,9 @@
 
 @Type
 include Monoidal as Planar,
-include Braided_Monoidal_aux as Aux,
-let Equation = Aux.Equation,
+include Braid,
+let Equation = Planar.Aux.Equation,
+let Braid = Braid.Braid,
 
 (*** 
     The unit is the same as the planar monoidal unit,
@@ -31,7 +32,7 @@ Unit <<= {
     
     let swap = merge split,
 
-    let Swap :: Aux.Braid = [
+    let Swap :: Braid = [
         1 => Planar.Object, 2 => Planar.Object,
         braid => merge split,
         LDomId.dir => (Merge.LDomId.dir #1 Split.DomId.inv)
@@ -121,10 +122,10 @@ Object <<= {
     ],
 
     (* The self-braidings *)
-    attach Over :: Aux.Braid along [
+    attach Over :: Braid along [
         1 => Planar, 2 => Planar,
     ],
-    attach Under :: Aux.Braid along [
+    attach Under :: Braid along [
         1 => Planar, 2 => Planar,
     ],
     let over = Over.braid,
@@ -180,16 +181,16 @@ Pair <<= {
     ],
 
     (* Adding the braidings *)
-    attach Over :: Aux.Braid along [
+    attach Over :: Braid along [
         1 => 1.Planar, 2 => 2.Planar,
     ],
-    attach Under :: Aux.Braid along [
+    attach Under :: Braid along [
         1 => 1.Planar, 2 => 2.Planar,
     ],
-    attach Rev_Over :: Aux.Braid along [
+    attach Rev_Over :: Braid along [
         1 => 2.Planar, 2 => 1.Planar,
     ],
-    attach Rev_Under :: Aux.Braid along [
+    attach Rev_Under :: Braid along [
         1 => 2.Planar, 2 => 1.Planar,
     ],
     let over = Over.braid,
@@ -300,7 +301,7 @@ let Pair :: Pair = [
     A.With_Unit = “(A, Unit)”
 *)
 @Object { (* Start local definitions *)
-    let Swap_With_Unit :: Aux.Braid = [
+    let Swap_With_Unit :: Braid = [
         1 => Planar, 2 => Unit.Planar.Object,
         braid => runit lunit_inv,
         LDomId.dir => (Planar.RUnit.LDomId.dir #1 Planar.LUnit_Inv.DomId.inv)
@@ -344,7 +345,7 @@ let Pair :: Pair = [
         Triangle_Cod.inv => (runit #1 Planar.LUnit_Inv.DomId.inv #1 (unit #0 lunit_inv))
             #2 (Planar.RUnit.CodId.dir #1 Planar.Left_Comodule.inv)
     ],
-    let Rev_Swap_With_Unit :: Aux.Braid = [
+    let Rev_Swap_With_Unit :: Braid = [
         1 => Unit.Planar.Object, 2 => Planar,
         braid => lunit runit_inv,
         LDomId.dir => (Planar.LUnit.LDomId.dir #1 Planar.RUnit_Inv.DomId.inv)
@@ -545,7 +546,7 @@ let Rev :: Pair = [
             #2 ((1.ob #0 Rev_<Loc>.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.<Loc>.LUnit_Inv_Nat.inv) #1 (1.<Loc>.braid #0 Unit.ob #0 2.ob #0 2.ob) #1 (1.ob #0 <Loc>.Triangle_Dom.dir #0 2.ob))
             #2 ((1.ob #0 Rev_<Loc>.braid #0 2.ob) #1 (1.<Loc>.braid #0 2.ob #0 2.ob) #1 (1.ob #0 1.ob #0 2.<Loc>.braid) #1 (1.ob #0 1.ob #0 2.Planar.LUnit_Inversion.dir #0 2.ob) #1 (1.ob #0 <Loc>.braid #0 2.ob))
             #2 ((1.ob #0 Rev_<Loc>.braid #0 2.ob) #1 (1.ob #0 1.ob #0 2.<Loc>.braid) #1 (1.<Loc>.braid #0 2.ob #0 2.ob) #1 (1.ob #0 <Loc>.RDomId.dir #0 2.ob)),
-        let Pair_<Loc> :: Aux.Braid = [
+        let Pair_<Loc> :: Braid = [
             1 => Planar.Tensor, 2 => Planar.Tensor,
             braid => (1.ob #0 Rev_<Loc>.braid #0 2.ob)
                 #1 (1.<Loc>.braid #0 2.<Loc>.braid)
@@ -857,7 +858,7 @@ let Triple :: Triple = Pair.Triple_112
 *)
 @Triple { (* Start local definitions *)
     for Loc in [ Over, Under ] {
-        let Tensor_Right_<Loc> :: Aux.Braid = [
+        let Tensor_Right_<Loc> :: Braid = [
             1 => 1.Planar, 2 => 23.Tensor.Planar,
             braid => (12.<Loc>.braid #0 3.ob)
                 #1 (2.ob #0 13.<Loc>.braid),
@@ -938,7 +939,7 @@ let Triple :: Triple = Pair.Triple_112
                 #2 ((12.<Loc>.Triangle_Cod.dir #0 3.ob) #1 (2.ob #0 Unit.ob #0 13.<Loc>.Triangle_Cod.inv) #1 (2.runit #0 3.ob #0 Unit.ob #0 1.ob))
                 #2 ((12.<Loc>.braid #0 3.ob) #1 (2.ob #0 13.<Loc>.LUnit_Inv_Nat.inv) #1 (2.runit #0 3.ob #0 1.ob) #1 (2.ob #0 3.runit_inv #0 1.ob))
         ],
-        let Tensor_Right_Rev_<Loc> :: Aux.Braid = [
+        let Tensor_Right_Rev_<Loc> :: Braid = [
             1 => 23.Tensor.Planar, 2 => 1.Planar,
             braid => (2.ob #0 13.Rev_<Loc>.braid)
                 #1 (12.Rev_<Loc>.braid #0 3.ob),

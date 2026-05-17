@@ -1,5 +1,6 @@
 (* 
-    Auxiliary gadgets for braided and symmetric monoidal categories
+    Auxiliary file containing a "braid", 
+    for Braided_Monoidal and Symmetric_Monoidal modules
 *)
 
 @Type
