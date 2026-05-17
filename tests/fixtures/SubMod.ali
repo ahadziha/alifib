@@ -1,0 +1,7 @@
+@Type
+include Aux,
+
+Magma <<= {
+  attach Ob :: Aux.Ob,
+  m : Ob.ob Ob.ob -> Ob.ob
+}

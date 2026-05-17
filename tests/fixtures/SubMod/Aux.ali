@@ -1,0 +1,5 @@
+@Type
+Ob <<= {
+  pt,
+  ob : pt -> pt
+}

@@ -113,21 +113,34 @@ impl Loader {
         }
     }
 
-    /// Build a child loader whose search paths prepend `file_path`'s parent directory.
+    /// Build a child loader whose search paths prepend `file_path`'s parent
+    /// directory and its same-named subdirectory.
     ///
-    /// Search path precedence: a module's own directory is checked first, then the
-    /// parent's search paths.  Two modules in different directories that both
-    /// include a module by the same name may therefore resolve to different files —
-    /// the closest directory wins.  Duplicate paths are removed by
-    /// `normalize_search_paths` so re-entering the same directory is a no-op.
+    /// Search path precedence:
+    /// 1. The file's own directory (e.g. `/path/to/` for `/path/to/Foo.ali`)
+    /// 2. A same-named subdirectory (e.g. `/path/to/Foo/`) — this lets a module
+    ///    keep private submodules in a directory that shares its name
+    /// 3. Inherited search paths (ALIFIB_PATH, etc.)
+    ///
+    /// Two modules in different directories that both include a module by the
+    /// same name may therefore resolve to different files — the closest directory
+    /// wins.  Duplicate paths are removed by `normalize_search_paths`.
     fn with_parent_dir(&self, file_path: &str) -> Loader {
         if self.is_virtual { return self.clone(); }
-        let parent = std::path::Path::new(file_path)
-            .parent()
+        let file = std::path::Path::new(file_path);
+        let parent = file.parent()
             .and_then(|p| p.to_str())
             .map(path::canonicalize)
             .unwrap_or_else(|| file_path.to_owned());
         let mut desired = vec![parent];
+        if let Some(stem) = file.file_stem().and_then(|s| s.to_str()) {
+            let subdir = file.parent()
+                .map(|p| p.join(stem))
+                .and_then(|p| p.to_str().map(|s| s.to_owned()));
+            if let Some(subdir) = subdir {
+                desired.push(path::canonicalize(&subdir));
+            }
+        }
         desired.extend(self.search_paths.iter().cloned());
         let normalized = path::normalize_search_paths(desired);
         if normalized == self.search_paths {

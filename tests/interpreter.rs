@@ -266,3 +266,21 @@ fn for_index_expansion() {
     assert!(y_dim1_names.contains(&"y"), "Y should contain generator 'y'");
 }
 
+#[test]
+fn submodule_in_same_named_directory() {
+    let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("SubMod.ali"))
+        .ok()
+        .expect("SubMod.ali should resolve Aux from SubMod/ subdirectory");
+
+    assert!(!file.has_holes());
+
+    let norm = file.state.normalize();
+    let module = &norm.modules[0];
+    assert!(module.types.iter().any(|t| t.name == "Ob"),
+        "Aux.Ob should be included from SubMod/Aux.ali");
+
+    let module = &norm.modules[1];
+    assert!(module.types.iter().any(|t| t.name == "Magma"),
+        "Magma should be defined in SubMod.ali");
+}
+
