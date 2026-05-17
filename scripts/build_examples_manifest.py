@@ -9,9 +9,9 @@ Rules mirror `web/shared/src/lib.rs` exactly:
 - Recursive walk; subdirectories are organisational.
 - Each path segment (directory name or file stem) must match the alifib
   identifier rule `[A-Za-z_][A-Za-z0-9_]*`.  Anything else is skipped.
-- A file's **stem** is its canonical name — globally unique across the
-  tree, case-insensitively.  Duplicates exit non-zero.
-- Index JSON is `{stem: relpath}` with forward slashes, sorted by key.
+- Index JSON is `{display_name: relpath}` with forward slashes, sorted
+  by key.  The display name is the relative path minus the `.ali` suffix
+  (e.g. `TRS/Aux` for `TRS/Aux.ali`).
 """
 
 import json
@@ -28,7 +28,7 @@ def valid_segment(name: str) -> bool:
 
 
 def walk_ali(src_root: str):
-    """Yield (stem, relpath) for every .ali file with ident-only segments."""
+    """Yield (display_name, relpath) for every .ali file with ident-only segments."""
     for dirpath, dirnames, filenames in os.walk(src_root):
         # Skip invalid-segment directories entirely.  Mutating `dirnames`
         # in place is what `os.walk` uses to prune the descent.
@@ -46,7 +46,8 @@ def walk_ali(src_root: str):
                 continue
             rel = os.path.join(rel_dir, fn) if rel_dir != "." else fn
             rel = rel.replace(os.sep, "/")
-            yield stem, rel
+            display_name = rel[:-4]  # strip .ali
+            yield display_name, rel
 
 
 def main(argv):
@@ -59,19 +60,7 @@ def main(argv):
         print(f"error: source directory {src!r} does not exist", file=sys.stderr)
         return 1
 
-    # Detect duplicate stems case-insensitively — the server's scanner uses
-    # the same rule, so disagreement between dev and CI is impossible.
-    by_stem: dict[str, list[tuple[str, str]]] = {}
-    for stem, rel in walk_ali(src):
-        by_stem.setdefault(stem.lower(), []).append((stem, rel))
-
-    duplicates = {k: v for k, v in by_stem.items() if len(v) > 1}
-    if duplicates:
-        print("error: duplicate example stems found (case-insensitive):", file=sys.stderr)
-        for key, occurrences in sorted(duplicates.items()):
-            paths = ", ".join(rel for _, rel in occurrences)
-            print(f"  {key}: {paths}", file=sys.stderr)
-        return 1
+    entries = list(walk_ali(src))
 
     # Fresh mirror — nuke and re-copy so removed upstream files disappear.
     if os.path.isdir(dest):
@@ -79,15 +68,13 @@ def main(argv):
     os.makedirs(dest, exist_ok=True)
 
     manifest: dict[str, str] = {}
-    for _, entries in by_stem.items():
-        stem, rel = entries[0]
+    for display_name, rel in entries:
         src_path = os.path.join(src, rel.replace("/", os.sep))
         dest_path = os.path.join(dest, rel.replace("/", os.sep))
         os.makedirs(os.path.dirname(dest_path), exist_ok=True) if os.path.dirname(dest_path) else None
         shutil.copy2(src_path, dest_path)
-        manifest[stem] = rel
+        manifest[display_name] = rel
 
-    # Sort by stem so the committed/deployed manifest is byte-stable.
     manifest = dict(sorted(manifest.items()))
     with open(os.path.join(dest, "index.json"), "w") as f:
         json.dump(manifest, f, indent=2, sort_keys=True)
