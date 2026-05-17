@@ -16,7 +16,7 @@ fn include_user_supplied_module_resolves() {
 
     let mut repl = WebRepl::new();
     let src = "@Type\ninclude Theory,\nlet S = Theory.Set";
-    let out = repl.load_source_with_modules(src, modules);
+    let out = repl.load_source_with_modules(src, modules, None);
     assert!(
         out.contains("\"status\":\"ok\""),
         "load_source failed for `include Theory`: {}",

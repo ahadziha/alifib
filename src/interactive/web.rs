@@ -55,15 +55,22 @@ pub struct WebRepl {
 /// convention only.
 enum State {
     Empty,
-    Loaded { store: Arc<GlobalStore> },
-    Active { store: Arc<GlobalStore>, engine: RewriteEngine },
+    Loaded { store: Arc<GlobalStore>, root_path: String },
+    Active { store: Arc<GlobalStore>, root_path: String, engine: RewriteEngine },
 }
 
 impl State {
     fn store(&self) -> Option<&Arc<GlobalStore>> {
         match self {
             State::Empty => None,
-            State::Loaded { store } | State::Active { store, .. } => Some(store),
+            State::Loaded { store, .. } | State::Active { store, .. } => Some(store),
+        }
+    }
+
+    fn root_path(&self) -> &str {
+        match self {
+            State::Empty => WEB_SOURCE_PATH,
+            State::Loaded { root_path, .. } | State::Active { root_path, .. } => root_path,
         }
     }
 
@@ -92,15 +99,15 @@ impl WebRepl {
     }
 
     pub fn stop_session(&mut self) {
-        if let State::Active { store, .. } = std::mem::replace(&mut self.state, State::Empty) {
-            self.state = State::Loaded { store };
+        if let State::Active { store, root_path, .. } = std::mem::replace(&mut self.state, State::Empty) {
+            self.state = State::Loaded { store, root_path };
         }
     }
 
     /// Interpret `.ali` source text and return a JSON response with structured
     /// type data (generators with boundaries, diagrams, maps).
     pub fn load_source(&mut self, source: &str) -> String {
-        self.load_source_with_modules(source, HashMap::new())
+        self.load_source_with_modules(source, HashMap::new(), None)
     }
 
     /// Like [`load_source`], but seeds additional virtual module files into the
@@ -108,20 +115,30 @@ impl WebRepl {
     /// `include <Name>` in the root source resolves to the matching entry.
     /// The frontend crates use this to bundle `examples/` as library modules,
     /// keeping the main crate free of web-specific data.
+    ///
+    /// `source_name` optionally overrides the virtual filename for the root
+    /// source (e.g. `"Monoidal"` → `"Monoidal.ali"`).  This determines the
+    /// same-named subdirectory used for `include` resolution.
     pub fn load_source_with_modules(
         &mut self,
         source: &str,
         extra_modules: HashMap<String, String>,
+        source_name: Option<&str>,
     ) -> String {
         // Free old state before allocating the new store so that both don't
         // coexist — in WASM, linear memory pages from the peak are permanent.
         self.state = State::Empty;
 
+        let root_path = source_name
+            .filter(|n| !n.is_empty())
+            .map(|n| if n.ends_with(".ali") { n.to_string() } else { format!("{}.ali", n) })
+            .unwrap_or_else(|| WEB_SOURCE_PATH.to_string());
+
         let mut files = extra_modules;
-        files.insert(WEB_SOURCE_PATH.to_string(), source.to_string());
+        files.insert(root_path.clone(), source.to_string());
         let loader = Loader::with_virtual_files(files);
 
-        match InterpretedFile::load(&loader, WEB_SOURCE_PATH) {
+        match InterpretedFile::load(&loader, &root_path) {
             LoadResult::Loaded(file) => {
                 let store = Arc::clone(&file.state);
                 // Preserve the original frontend contract for `load_source`,
@@ -132,7 +149,7 @@ impl WebRepl {
                     "types": type_summaries_json(&file.state),
                 })
                 .to_string();
-                self.state = State::Loaded { store };
+                self.state = State::Loaded { store, root_path };
                 json
             }
             LoadResult::LoadError(e) => load_error_json(&e),
@@ -160,13 +177,13 @@ impl WebRepl {
     ) -> String {
         // Collapse any existing session back to Loaded so a failed init
         // leaves the caller with at least the store they already had.
-        let store = match std::mem::replace(&mut self.state, State::Empty) {
+        let (store, root_path) = match std::mem::replace(&mut self.state, State::Empty) {
             State::Empty => return err_json("no source loaded; call load_source first"),
-            State::Loaded { store } | State::Active { store, .. } => store,
+            State::Loaded { store, root_path } | State::Active { store, root_path, .. } => (store, root_path),
         };
-        self.state = State::Loaded { store: Arc::clone(&store) };
+        self.state = State::Loaded { store: Arc::clone(&store), root_path: root_path.clone() };
 
-        let type_complex = match resolve_type(&store, WEB_SOURCE_PATH, type_name) {
+        let type_complex = match resolve_type(&store, &root_path, type_name) {
             Ok(tc) => tc,
             Err(e) => return err_json(&e),
         };
@@ -176,12 +193,12 @@ impl WebRepl {
             type_complex,
             source_diagram,
             target_diagram.as_deref(),
-            WEB_SOURCE_PATH.to_string(),
+            root_path.clone(),
             type_name.to_string(),
         ) {
             Ok(engine) => {
                 let data = build_response(&engine, false);
-                self.state = State::Active { store, engine };
+                self.state = State::Active { store, root_path, engine };
                 ok_json(data)
             }
             Err(e) => err_json(&e),
@@ -216,7 +233,7 @@ impl WebRepl {
                 let Some(store) = self.state.store() else {
                     return err_json("no source loaded");
                 };
-                return match build_homology_response(store, WEB_SOURCE_PATH, &name) {
+                return match build_homology_response(store, self.state.root_path(), &name) {
                     Ok(data) => ok_json(data),
                     Err(msg) => err_json(&msg),
                 };
@@ -233,11 +250,11 @@ impl WebRepl {
             match &request {
                 Request::Types => {
                     return ok_json(serde_json::json!({
-                        "types": build_types_from_store(store, WEB_SOURCE_PATH),
+                        "types": build_types_from_store(store, self.state.root_path()),
                     }));
                 }
                 Request::TypeInfo { name } => {
-                    return match build_type_detail_from_store(store, WEB_SOURCE_PATH, name) {
+                    return match build_type_detail_from_store(store, self.state.root_path(), name) {
                         Ok(detail) => ok_json(serde_json::json!({ "type_detail": detail })),
                         Err(msg) => err_json(&msg),
                     };
@@ -249,7 +266,7 @@ impl WebRepl {
         }
 
         // Everything else is engine-level: delegate to the shared dispatcher.
-        let State::Active { store, engine } = &mut self.state else {
+        let State::Active { store, engine, .. } = &mut self.state else {
             return err_json("no session active — use 'start' to begin");
         };
         match engine.handle(&request) {
@@ -289,7 +306,7 @@ impl WebRepl {
             let sign = boundary_sign.as_deref().unwrap_or("input");
             (d, sign)
         });
-        match build_strdiag_response(store, WEB_SOURCE_PATH, type_name, item_name, boundary) {
+        match build_strdiag_response(store, self.state.root_path(), type_name, item_name, boundary) {
             Ok(data) => ok_json(data),
             Err(msg) => err_json(&msg),
         }
@@ -311,7 +328,7 @@ impl WebRepl {
             let sign = boundary_sign.as_deref().unwrap_or("input");
             (d, sign)
         });
-        match build_map_image_strdiag(store, WEB_SOURCE_PATH, type_name, map_name, gen_name, boundary) {
+        match build_map_image_strdiag(store, self.state.root_path(), type_name, map_name, gen_name, boundary) {
             Ok(data) => ok_json(data),
             Err(msg) => err_json(&msg),
         }

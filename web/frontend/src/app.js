@@ -367,9 +367,9 @@ class WasmBackend {
     this.inner.stop_session();
   }
 
-  async load_source(source, modules) {
+  async load_source(source, modules, sourceName) {
     const modulesJson = modules ? JSON.stringify(modules) : null;
-    return this.inner.load_source(source, modulesJson);
+    return this.inner.load_source(source, modulesJson, sourceName || null);
   }
 
   async init_session(typeName, sourceDiagram, targetDiagram) {
@@ -425,8 +425,10 @@ class HttpBackend {
     return this.post('/api/stop_session', {});
   }
 
-  async load_source(source, modules) {
-    return this.post('/api/load_source', { source, modules: modules || {} });
+  async load_source(source, modules, sourceName) {
+    const body = { source, modules: modules || {} };
+    if (sourceName) body.source_name = sourceName;
+    return this.post('/api/load_source', body);
   }
 
   async init_session(typeName, sourceDiagram, targetDiagram) {
@@ -965,8 +967,9 @@ async function evaluateSource() {
 
   await repl.reset();
   const tab = activeTab();
-  const modules = await collectIncludeModules(src, tab ? tab.name : null);
-  const result = await parseReplResponse(repl.load_source(src, modules));
+  const tabName = tab ? tab.name : null;
+  const modules = await collectIncludeModules(src, tabName);
+  const result = await parseReplResponse(repl.load_source(src, modules, tabName));
 
   if (result.status === 'error') {
     fileOutput.innerHTML = '';
@@ -1039,10 +1042,6 @@ async function evaluateSource() {
 // ── Accordion builders ───────────────────────────────────────────────────────
 
 function displayModuleName(mod) {
-  if (mod === 'source') {
-    const tab = activeTab();
-    return tab ? tab.name : 'source';
-  }
   return mod;
 }
 

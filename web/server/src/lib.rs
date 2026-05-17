@@ -77,7 +77,7 @@ fn handle_connection(
             write_json_response(
                 stream,
                 200,
-                repl.load_source_with_modules(&body.source, modules),
+                repl.load_source_with_modules(&body.source, modules, body.source_name.as_deref()),
             )
         }
         ("POST", "/api/init_session") => {
@@ -289,6 +289,8 @@ struct LoadSourceBody {
     /// access.
     #[serde(default)]
     modules: Option<std::collections::HashMap<String, String>>,
+    #[serde(default)]
+    source_name: Option<String>,
 }
 
 #[derive(Deserialize)]

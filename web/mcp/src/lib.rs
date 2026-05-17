@@ -300,7 +300,8 @@ fn dispatch(
                     }
                 }
             }
-            Ok(repl.load_source_with_modules(source, modules))
+            let source_name = args.get("source_name").and_then(|v| v.as_str());
+            Ok(repl.load_source_with_modules(source, modules, source_name))
         }
         "init_session" => {
             let type_name = args

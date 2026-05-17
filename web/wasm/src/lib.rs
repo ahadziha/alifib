@@ -48,11 +48,11 @@ impl WasmRepl {
     /// it has fetched over HTTP, so `include <Name>` resolves without any
     /// server-side file access.  Pass `null` or an empty object when no
     /// extra modules are needed.
-    pub fn load_source(&mut self, source: &str, modules_json: Option<String>) -> String {
+    pub fn load_source(&mut self, source: &str, modules_json: Option<String>, source_name: Option<String>) -> String {
         let modules: std::collections::HashMap<String, String> = modules_json
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default();
-        self.inner.load_source_with_modules(source, modules)
+        self.inner.load_source_with_modules(source, modules, source_name.as_deref())
     }
 
     /// Start a rewrite session for the named type.
