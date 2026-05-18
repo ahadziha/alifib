@@ -2468,6 +2468,24 @@ async function refreshInfobox() {
         if (data.label) html += `<div class="infobox-label">${esc(data.label)}</div>`;
         if (data.src || data.tgt) html += `<div class="infobox-boundary">${esc(data.src)} → ${esc(data.tgt)}</div>`;
         currentLayout = layoutStrDiag(data.strdiag, selOrientation.value);
+        const imageDim = data.dim ?? 0;
+        if (bdDim == null && imageDim !== currentItemDim) {
+          currentItemDim = imageDim;
+          if (currentItemDim >= 1) {
+            selBoundary.innerHTML = '<option value="main">Main</option>';
+            for (let k = currentItemDim - 1; k >= 0; k--) {
+              const opt = document.createElement('option');
+              opt.value = String(k);
+              opt.textContent = `${k}-boundary`;
+              selBoundary.appendChild(opt);
+            }
+            boundaryControls.hidden = false;
+            selBoundary.value = 'main';
+            setSignControlsEnabled(false);
+          } else {
+            boundaryControls.hidden = true;
+          }
+        }
       }
     }
 
@@ -2477,22 +2495,8 @@ async function refreshInfobox() {
     if (selMapGen) {
       selMapGen.addEventListener('change', async () => {
         currentMapGen = selMapGen.value || null;
-        const gen = item.generators.find(g => g.name === currentMapGen);
-        currentItemDim = gen ? gen.dim : 0;
-        if (currentItemDim >= 1) {
-          selBoundary.innerHTML = '<option value="main">Main</option>';
-          for (let k = currentItemDim - 1; k >= 0; k--) {
-            const opt = document.createElement('option');
-            opt.value = String(k);
-            opt.textContent = `${k}-boundary`;
-            selBoundary.appendChild(opt);
-          }
-          boundaryControls.hidden = false;
-          selBoundary.value = 'main';
-          setSignControlsEnabled(false);
-        } else {
-          boundaryControls.hidden = true;
-        }
+        currentItemDim = 0;
+        boundaryControls.hidden = true;
         await refreshInfobox();
       });
     }
