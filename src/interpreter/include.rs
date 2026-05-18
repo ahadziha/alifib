@@ -77,7 +77,7 @@ fn extend_scope_with_attached_generators(
     mut map: PartialMap,
     prefix: &str,
     attachment_scope: &Complex,
-) -> (Complex, PartialMap) {
+) -> Result<(Complex, PartialMap), String> {
     for (generator_dim, generator_name, generator_tag) in sorted_generators(attachment_scope) {
         if map.is_defined_at(&generator_tag) {
             continue;
@@ -88,6 +88,18 @@ fn extend_scope_with_attached_generators(
         let source_cell_data = cell_entry.data.clone();
 
         let Some(image_cell_data) = mapped_cell_data(&map, &source_cell_data) else { continue; };
+
+        if generator_dim > 0 {
+            if let CellData::Boundary { boundary_in, boundary_out } = &image_cell_data {
+                let expected = (generator_dim - 1) as isize;
+                if boundary_in.dim() != expected || boundary_out.dim() != expected {
+                    return Err(format!(
+                        "cannot attach {}: mapped boundaries have dimension {}/{}, expected {}",
+                        generator_name, boundary_in.dim(), boundary_out.dim(), expected
+                    ));
+                }
+            }
+        }
 
         let qualified_name = qualify_name(prefix, &generator_name);
         let image_tag = match mode {
@@ -108,7 +120,7 @@ fn extend_scope_with_attached_generators(
         map.insert_raw(Tag::Global(global_id), generator_dim, source_cell_data, image_classifier);
     }
 
-    (scope, map)
+    Ok((scope, map))
 }
 
 /// Interpret an `include module` instruction at the top level.
@@ -231,14 +243,17 @@ pub fn interpret_attach_instr(
     };
 
     let mut r = attach_result;
-    let (mut current_scope, current_map) = extend_scope_with_attached_generators(
+    let (mut current_scope, current_map) = match extend_scope_with_attached_generators(
         mode,
         scope.clone(),
         &mut r.context,
         map,
         &name,
         &attachment,
-    );
+    ) {
+        Ok(result) => result,
+        Err(msg) => return (None, error_result(&r.context, span, msg)),
+    };
     current_scope.add_map(name, domain, current_map);
     (Some(current_scope), r)
 }

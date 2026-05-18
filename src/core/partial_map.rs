@@ -102,7 +102,7 @@ impl PartialMap {
     /// Insert an entry directly without boundary validation. Used for incremental
     /// construction where boundaries have already been verified by other means.
     pub fn insert_raw(&mut self, tag: Tag, dim: usize, cell_data: CellData, image: Diagram) {
-        self.cellular = self.cellular && image.is_cell();
+        self.cellular = self.cellular && image.is_cell() && image.dim() == dim as isize;
         self.by_dim.entry(dim).or_default().push(tag.clone());
         self.table.insert(tag, Entry { cell_data, image });
     }
@@ -119,11 +119,8 @@ impl PartialMap {
         if f.is_defined_at(&tag) {
             return Err(Error::new("already defined"));
         }
-        if image.dim() != dim as isize {
-            return Err(Error::new("dimensions do not match"));
-        }
-        if !image.is_round() {
-            return Err(Error::new("image is not round"));
+        if image.dim() > dim as isize {
+            return Err(Error::new("image dimension exceeds source dimension"));
         }
 
         let cellular = match (dim, &cell_data) {
@@ -138,7 +135,7 @@ impl PartialMap {
                 let k = dim - 1;
                 check_boundary_match(&f, boundary_in, Sign::Source, k, &image)?;
                 check_boundary_match(&f, boundary_out, Sign::Target, k, &image)?;
-                f.cellular && image.is_cell()
+                f.cellular && image.is_cell() && image.dim() == dim as isize
             }
         };
 
@@ -193,7 +190,7 @@ impl PartialMap {
             for tag in tags {
                 let Some(f_entry) = f.table.get(&tag) else { continue };
                 let Ok(image_gf) = PartialMap::apply(g, &f_entry.image) else { continue };
-                cellular = cellular && image_gf.is_cell();
+                cellular = cellular && image_gf.is_cell() && image_gf.dim() == dim as isize;
                 table.insert(tag.clone(), Entry {
                     cell_data: f_entry.cell_data.clone(),
                     image: image_gf,
