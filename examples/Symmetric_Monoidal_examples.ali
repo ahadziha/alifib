@@ -5,7 +5,7 @@
 
 @Type
 include Symmetric_Monoidal as Monoidal,
-let Equation = Monoidal.Aux.Equation,
+let Equation = Monoidal.Equation,
 
 (* The walking commutative monoid *)
 Commutative_Monoid <<= {
