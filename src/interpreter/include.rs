@@ -114,7 +114,8 @@ fn extend_scope_with_attached_generators(
             }
         };
 
-        let Ok(image_classifier) = Diagram::cell(image_tag.clone(), &image_cell_data) else { continue; };
+        let image_classifier = Diagram::cell(image_tag.clone(), &image_cell_data)
+            .map_err(|e| format!("cannot attach {}: {}", generator_name, e.message))?;
 
         scope.add_generator(qualified_name, image_tag, image_classifier.clone());
         map.insert_raw(Tag::Global(global_id), generator_dim, source_cell_data, image_classifier);
