@@ -1,0 +1,40 @@
+(***
+    Strings as a free 1-dimensional type.
+
+    A string is a pasting of 1-cells here -> here,
+    one generator per character. The empty string
+    is the identity on here.
+
+    Generator naming conventions:
+        a-z         lowercase letters
+        A-Z         uppercase letters
+        0-9         digits
+        SPACE etc.  punctuation and whitespace
+***)
+
+@Type
+String <<= {
+    here,
+
+    index characters = [
+        a, b, c, d, e, f, g, h, i, j, k, l, m,
+        n, o, p, q, r, s, t, u, v, w, x, y, z,
+        A, B, C, D, E, F, G, H, I, J, K, L, M,
+        N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+        SPACE, TAB, NEWLINE, CR,
+        LPAREN, RPAREN, LBRACK, RBRACK,
+        LBRACE, RBRACE, LT, GT,
+        DOT, COMMA, COLON, SEMICOLON,
+        EXCL, QUESTION, QUOTE, DQUOTE, BACKTICK,
+        PLUS, DASH, STAR, SLASH, BACKSLASH,
+        PERCENT, CARET, TILDE, AMP, PIPE, EQ,
+        AT, HASH, DOLLAR, UNDERSCORE
+    ],
+
+    for char in characters {
+        <char>: here -> here
+    },
+
+    index thin = [ here ]
+}

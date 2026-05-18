@@ -42,6 +42,22 @@ pub fn lexer<'src>(
             }
         });
 
+    let string = |delim: char| {
+        just(delim)
+            .ignore_then(
+                choice((
+                    just('\\').then(any()).to(()),
+                    any().filter(move |c: &char| *c != delim && *c != '\\').to(()),
+                ))
+                .repeated()
+                .to_slice()
+            )
+            .then_ignore(just(delim))
+            .map(Token::Str)
+    };
+
+    let string_literal = choice((string('"'), string('\'')));
+
     let symbol = choice((
         just("<<=").to(Token::LArrow),
         just("::").to(Token::DColon),
@@ -64,7 +80,7 @@ pub fn lexer<'src>(
         just('?').to(Token::Question),
     ));
 
-    let token = choice((symbol, ident_or_nat_or_kw));
+    let token = choice((string_literal, symbol, ident_or_nat_or_kw));
 
     token
         .map_with(|tok, e| (tok, e.span()))
@@ -292,6 +308,58 @@ mod tests {
             (Token::Ident("ab"), (0, 2)),
             (Token::Ident("αβ"), (3, 7)),
         ]);
+    }
+
+    // --- String literals ---
+
+    #[test]
+    fn test_string_double_quoted() {
+        assert_eq!(lex(r#""hello""#), vec![Token::Str("hello")]);
+    }
+
+    #[test]
+    fn test_string_single_quoted() {
+        assert_eq!(lex("'hello'"), vec![Token::Str("hello")]);
+    }
+
+    #[test]
+    fn test_string_empty() {
+        assert_eq!(lex(r#""""#), vec![Token::Str("")]);
+    }
+
+    #[test]
+    fn test_string_with_spaces() {
+        assert_eq!(lex(r#""hello world""#), vec![Token::Str("hello world")]);
+    }
+
+    #[test]
+    fn test_string_with_escapes() {
+        assert_eq!(lex(r#""a\nb""#), vec![Token::Str(r"a\nb")]);
+    }
+
+    #[test]
+    fn test_string_escaped_quote() {
+        assert_eq!(lex(r#""say \"hi\"""#), vec![Token::Str(r#"say \"hi\""#)]);
+    }
+
+    #[test]
+    fn test_string_among_tokens() {
+        assert_eq!(lex(r#"let x = "hello""#), vec![
+            Token::Let,
+            Token::Ident("x"),
+            Token::Eq,
+            Token::Str("hello"),
+        ]);
+    }
+
+    #[test]
+    fn test_string_span() {
+        assert_eq!(lex_spanned(r#""abc""#), vec![(Token::Str("abc"), (0, 5))]);
+    }
+
+    #[test]
+    fn test_unclosed_string() {
+        assert!(lexer().parse(r#""unclosed"#).has_errors());
     }
 
     // --- Errors ---

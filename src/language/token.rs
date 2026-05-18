@@ -41,6 +41,7 @@ pub enum Token<'src> {
     // Data
     Ident(&'src str),
     Nat(&'src str),
+    Str(&'src str),
 }
 
 impl fmt::Display for Token<'_> {
@@ -80,6 +81,7 @@ impl fmt::Display for Token<'_> {
             Token::Question => write!(f, "?"),
             Token::Ident(s) => write!(f, "{s}"),
             Token::Nat(s) => write!(f, "{s}"),
+            Token::Str(s) => write!(f, "\"{s}\""),
         }
     }
 }

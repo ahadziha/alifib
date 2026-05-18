@@ -294,6 +294,68 @@ fn build_partial_map<'tokens, 'src: 'tokens>(diagram: RDiagram<'tokens, 'src>) -
     })
 }
 
+// ---------------------------------------------------------------------------
+// String literal expansion
+// ---------------------------------------------------------------------------
+
+fn char_to_generator_name(c: char) -> String {
+    match c {
+        'a'..='z' | 'A'..='Z' | '0'..='9' => c.to_string(),
+        ' ' => "SPACE".into(), '\t' => "TAB".into(),
+        '\n' => "NEWLINE".into(), '\r' => "CR".into(),
+        '(' => "LPAREN".into(), ')' => "RPAREN".into(),
+        '[' => "LBRACK".into(), ']' => "RBRACK".into(),
+        '{' => "LBRACE".into(), '}' => "RBRACE".into(),
+        '<' => "LT".into(), '>' => "GT".into(),
+        '.' => "DOT".into(), ',' => "COMMA".into(),
+        ':' => "COLON".into(), ';' => "SEMICOLON".into(),
+        '!' => "EXCL".into(), '?' => "QUESTION".into(),
+        '\'' => "QUOTE".into(), '"' => "DQUOTE".into(),
+        '`' => "BACKTICK".into(),
+        '+' => "PLUS".into(), '-' => "DASH".into(),
+        '*' => "STAR".into(), '/' => "SLASH".into(),
+        '\\' => "BACKSLASH".into(), '%' => "PERCENT".into(),
+        '^' => "CARET".into(), '~' => "TILDE".into(),
+        '&' => "AMP".into(), '|' => "PIPE".into(),
+        '=' => "EQ".into(),
+        '@' => "AT".into(), '#' => "HASH".into(),
+        '$' => "DOLLAR".into(), '_' => "UNDERSCORE".into(),
+        _ => c.to_string(),
+    }
+}
+
+fn expand_string_literal(raw: &str, span: Span) -> DComponent {
+    let mut chars = raw.chars();
+    let mut names: Vec<Spanned<DExpr>> = Vec::new();
+
+    while let Some(c) = chars.next() {
+        let logical = if c == '\\' {
+            match chars.next() {
+                Some('n') => '\n',
+                Some('t') => '\t',
+                Some('r') => '\r',
+                Some('\\') => '\\',
+                Some('"') => '"',
+                Some('\'') => '\'',
+                Some(other) => other,
+                None => break,
+            }
+        } else {
+            c
+        };
+        names.push(sp(
+            DExpr::Component(DComponent::Name(char_to_generator_name(logical))),
+            span,
+        ));
+    }
+
+    if names.is_empty() {
+        DComponent::Name("here".to_string())
+    } else {
+        DComponent::Paren(Box::new(sp(Diagram::PrincipalPaste(names), span)))
+    }
+}
+
 /// Build Diagram parser (actually recursive: through DComponent::Paren and AnonMap)
 fn build_diagram<'tokens, 'src: 'tokens>() -> RDiagram<'tokens, 'src> {
     recursive(|diagram: RDiagram<'tokens, 'src>| {
@@ -321,6 +383,9 @@ fn build_diagram<'tokens, 'src: 'tokens>() -> RDiagram<'tokens, 'src> {
             t(Token::In).map(|_| DComponent::In),
             t(Token::Out).map(|_| DComponent::Out),
             t(Token::Question).map(|_| DComponent::Hole),
+            select_ref! {
+                Token::Str(s) => *s,
+            }.map_with(|s, e| expand_string_literal(s, cspan(e.span()))),
             select_ref! {
                 Token::Ident(s) => DComponent::Name(s.to_string()),
                 Token::Nat(s) => DComponent::Name(s.to_string()),
