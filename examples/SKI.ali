@@ -162,7 +162,13 @@ SKI_var <<= SKI {
 }
 let Bxyz = Assign.fxyz
 
-(* Maps parse trees of SKI terms to SKI diagrams *)
+(* 
+	Maps parse trees of SKI terms to SKI diagrams.
+	Usage:
+    	`Term.(run auto on parse "<term>")`
+    for example
+    	`Term.(run auto on parse "S(S(KS)K)")`
+*)
 @SKI
 let total Term :: SKI_Term.Parser = [
 	parse => Unit.pt, ACTIVE => Unit.pt, CURSOR => Unit.pt,

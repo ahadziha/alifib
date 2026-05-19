@@ -1,14 +1,14 @@
 (***
 	Parser for SKI terms.
 
-    Feed a SKI term <Term> to the parser 
+    Feed a SKI term <term> to the parser 
     as the diagram
-    ```
-    	parse "<Term>"
-    ```
+    	`parse "<term>"`
     e.g. parse "S(S(KS)K)".
+    	`(run auto on parse "<term>")`
+    returns the parsing trace.
     
-    Parse trees are turned into SKI diagrams by the
+    Parse traces are turned into SKI diagrams by the
     map Parse to type SKI in SKI.ali.
 ***)
 
