@@ -33,6 +33,7 @@ pub fn lexer<'src>(
             "as" => Token::As,
             "index" => Token::Index,
             "for" => Token::For,
+            "run" => Token::Run,
             _ => {
                 if s.chars().all(|c| c.is_ascii_digit()) {
                     Token::Nat(s)
@@ -123,6 +124,18 @@ mod tests {
         assert_eq!(lex("along"), vec![Token::Along]);
         assert_eq!(lex("assert"), vec![Token::Assert]);
         assert_eq!(lex("as"), vec![Token::As]);
+        assert_eq!(lex("run"), vec![Token::Run]);
+    }
+
+    #[test]
+    fn test_run_keyword_prefix() {
+        assert_eq!(lex("running"), vec![Token::Ident("running")]);
+    }
+
+    #[test]
+    fn test_on_is_ident() {
+        assert_eq!(lex("on"), vec![Token::Ident("on")]);
+        assert_eq!(lex("only"), vec![Token::Ident("only")]);
     }
 
     // Keywords that share prefixes don't shadow one another.

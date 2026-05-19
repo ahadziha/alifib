@@ -7,6 +7,7 @@ use crate::core::complex::Complex;
 use crate::core::diagram::{Diagram, Sign};
 use crate::core::matching::{
     FamilyMember, MatchResult, RulePattern,
+    build_rule_patterns,
     confirm_candidate,
     for_each_rule_candidate,
     greedy_parallel_auto_step,
@@ -224,25 +225,6 @@ fn check_parallel(source: &Diagram, target: &Diagram) -> Result<(), String> {
         return Err("source and target are not parallel: output boundaries do not match".to_owned());
     }
     Ok(())
-}
-
-/// Build precomputed [`RulePattern`]s for every rewrite rule at dimension
-/// `n + 1` in `type_complex`, indexed by rule name.
-fn build_rule_patterns(
-    type_complex: &Complex,
-    n: usize,
-    backward: bool,
-) -> Result<HashMap<String, RulePattern>, String> {
-    let mut out = HashMap::new();
-    for (name, _tag, dim) in type_complex.generators_iter() {
-        if dim != n + 1 { continue; }
-        let Some(rewrite) = type_complex.classifier(name) else { continue; };
-        let rp = RulePattern::new(rewrite, backward).map_err(|e| {
-            format!("failed to precompute pattern for rule '{}': {}", name, e)
-        })?;
-        out.insert(name.to_owned(), rp);
-    }
-    Ok(out)
 }
 
 /// Confirm each candidate individually and collect all successes (non-parallel).

@@ -26,6 +26,14 @@ impl fmt::Display for FmtAddress<'_> {
 
 // ─── Compact Display: value/leaf types ──────────────────────────────────────
 
+impl fmt::Display for Strategy {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Auto => f.write_str("auto"),
+        }
+    }
+}
+
 impl fmt::Display for DComponent {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -35,6 +43,9 @@ impl fmt::Display for DComponent {
             Self::Out => f.write_str("out"),
             Self::Paren(d) => write!(f, "({})", d.inner),
             Self::Hole => f.write_str("?"),
+            Self::Run { strategy, diagram } => {
+                write!(f, "(run {} on {})", strategy.inner, diagram.inner)
+            }
         }
     }
 }

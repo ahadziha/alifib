@@ -819,6 +819,23 @@ fn enumerate_independent_sets_of_size(
 }
 
 
+pub(crate) fn build_rule_patterns(
+    type_complex: &Complex,
+    n: usize,
+    backward: bool,
+) -> Result<HashMap<String, RulePattern>, String> {
+    let mut out = HashMap::new();
+    for (name, _tag, dim) in type_complex.generators_iter() {
+        if dim != n + 1 { continue; }
+        let Some(rewrite) = type_complex.classifier(name) else { continue; };
+        let rp = RulePattern::new(rewrite, backward).map_err(|e| {
+            format!("failed to precompute pattern for rule '{}': {}", name, e)
+        })?;
+        out.insert(name.to_owned(), rp);
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     mod find_matches_tests {

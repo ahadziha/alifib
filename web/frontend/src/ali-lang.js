@@ -4,8 +4,7 @@ import { Tag } from '@lezer/highlight';
 import { tags } from '@lezer/highlight';
 
 const KEYWORDS_CONTROL = new Set(['attach', 'along', 'include', 'assert', 'for', 'index']);
-const KEYWORDS_OTHER   = new Set(['let', 'def', 'as', 'total', 'map']);
-const KEYWORDS_BOUND   = new Set(['in', 'out']);
+const KEYWORDS_OTHER   = new Set(['let', 'def', 'as', 'total', 'map', 'run', 'in', 'out', 'on']);
 
 export const aliTags = {
   decoType: Tag.define(),
@@ -59,7 +58,6 @@ const aliMode = {
     if (stream.match(/^[A-Za-z_][A-Za-z0-9_]*/)) {
       const word = stream.current();
       if (KEYWORDS_CONTROL.has(word) || KEYWORDS_OTHER.has(word)) return 'keyword';
-      if (KEYWORDS_BOUND.has(word)) return 'modifier';
       const rest = stream.string.slice(stream.pos);
       if (/^[ \t]*<<=/.test(rest)) return 'typeHead';
       return null;
@@ -97,7 +95,6 @@ export const aliLanguage = StreamLanguage.define(aliMode);
 export const aliDarkHighlight = HighlightStyle.define([
   { tag: tags.blockComment,  color: '#6b8a6b', fontStyle: 'italic' },
   { tag: tags.keyword,       color: '#c586c0', fontWeight: '600' },
-  { tag: tags.modifier,      color: '#dcdcaa' },
   { tag: aliTags.decoType,   color: '#7c6af2', fontWeight: '600' },
   { tag: aliTags.decoId,     color: '#5fa8d3' },
   { tag: aliTags.arrow,      color: '#fbbf24' },
@@ -111,7 +108,6 @@ export const aliDarkHighlight = HighlightStyle.define([
 export const aliLightHighlight = HighlightStyle.define([
   { tag: tags.blockComment,  color: '#6a8a58', fontStyle: 'italic' },
   { tag: tags.keyword,       color: '#a03870', fontWeight: '600' },
-  { tag: tags.modifier,      color: '#9a7020' },
   { tag: aliTags.decoType,   color: '#1a7a7a', fontWeight: '600' },
   { tag: aliTags.decoId,     color: '#1a6060' },
   { tag: aliTags.arrow,      color: '#b87000' },

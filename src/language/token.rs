@@ -16,6 +16,7 @@ pub enum Token<'src> {
     As,
     Index,
     For,
+    Run,
 
     // Symbols
     At,        // @
@@ -60,6 +61,7 @@ impl fmt::Display for Token<'_> {
             Token::As => write!(f, "as"),
             Token::Index => write!(f, "index"),
             Token::For => write!(f, "for"),
+            Token::Run => write!(f, "run"),
             Token::At => write!(f, "@"),
             Token::LBrace => write!(f, "{{"),
             Token::RBrace => write!(f, "}}"),

@@ -22,11 +22,8 @@ class AlifibLexer(RegexLexer):
             # Keywords
             (words((
                 'let', 'attach', 'along', 'include', 'as',
-                'assert', 'total', 'map',
+                'assert', 'total', 'map', 'run', 'in', 'out', 'on',
             ), suffix=r'\b'), Keyword),
-
-            # Boundary keywords
-            (r'\b(in|out)\b', Keyword.Pseudo),
 
             # Operators
             (r'<<=', Operator),

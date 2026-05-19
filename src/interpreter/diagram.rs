@@ -7,6 +7,7 @@ use super::types::{
 use crate::core::{
     complex::Complex,
     diagram::{CellData, Diagram, Sign as DiagramSign},
+    matching::{build_rule_patterns, greedy_parallel_auto_step},
     partial_map::PartialMap,
 };
 use crate::language::ast::{self, DComponent, DExpr, Span, Spanned};
@@ -299,7 +300,71 @@ pub fn interpret_dcomponent(
             (term_opt.map(Component::Value), result)
         }
         DComponent::Hole => (Some(Component::Hole), InterpResult::ok(context.clone())),
+        DComponent::Run { strategy, diagram } => match strategy.inner {
+            ast::Strategy::Auto => interpret_run_auto(context, scope, diagram, span),
+        },
     }
+}
+
+// ---- Strategy application ----
+
+const AUTO_STEP_LIMIT: usize = 1024;
+
+fn interpret_run_auto(
+    context: &Context,
+    scope: &Complex,
+    diagram_ast: &Spanned<ast::Diagram>,
+    span: Span,
+) -> (Option<Component>, InterpResult) {
+    let (diag_opt, result) = interpret_diagram(context, scope, diagram_ast);
+    let Some(initial) = diag_opt else { return (None, result); };
+    if result.has_errors() { return (None, result); }
+
+    let n = initial.top_dim();
+    let rule_patterns = match build_rule_patterns(scope, n, false) {
+        Ok(rp) => rp,
+        Err(e) => return fail(context, span, format!("run auto: {}", e)),
+    };
+
+    let mut current = initial.clone();
+    let mut steps: Vec<Diagram> = Vec::new();
+
+    for _ in 0..AUTO_STEP_LIMIT {
+        match greedy_parallel_auto_step(scope, &rule_patterns, &current) {
+            Ok(Some(pr)) => {
+                match Diagram::boundary(DiagramSign::Target, n, &pr.step) {
+                    Ok(d) => {
+                        steps.push(pr.step);
+                        current = d;
+                    }
+                    Err(e) => return fail(context, span, format!("run auto: {}", e)),
+                }
+            }
+            Ok(None) => break,
+            Err(e) => return fail(context, span, format!("run auto: {}", e)),
+        }
+    }
+
+    if steps.len() >= AUTO_STEP_LIMIT {
+        if let Ok(Some(_)) = greedy_parallel_auto_step(scope, &rule_patterns, &current) {
+            return fail(context, span,
+                format!("run auto: did not terminate within {} steps", AUTO_STEP_LIMIT));
+        }
+    }
+
+    if steps.is_empty() {
+        return (Some(Component::Value(Term::Diag(initial))), result);
+    }
+
+    let mut proof = steps[0].clone();
+    for step in &steps[1..] {
+        match Diagram::paste(n, &proof, step) {
+            Ok(d) => proof = d,
+            Err(e) => return fail(context, span, format!("run auto: {}", e)),
+        }
+    }
+
+    (Some(Component::Value(Term::Diag(proof))), result)
 }
 
 // ---- Assert ----

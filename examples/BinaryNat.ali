@@ -119,18 +119,19 @@ let n10 = zero bit1 bit0 bit1 bit0,
 
 (***
     Example computations.
-    These construct the "problem" as a diagram;
-    once strategies and `run` are implemented,
-    they would reduce to the expected normal forms.
 ***)
 @BinaryNat
 (* 2 + 3 = 5 *)
 let two_plus_three = split (n2 #0 n3) add,
+assert (run auto on two_plus_three).out = n5,
 (* 3 * 3 = 9 *)
 let three_times_three = split (n3 #0 n3) mul,
+assert (run auto on three_times_three).out = n9,
 (* succ(7) = 8 *)
 let succ_seven = n7 succ,
+assert (run auto on succ_seven).out = n8,
 (* (2 + 3) * 2 = 10 *)
 let five_times_two = split (unit split)
     (n2 #0 n3 #0 n2)
-    (add nat) mul
+    (add nat) mul,
+assert (run auto on five_times_two).out = n10

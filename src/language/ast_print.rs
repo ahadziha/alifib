@@ -344,6 +344,15 @@ impl Printer {
                 self.diagram(&inner.inner);
                 self.s(")");
             }
+            DComponent::Run { strategy, diagram } => {
+                self.s("(run ");
+                match &strategy.inner {
+                    Strategy::Auto => self.s("auto"),
+                }
+                self.s(" on ");
+                self.diagram(&diagram.inner);
+                self.s(")");
+            }
         }
     }
 

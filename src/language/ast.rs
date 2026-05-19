@@ -144,6 +144,10 @@ pub struct DefPartialMap {
 // Diagrams
 // ---------------------------------------------------------------------------
 
+pub enum Strategy {
+    Auto,
+}
+
 pub enum Diagram {
     /// Implicit pasting: a principal sequence of diagram expressions (no explicit #n).
     PrincipalPaste(Vec<Spanned<DExpr>>),
@@ -175,6 +179,10 @@ pub enum DComponent {
     Out,
     Paren(Box<Spanned<Diagram>>),
     Hole,
+    Run {
+        strategy: Spanned<Strategy>,
+        diagram: Box<Spanned<Diagram>>,
+    },
 }
 
 // ---------------------------------------------------------------------------

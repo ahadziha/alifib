@@ -7,7 +7,7 @@ use super::ast::{
     Address, AssertStmt, AttachStmt, Block, Boundary, ComplexInstr, Complex, DComponent, DExpr,
     DefPartialMap, Diagram, ForBlock, ForIndex, Generator, IncludeModule, IncludeStmt, IndexDecl,
     LetDiag, LocalInst, NameWithBoundary, PartialMap, PartialMapBasic, PartialMapClause,
-    PartialMapDef, PartialMapExt, Program, Span, Spanned, TypeInst,
+    PartialMapDef, PartialMapExt, Program, Span, Spanned, Strategy, TypeInst,
 };
 use super::token::Token;
 
@@ -374,8 +374,29 @@ fn build_diagram<'tokens, 'src: 'tokens>() -> RDiagram<'tokens, 'src> {
                 target,
             });
 
+        let strategy = select_ref! {
+            Token::Ident("auto") => Strategy::Auto,
+        }
+        .map_with(|s, e| sp(s, cspan(e.span())));
+
+        let on_keyword = select_ref! {
+            Token::Ident("on") => (),
+        };
+
+        let run_dcomp = t(Token::LParen)
+            .ignore_then(t(Token::Run))
+            .ignore_then(strategy)
+            .then_ignore(on_keyword)
+            .then(diagram.clone())
+            .then_ignore(t(Token::RParen))
+            .map(|(strategy, diagram)| DComponent::Run {
+                strategy,
+                diagram: Box::new(diagram),
+            });
+
         let dcomponent = choice((
             anon_map_dcomp,
+            run_dcomp,
             diagram
                 .clone()
                 .delimited_by(t(Token::LParen), t(Token::RParen))
