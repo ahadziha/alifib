@@ -164,8 +164,8 @@ let Bxyz = Assign.fxyz
 
 (* Maps parse trees of SKI terms to SKI diagrams *)
 @SKI
-let total Parse :: SKI_Term.Parser = [
-	DOLLAR => Unit.pt, ACTIVE => Unit.pt, CURSOR => Unit.pt,
+let total Term :: SKI_Term.Parser = [
+	parse => Unit.pt, ACTIVE => Unit.pt, CURSOR => Unit.pt,
     LPAREN => Unit.pt, RPAREN => Unit.pt,
     S => unit, K => unit, I => unit,
     TERM => a, ATOM => a,

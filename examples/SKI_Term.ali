@@ -2,7 +2,11 @@
 	Parser for SKI terms.
 
     Feed a SKI term <Term> to the parser 
-    as the string "$<Term>", e.g. "$S(S(KS)K)".
+    as the diagram
+    ```
+    	parse "<Term>"
+    ```
+    e.g. parse "S(S(KS)K)".
     
     Parse trees are turned into SKI diagrams by the
     map Parse to type SKI in SKI.ali.
@@ -24,7 +28,7 @@ Term <<= {
 
 Parser <<= Term {
 	(* Parser helper characters *)
-    DOLLAR: here -> here,
+    parse: here -> here,
     ACTIVE: here -> here,
     CURSOR: here -> here,
 
@@ -34,7 +38,7 @@ Parser <<= Term {
 
     (* Rewrite rules *)
     (* --- Initiating parsing --- *)
-	Init: DOLLAR -> ACTIVE CURSOR,
+	Init: parse -> ACTIVE CURSOR,
 
     (* --- Shifting atoms and LPAREN --- *)
     for char in [ S, K, I, LPAREN ] {
