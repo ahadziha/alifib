@@ -15,6 +15,8 @@ use crate::core::matching::{
 };
 use crate::interpreter::{GlobalStore, InterpretedFile};
 use super::session::{Move, SessionFile};
+use rand::RngExt;
+use rand::rngs::SmallRng;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -58,6 +60,7 @@ pub struct RewriteEngine {
     active_len: usize,
     rewrites: Vec<MatchResult>,
     parallel: bool,
+    rng: SmallRng,
 
     /// Per-rule precomputed pattern data (normalised input or output boundary
     /// + embedding into the rule's shape, depending on [`backward`]).
@@ -301,6 +304,7 @@ impl RewriteEngine {
             rewrites,
             parallel: true,
             backward,
+            rng: rand::make_rng(),
             rule_patterns,
             proof_cache: None,
             source_file,
@@ -340,6 +344,7 @@ impl RewriteEngine {
             rewrites,
             parallel: true,
             backward: false,
+            rng: rand::make_rng(),
             rule_patterns,
             proof_cache: None,
             store,
@@ -428,6 +433,7 @@ impl RewriteEngine {
             rewrites,
             parallel: true,
             backward,
+            rng: rand::make_rng(),
             rule_patterns,
             proof_cache: None,
             source_file: session.source_file.clone(),
@@ -681,6 +687,26 @@ impl RewriteEngine {
         self.refresh_rewrites()?;
 
         Ok((applied, stop_reason))
+    }
+
+    /// Apply randomly selected available rewrites.
+    pub fn random(&mut self, max_steps : usize) -> Result<(usize, Option<&'static str>), String> {
+        for applied in 0..max_steps {
+            if self.target_reached() {
+                return Ok((applied, Some("target reached")));
+            }
+
+            // TODO: Speed this up by not using `step`, but first picking a
+            // random rule, and then finding a random instance
+            let total = self.total_choices();
+            if total == 0 {
+                return Ok((applied, Some("no rewrites available")));
+            }
+            let choice = self.rng.random_range(0..total);
+            self.step(choice)?;
+        }
+
+        Ok((max_steps, None))
     }
 
     /// Undo back to (but not past) the given step index (0 = fully undone,
@@ -1064,6 +1090,17 @@ impl RewriteEngine {
                 }
             }
             Request::Auto { max_steps } => match self.auto(*max_steps) {
+                Ok((applied, stop_reason)) => {
+                    let mut data = build_response(self, false);
+                    data.auto = Some(AutoInfo {
+                        applied,
+                        stop_reason: stop_reason.unwrap_or("").to_owned(),
+                    });
+                    Ok(data)
+                }
+                Err(msg) => Err(msg),
+            },
+            Request::Random { max_steps } => match self.random(*max_steps) {
                 Ok((applied, stop_reason)) => {
                     let mut data = build_response(self, false);
                     data.auto = Some(AutoInfo {

@@ -647,8 +647,7 @@ where
     let target_flow = TargetFlowData::new(current);
     let n = current.top_dim();
     let empty = Vec::new();
-    for (name, _tag, dim) in type_complex.generators_iter() {
-        if dim != n + 1 { continue; }
+    for (name, _tag) in type_complex.generators_iter_by_dim(n+1) {
         if type_complex.classifier(name).is_none() { continue; }
         let Some(rp) = rule_patterns.get(name) else { continue; };
         if for_each_candidate_in_rule(rp, name, current, target_flow.as_ref(), &empty, &mut f)
@@ -679,8 +678,7 @@ fn build_greedy_family(
     let target_flow = TargetFlowData::new(current);
     let n = current.top_dim();
 
-    for (name, _tag, dim) in type_complex.generators_iter() {
-        if dim != n + 1 { continue; }
+    for (name, _tag) in type_complex.generators_iter_by_dim(n + 1) {
         if type_complex.classifier(name).is_none() { continue; }
         let Some(rp) = rule_patterns.get(name) else { continue; };
 
@@ -825,8 +823,7 @@ pub(crate) fn build_rule_patterns(
     backward: bool,
 ) -> Result<HashMap<String, RulePattern>, String> {
     let mut out = HashMap::new();
-    for (name, _tag, dim) in type_complex.generators_iter() {
-        if dim != n + 1 { continue; }
+    for (name, _tag) in type_complex.generators_iter_by_dim(n + 1) {
         let Some(rewrite) = type_complex.classifier(name) else { continue; };
         let rp = RulePattern::new(rewrite, backward).map_err(|e| {
             format!("failed to precompute pattern for rule '{}': {}", name, e)

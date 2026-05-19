@@ -209,7 +209,7 @@ impl WebRepl {
 
     /// Send a daemon-protocol command and return a JSON response.
     ///
-    /// Engine-level commands (`step`, `auto`, `undo`, `undo_to`, `show`,
+    /// Engine-level commands (`step`, `auto`, `random`, `undo`, `undo_to`, `show`,
     /// `history`, `list_rules`, `types`, `type`, `cell`, `store`) are
     /// delegated to [`RewriteEngine::handle`], shared with the daemon.
     ///

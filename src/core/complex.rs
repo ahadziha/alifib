@@ -130,6 +130,18 @@ impl Complex {
         self.generators.by_name.iter().map(|(name, e)| (name, &e.tag, e.dim))
     }
 
+    /// Iterate over all generators of a specific dimension.
+    pub fn generators_iter_by_dim(&self, dim: usize) -> impl Iterator<Item = (&LocalId, &Tag)> {
+        self.generators.by_dim
+            .get(&dim)
+            .into_iter()
+            .flat_map(|set| set.iter())
+            .map(|name| {
+                let e = &self.generators.by_name[name];
+                (name, &e.tag)
+            })
+    }
+
     // ---- Diagrams ----
 
     /// Store a named diagram in the complex.
