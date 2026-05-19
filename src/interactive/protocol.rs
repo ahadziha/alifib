@@ -6,7 +6,7 @@
 //! # Request format
 //!
 //! ```json
-//! {"command":"init","source_file":"Idem.ali","type_name":"Idem","source_diagram":"lhs"}
+//! {"command":"init","source_file":"Idem.ali","type_name":"Idem","initial_diagram":"lhs"}
 //! {"command":"step","choice":0}
 //! {"command":"undo"}
 //! {"command":"show"}
@@ -43,9 +43,12 @@ pub enum Request {
     Init {
         source_file: String,
         type_name: String,
-        source_diagram: String,
+        #[serde(alias = "source_diagram")]
+        initial_diagram: String,
         #[serde(default)]
         target_diagram: Option<String>,
+        #[serde(default)]
+        backward: bool,
     },
     /// Resume from a session file on disk.
     Resume {
@@ -141,11 +144,12 @@ pub struct ResponseData {
     pub step_count: usize,
     pub can_redo: bool,
     pub current: DiagramInfo,
-    pub source: DiagramInfo,
+    pub initial: DiagramInfo,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target: Option<DiagramInfo>,
     pub target_reached: bool,
     pub parallel: bool,
+    pub backward: bool,
     pub rewrites: Vec<RewriteInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub proof: Option<ProofInfo>,
@@ -434,6 +438,7 @@ pub fn build_map_entries(
 pub fn build_response(engine: &RewriteEngine, include_history: bool) -> ResponseData {
     let scope = engine.type_complex();
     let current = engine.current_diagram();
+    let backward = engine.backward();
 
     let rewrites: Vec<RewriteInfo> = engine
         .rewrites()
@@ -442,18 +447,22 @@ pub fn build_response(engine: &RewriteEngine, include_history: bool) -> Response
         .map(|(i, pr)| build_rewrite_info_from_family(i, pr, scope))
         .collect();
 
-    // The proof's source/target boundaries are the session's source diagram
-    // and the current diagram respectively — no need to assemble the full
-    // proof diagram just to extract these.
     let proof = if engine.steps().is_empty() {
         None
     } else {
-        let n = engine.source_diagram().top_dim();
+        let n = engine.initial_diagram().top_dim();
+        let (source_label, target_label) = if backward {
+            (render_diagram(engine.current_diagram(), scope),
+             render_diagram(engine.initial_diagram(), scope))
+        } else {
+            (render_diagram(engine.initial_diagram(), scope),
+             render_diagram(engine.current_diagram(), scope))
+        };
         Some(ProofInfo {
             dim: n + 1,
             step_count: engine.step_count(),
-            source_label: render_diagram(engine.source_diagram(), scope),
-            target_label: render_diagram(engine.current_diagram(), scope),
+            source_label,
+            target_label,
         })
     };
 
@@ -478,10 +487,11 @@ pub fn build_response(engine: &RewriteEngine, include_history: bool) -> Response
         step_count: engine.step_count(),
         can_redo: engine.can_redo(),
         current: diagram_info(current, scope),
-        source: diagram_info(engine.source_diagram(), scope),
+        initial: diagram_info(engine.initial_diagram(), scope),
         target: engine.target_diagram().map(|t| diagram_info(t, scope)),
         target_reached: engine.target_reached(),
         parallel: engine.parallel(),
+        backward,
         rewrites,
         proof,
         history,

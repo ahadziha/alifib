@@ -57,18 +57,20 @@ impl WasmRepl {
 
     /// Start a rewrite session for the named type.
     ///
-    /// `source_diagram` — name or expression for the starting diagram.
+    /// `initial_diagram` — name or expression for the starting diagram.
     /// `target_diagram` — optional goal diagram (name or expression).
+    /// `backward` — if true, match output boundaries and advance via input.
     ///
     /// Returns a daemon-protocol JSON response (same shape as `show`).
     pub fn init_session(
         &mut self,
         type_name: &str,
-        source_diagram: &str,
+        initial_diagram: &str,
         target_diagram: Option<String>,
+        backward: bool,
     ) -> String {
         self.inner
-            .init_session(type_name, source_diagram, target_diagram)
+            .init_session(type_name, initial_diagram, target_diagram, backward)
     }
 
     /// Send a daemon-protocol command and return a JSON response.

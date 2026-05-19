@@ -12,12 +12,16 @@ pub struct SessionFile {
     pub source_file: String,
     /// Name of the type whose generators serve as rewrite rules.
     pub type_name: String,
-    /// Name of the source n-diagram within the type's complex.
-    pub source_diagram: String,
+    /// Name of the initial n-diagram (where rewriting starts).
+    #[serde(alias = "source_diagram")]
+    pub initial_diagram: String,
     /// Optional name of the target n-diagram (the goal to reach).
     pub target_diagram: Option<String>,
     /// Ordered list of moves applied so far.
     pub moves: Vec<Move>,
+    /// Whether this session uses backward rewriting (output → input).
+    #[serde(default)]
+    pub backward: bool,
 }
 
 /// A single rewrite move in the session history.
@@ -67,9 +71,10 @@ mod tests {
         let s = SessionFile {
             source_file: "foo.ali".into(),
             type_name: "T".into(),
-            source_diagram: "lhs".into(),
+            initial_diagram: "lhs".into(),
             target_diagram: Some("rhs".into()),
             moves: vec![],
+            backward: false,
         };
         let json = serde_json::to_string(&s).unwrap();
         let s2: SessionFile = serde_json::from_str(&json).unwrap();
@@ -83,8 +88,9 @@ mod tests {
         let s = SessionFile {
             source_file: "bar.ali".into(),
             type_name: "Cat".into(),
-            source_diagram: "d".into(),
+            initial_diagram: "d".into(),
             target_diagram: None,
+            backward: false,
             moves: vec![
                 Move { choice: Some(0), choices: None, rule_name: "assoc".into(), parallel: false },
                 Move { choice: Some(1), choices: None, rule_name: "unit".into(), parallel: false },

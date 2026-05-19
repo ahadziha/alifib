@@ -64,9 +64,10 @@ pub struct RulePattern {
 impl RulePattern {
     /// Build a [`RulePattern`] from a rewrite rule's classifier diagram.
     ///
-    /// The rule must be at least 1-dimensional (i.e. `rewrite.top_dim() >= 1`);
-    /// the pattern is the rule's input boundary at dimension `rewrite.top_dim() - 1`.
-    pub fn new(rewrite: &Diagram) -> Result<Self, Error> {
+    /// The rule must be at least 1-dimensional (i.e. `rewrite.top_dim() >= 1`).
+    /// In forward mode (`backward = false`) the pattern is the rule's input
+    /// boundary; in backward mode it is the output boundary.
+    pub fn new(rewrite: &Diagram, backward: bool) -> Result<Self, Error> {
         let top = rewrite.top_dim();
         if rewrite.dim() < 1 {
             return Err(Error::new(
@@ -74,13 +75,14 @@ impl RulePattern {
             ));
         }
         let n = top - 1;
-        // Normalised input boundary diagram (pattern.shape is in canonical form).
-        let pattern = Diagram::boundary_normal(super::diagram::Sign::Source, n, rewrite)?;
-        // Embedding from the normalised boundary sub-shape into the rule's shape.
-        // `boundary_traverse` is deterministic so calling it again yields the
-        // same cell ordering that `boundary_normal` used above.
+        let (diag_sign, og_sign) = if backward {
+            (super::diagram::Sign::Target, Sign::Output)
+        } else {
+            (super::diagram::Sign::Source, Sign::Input)
+        };
+        let pattern = Diagram::boundary_normal(diag_sign, n, rewrite)?;
         let (_, pattern_to_rewrite) =
-            ogposet::boundary_traverse(Sign::Input, n, &rewrite.shape);
+            ogposet::boundary_traverse(og_sign, n, &rewrite.shape);
         Ok(Self { pattern, pattern_to_rewrite })
     }
 }
@@ -122,7 +124,7 @@ fn find_matches(
     let mut rule_patterns = HashMap::new();
     rule_patterns.insert(
         rule_name.to_owned(),
-        RulePattern::new(rewrite).expect("RulePattern::new"),
+        RulePattern::new(rewrite, false).expect("RulePattern::new"),
     );
     let rp = rule_patterns.get(rule_name).unwrap();
     let mut results = Vec::new();
@@ -952,7 +954,7 @@ mod tests {
             let target = Diagram::paste(0, &lhs, &id_diag).unwrap(); // id id id id
 
             let mut rule_patterns = HashMap::new();
-            rule_patterns.insert(rname.clone(), super::super::RulePattern::new(&rewrite).unwrap());
+            rule_patterns.insert(rname.clone(), super::super::RulePattern::new(&rewrite, false).unwrap());
             let rp = rule_patterns.get(&rname).unwrap();
 
             let mut candidates = Vec::new();
@@ -1010,7 +1012,7 @@ mod tests {
             let target = get_diagram(&complex, "lhs"); // id id id
 
             let mut rule_patterns = HashMap::new();
-            rule_patterns.insert(rname.clone(), super::super::RulePattern::new(&rewrite).unwrap());
+            rule_patterns.insert(rname.clone(), super::super::RulePattern::new(&rewrite, false).unwrap());
             let rp = rule_patterns.get(&rname).unwrap();
 
             let mut candidates = Vec::new();
@@ -1039,7 +1041,7 @@ mod tests {
             let target = Diagram::paste(0, &lhs, &id_diag).unwrap();
 
             let mut rule_patterns = std::collections::HashMap::new();
-            rule_patterns.insert(rname.clone(), super::super::RulePattern::new(&rewrite).unwrap());
+            rule_patterns.insert(rname.clone(), super::super::RulePattern::new(&rewrite, false).unwrap());
 
             let result = super::super::greedy_parallel_auto_step(
                 &complex, &rule_patterns, &target,

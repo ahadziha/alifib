@@ -41,8 +41,9 @@ pub struct RewriteEngine {
     // Immutable context (loaded once)
     store: Arc<GlobalStore>,
     type_complex: Arc<Complex>,
-    source_diagram: Diagram,
+    initial_diagram: Diagram,
     target_diagram: Option<Diagram>,
+    backward: bool,
 
     // Mutable session state
     current_diagram: Diagram,
@@ -57,10 +58,10 @@ pub struct RewriteEngine {
     rewrites: Vec<MatchResult>,
     parallel: bool,
 
-    /// Per-rule precomputed pattern data (normalised input boundary + embedding
-    /// into the rule's shape).  Built once when the engine is constructed and
-    /// reused for every [`find_matches`] call so that rule-side boundary
-    /// traversal and normalisation aren't redone on every step.
+    /// Per-rule precomputed pattern data (normalised input or output boundary
+    /// + embedding into the rule's shape, depending on [`backward`]).
+    /// Built once when the engine is constructed and reused for every
+    /// [`find_matches`] call.
     rule_patterns: HashMap<String, RulePattern>,
 
     /// Incremental proof cache, active only while proof view is enabled.
@@ -69,7 +70,7 @@ pub struct RewriteEngine {
     // Metadata (for session file persistence)
     source_file: String,
     type_name: String,
-    source_diagram_name: String,
+    initial_diagram_name: String,
     target_diagram_name: Option<String>,
 }
 
@@ -181,18 +182,18 @@ pub fn eval_diagram_expr(
 fn load_context(
     source_file: &str,
     type_name: &str,
-    source_diagram_name: &str,
+    initial_diagram_name: &str,
     target_diagram_name: Option<&str>,
 ) -> Result<LoadedRewriteContext, String> {
     let (store, type_complex, canonical_path) = load_type_context(source_file, type_name)?;
 
-    let source_diagram =
-        eval_diagram_expr(&store, &type_complex, &canonical_path, source_diagram_name)?;
+    let initial_diagram =
+        eval_diagram_expr(&store, &type_complex, &canonical_path, initial_diagram_name)?;
     let target_diagram = target_diagram_name
         .map(|expr| eval_diagram_expr(&store, &type_complex, &canonical_path, expr))
         .transpose()?;
 
-    Ok((store, type_complex, source_diagram, target_diagram))
+    Ok((store, type_complex, initial_diagram, target_diagram))
 }
 
 /// Check that `source` and `target` are parallel: same dimension, and (for
@@ -230,12 +231,13 @@ fn check_parallel(source: &Diagram, target: &Diagram) -> Result<(), String> {
 fn build_rule_patterns(
     type_complex: &Complex,
     n: usize,
+    backward: bool,
 ) -> Result<HashMap<String, RulePattern>, String> {
     let mut out = HashMap::new();
     for (name, _tag, dim) in type_complex.generators_iter() {
         if dim != n + 1 { continue; }
         let Some(rewrite) = type_complex.classifier(name) else { continue; };
-        let rp = RulePattern::new(rewrite).map_err(|e| {
+        let rp = RulePattern::new(rewrite, backward).map_err(|e| {
             format!("failed to precompute pattern for rule '{}': {}", name, e)
         })?;
         out.insert(name.to_owned(), rp);
@@ -282,48 +284,50 @@ fn find_first_match(
 impl RewriteEngine {
     /// Create a fresh session from an already-loaded store and type complex.
     ///
-    /// `source_diagram_name` and `target_diagram_name` may be either plain diagram
+    /// `initial_diagram_name` and `target_diagram_name` may be either plain diagram
     /// names (resolved against `type_complex` and the module at `source_file`) or
     /// full diagram expressions in the alifib language (e.g. `"f g"` or `"(f #0 g)"`).
     /// This constructor is used by the interactive REPL and the web backends.
     pub fn from_store(
         store: Arc<GlobalStore>,
         type_complex: Arc<Complex>,
-        source_diagram_name: &str,
+        initial_diagram_name: &str,
         target_diagram_name: Option<&str>,
         source_file: String,
         type_name: String,
+        backward: bool,
     ) -> Result<Self, String> {
-        let source_diagram =
-            eval_diagram_expr(&store, &type_complex, &source_file, source_diagram_name)?;
+        let initial_diagram =
+            eval_diagram_expr(&store, &type_complex, &source_file, initial_diagram_name)?;
         let target_diagram = target_diagram_name
             .map(|expr| eval_diagram_expr(&store, &type_complex, &source_file, expr))
             .transpose()?;
         if let Some(ref target) = target_diagram {
-            check_parallel(&source_diagram, target)?;
+            check_parallel(&initial_diagram, target)?;
         }
 
-        let rule_patterns = build_rule_patterns(&type_complex, source_diagram.top_dim())?;
+        let rule_patterns = build_rule_patterns(&type_complex, initial_diagram.top_dim(), backward)?;
         let rewrites = collect_confirmed_matches(
-            &type_complex, &rule_patterns, &source_diagram,
+            &type_complex, &rule_patterns, &initial_diagram,
         )?;
 
         Ok(Self {
-            current_diagram: source_diagram.clone(),
+            current_diagram: initial_diagram.clone(),
             steps: Vec::new(),
             history: Vec::new(),
             active_len: 0,
             rewrites,
             parallel: true,
+            backward,
             rule_patterns,
             proof_cache: None,
             source_file,
             type_name,
-            source_diagram_name: source_diagram_name.to_owned(),
+            initial_diagram_name: initial_diagram_name.to_owned(),
             target_diagram_name: target_diagram_name.map(str::to_owned),
             store,
             type_complex,
-            source_diagram,
+            initial_diagram,
             target_diagram,
         })
     }
@@ -332,55 +336,58 @@ impl RewriteEngine {
     pub fn init(
         source_file: &str,
         type_name: &str,
-        source_diagram_name: &str,
+        initial_diagram_name: &str,
         target_diagram_name: Option<&str>,
     ) -> Result<Self, String> {
-        let (store, type_complex, source_diagram, target_diagram) =
-            load_context(source_file, type_name, source_diagram_name, target_diagram_name)?;
+        let (store, type_complex, initial_diagram, target_diagram) =
+            load_context(source_file, type_name, initial_diagram_name, target_diagram_name)?;
         if let Some(ref target) = target_diagram {
-            check_parallel(&source_diagram, target)?;
+            check_parallel(&initial_diagram, target)?;
         }
 
-        let rule_patterns = build_rule_patterns(&type_complex, source_diagram.top_dim())?;
+        let rule_patterns = build_rule_patterns(&type_complex, initial_diagram.top_dim(), false)?;
         let rewrites = collect_confirmed_matches(
-            &type_complex, &rule_patterns, &source_diagram,
+            &type_complex, &rule_patterns, &initial_diagram,
         )?;
 
         Ok(Self {
-            current_diagram: source_diagram.clone(),
+            current_diagram: initial_diagram.clone(),
             steps: Vec::new(),
             history: Vec::new(),
             active_len: 0,
             rewrites,
             parallel: true,
+            backward: false,
             rule_patterns,
             proof_cache: None,
             store,
             type_complex,
-            source_diagram,
+            initial_diagram,
             target_diagram,
             source_file: source_file.to_owned(),
             type_name: type_name.to_owned(),
-            source_diagram_name: source_diagram_name.to_owned(),
+            initial_diagram_name: initial_diagram_name.to_owned(),
             target_diagram_name: target_diagram_name.map(str::to_owned),
         })
     }
 
     /// Load the source file and replay a saved session.
     pub fn from_session(session: SessionFile) -> Result<Self, String> {
-        let (store, type_complex, source_diagram, target_diagram) = load_context(
+        let backward = session.backward;
+        let (store, type_complex, initial_diagram, target_diagram) = load_context(
             &session.source_file,
             &session.type_name,
-            &session.source_diagram,
+            &session.initial_diagram,
             session.target_diagram.as_deref(),
         )?;
         if let Some(ref target) = target_diagram {
-            check_parallel(&source_diagram, target)?;
+            check_parallel(&initial_diagram, target)?;
         }
 
-        let n = source_diagram.top_dim();
-        let rule_patterns = build_rule_patterns(&type_complex, n)?;
-        let mut current = source_diagram.clone();
+        let n = initial_diagram.top_dim();
+        let rule_patterns = build_rule_patterns(&type_complex, n, backward)?;
+        let step_sign = if backward { Sign::Source } else { Sign::Target };
+        let mut current = initial_diagram.clone();
         let mut steps: Vec<Diagram> = Vec::with_capacity(session.moves.len());
         let mut history: Vec<HistoryEntry> = Vec::with_capacity(session.moves.len());
 
@@ -421,8 +428,8 @@ impl RewriteEngine {
                 mov: mov.clone(),
             });
 
-            current = Diagram::boundary(Sign::Target, n, &step)
-                .map_err(|e| format!("target boundary at step {}: {}", step_idx + 1, e))?;
+            current = Diagram::boundary(step_sign, n, &step)
+                .map_err(|e| format!("boundary at step {}: {}", step_idx + 1, e))?;
             steps.push(step);
         }
 
@@ -438,15 +445,16 @@ impl RewriteEngine {
             active_len,
             rewrites,
             parallel: true,
+            backward,
             rule_patterns,
             proof_cache: None,
             source_file: session.source_file.clone(),
             type_name: session.type_name.clone(),
-            source_diagram_name: session.source_diagram.clone(),
+            initial_diagram_name: session.initial_diagram.clone(),
             target_diagram_name: session.target_diagram.clone(),
             store,
             type_complex,
-            source_diagram,
+            initial_diagram,
             target_diagram,
         })
     }
@@ -456,9 +464,9 @@ impl RewriteEngine {
 
 impl RewriteEngine {
     fn diagram_after_step(&self, step_idx: usize) -> Result<Diagram, String> {
-        let n = self.source_diagram.top_dim();
-        Diagram::boundary(Sign::Target, n, &self.steps[step_idx])
-            .map_err(|e| format!("target boundary failed: {}", e))
+        let n = self.initial_diagram.top_dim();
+        Diagram::boundary(self.step_sign(), n, &self.steps[step_idx])
+            .map_err(|e| format!("step boundary failed: {}", e))
     }
 
     /// Recompute available rewrites (individual matches for manual selection).
@@ -505,8 +513,8 @@ impl RewriteEngine {
 
         let n = self.current_diagram.top_dim();
 
-        let new_current = Diagram::boundary(Sign::Target, n, &step)
-            .map_err(|e| format!("target boundary failed: {}", e))?;
+        let new_current = Diagram::boundary(self.step_sign(), n, &step)
+            .map_err(|e| format!("step boundary failed: {}", e))?;
 
         self.truncate_redo();
         self.current_diagram = new_current;
@@ -567,8 +575,8 @@ impl RewriteEngine {
 
         let n = self.current_diagram.top_dim();
 
-        let new_current = Diagram::boundary(Sign::Target, n, &pr.step)
-            .map_err(|e| format!("target boundary failed: {}", e))?;
+        let new_current = Diagram::boundary(self.step_sign(), n, &pr.step)
+            .map_err(|e| format!("step boundary failed: {}", e))?;
 
         self.truncate_redo();
         self.current_diagram = new_current;
@@ -592,7 +600,7 @@ impl RewriteEngine {
     fn seek(&mut self, target: usize) -> Result<(), String> {
         self.active_len = target;
         self.current_diagram = if target == 0 {
-            self.source_diagram.clone()
+            self.initial_diagram.clone()
         } else {
             self.diagram_after_step(target - 1)?
         };
@@ -671,8 +679,8 @@ impl RewriteEngine {
 
             let n = self.current_diagram.top_dim();
 
-            let new_current = Diagram::boundary(Sign::Target, n, &pr.step)
-                .map_err(|e| format!("target boundary failed: {}", e))?;
+            let new_current = Diagram::boundary(self.step_sign(), n, &pr.step)
+                .map_err(|e| format!("step boundary failed: {}", e))?;
 
             self.current_diagram = new_current;
             self.steps.push(pr.step);
@@ -724,11 +732,20 @@ impl RewriteEngine {
     /// The n-diagram being actively rewritten (changes after each [`step`](Self::step)).
     pub fn current_diagram(&self) -> &Diagram { &self.current_diagram }
 
-    /// The fixed source n-diagram that the session started from.
-    pub fn source_diagram(&self) -> &Diagram { &self.source_diagram }
+    /// The fixed n-diagram that the session started from.
+    pub fn initial_diagram(&self) -> &Diagram { &self.initial_diagram }
 
     /// The declared goal diagram, or `None` if no target was specified.
     pub fn target_diagram(&self) -> Option<&Diagram> { self.target_diagram.as_ref() }
+
+    /// Whether this session uses backward rewriting (output → input).
+    pub fn backward(&self) -> bool { self.backward }
+
+    /// The boundary sign used to extract the new current diagram from a step.
+    /// Forward: `Target` (output boundary). Backward: `Source` (input boundary).
+    fn step_sign(&self) -> Sign {
+        if self.backward { Sign::Source } else { Sign::Target }
+    }
 
     /// The active (n+1)-dimensional rewrite steps, in order.
     ///
@@ -744,13 +761,14 @@ impl RewriteEngine {
     /// call it only when the assembled proof is needed (storing, typechecking,
     /// or rendering the final proof label).
     pub fn assemble_proof(&self) -> Result<Option<Diagram>, String> {
-        let n = self.source_diagram.top_dim();
+        let n = self.initial_diagram.top_dim();
         let active = &self.steps[..self.active_len];
         let mut iter = active.iter();
         let Some(first) = iter.next() else { return Ok(None); };
         let mut acc = first.clone();
         for step in iter {
-            acc = Diagram::paste(n, &acc, step)
+            let (left, right) = if self.backward { (step, &acc) } else { (&acc, step) };
+            acc = Diagram::paste(n, left, right)
                 .map_err(|e| format!("compose step failed: {}", e))?;
         }
         Ok(Some(acc))
@@ -786,7 +804,7 @@ impl RewriteEngine {
     pub fn type_name(&self) -> &str { &self.type_name }
 
     /// Name of the source n-diagram (as declared in the type or module).
-    pub fn source_diagram_name(&self) -> &str { &self.source_diagram_name }
+    pub fn initial_diagram_name(&self) -> &str { &self.initial_diagram_name }
 
     /// Name of the target diagram, or `None` if no goal was declared.
     pub fn target_diagram_name(&self) -> Option<&str> { self.target_diagram_name.as_deref() }
@@ -794,7 +812,7 @@ impl RewriteEngine {
     /// Set or replace the target diagram on a running session.
     pub fn set_target(&mut self, name: &str) -> Result<(), String> {
         let diag = eval_diagram_expr(&self.store, &self.type_complex, &self.source_file, name)?;
-        check_parallel(&self.source_diagram, &diag)?;
+        check_parallel(&self.initial_diagram, &diag)?;
         self.target_diagram = Some(diag);
         self.target_diagram_name = Some(name.to_owned());
         Ok(())
@@ -813,7 +831,7 @@ impl RewriteEngine {
             }
             None => {
                 self.proof_cache = Some(ProofCache {
-                    snapshot: self.source_diagram.clone(),
+                    snapshot: self.initial_diagram.clone(),
                     at_step: 0,
                 });
             }
@@ -838,10 +856,10 @@ impl RewriteEngine {
     pub fn proof_diagram(&mut self) -> Result<Diagram, String> {
         if self.active_len == 0 {
             if let Some(ref mut cache) = self.proof_cache {
-                cache.snapshot = self.source_diagram.clone();
+                cache.snapshot = self.initial_diagram.clone();
                 cache.at_step = 0;
             }
-            return Ok(self.source_diagram.clone());
+            return Ok(self.initial_diagram.clone());
         }
         if let Some(ref cache) = self.proof_cache {
             if cache.at_step == self.active_len {
@@ -858,7 +876,7 @@ impl RewriteEngine {
 
         if self.active_len == 0 {
             self.proof_cache = Some(ProofCache {
-                snapshot: self.source_diagram.clone(),
+                snapshot: self.initial_diagram.clone(),
                 at_step: 0,
             });
             return Ok(());
@@ -869,18 +887,19 @@ impl RewriteEngine {
             return Ok(());
         }
 
-        let n = self.source_diagram.top_dim();
+        let n = self.initial_diagram.top_dim();
 
         let proof = if cache_step < self.active_len && cache_step > 0 {
             let mut acc = self.proof_cache.as_ref().unwrap().snapshot.clone();
             for step in &self.steps[cache_step..self.active_len] {
-                acc = Diagram::paste(n, &acc, step)
+                let (left, right) = if self.backward { (step, &acc) } else { (&acc, step) };
+                acc = Diagram::paste(n, left, right)
                     .map_err(|e| format!("proof cache extend failed: {}", e))?;
             }
             acc
         } else {
             self.assemble_proof()?
-                .unwrap_or_else(|| self.source_diagram.clone())
+                .unwrap_or_else(|| self.initial_diagram.clone())
         };
 
         self.proof_cache = Some(ProofCache {
@@ -914,7 +933,8 @@ impl RewriteEngine {
     /// Typecheck the current proof diagram.
     ///
     /// Runs two checks:
-    /// 1. Source boundary: the proof's source n-boundary is isomorphic to `source_diagram`.
+    /// 1. Initial boundary: the proof's boundary on the initial side is
+    ///    isomorphic to `initial_diagram` (source in forward, target in backward).
     /// 2. Round-trip: sourcefies the proof, re-interprets it through the interpreter, and
     ///    confirms the result is isomorphic to the constructed proof.
     ///
@@ -925,15 +945,15 @@ impl RewriteEngine {
             .ok_or_else(|| "no proof steps taken yet".to_owned())?;
         let diagram = &assembled;
 
-        // Check 1: source boundary.
-        let n = self.source_diagram.top_dim();
-        let src_boundary = Diagram::boundary(Sign::Source, n, diagram)
-            .map_err(|e| format!("source boundary check failed: {}", e))?;
-        if !Diagram::isomorphic(&src_boundary, &self.source_diagram) {
+        let n = self.initial_diagram.top_dim();
+        let check_sign = if self.backward { Sign::Target } else { Sign::Source };
+        let boundary = Diagram::boundary(check_sign, n, diagram)
+            .map_err(|e| format!("boundary check failed: {}", e))?;
+        if !Diagram::isomorphic(&boundary, &self.initial_diagram) {
             return Err(format!(
-                "proof source boundary does not match declared source '{}' — \
+                "proof boundary does not match initial diagram '{}' — \
                  this is a bug in the rewrite engine",
-                self.source_diagram_name,
+                self.initial_diagram_name,
             ));
         }
 
@@ -982,10 +1002,10 @@ impl RewriteEngine {
             if cache.at_step == self.active_len {
                 cache.snapshot.clone()
             } else {
-                self.assemble_proof()?.unwrap_or_else(|| self.source_diagram.clone())
+                self.assemble_proof()?.unwrap_or_else(|| self.initial_diagram.clone())
             }
         } else {
-            self.assemble_proof()?.unwrap_or_else(|| self.source_diagram.clone())
+            self.assemble_proof()?.unwrap_or_else(|| self.initial_diagram.clone())
         };
 
         if self.type_complex.name_in_use(name) || self.type_complex.find_generator(name).is_some() {
@@ -1022,8 +1042,9 @@ impl RewriteEngine {
         SessionFile {
             source_file: self.source_file.clone(),
             type_name: self.type_name.clone(),
-            source_diagram: self.source_diagram_name.clone(),
+            initial_diagram: self.initial_diagram_name.clone(),
             target_diagram: self.target_diagram_name.clone(),
+            backward: self.backward,
             moves: self.history[..self.active_len].iter().map(|e| e.mov.clone()).collect(),
         }
     }
@@ -1093,12 +1114,17 @@ impl RewriteEngine {
                     Some(StoredInfo {
                         type_name: self.type_name().to_owned(),
                         def_name: name.clone(),
-                        expr: crate::output::render_diagram(self.source_diagram(), self.type_complex()),
+                        expr: crate::output::render_diagram(self.initial_diagram(), self.type_complex()),
                     })
                 } else {
-                    let n = self.source_diagram().top_dim();
+                    let n = self.initial_diagram().top_dim();
                     let scope = self.type_complex();
-                    let mut steps = self.steps().iter();
+                    let ordered: Vec<_> = if self.backward {
+                        self.steps().iter().rev().collect()
+                    } else {
+                        self.steps().iter().collect()
+                    };
+                    let mut steps = ordered.iter();
                     let first = crate::output::render_diagram(steps.next().unwrap(), scope);
                     let rest: String = steps
                         .map(|s| {

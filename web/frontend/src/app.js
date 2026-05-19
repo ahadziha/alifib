@@ -103,6 +103,7 @@ const fileOutput  = document.getElementById('file-output');
 const selType     = document.getElementById('sel-type');
 const inpSource   = document.getElementById('inp-source');
 const inpTarget   = document.getElementById('inp-target');
+const chkBackward = document.getElementById('chk-backward');
 const btnStart    = document.getElementById('btn-start');
 const sessionSetup = document.getElementById('session-setup');
 const btnStop     = document.getElementById('btn-stop');
@@ -372,8 +373,8 @@ class WasmBackend {
     return this.inner.load_source(source, modulesJson, sourceName || null);
   }
 
-  async init_session(typeName, sourceDiagram, targetDiagram) {
-    return this.inner.init_session(typeName, sourceDiagram, targetDiagram);
+  async init_session(typeName, initialDiagram, targetDiagram, backward = false) {
+    return this.inner.init_session(typeName, initialDiagram, targetDiagram, backward);
   }
 
   async run_command(commandJson) {
@@ -431,12 +432,14 @@ class HttpBackend {
     return this.post('/api/load_source', body);
   }
 
-  async init_session(typeName, sourceDiagram, targetDiagram) {
-    return this.post('/api/init_session', {
+  async init_session(typeName, initialDiagram, targetDiagram, backward = false) {
+    const body = {
       type_name: typeName,
-      source_diagram: sourceDiagram,
+      initial_diagram: initialDiagram,
       target_diagram: targetDiagram,
-    });
+    };
+    if (backward) body.backward = true;
+    return this.post('/api/init_session', body);
   }
 
   async run_command(commandJson) {
@@ -1209,9 +1212,10 @@ async function startSession() {
   const typeName = selType.value;
   const src = inpSource.value.trim();
   const tgt = inpTarget.value.trim() || undefined;
+  const backward = chkBackward.checked;
   if (!typeName) { appendReplMsg('Select a type first.', 'repl-result err'); return; }
-  if (!src)      { appendReplMsg('Enter a source diagram.', 'repl-result err'); return; }
-  await startSessionFromRepl(typeName, src, tgt, formatStartCmd(typeName, src, tgt));
+  if (!src)      { appendReplMsg('Enter an initial diagram.', 'repl-result err'); return; }
+  await startSessionFromRepl(typeName, src, tgt, backward, formatStartCmd(typeName, src, tgt));
 }
 
 function resetSession() {
@@ -1244,8 +1248,8 @@ function resetSession() {
   syncAnalysisLayout();
 }
 
-async function startSessionFromRepl(typeName, src, tgt, rawCmd) {
-  const result = await parseReplResponse(repl.init_session(typeName, src, tgt));
+async function startSessionFromRepl(typeName, src, tgt, backward, rawCmd) {
+  const result = await parseReplResponse(repl.init_session(typeName, src, tgt, backward));
   if (result.status === 'error') {
     appendReplEntry(rawCmd, formatError(result));
     return;
@@ -1398,6 +1402,16 @@ function buildCommand(cmd, arg, raw) {
       if (!arg)          return JSON.stringify({ command: 'show' });
       appendReplEntry(raw, formatError('usage: parallel [on|off]'));
       return null;
+    case 'backward':
+      if (sessionActive) {
+        appendReplEntry(raw, `<span class="meta">Backward mode ${chkBackward.checked ? 'on' : 'off'}.</span>`);
+      } else {
+        if (arg === 'on')       chkBackward.checked = true;
+        else if (arg === 'off') chkBackward.checked = false;
+        else if (arg) { appendReplEntry(raw, formatError('usage: backward [on|off]')); return null; }
+        appendReplEntry(raw, `<span class="meta">Backward mode ${chkBackward.checked ? 'on' : 'off'}.</span>`);
+      }
+      return null;
     case 'stop': {
       if (!sessionActive) {
         appendReplEntry(raw, formatError('no active session'));
@@ -1418,11 +1432,11 @@ function buildCommand(cmd, arg, raw) {
       }
       const parts = splitQuotedArgs(arg);
       if (parts.length < 2 || parts.length > 3) {
-        appendReplEntry(raw, formatError('usage: start <type> <source> [<target>]'));
+        appendReplEntry(raw, formatError('usage: start <type> <initial> [<target>]'));
         return null;
       }
       const [typeName, src, tgt] = parts;
-      void startSessionFromRepl(typeName, src, tgt, raw);
+      void startSessionFromRepl(typeName, src, tgt, chkBackward.checked, raw);
       return null;
     }
     default:
@@ -1679,7 +1693,8 @@ const HELP_TEXT = `Always available:
   types               list all types in the file
   type <name>         inspect a type
   homology <name>     compute cellular homology of a type
-  start <t> <s> [<g>] start a rewrite session (target optional)
+  start <t> <i> [<g>] start a rewrite session (target optional)
+  backward [on|off]   show or toggle backward rewrite mode   (default: off)
   stop                end the active session
   clear               clear the REPL output
   help / ?            show this message
@@ -2138,9 +2153,11 @@ function buildRewriteList(rewrites) {
         if (proofView && proofBoundaryMap) {
           currentLayout._highlightPositions = null;
           currentLayout._highlightWires = positions.map(p => proofBoundaryMap[p]).filter(w => w != null);
+          currentLayout._highlightWireInputHalf = chkBackward.checked;
         } else {
           currentLayout._highlightPositions = positions;
           currentLayout._highlightWires = null;
+          currentLayout._highlightWireInputHalf = false;
         }
         resizeAndRender();
       }
@@ -2151,6 +2168,7 @@ function buildRewriteList(rewrites) {
       if (currentLayout) {
         currentLayout._highlightPositions = null;
         currentLayout._highlightWires = null;
+        currentLayout._highlightWireInputHalf = false;
         resizeAndRender();
       }
     });
@@ -2235,9 +2253,11 @@ function buildRewriteList(rewrites) {
         if (proofView && proofBoundaryMap) {
           currentLayout._highlightPositions = null;
           currentLayout._highlightWires = (r.match_positions || []).map(p => proofBoundaryMap[p]).filter(w => w != null);
+          currentLayout._highlightWireInputHalf = chkBackward.checked;
         } else {
           currentLayout._highlightPositions = r.match_positions;
           currentLayout._highlightWires = null;
+          currentLayout._highlightWireInputHalf = false;
         }
         resizeAndRender();
       }
@@ -2248,6 +2268,7 @@ function buildRewriteList(rewrites) {
       if (currentLayout) {
         currentLayout._highlightPositions = null;
         currentLayout._highlightWires = null;
+        currentLayout._highlightWireInputHalf = false;
         resizeAndRender();
       }
     });
@@ -2288,9 +2309,11 @@ function endRewritePreview() {
       if (proofView && proofBoundaryMap) {
         currentLayout._highlightPositions = null;
         currentLayout._highlightWires = (positions || []).map(p => proofBoundaryMap[p]).filter(w => w != null);
+        currentLayout._highlightWireInputHalf = chkBackward.checked;
       } else {
         currentLayout._highlightPositions = positions;
         currentLayout._highlightWires = null;
+        currentLayout._highlightWireInputHalf = false;
       }
     }
     resizeAndRender();
@@ -2799,6 +2822,17 @@ function renderStrDiag(ctx, L, cw, ch) {
     }
   }
 
+  function strokeWireInputHalf(wi) {
+    const { wp, sources } = wirePathParts(wi);
+    for (const src of sources) {
+      const q0 = isVert ? { x: wp.x, y: src.y } : { x: src.x, y: wp.y };
+      ctx.beginPath();
+      ctx.moveTo(src.x, src.y);
+      ctx.quadraticCurveTo(q0.x, q0.y, wp.x, wp.y);
+      ctx.stroke();
+    }
+  }
+
   const hlWires = L._highlightWires ? new Set(L._highlightWires) : null;
 
   function drawWire(wi) {
@@ -2816,7 +2850,7 @@ function renderStrDiag(ctx, L, cw, ch) {
     ctx.strokeStyle = C.hlFill;
     ctx.lineWidth = WIRE_W + 2;
     ctx.lineCap = 'round';
-    strokeWireOutputHalf(wi);
+    (L._highlightWireInputHalf ? strokeWireInputHalf : strokeWireOutputHalf)(wi);
     ctx.restore();
   }
 

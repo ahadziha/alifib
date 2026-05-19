@@ -165,15 +165,16 @@ impl WebRepl {
 
     /// Start a rewrite session for the named type.
     ///
-    /// `source_diagram` — name or expression for the starting diagram.
+    /// `initial_diagram` — name or expression for the starting diagram.
     /// `target_diagram` — optional goal diagram (name or expression).
     ///
     /// Returns a daemon-protocol JSON response (same shape as `show`).
     pub fn init_session(
         &mut self,
         type_name: &str,
-        source_diagram: &str,
+        initial_diagram: &str,
         target_diagram: Option<String>,
+        backward: bool,
     ) -> String {
         // Collapse any existing session back to Loaded so a failed init
         // leaves the caller with at least the store they already had.
@@ -191,10 +192,11 @@ impl WebRepl {
         match RewriteEngine::from_store(
             Arc::clone(&store),
             type_complex,
-            source_diagram,
+            initial_diagram,
             target_diagram.as_deref(),
             root_path.clone(),
             type_name.to_string(),
+            backward,
         ) {
             Ok(engine) => {
                 let data = build_response(&engine, false);
@@ -416,13 +418,14 @@ impl WebRepl {
 
         let scope = engine.type_complex();
         let step_count = engine.step_count();
-        let n = engine.source_diagram().top_dim();
+        let n = engine.initial_diagram().top_dim();
         let current = engine.current_diagram().clone();
 
         let sd = StrDiag::from_diagram_at_dim(&proof, scope, n + 1);
 
+        let current_sign = if engine.backward() { Sign::Source } else { Sign::Target };
         let boundary_map = match Diagram::boundary_correspondence(
-            Sign::Target, n, &proof, &current,
+            current_sign, n, &proof, &current,
         ) {
             Ok(m) => serde_json::json!(m),
             Err(e) => return err_json(&format!("boundary map: {}", e)),

@@ -55,12 +55,15 @@
             <select id="sel-type"><option value="">— select —</option></select>
           </div>
           <div class="setup-row">
-            <label for="inp-source">Source</label>
+            <label for="inp-source">Initial</label>
             <input id="inp-source" type="text" placeholder="diagram name or expression">
           </div>
           <div class="setup-row">
             <label for="inp-target">Target</label>
             <input id="inp-target" type="text" placeholder="(optional)">
+            <label class="setup-check" for="chk-backward">
+              Backward <input id="chk-backward" type="checkbox">
+            </label>
           </div>
           <button id="btn-start" class="btn-primary">Start session</button>
         </div>

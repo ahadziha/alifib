@@ -982,7 +982,7 @@ header {
   font-size: 12px;
   flex-shrink: 0;
 }
-.setup-row select, .setup-row input {
+.setup-row select, .setup-row input[type="text"] {
   flex: 1;
   background: var(--bg);
   border: 1px solid var(--border);
@@ -993,8 +993,24 @@ header {
   padding: 4px 8px;
   outline: none;
 }
-.setup-row select:focus, .setup-row input:focus {
+.setup-row select:focus, .setup-row input[type="text"]:focus {
   border-color: var(--accent);
+}
+.setup-row .setup-check {
+  width: auto;
+  text-align: left;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.setup-check input[type="checkbox"] {
+  accent-color: var(--accent);
+  margin: 0;
 }
 
 .repl-output {

@@ -107,13 +107,14 @@ fn dispatch(engine: &mut Option<RewriteEngine>, req: Request) -> DispatchResult 
     // else is an engine-level command — delegate to `engine.handle`, which
     // is the shared surface used by `WebRepl` too.
     let resp = match req {
-        Request::Init { source_file, type_name, source_diagram, target_diagram } => {
-            match RewriteEngine::init(
-                &source_file,
-                &type_name,
-                &source_diagram,
-                target_diagram.as_deref(),
-            ) {
+        Request::Init { source_file, type_name, initial_diagram, target_diagram, backward } => {
+            let ctx = super::engine::load_type_context(&source_file, &type_name);
+            match ctx.and_then(|(store, tc, canonical_path)| {
+                RewriteEngine::from_store(
+                    store, tc, &initial_diagram, target_diagram.as_deref(),
+                    canonical_path, type_name, backward,
+                )
+            }) {
                 Ok(e) => {
                     let data = build_response(&e, false);
                     *engine = Some(e);

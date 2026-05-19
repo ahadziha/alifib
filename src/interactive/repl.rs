@@ -140,7 +140,7 @@ fn write_updated_file(
 
 /// Run the interactive REPL starting from a loaded file.
 ///
-/// `type_name`, `source_diagram`, and `target_diagram` may be given as CLI
+/// `type_name`, `initial_diagram`, and `target_diagram` may be given as CLI
 /// arguments to auto-start a session; otherwise the user starts one
 /// interactively with `start <type> <source> [<target>]`.
 /// `emacs_mode` selects Emacs keybindings; the default is vi mode.
@@ -148,7 +148,7 @@ fn write_updated_file(
 pub fn run_repl(
     source_file: &str,
     type_name: Option<&str>,
-    source_diagram: Option<&str>,
+    initial_diagram: Option<&str>,
     target_diagram: Option<&str>,
     emacs_mode: bool,
 ) -> Result<(), ()> {
@@ -164,12 +164,13 @@ pub fn run_repl(
     let mut rl = make_editor(emacs_mode);
     let mut engine: Option<RewriteEngine> = None;
     let mut stored_defs: Vec<(String, String, String)> = Vec::new();
+    let mut backward = false;
 
     // Auto-start from CLI flags when type and source are given.
-    if let (Some(tn), Some(src)) = (type_name, source_diagram) {
+    if let (Some(tn), Some(src)) = (type_name, initial_diagram) {
         try_start_session(
             &store, &canonical_path, source_file, tn, src, target_diagram,
-            &display, &mut engine,
+            backward, &display, &mut engine,
         );
     }
 
@@ -214,6 +215,22 @@ pub fn run_repl(
                         engine = None;
                         display.meta("Session stopped.");
                     }
+                    Cmd::Backward(arg) => {
+                        if engine.is_some() {
+                            let on = engine.as_ref().unwrap().backward();
+                            display.meta(&format!("Backward mode {}.", if on { "on" } else { "off" }));
+                        } else {
+                            match arg {
+                                Some(on) => {
+                                    backward = on;
+                                    display.meta(&format!("Backward mode {}.", if on { "on" } else { "off" }));
+                                }
+                                None => {
+                                    display.meta(&format!("Backward mode {}.", if backward { "on" } else { "off" }));
+                                }
+                            }
+                        }
+                    }
                     Cmd::Help => print_help(&display),
                     Cmd::Quit => break 'repl,
 
@@ -224,7 +241,7 @@ pub fn run_repl(
                             try_start_session(
                                 &store, &canonical_path, source_file,
                                 &type_arg, &source_arg, target_arg.as_deref(),
-                                &display, &mut engine,
+                                backward, &display, &mut engine,
                             );
                         }
                     }
@@ -242,11 +259,16 @@ pub fn run_repl(
                             match cmd {
                                 Cmd::Store(name) => {
                                     let source_expr = if e.steps().is_empty() {
-                                        Some(e.source_diagram_name().to_owned())
+                                        Some(e.initial_diagram_name().to_owned())
                                     } else {
-                                        let n = e.source_diagram().top_dim();
+                                        let n = e.initial_diagram().top_dim();
                                         let scope = e.type_complex();
-                                        let mut steps = e.steps().iter();
+                                        let ordered: Vec<_> = if e.backward() {
+                                            e.steps().iter().rev().collect()
+                                        } else {
+                                            e.steps().iter().collect()
+                                        };
+                                        let mut steps = ordered.iter();
                                         let first = render_diagram(steps.next().unwrap(), scope);
                                         let rest: String = steps
                                             .map(|s| format!("\n#{} {}", n, render_diagram(s, scope)))
@@ -300,6 +322,10 @@ pub fn dispatch_rewrite_command(
             display.error("command not available here");
         }
         Cmd::Type(_) | Cmd::Homology(_) => display.error("command not available here"),
+        Cmd::Backward(_) => {
+            let on = engine.backward();
+            display.meta(&format!("Backward mode {}.", if on { "on" } else { "off" }));
+        }
         Cmd::Status => show_state(engine, display),
         cmd => dispatch_engine_cmd(engine, cmd, display),
     }
@@ -323,6 +349,7 @@ fn try_start_session(
     type_name: &str,
     source_name: &str,
     target_name: Option<&str>,
+    backward: bool,
     display: &Display,
     engine: &mut Option<RewriteEngine>,
 ) {
@@ -332,13 +359,13 @@ fn try_start_session(
     };
     match RewriteEngine::from_store(
         Arc::clone(store), tc, source_name, target_name,
-        source_file.to_owned(), type_name.to_owned(),
+        source_file.to_owned(), type_name.to_owned(), backward,
     ) {
         Ok(e) => {
             *engine = Some(e);
             display.meta("Ready.");
             let e = engine.as_ref().unwrap();
-            show_diagram_or_name(source_name, e.source_diagram(), e.type_complex(), display);
+            show_diagram_or_name(source_name, e.initial_diagram(), e.type_complex(), display);
             if let Some(tgt) = target_name {
                 if let Some(tgt_diag) = e.target_diagram() {
                     show_diagram_or_name(tgt, tgt_diag, e.type_complex(), display);
@@ -415,12 +442,10 @@ fn dispatch_types(store: &GlobalStore, canonical_path: &str, display: &Display) 
 /// When the proof is complete (`target_reached`), runs `typecheck_proof` and reports
 /// any failure as an error before displaying the completion message.
 fn show_state(engine: &RewriteEngine, display: &Display) {
-    let src_label = render_diagram(engine.source_diagram(), engine.type_complex());
-    let tgt_label = engine.target_diagram()
+    let initial_label = render_diagram(engine.initial_diagram(), engine.type_complex());
+    let goal_label = engine.target_diagram()
         .map(|t| render_diagram(t, engine.type_complex()));
 
-    // Only assemble the full proof diagram when the goal is reached — the
-    // rewrite steps are not pasted together until storage or typechecking.
     let proof_label = if engine.target_reached() {
         if let Err(e) = engine.typecheck_proof() {
             display.error(&format!("proof typecheck failed: {}", e));
@@ -433,8 +458,14 @@ fn show_state(engine: &RewriteEngine, display: &Display) {
         None
     };
 
-    let proof = match (&tgt_label, &proof_label) {
-        (Some(tl), Some(pl)) => Some((src_label.as_str(), tl.as_str(), pl.as_str())),
+    let proof = match (&goal_label, &proof_label) {
+        (Some(gl), Some(pl)) => {
+            if engine.backward() {
+                Some((gl.as_str(), initial_label.as_str(), pl.as_str()))
+            } else {
+                Some((initial_label.as_str(), gl.as_str(), pl.as_str()))
+            }
+        }
         _ => None,
     };
 
@@ -726,27 +757,32 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
                     (choice, m.rule_name.as_str())
                 })
                 .collect();
-            print_history(display, engine.source_diagram(), &entries, engine.type_complex());
+            print_history(display, engine.initial_diagram(), &entries, engine.type_complex());
         }
         Cmd::Proof => {
             let steps = engine.steps();
             if steps.is_empty() {
                 display.meta("(no proof built yet)");
             } else {
-                let n = engine.source_diagram().top_dim();
+                let n = engine.initial_diagram().top_dim();
                 let scope = engine.type_complex();
-                // Render as step1 #n step2 #n ... #n stepN — the individual
-                // rewrite steps are not pasted together for display.
-                let proof_expr = steps.iter()
+                let ordered: Vec<_> = if engine.backward() {
+                    steps.iter().rev().collect()
+                } else {
+                    steps.iter().collect()
+                };
+                let proof_expr = ordered.iter()
                     .map(|s| render_diagram(s, scope))
                     .collect::<Vec<_>>()
                     .join(&format!(" #{} ", n));
-                display.inspect(&format!(
-                    "{} : {} -> {}",
-                    proof_expr,
-                    render_diagram(engine.source_diagram(), scope),
-                    render_diagram(engine.current_diagram(), scope),
-                ));
+                let (src, tgt) = if engine.backward() {
+                    (render_diagram(engine.current_diagram(), scope),
+                     render_diagram(engine.initial_diagram(), scope))
+                } else {
+                    (render_diagram(engine.initial_diagram(), scope),
+                     render_diagram(engine.current_diagram(), scope))
+                };
+                display.inspect(&format!("{} : {} -> {}", proof_expr, src, tgt));
             }
         }
         Cmd::Load(path) => {
@@ -773,7 +809,7 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
         Cmd::Quit => {}   // handled by caller
         // These are all handled before dispatch_engine_cmd is reached
         Cmd::Stop | Cmd::Types | Cmd::PrintFile | Cmd::Type(_) | Cmd::Homology(_)
-        | Cmd::Status | Cmd::Start(..)
+        | Cmd::Status | Cmd::Start(..) | Cmd::Backward(_)
         | Cmd::Store(_) | Cmd::Save(_) | Cmd::Unknown(_) | Cmd::UsageError(_) => unreachable!(),
     }
 }
@@ -785,6 +821,7 @@ fn print_help(display: &Display) {
          \x20 type <name>         Inspect a type: generators, diagrams, maps\n\
          \x20 homology <name>     Compute cellular homology of a type\n\
          \x20 start <t> <s> [<g>] Start a rewrite session  (target optional)\n\
+         \x20 backward [on|off]   Show or toggle backward rewrite mode   (default: off)\n\
          \x20 status / show       Session state, or module info when idle\n\
          \x20 print               Print the whole source file\n\
          \x20 stop                End the active session\n\
@@ -854,6 +891,8 @@ enum Cmd {
     Homology(String),
     /// `parallel [on|off]` — show or toggle parallel rewrite mode.
     Parallel(Option<bool>),
+    /// `backward [on|off]` — show or toggle backward rewrite mode (pre-session).
+    Backward(Option<bool>),
     Help,
     Quit,
     /// Unrecognised command word.
@@ -977,6 +1016,14 @@ fn parse_command(line: &str) -> Cmd {
                 "off" => Cmd::Parallel(Some(false)),
                 "" => Cmd::Parallel(None),
                 _ => Cmd::UsageError("parallel [on|off]".to_owned()),
+            }
+        }
+        "backward" => {
+            match rest {
+                "on" => Cmd::Backward(Some(true)),
+                "off" => Cmd::Backward(Some(false)),
+                "" => Cmd::Backward(None),
+                _ => Cmd::UsageError("backward [on|off]".to_owned()),
             }
         }
         "help" | "?" => Cmd::Help,
