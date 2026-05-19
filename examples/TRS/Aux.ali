@@ -11,7 +11,9 @@ Wire <<= {
 
     id: wire -> wire,
 
-    Idem: id id -> id
+    Idem: id id -> id,
+
+    index thin = [ Idem ]
 },
 
 (* One-input, one-output node *)
@@ -24,7 +26,9 @@ Node_1_to_1 <<= {
     node: Dom.wire -> Cod.wire,
 
     DomId: Dom.id node -> node,
-    CodId: node Cod.id -> node
+    CodId: node Cod.id -> node,
+
+    index thin = [ DomId, CodId ]
 },
 
 (* Two-input, one-output node *)
@@ -39,7 +43,9 @@ Node_2_to_1 <<= {
 
     LDomId: (LDom.id RDom.wire) node -> node,
     RDomId: (LDom.wire RDom.id) node -> node,
-    CodId: node Cod.id -> node
+    CodId: node Cod.id -> node,
+
+    index thin = [ LDomId, RDomId, CodId ]
 },
 
 (* One-input, two-output node *)
@@ -54,7 +60,9 @@ Node_1_to_2 <<= {
 
 	DomId: Dom.id node -> node,
     LCodId: node (LCod.id RCod.wire) -> node,
-    RCodId: node (LCod.wire RCod.id) -> node
+    RCodId: node (LCod.wire RCod.id) -> node,
+
+    index thin = [ DomId, LCodId, RCodId ]
 },
 
 (* Two-input, two-output node *)
@@ -71,5 +79,7 @@ Node_2_to_2 <<= {
 	LDomId: (LDom.id RDom.wire) node -> node,
     RDomId: (LDom.wire RDom.id) node -> node,
     LCodId: node (LCod.id RCod.wire) -> node,
-    RCodId: node (LCod.wire RCod.id) -> node
+    RCodId: node (LCod.wire RCod.id) -> node,
+
+    index thin = [ LDomId, RDomId, LCodId, RCodId ]
 }

@@ -42,7 +42,8 @@ Unit <<= {
     Split_Merge: split merge -> id,
 
     index thin = [
-        pt, wire, id, merge, split
+        pt, wire, id, merge, split,
+        Assoc, Coassoc, LFrobenius, RFrobenius, Split_Merge
     ]
 },
 
@@ -188,7 +189,12 @@ Constant <<= {
     Copy_Nat: node Cod.copy -> Unit.split (node #0 node),
 
     (* Constants are discarded *)
-    Discard_Nat: node Cod.discard -> Unit.id
+    Discard_Nat: node Cod.discard -> Unit.id,
+
+    index thin = [
+    	LUnit_Nat, RUnit_Nat, LUnit_Inv_Nat, RUnit_Inv_Nat,
+        Swap_Left_Nat, Swap_Right_Nat, Copy_Nat, Discard_Nat
+    ]
 },
 (***
     A constant with an extra sort, 
@@ -207,7 +213,9 @@ Constant_Nat <<= {
     Swap_Left_Nat: (node Other.wire) Cod_Other.swap 
         -> Other.lswap (Other.wire node),
     Swap_Right_Nat: (Other.wire node) Cod_Other.rev_swap
-        -> Other.rswap (node Other.wire)
+        -> Other.rswap (node Other.wire),
+
+    index thin = [ Swap_Left_Nat, Swap_Right_Nat ]
 },
 
 (***
@@ -250,7 +258,14 @@ Unary <<= {
     Copy_Nat: node Cod.copy -> Dom.copy (node #0 node),
 
     (* Unary operations are discarded *)
-    Discard_Nat: node Cod.discard -> Dom.discard
+    Discard_Nat: node Cod.discard -> Dom.discard,
+
+    index thin = [
+    	LUnit_Nat, RUnit_Nat, LUnit_Inv_Nat, RUnit_Inv_Nat,
+        Swap_Dom_Left_Nat, Swap_Dom_Right_Nat, 
+        Swap_Cod_Left_Nat, Swap_Cod_Right_Nat,
+        Copy_Nat, Discard_Nat
+    ]
 },
 (***
     A unary operation with an extra sort, 
@@ -272,7 +287,9 @@ Unary_Nat <<= {
     Swap_Left_Nat: (node Other.wire) Cod_Other.swap 
         -> Dom_Other.swap (Other.wire node),
     Swap_Right_Nat: (Other.wire node) Cod_Other.rev_swap
-        -> Dom_Other.rev_swap (node Other.wire)
+        -> Dom_Other.rev_swap (node Other.wire),
+
+    index thin = [ Swap_Left_Nat, Swap_Right_Nat ]
 },
 
 (***
@@ -332,7 +349,15 @@ Binary <<= {
     	-> (LDom.copy #0 RDom.copy) (LDom.wire LDom_RDom.swap RDom.wire) (node #0 node),
 
     (* Binary operations are discarded *)
-    Discard_Nat: node Cod.discard -> (LDom.discard #0 RDom.discard) Unit.merge
+    Discard_Nat: node Cod.discard -> (LDom.discard #0 RDom.discard) Unit.merge,
+
+    index thin = [
+    	LUnit_Nat, RUnit_Nat, LUnit_Inv_Nat, RUnit_Inv_Nat,
+        Swap_LDom_Left_Nat, Swap_LDom_Right_Nat, 
+        Swap_RDom_Left_Nat, Swap_RDom_Right_Nat, 
+        Swap_Cod_Left_Nat, Swap_Cod_Right_Nat,
+        Copy_Nat, Discard_Nat
+    ]
 },
 (***
     A binary operation with an extra sort, 
@@ -354,8 +379,10 @@ Binary_Nat <<= {
         1 => Binary.Cod, 2 => Other
     ],
     
-    Swap_Cod_Left_Nat: (node Other.wire) Cod_Other.swap
+    Swap_Left_Nat: (node Other.wire) Cod_Other.swap
     	-> (Binary.LDom.wire RDom_Other.swap) (LDom_Other.swap Binary.RDom.wire) (Other.wire node),
-    Swap_Cod_Right_Nat: (Other.wire node) Cod_Other.rev_swap
-    	-> (LDom_Other.rev_swap Binary.RDom.wire) (Binary.LDom.wire RDom_Other.rev_swap) (node Other.wire)
+    Swap_Right_Nat: (Other.wire node) Cod_Other.rev_swap
+    	-> (LDom_Other.rev_swap Binary.RDom.wire) (Binary.LDom.wire RDom_Other.rev_swap) (node Other.wire),
+
+	index thin = [ Swap_Left_Nat, Swap_Right_Nat ]
 }

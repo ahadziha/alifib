@@ -163,7 +163,7 @@ SKI_var <<= SKI {
 let Bxyz = Assign.fxyz
 
 (* 
-	Maps parse trees of SKI terms to SKI diagrams.
+	Maps parse traces of SKI terms to SKI diagrams.
 	Usage:
     	`Term.(run auto on parse "<term>")`
     for example
