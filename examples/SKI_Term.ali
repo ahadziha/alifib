@@ -1,0 +1,66 @@
+(***
+	Parser for SKI terms.
+
+    Feed a SKI term <Term> to the parser 
+    as the string "$<Term>", e.g. "$S(S(KS)K)".
+    
+    Parse trees are turned into SKI diagrams by the
+    map Parse to type SKI in SKI.ali.
+***)
+
+@Type
+(* Restricted type for valid SKI terms *)
+Term <<= {
+	here,
+    
+    index characters = [
+    	S, K, I, LPAREN, RPAREN
+    ],
+    
+    for char in characters {
+    	<char>: here -> here
+    }
+},
+
+Parser <<= Term {
+	(* Parser helper characters *)
+    DOLLAR: here -> here,
+    ACTIVE: here -> here,
+    CURSOR: here -> here,
+
+	(* Non-terminals *)
+    TERM: here -> here,
+    ATOM: here -> here,
+
+    (* Rewrite rules *)
+    (* --- Initiating parsing --- *)
+	Init: DOLLAR -> ACTIVE CURSOR,
+
+    (* --- Shifting atoms and LPAREN --- *)
+    for char in [ S, K, I, LPAREN ] {
+    	for sym in [ TERM, LPAREN, ACTIVE ] {
+        	Shift_<sym>_<char> : 
+            	<sym> CURSOR <char> -> <sym> <char> CURSOR
+        }
+    },
+
+    (* --- Shifting RPAREN --- *)
+    Shift_TERM_RPAREN: 
+    	TERM CURSOR RPAREN -> TERM RPAREN CURSOR,
+
+    (* --- Reducing atom to ATOM --- *)
+    for char in [ S, K, I ] {
+		Reduce_<char> : <char> CURSOR -> ATOM CURSOR
+    },
+    
+    (* --- Reducing completed TERM to ATOM --- *)
+    Reduce_TERM : LPAREN TERM RPAREN CURSOR -> ATOM CURSOR,
+
+    (* --- Three reductions to TERM --- *)
+    Reduce_ACTIVE_ATOM: 
+    	ACTIVE ATOM CURSOR -> ACTIVE TERM CURSOR,
+    Reduce_LPAREN_ATOM:
+    	LPAREN ATOM CURSOR -> LPAREN TERM CURSOR,
+    Reduce_TERM_ATOM:
+    	TERM ATOM CURSOR -> TERM CURSOR
+}

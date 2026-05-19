@@ -5,6 +5,7 @@
 
 @Type
 include TRS,
+include SKI_Term,
 
 SKI <<= {
 	include TRS.Unit as Unit,
@@ -131,7 +132,7 @@ let Three = split (Succ #0 Two) apply,
     add variables to the index `variables` as needed
 ***)
 SKI_var <<= SKI {
-	index variables = [ x, y, z, f ],
+	index variables = [ x, y, z, f, g ],
 
     for var in variables {
     	attach <var>_var :: TRS.Constant along [ Cod => A ],
@@ -160,3 +161,33 @@ SKI_var <<= SKI {
     ]
 }
 let Bxyz = Assign.fxyz
+
+(* Maps parse trees of SKI terms to SKI diagrams *)
+@SKI
+let total Parse :: SKI_Term.Parser = [
+	DOLLAR => Unit.pt, ACTIVE => Unit.pt, CURSOR => Unit.pt,
+    LPAREN => Unit.pt, RPAREN => Unit.pt,
+    S => unit, K => unit, I => unit,
+    TERM => a, ATOM => a,
+    Init => Unit.pt,
+    Shift_ACTIVE_I => unit,
+	Shift_ACTIVE_K => unit,
+	Shift_ACTIVE_LPAREN => Unit.pt,
+	Shift_ACTIVE_S => unit,
+	Shift_LPAREN_I => unit,
+	Shift_LPAREN_K => unit,
+	Shift_LPAREN_LPAREN => Unit.pt,
+	Shift_LPAREN_S => unit,
+	Shift_TERM_RPAREN => a,
+	Shift_TERM_I => a unit,
+	Shift_TERM_K => a unit,
+	Shift_TERM_LPAREN => a,
+	Shift_TERM_S => a unit,
+    Reduce_S => S,
+    Reduce_K => K,
+    Reduce_I => I,
+	Reduce_TERM => a,
+    Reduce_ACTIVE_ATOM => a,
+    Reduce_LPAREN_ATOM => a,
+    Reduce_TERM_ATOM => apply
+]
