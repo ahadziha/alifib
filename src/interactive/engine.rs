@@ -15,8 +15,8 @@ use crate::core::matching::{
 };
 use crate::interpreter::{GlobalStore, InterpretedFile};
 use super::session::{Move, SessionFile};
-use rand::RngExt;
-use rand::rngs::SmallRng;
+use rand_xoshiro::rand_core::{Rng, SeedableRng};
+use rand_xoshiro::Xoshiro256PlusPlus;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -60,7 +60,7 @@ pub struct RewriteEngine {
     active_len: usize,
     rewrites: Vec<MatchResult>,
     parallel: bool,
-    rng: SmallRng,
+    rng: Xoshiro256PlusPlus,
 
     /// Per-rule precomputed pattern data (normalised input or output boundary
     /// + embedding into the rule's shape, depending on [`backward`]).
@@ -140,6 +140,14 @@ pub fn load_type_context(
 }
 
 type LoadedRewriteContext = (Arc<GlobalStore>, Arc<Complex>, Diagram, Option<Diagram>);
+
+fn seeded_rng() -> Xoshiro256PlusPlus {
+    Xoshiro256PlusPlus::seed_from_u64(1)
+}
+
+fn random(rng: &mut Xoshiro256PlusPlus, upper_bound: usize) -> usize {
+    (rng.next_u64() % upper_bound as u64) as usize
+}
 
 /// Resolve a source or target diagram from either a name or a diagram expression.
 ///
@@ -304,7 +312,7 @@ impl RewriteEngine {
             rewrites,
             parallel: true,
             backward,
-            rng: rand::make_rng(),
+            rng: seeded_rng(),
             rule_patterns,
             proof_cache: None,
             source_file,
@@ -344,7 +352,7 @@ impl RewriteEngine {
             rewrites,
             parallel: true,
             backward: false,
-            rng: rand::make_rng(),
+            rng: seeded_rng(),
             rule_patterns,
             proof_cache: None,
             store,
@@ -433,7 +441,7 @@ impl RewriteEngine {
             rewrites,
             parallel: true,
             backward,
-            rng: rand::make_rng(),
+            rng: seeded_rng(),
             rule_patterns,
             proof_cache: None,
             source_file: session.source_file.clone(),
@@ -702,7 +710,7 @@ impl RewriteEngine {
             if total == 0 {
                 return Ok((applied, Some("no rewrites available")));
             }
-            let choice = self.rng.random_range(0..total);
+            let choice = random(&mut self.rng, total);
             self.step(choice)?;
         }
 
