@@ -142,7 +142,11 @@ pub fn load_type_context(
 type LoadedRewriteContext = (Arc<GlobalStore>, Arc<Complex>, Diagram, Option<Diagram>);
 
 fn seeded_rng() -> Xoshiro256PlusPlus {
-    Xoshiro256PlusPlus::seed_from_u64(1)
+    let seed = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    Xoshiro256PlusPlus::seed_from_u64(seed)
 }
 
 fn random(rng: &mut Xoshiro256PlusPlus, upper_bound: usize) -> usize {
