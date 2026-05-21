@@ -142,10 +142,16 @@ pub fn load_type_context(
 type LoadedRewriteContext = (Arc<GlobalStore>, Arc<Complex>, Diagram, Option<Diagram>);
 
 fn seeded_rng() -> Xoshiro256PlusPlus {
+    #[cfg(not(target_arch = "wasm32"))]
     let seed = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos() as u64)
         .unwrap_or(0);
+    #[cfg(target_arch = "wasm32")]
+    let seed = {
+        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    };
     Xoshiro256PlusPlus::seed_from_u64(seed)
 }
 
