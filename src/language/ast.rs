@@ -196,7 +196,7 @@ pub enum PartialMapDef {
 
 pub struct PartialMapExt {
     pub prefix: Option<Box<Spanned<PartialMap>>>,
-    pub clauses: Vec<Spanned<PartialMapClause>>,
+    pub clauses: Vec<Spanned<PMapEntry>>,
 }
 
 pub enum PartialMap {
@@ -219,6 +219,11 @@ pub enum PartialMapBasic {
 pub struct PartialMapClause {
     pub lhs: Spanned<Diagram>,
     pub rhs: Spanned<Diagram>,
+}
+
+pub enum PMapEntry {
+    Clause(PartialMapClause),
+    For(ForBlock),
 }
 
 // ---------------------------------------------------------------------------

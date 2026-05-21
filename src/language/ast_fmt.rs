@@ -113,6 +113,29 @@ impl fmt::Display for PartialMapDef {
     }
 }
 
+impl fmt::Display for PMapEntry {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Clause(c) => write!(f, "{c}"),
+            Self::For(fb) => {
+                write!(f, "for {} in ", fb.variable.inner)?;
+                match &fb.index {
+                    ForIndex::Named(n) => write!(f, "{}", n.inner)?,
+                    ForIndex::Inline(vals) => {
+                        f.write_str("[")?;
+                        for (i, v) in vals.iter().enumerate() {
+                            if i > 0 { f.write_str(", ")?; }
+                            f.write_str(&v.inner)?;
+                        }
+                        f.write_str("]")?;
+                    }
+                }
+                f.write_str(" { ... }")
+            }
+        }
+    }
+}
+
 impl fmt::Display for PartialMapExt {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if let Some(prefix) = &self.prefix {

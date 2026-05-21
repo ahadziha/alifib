@@ -379,9 +379,12 @@ impl Printer {
         }
         self.s("[");
         self.depth += 1;
-        for (i, clause) in ext.clauses.iter().enumerate() {
+        for (i, entry) in ext.clauses.iter().enumerate() {
             self.newline();
-            self.partial_map_clause(&clause.inner);
+            match &entry.inner {
+                PMapEntry::Clause(clause) => self.partial_map_clause(clause),
+                PMapEntry::For(fb) => self.for_block(fb),
+            }
             if i + 1 < ext.clauses.len() {
                 self.s(",");
             }

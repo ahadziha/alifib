@@ -92,7 +92,8 @@
 
 -- <ForBody> is raw source text (with balanced braces); occurrences of
 -- <Name> delimited by < > are replaced with the current index value.
--- For-blocks and index declarations may appear in type, complex, and local blocks.
+-- For-blocks and index declarations may appear in type, complex, local, and
+-- partial map blocks.
 
 -- Comments are delimited by (* ... *) and may be nested.
 
@@ -127,6 +128,7 @@
 -- An extension is (optionally) a partial map followed by a number of clauses
 -- that extend it.
 
-<PMapExt> ::= [ <PMap> ] "[" <PMapClauses> "]"
-<PMapClauses> ::= <PMapClause> { "," <PMapClause> } [ "," ]
+<PMapExt> ::= [ <PMap> ] "[" <PMapEntries> "]"
+<PMapEntries> ::= <PMapEntry> { "," <PMapEntry> } [ "," ]
+<PMapEntry> ::= <PMapClause> | <ForBlock>
 <PMapClause> ::= <Diagram> "=>" <Diagram>

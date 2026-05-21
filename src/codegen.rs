@@ -206,10 +206,10 @@ fn instr_to_ast(instr: InstrRepr) -> ast::Spanned<ast::ComplexInstr> {
             let clauses = map
                 .into_iter()
                 .map(|(gen_name, val)| {
-                    syn(ast::PartialMapClause {
+                    syn(ast::PMapEntry::Clause(ast::PartialMapClause {
                         lhs: syn(repr_to_ast(DiagRepr::Cell(gen_name))),
                         rhs: syn(repr_to_ast(val)),
-                    })
+                    }))
                 })
                 .collect();
             syn(ast::ComplexInstr::AttachStmt(ast::AttachStmt {

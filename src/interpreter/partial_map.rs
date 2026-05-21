@@ -11,7 +11,7 @@ use crate::core::{
     diagram::{CellData, Diagram, Sign as DiagramSign},
     partial_map::PartialMap,
 };
-use crate::language::ast::{self, DefPartialMap, PartialMapBasic, PartialMapClause, PartialMapDef, PartialMapExt, Span, Spanned};
+use crate::language::ast::{self, DefPartialMap, ForBlock, PMapEntry, PartialMapBasic, PartialMapClause, PartialMapDef, PartialMapExt, Span, Spanned};
 use std::sync::Arc;
 
 // ---- Hole boundary enrichment ----
@@ -279,21 +279,26 @@ fn initial_eval_map(ctx: &PartialMapCtx<'_>, prefix: &Option<Box<Spanned<ast::Pa
     }
 }
 
-/// Evaluate a sequence of partial map clauses, extending the map after each one.
+/// Evaluate a sequence of partial map entries, extending the map after each one.
 ///
-/// Returns early if any clause fails to produce an updated map.
+/// Returns early if any entry fails to produce an updated map.
 fn eval_pmap_clauses(
     ctx: &PartialMapCtx<'_>,
     initial_map: PartialMap,
-    clauses: &[Spanned<PartialMapClause>],
+    entries: &[Spanned<PMapEntry>],
 ) -> Step<PartialMap> {
     let mut map = initial_map;
     let mut result = InterpResult::ok(ctx.context.clone());
 
-    for clause in clauses {
+    for entry in entries {
         let step_ctx = PartialMapCtx { context: &result.context, ..*ctx };
-        let (next_map, clause_result) = interpret_partial_map_clause(&step_ctx, map, clause);
-        result = result.merge(clause_result);
+        let (next_map, entry_result) = match &entry.inner {
+            PMapEntry::Clause(clause) => {
+                interpret_partial_map_clause(&step_ctx, map, clause, entry.span)
+            }
+            PMapEntry::For(fb) => expand_pmap_for(&step_ctx, map, fb, entry.span),
+        };
+        result = result.merge(entry_result);
         let Some(updated_map) = next_map else {
             return (None, result);
         };
@@ -304,6 +309,35 @@ fn eval_pmap_clauses(
     }
 
     (Some(map), result)
+}
+
+fn expand_pmap_for(
+    ctx: &PartialMapCtx<'_>,
+    map: PartialMap,
+    fb: &ForBlock,
+    outer_span: Span,
+) -> Step<PartialMap> {
+    let values = match super::eval::resolve_index_values(ctx.domain, fb, outer_span, ctx.context) {
+        Ok(v) => v,
+        Err(result) => return (None, result),
+    };
+    let expanded = super::eval::expand_body(fb, &values);
+    let entries = match crate::language::parse_pmap_clauses(&expanded) {
+        Ok(entries) => entries,
+        Err(errors) => {
+            let mut result = InterpResult::ok(ctx.context.clone());
+            for err in errors {
+                result.add_error(make_error(
+                    outer_span,
+                    format!("In for-block expansion: {}", err),
+                ));
+            }
+            return (None, result);
+        }
+    };
+    let (map_opt, mut result) = eval_pmap_clauses(ctx, map, &entries);
+    super::eval::relocate_errors(&mut result, outer_span);
+    (map_opt, result)
 }
 
 /// Check that every entry in `map` is defined on a generator of `source`, and
@@ -403,26 +437,21 @@ fn mark_new_hole_source_tags(
 ///
 /// Evaluates both sides, then calls `interpret_assign` to extend the map.
 /// If the right side fails with a hole, the source tag is recorded on that hole.
-fn interpret_partial_map_clause(ctx: &PartialMapCtx<'_>, map: PartialMap, clause: &Spanned<PartialMapClause>) -> Step<PartialMap> {
-    let (left_opt, left_result) = interpret_diagram_as_term(ctx.context, ctx.domain, &clause.inner.lhs);
+fn interpret_partial_map_clause(ctx: &PartialMapCtx<'_>, map: PartialMap, clause: &PartialMapClause, span: Span) -> Step<PartialMap> {
+    let (left_opt, left_result) = interpret_diagram_as_term(ctx.context, ctx.domain, &clause.lhs);
     let Some(left_term) = left_opt else { return (None, left_result); };
 
     let prev_hole_count = left_result.holes.len();
     let (right_opt, right_result) =
-        interpret_diagram_as_term(&left_result.context, ctx.scope, &clause.inner.rhs);
+        interpret_diagram_as_term(&left_result.context, ctx.scope, &clause.rhs);
     let mut combined = left_result.merge(right_result);
 
     let Some(right_term) = right_opt else {
-        // Right side failed. If any holes were recorded, tag all of them with the
-        // left-side source cell and return the partially-built map; otherwise fail.
         let new_holes = combined.holes.len() > prev_hole_count;
         if !new_holes {
             return (None, combined);
         }
-        // A "direct" hole is one where the entire RHS is literally `?` (possibly
-        // parenthesized).  For those, `enrich_holes` can use the stronger
-        // BoundaryEq constraint when the map covers the boundary completely.
-        let is_direct = is_pure_hole_diagram(&clause.inner.rhs.inner);
+        let is_direct = is_pure_hole_diagram(&clause.rhs.inner);
         mark_new_hole_source_tags(&mut combined, prev_hole_count, &left_term, is_direct);
         return (Some(map), combined);
     };
@@ -430,7 +459,7 @@ fn interpret_partial_map_clause(ctx: &PartialMapCtx<'_>, map: PartialMap, clause
     match interpret_assign(&combined.context, map, ctx.domain, ctx.scope, &left_term, &right_term) {
         Ok(new_map) => (Some(new_map), combined),
         Err(e) => {
-            combined.add_error(make_error_from_core(clause.span, e));
+            combined.add_error(make_error_from_core(span, e));
             (None, combined)
         }
     }

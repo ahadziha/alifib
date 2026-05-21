@@ -11,7 +11,7 @@ use std::collections::HashSet;
 use chumsky::input::Input as _;
 use chumsky::prelude::*;
 
-pub use ast::{Complex, Program};
+pub use ast::{Complex, PMapEntry, Program};
 pub use ast_print::print_program;
 pub use error::Error;
 
@@ -208,10 +208,31 @@ fn resolve_fb(fb: &mut ast::ForBlock, source: &str) {
     fb.body_text = source[fb.body_span.start..fb.body_span.end].to_string();
 }
 
+fn resolve_for_bodies_pmap_entries(entries: &mut [ast::Spanned<ast::PMapEntry>], source: &str) {
+    for entry in entries {
+        if let ast::PMapEntry::For(fb) = &mut entry.inner {
+            resolve_fb(fb, source);
+        }
+    }
+}
+
+fn resolve_for_bodies_pmap_def(def: &mut ast::PartialMapDef, source: &str) {
+    if let ast::PartialMapDef::Ext(ext) = def {
+        resolve_for_bodies_pmap_entries(&mut ext.clauses, source);
+    }
+}
+
 fn resolve_for_bodies_complex(instrs: &mut [ast::Spanned<ast::ComplexInstr>], source: &str) {
     for instr in instrs {
-        if let ast::ComplexInstr::For(fb) = &mut instr.inner {
-            resolve_fb(fb, source);
+        match &mut instr.inner {
+            ast::ComplexInstr::For(fb) => resolve_fb(fb, source),
+            ast::ComplexInstr::DefPartialMap(dp) => resolve_for_bodies_pmap_def(&mut dp.value.inner, source),
+            ast::ComplexInstr::AttachStmt(a) => {
+                if let Some(along) = &mut a.along {
+                    resolve_for_bodies_pmap_def(&mut along.inner, source);
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -220,6 +241,7 @@ fn resolve_for_bodies_type(instrs: &mut [ast::Spanned<ast::TypeInst>], source: &
     for instr in instrs {
         match &mut instr.inner {
             ast::TypeInst::For(fb) => resolve_fb(fb, source),
+            ast::TypeInst::DefPartialMap(dp) => resolve_for_bodies_pmap_def(&mut dp.value.inner, source),
             ast::TypeInst::Generator(g) => {
                 if let ast::Complex::Block { body, .. } = &mut g.complex.inner {
                     resolve_for_bodies_complex(body, source);
@@ -232,8 +254,10 @@ fn resolve_for_bodies_type(instrs: &mut [ast::Spanned<ast::TypeInst>], source: &
 
 fn resolve_for_bodies_local(instrs: &mut [ast::Spanned<ast::LocalInst>], source: &str) {
     for instr in instrs {
-        if let ast::LocalInst::For(fb) = &mut instr.inner {
-            resolve_fb(fb, source);
+        match &mut instr.inner {
+            ast::LocalInst::For(fb) => resolve_fb(fb, source),
+            ast::LocalInst::DefPartialMap(dp) => resolve_for_bodies_pmap_def(&mut dp.value.inner, source),
+            _ => {}
         }
     }
 }
@@ -266,6 +290,26 @@ pub fn parse_local_instrs(source: &str) -> Result<Vec<ast::Spanned<ast::LocalIns
     match ast {
         Some(mut result) if errors.is_empty() => {
             resolve_for_bodies_local(&mut result, source);
+            Ok(result)
+        }
+        _ => { if errors.is_empty() { errors.push(Error::Syntax { message: "parse error".to_string(), span: Span { start: 0, end: 0 } }); } Err(errors) }
+    }
+}
+
+pub fn parse_pmap_clauses(source: &str) -> Result<Vec<ast::Spanned<ast::PMapEntry>>, Vec<Error>> {
+    let (tokens, lex_errs) = lexer::lexer().parse(source).into_output_errors();
+    let mut errors: Vec<Error> = lex_errs.iter()
+        .map(|e| Error::Syntax { message: format!("{}", e.reason()), span: Span { start: e.span().start, end: e.span().end } })
+        .collect();
+    let Some(tokens) = tokens else { return Err(errors); };
+    let eoi = SimpleSpan::from(source.len()..source.len());
+    let (ast, parse_errs) = parser::pmap_clauses_parser()
+        .parse(tokens.as_slice().split_token_span(eoi))
+        .into_output_errors();
+    errors.extend(parse_errs.iter().map(|e| Error::Syntax { message: format!("{}", e.reason()), span: Span { start: e.span().start, end: e.span().end } }));
+    match ast {
+        Some(mut result) if errors.is_empty() => {
+            resolve_for_bodies_pmap_entries(&mut result, source);
             Ok(result)
         }
         _ => { if errors.is_empty() { errors.push(Error::Syntax { message: "parse error".to_string(), span: Span { start: 0, end: 0 } }); } Err(errors) }

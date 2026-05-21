@@ -137,25 +137,22 @@ let total Eval :: SKI_Term.Parser = [
     S => unit, K => unit, I => unit,
     TERM => a, ATOM => a,
     Init => Unit.pt,
-    Shift_ACTIVE_I => unit,
-	Shift_ACTIVE_K => unit,
-	Shift_ACTIVE_LPAREN => Unit.pt,
-	Shift_ACTIVE_S => unit,
-	Shift_LPAREN_I => unit,
-	Shift_LPAREN_K => unit,
-	Shift_LPAREN_LPAREN => Unit.pt,
-	Shift_LPAREN_S => unit,
+    for ctx in [ ACTIVE, LPAREN ] {
+        for sym in [ S, K, I ] {
+            Shift_<ctx>_<sym> => unit
+        },
+        Shift_<ctx>_LPAREN => Unit.pt
+    },
 	Shift_TERM_RPAREN => a,
-	Shift_TERM_I => a unit,
-	Shift_TERM_K => a unit,
 	Shift_TERM_LPAREN => a,
-	Shift_TERM_S => a unit,
-    Reduce_S => S,
-    Reduce_K => K,
-    Reduce_I => I,
+    for sym in [ S, K, I ] {
+        Shift_TERM_<sym> => a unit,
+        Reduce_<sym> => <sym>
+    },
 	Reduce_TERM => a,
-    Reduce_ACTIVE_ATOM => a,
-    Reduce_LPAREN_ATOM => a,
+    for ctx in [ ACTIVE, LPAREN ] {
+        Reduce_<ctx>_ATOM => a
+    },
     Reduce_TERM_ATOM => apply
 ]
 

@@ -512,7 +512,7 @@ fn interpret_local_index(
 
 // ---- For-block expansion ----
 
-fn resolve_index_values(
+pub(super) fn resolve_index_values(
     scope: &Complex,
     fb: &ForBlock,
     _outer_span: Span,
@@ -535,7 +535,7 @@ fn resolve_index_values(
     }
 }
 
-fn relocate_errors(result: &mut InterpResult, target: Span) {
+pub(super) fn relocate_errors(result: &mut InterpResult, target: Span) {
     for error in &mut result.errors {
         match error {
             Error::Syntax { span, .. } | Error::Runtime { span, .. } => *span = target,
@@ -543,7 +543,7 @@ fn relocate_errors(result: &mut InterpResult, target: Span) {
     }
 }
 
-fn expand_body(fb: &ForBlock, values: &[String]) -> String {
+pub(super) fn expand_body(fb: &ForBlock, values: &[String]) -> String {
     let var_pattern = format!("<{}>", fb.variable.inner);
     let mut expanded = String::new();
     for (i, value) in values.iter().enumerate() {

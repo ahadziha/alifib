@@ -6,8 +6,8 @@ use chumsky::span::SimpleSpan;
 use super::ast::{
     Address, AssertStmt, AttachStmt, Block, Boundary, ComplexInstr, Complex, DComponent, DExpr,
     DefPartialMap, Diagram, ForBlock, ForIndex, Generator, IncludeModule, IncludeStmt, IndexDecl,
-    LetDiag, LocalInst, NameWithBoundary, PartialMap, PartialMapBasic, PartialMapClause,
-    PartialMapDef, PartialMapExt, Program, Span, Spanned, Strategy, TypeInst,
+    LetDiag, LocalInst, NameWithBoundary, PMapEntry, PartialMap, PartialMapBasic,
+    PartialMapClause, PartialMapDef, PartialMapExt, Program, Span, Spanned, Strategy, TypeInst,
 };
 use super::token::Token;
 
@@ -157,9 +157,14 @@ fn build_partial_map_def<'tokens, 'src: 'tokens>(
             .clone()
             .then_ignore(t(Token::FatArrow))
             .then(diagram.clone())
-            .map_with(|(lhs, rhs), e| sp(PartialMapClause { lhs, rhs }, cspan(e.span())));
+            .map_with(|(lhs, rhs), e| sp(PMapEntry::Clause(PartialMapClause { lhs, rhs }), cspan(e.span())));
 
-        let bracketed = clause
+        let pmap_for = for_block()
+            .map(|s| sp(PMapEntry::For(s.inner), s.span));
+
+        let pmap_entry = choice((pmap_for, clause));
+
+        let bracketed = pmap_entry
             .separated_by(t(Token::Comma))
             .allow_trailing()
             .collect::<Vec<_>>()
@@ -745,6 +750,29 @@ pub fn local_instrs_parser<'tokens, 'src: 'tokens>()
     let local_inst = choice((l_index, l_for, assert_stmt, let_or_def_local));
 
     local_inst
+        .separated_by(t(Token::Comma))
+        .allow_trailing()
+        .collect::<Vec<_>>()
+        .then_ignore(end())
+}
+
+/// Parse a comma-separated list of partial map entries (for expanded for-block bodies inside maps).
+pub fn pmap_clauses_parser<'tokens, 'src: 'tokens>()
+-> impl Parser<'tokens, TokenInput<'tokens, 'src>, Vec<Spanned<PMapEntry>>, E<'tokens, 'src>> {
+    let diagram = build_diagram();
+
+    let clause = diagram
+        .clone()
+        .then_ignore(t(Token::FatArrow))
+        .then(diagram)
+        .map_with(|(lhs, rhs), e| sp(PMapEntry::Clause(PartialMapClause { lhs, rhs }), cspan(e.span())));
+
+    let pmap_for = for_block()
+        .map(|s| sp(PMapEntry::For(s.inner), s.span));
+
+    let pmap_entry = choice((pmap_for, clause));
+
+    pmap_entry
         .separated_by(t(Token::Comma))
         .allow_trailing()
         .collect::<Vec<_>>()

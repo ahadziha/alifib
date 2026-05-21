@@ -247,12 +247,9 @@ let Pair :: Pair = [
     Swap => Swap, Rev_Swap => Swap,
     Swap_Inversion => Swap_Inversion,
     Rev_Swap_Inversion => Swap_Inversion,
-    Swap_YangBaxter_112 => Swap_YangBaxter,
-    Swap_YangBaxter_121 => Swap_YangBaxter,
-    Swap_YangBaxter_122 => Swap_YangBaxter,
-    Swap_YangBaxter_211 => Swap_YangBaxter,
-    Swap_YangBaxter_212 => Swap_YangBaxter,
-    Swap_YangBaxter_221 => Swap_YangBaxter
+    for ijk in [ 112, 121, 122, 211, 212, 221 ] {
+        Swap_YangBaxter_<ijk> => Swap_YangBaxter
+    }
 ]
 
 (* 
@@ -447,12 +444,9 @@ let With_Unit :: Pair = [
     Swap => Swap_With_Unit, Rev_Swap => Rev_Swap_With_Unit,
     Swap_Inversion => Swap_With_Unit_Inversion,
     Rev_Swap_Inversion => Rev_Swap_With_Unit_Inversion,
-    Swap_YangBaxter_112 => Swap_With_Unit_112,
-    Swap_YangBaxter_121 => Swap_With_Unit_121,
-    Swap_YangBaxter_122 => Swap_With_Unit_122,
-    Swap_YangBaxter_211 => Swap_With_Unit_211,
-    Swap_YangBaxter_212 => Swap_With_Unit_212,
-    Swap_YangBaxter_221 => Swap_With_Unit_221,
+    for ijk in [ 112, 121, 122, 211, 212, 221 ] {
+        Swap_YangBaxter_<ijk> => Swap_With_Unit_<ijk>
+    }
 ]
 
 (* 
@@ -965,12 +959,9 @@ let Tensor_Right :: Pair = [
     Rev_Swap => Tensor_Right_Rev_Swap,
     Swap_Inversion => Tensor_Right_Swap_Inversion,
     Rev_Swap_Inversion => Tensor_Right_Rev_Swap_Inversion,
-    Swap_YangBaxter_112 => Tensor_Right_Swap_112,
-    Swap_YangBaxter_121 => Tensor_Right_Swap_121,
-    Swap_YangBaxter_122 => Tensor_Right_Swap_122,
-    Swap_YangBaxter_211 => Tensor_Right_Swap_211,
-    Swap_YangBaxter_212 => Tensor_Right_Swap_212,
-    Swap_YangBaxter_221 => Tensor_Right_Swap_221
+    for ijk in [ 112, 121, 122, 211, 212, 221 ] {
+        Swap_YangBaxter_<ijk> => Tensor_Right_Swap_<ijk>
+    }
 ],
 let Tensor_Left :: Pair = Rev_23.Rev_12.Tensor_Right.Rev
 
@@ -1088,12 +1079,9 @@ let Rev_24 :: Quadruple = Rev_34.Rev_23.Rev_34
 let Tensor_Right :: Triple = [
 	1 => 1, 2 => 2, 3 => 34.Tensor,
     12 => 12, 13 => 134.Tensor_Right, 23 => 234.Tensor_Right,
-    Swap_YangBaxter_123 => Tensor_Right_Swap_123,
-    Swap_YangBaxter_132 => Tensor_Right_Swap_132,
-    Swap_YangBaxter_213 => Tensor_Right_Swap_213,
-    Swap_YangBaxter_231 => Tensor_Right_Swap_231,
-    Swap_YangBaxter_312 => Tensor_Right_Swap_312,
-    Swap_YangBaxter_321 => Tensor_Right_Swap_321
+    for ijk in [ 123, 132, 213, 231, 312, 321 ] {
+        Swap_YangBaxter_<ijk> => Tensor_Right_Swap_<ijk>
+    }
 ],
 let Tensor_Mid :: Triple = Rev_34.Rev_23.Tensor_Right.Rev_23,
 let Tensor_Left :: Triple = Rev_23.Rev_12.Tensor_Mid.Rev_12
