@@ -1,0 +1,145 @@
+(***
+	Parser for Lambda-Sigma terms.
+
+    Syntax:
+        1       variable (De Bruijn index 1)
+        LM      lambda abstraction (body is one atom)
+        M N     application (left-associative)
+        M[s]    closure (left-associative)
+        M.s     cons (right-associative)
+        s o t   composition (left-associative)
+        i       identity substitution
+        ^       shift substitution
+        (M)     parenthesized term
+
+    Lambda takes the next atom:
+        L1      = λ1
+        L(1 1)  = λ(1 1)
+        L1 1    = (λ1) 1
+        LL1     = λλ1
+
+    Higher De Bruijn indices are syntactic sugar:
+        2 = 1[^], 3 = 1[^][^], ..., 9 = 1[^]...[^]
+    expanded by rewrite rules before parsing.
+
+    Feed a term <term> to the parser as the diagram
+    	`parse "<term>"`
+    e.g. parse "(L1) 1".
+    	`(run auto on parse "(L1) 1")`
+    returns the parsing trace.
+
+    Parse traces are turned into LambdaSigma diagrams by the
+    map Eval in LambdaSigma.ali.
+***)
+
+@Type
+Term <<= {
+    here,
+
+    index characters = [
+    	1, 2, 3, 4, 5, 6, 7, 8, 9,
+    	L, i, CARET, o, DOT,
+        LBRACK, RBRACK, LPAREN, RPAREN, SPACE
+    ],
+
+    for char in characters {
+    	<char>: here -> here
+    }
+},
+
+Parser <<= Term {
+    (* Parser state *)
+    parse: here -> here,
+    ACTIVE: here -> here,
+    CURSOR: here -> here,
+
+    (* Non-terminals *)
+    TERM: here -> here,
+    ATOM: here -> here,
+    SUBST: here -> here,
+    SATOM: here -> here,
+
+    (* --- Initiating parsing --- *)
+    Init: parse -> ACTIVE CURSOR,
+
+    (* --- Expanding higher De Bruijn indices --- *)
+    Expand_2: 2 -> LPAREN 1 LBRACK CARET RBRACK RPAREN,
+    Expand_3: 3 -> LPAREN 2 LBRACK CARET RBRACK RPAREN,
+    Expand_4: 4 -> LPAREN 3 LBRACK CARET RBRACK RPAREN,
+    Expand_5: 5 -> LPAREN 4 LBRACK CARET RBRACK RPAREN,
+    Expand_6: 6 -> LPAREN 5 LBRACK CARET RBRACK RPAREN,
+    Expand_7: 7 -> LPAREN 6 LBRACK CARET RBRACK RPAREN,
+    Expand_8: 8 -> LPAREN 7 LBRACK CARET RBRACK RPAREN,
+    Expand_9: 9 -> LPAREN 8 LBRACK CARET RBRACK RPAREN,
+
+    (* --- Skipping spaces --- *)
+    for ctx in [ ACTIVE, LPAREN, L, TERM, LBRACK, DOT, o, SUBST ] {
+    	Skip_<ctx>_SPACE: <ctx> CURSOR SPACE -> <ctx> CURSOR
+    },
+
+    (* --- Shifting term-starting characters --- *)
+    for char in [ 1, LPAREN, L ] {
+    	for ctx in [ ACTIVE, LPAREN, L, TERM, LBRACK, DOT, o ] {
+        	Shift_<ctx>_<char>:
+            	<ctx> CURSOR <char> -> <ctx> <char> CURSOR
+        }
+    },
+
+    (* --- Shifting substitution atoms --- *)
+    for char in [ i, CARET ] {
+    	for ctx in [ LBRACK, DOT, o ] {
+        	Shift_<ctx>_<char>:
+            	<ctx> CURSOR <char> -> <ctx> <char> CURSOR
+        }
+    },
+
+    (* --- Shifting delimiters --- *)
+    Shift_TERM_RPAREN:
+    	TERM CURSOR RPAREN -> TERM RPAREN CURSOR,
+    Shift_TERM_LBRACK:
+    	TERM CURSOR LBRACK -> TERM LBRACK CURSOR,
+    Shift_TERM_DOT:
+    	TERM CURSOR DOT -> TERM DOT CURSOR,
+    Shift_SUBST_RBRACK:
+    	SUBST CURSOR RBRACK -> SUBST RBRACK CURSOR,
+    Shift_SUBST_o:
+    	SUBST CURSOR o -> SUBST o CURSOR,
+
+    (* --- Reducing characters to atoms --- *)
+    Reduce_1: 1 CURSOR -> ATOM CURSOR,
+    Reduce_i: i CURSOR -> SATOM CURSOR,
+    Reduce_CARET: CARET CURSOR -> SATOM CURSOR,
+
+    (* --- Lambda: takes one atom --- *)
+    Reduce_LAMBDA: L ATOM CURSOR -> ATOM CURSOR,
+
+    (* --- Promoting ATOM to TERM --- *)
+    for ctx in [ ACTIVE, LPAREN, LBRACK, DOT, o ] {
+    	Reduce_<ctx>_ATOM:
+        	<ctx> ATOM CURSOR -> <ctx> TERM CURSOR
+    },
+
+    (* --- Application: TERM absorbs ATOM --- *)
+    Reduce_TERM_ATOM:
+    	TERM ATOM CURSOR -> TERM CURSOR,
+
+    (* --- Promoting SATOM to SUBST --- *)
+    Reduce_LBRACK_SATOM:
+    	LBRACK SATOM CURSOR -> LBRACK SUBST CURSOR,
+
+    (* --- Cons: term . substitution --- *)
+    Reduce_CONS:
+    	TERM DOT SATOM CURSOR -> SATOM CURSOR,
+
+    (* --- Composition: subst o subst --- *)
+    Reduce_COMP:
+    	SUBST o SATOM CURSOR -> SUBST CURSOR,
+
+    (* --- Parenthesized term --- *)
+    Reduce_PAREN:
+    	LPAREN TERM RPAREN CURSOR -> ATOM CURSOR,
+
+    (* --- Closure: term[subst] --- *)
+    Reduce_CLOS:
+    	TERM LBRACK SUBST RBRACK CURSOR -> ATOM CURSOR
+}

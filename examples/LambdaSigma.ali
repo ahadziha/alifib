@@ -5,6 +5,7 @@
 
 @Type
 include TRS,
+include LambdaSigma_Term,
 
 LambdaSigma <<= {
 	include TRS.Unit as Unit,
@@ -177,6 +178,85 @@ let three = split (unit split)
 let four = split (unit split) (unit unit split)
 	(var #0 shift #0 shift #0 shift) 
 	(term subst comp) (term comp) clos,
+
+(***
+	Maps parse traces of Lambda-Sigma terms to LambdaSigma diagrams.
+	Usage:
+    	`Eval.(run auto on parse "<term>")`
+    for example
+    	`Eval.(run auto on parse "(L1[^] 1) (L1)")`
+***)
+@LambdaSigma
+let total Eval :: LambdaSigma_Term.Parser = [
+	parse => Unit.pt, ACTIVE => Unit.pt, CURSOR => Unit.pt,
+    LPAREN => Unit.pt, RPAREN => Unit.pt,
+    LBRACK => Unit.pt, RBRACK => Unit.pt,
+    DOT => Unit.pt, L => Unit.pt, SPACE => Unit.pt, o => Unit.pt,
+    1 => unit, 2 => unit, 3 => unit, 4 => unit, 5 => unit,
+    6 => unit, 7 => unit, 8 => unit, 9 => unit,
+    i => unit, CARET => unit,
+    TERM => term, ATOM => term,
+    SUBST => subst, SATOM => subst,
+    Init => Unit.pt,
+    Expand_2 => split, Expand_3 => split, Expand_4 => split,
+    Expand_5 => split, Expand_6 => split, Expand_7 => split,
+    Expand_8 => split, Expand_9 => split,
+    Skip_ACTIVE_SPACE => Unit.pt,
+    Skip_LPAREN_SPACE => Unit.pt,
+    Skip_L_SPACE => Unit.pt,
+    Skip_TERM_SPACE => term,
+    Skip_LBRACK_SPACE => Unit.pt,
+    Skip_DOT_SPACE => Unit.pt,
+    Skip_o_SPACE => Unit.pt,
+    Skip_SUBST_SPACE => subst,
+    Shift_ACTIVE_1 => unit,
+    Shift_LPAREN_1 => unit,
+    Shift_L_1 => unit,
+    Shift_TERM_1 => term unit,
+    Shift_LBRACK_1 => unit,
+    Shift_DOT_1 => unit,
+    Shift_o_1 => unit,
+    Shift_ACTIVE_LPAREN => Unit.pt,
+    Shift_LPAREN_LPAREN => Unit.pt,
+    Shift_L_LPAREN => Unit.pt,
+    Shift_TERM_LPAREN => term,
+    Shift_LBRACK_LPAREN => Unit.pt,
+    Shift_DOT_LPAREN => Unit.pt,
+    Shift_o_LPAREN => Unit.pt,
+    Shift_ACTIVE_L => Unit.pt,
+    Shift_LPAREN_L => Unit.pt,
+    Shift_L_L => Unit.pt,
+    Shift_TERM_L => term,
+    Shift_LBRACK_L => Unit.pt,
+    Shift_DOT_L => Unit.pt,
+    Shift_o_L => Unit.pt,
+    Shift_LBRACK_i => unit,
+    Shift_LBRACK_CARET => unit,
+    Shift_DOT_i => unit,
+    Shift_DOT_CARET => unit,
+    Shift_o_i => unit,
+    Shift_o_CARET => unit,
+    Shift_TERM_RPAREN => term,
+    Shift_TERM_LBRACK => term,
+    Shift_TERM_DOT => term,
+    Shift_SUBST_RBRACK => subst,
+    Shift_SUBST_o => subst,
+    Reduce_1 => var,
+    Reduce_i => id,
+    Reduce_CARET => shift,
+    Reduce_LAMBDA => lambda,
+    Reduce_ACTIVE_ATOM => term,
+    Reduce_LPAREN_ATOM => term,
+    Reduce_LBRACK_ATOM => term,
+    Reduce_DOT_ATOM => term,
+    Reduce_o_ATOM => term,
+    Reduce_TERM_ATOM => app,
+    Reduce_LBRACK_SATOM => subst,
+    Reduce_CONS => cons,
+    Reduce_COMP => comp,
+    Reduce_PAREN => term,
+    Reduce_CLOS => clos
+]
 
 @Type
 (***

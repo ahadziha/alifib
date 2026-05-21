@@ -9,7 +9,7 @@
     returns the parsing trace.
     
     Parse traces are turned into SKI diagrams by the
-    map Parse to type SKI in SKI.ali.
+    map Eval to type SKI in SKI.ali.
 ***)
 
 @Type
