@@ -43,7 +43,7 @@
       "patterns": [
         {
           "name": "keyword.control.ali",
-          "match": "\\b(attach|along|include|assert|for|index)\\b"
+          "match": "\\b(attach|along|include|assert|for|bar|index)\\b"
         },
         {
           "name": "keyword.other.ali",

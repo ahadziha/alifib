@@ -512,13 +512,12 @@ fn interpret_local_index(
 
 // ---- For-block expansion ----
 
-pub(super) fn resolve_index_values(
+fn resolve_for_index(
     scope: &Complex,
-    fb: &ForBlock,
-    _outer_span: Span,
+    index: &ForIndex,
     context: &Context,
 ) -> Result<Vec<String>, InterpResult> {
-    match &fb.index {
+    match index {
         ForIndex::Inline(vals) => {
             Ok(vals.iter().map(|v| v.inner.clone()).collect())
         }
@@ -533,6 +532,20 @@ pub(super) fn resolve_index_values(
             }
         }
     }
+}
+
+pub(super) fn resolve_index_values(
+    scope: &Complex,
+    fb: &ForBlock,
+    _outer_span: Span,
+    context: &Context,
+) -> Result<Vec<String>, InterpResult> {
+    let mut values = resolve_for_index(scope, &fb.index, context)?;
+    if let Some(ref exclude) = fb.exclude {
+        let excluded = resolve_for_index(scope, exclude, context)?;
+        values.retain(|v| !excluded.contains(v));
+    }
+    Ok(values)
 }
 
 pub(super) fn relocate_errors(result: &mut InterpResult, target: Span) {

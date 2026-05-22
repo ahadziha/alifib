@@ -6,6 +6,7 @@
 @Type
 include TRS,
 include LambdaSigma_Term,
+include Lambda_Term,
 
 LambdaSigma <<= {
 	include TRS.Unit as Unit,
@@ -182,12 +183,12 @@ let four = split (unit split) (unit unit split)
 (***
 	Maps parse traces of Lambda-Sigma terms to LambdaSigma diagrams.
 	Usage:
-    	`Eval.(run auto on parse "<term>")`
+    	`LSTerm.(run auto on parse "<term>")`
     for example
-    	`Eval.(run auto on parse "(L1[^] 1) (L1)")`
+    	`LSTerm.(run auto on parse "(L1[^] 1) (L1)")`
 ***)
 @LambdaSigma
-let total Eval :: LambdaSigma_Term.Parser = [
+let total LSTerm :: LambdaSigma_Term.Parser = [
 	parse => Unit.pt, ACTIVE => Unit.pt, CURSOR => Unit.pt,
     LPAREN => Unit.pt, RPAREN => Unit.pt,
     LBRACK => Unit.pt, RBRACK => Unit.pt,
@@ -242,14 +243,16 @@ let total Eval :: LambdaSigma_Term.Parser = [
 
 @Type
 (***
-	This extends LambdaSigma with named variables (modelled as
-    fresh constants with no non-structural rewrite rules);
+	This extends LambdaSigma with named variables 
+    and metavariables 
+    (modelled as fresh constants with no non-structural rewrite rules);
     
     add variables to the indices as needed
 ***)
 LambdaSigma_var <<= LambdaSigma {
 	index Term_variables = [ M, N, P ],
     index Subst_variables = [ s, t, u ],
+    index variables = [ x, y, z, w, f, g, h ],
 
     for var in Term_variables {
     	attach <var>_term :: TRS.Constant along [ Cod => Term ],
@@ -266,7 +269,15 @@ LambdaSigma_var <<= LambdaSigma {
         	Cod_Other => Term_Subst.Rev
         ],
         let <var> = <var>_subst.node
-    }
+    },
+    for var in variables {
+    	attach <var>_term :: TRS.Constant along [ Cod => Term ],
+        attach <var>_term_Subst :: TRS.Constant_Nat along [
+        	Constant => <var>_term, Other => Subst,
+        	Cod_Other => Term_Subst
+        ],
+        let <var> = <var>_term.node
+    },
 }
 
 (***
@@ -397,9 +408,148 @@ let example_11 =
 	((M N)[s])[P . t]
     --> M[s ∘ (P . t)] N[s ∘ (P . t)]
 *)
-let example_12 = 
+let example_12 =
 	split (unit split) (unit unit split) (unit unit unit split)
     (M #0 N #0 s #0 P #0 t)
     (app #0 subst #0 cons)
     (clos subst)
-    clos
+    clos,
+
+(***
+	Maps parse traces of lambda terms with named
+    variables to LambdaSigma_var diagrams.
+    Usage:
+    	`LTerm.(run auto on parse "Lx.Ly.x" end)`
+***)
+let total LTerm :: Lambda_Term.Parser = [
+    (* --- Generators --- *)
+    L => Unit.pt,
+    LPAREN => Unit.pt, RPAREN => Unit.pt,
+    SPACE => Unit.pt, DOT => Unit.pt,
+    end => Unit.pt,
+    parse => Unit.pt, ACTIVE => Unit.pt, CURSOR => Unit.pt,
+    TERM => term, ATOM => term,
+    1 => unit,
+    WRAP => term,
+    UP => Unit.pt,
+    for v in variables {
+        <v> => unit, L<v> => unit,
+        VAR_<v> => unit,
+        LOOKUP_<v> => Unit.pt,
+        INCREMENT_<v> => Unit.pt,
+        FOUND_<v> => Unit.pt,
+        FREE_<v> => Unit.pt,
+        SEEN_<v> => Unit.pt,
+        FREE_<v>_atom => unit
+    },
+
+    (* --- Init and Combine --- *)
+    Init => Unit.pt,
+    for v in variables {
+        Combine_L<v> => unit
+    },
+
+    (* --- Skipping spaces --- *)
+    Skip_SPACE => Unit.pt,
+
+    (* --- Shifting --- *)
+    for v in variables {
+        for ctx in [ ACTIVE, LPAREN ] {
+            Shift_<ctx>_<v> => unit,
+            Shift_<ctx>_L<v> => unit
+        },
+        Shift_TERM_<v> => term unit,
+        Shift_TERM_L<v> => term unit,
+        for u in variables {
+            Shift_L<u>_<v> => unit unit,
+            Shift_L<u>_L<v> => unit unit
+        }
+    },
+    for ctx in [ ACTIVE, LPAREN ] {
+        Shift_<ctx>_LPAREN => Unit.pt
+    },
+    Shift_TERM_LPAREN => term,
+    for v in variables {
+        Shift_L<v>_LPAREN => unit
+    },
+    Shift_TERM_end => term,
+    
+    (* --- Enter --- *)
+    for v in variables {
+        Enter_<v> => unit
+    },
+
+    (* --- LOOKUP --- *)
+    for v in variables {
+        Lookup_<v>_match => unit,
+        for u in variables {
+            Lookup_<v>_seen_L<u> => unit
+        },
+        Lookup_<v>_TERM => term,
+        Lookup_<v>_LPAREN => Unit.pt,
+        Lookup_<v>_ACTIVE => Unit.pt
+    },
+    for v in variables {
+    	for u in variables bar [<v>] {
+        	Lookup_<v>_skip_L<u> => unit
+        }
+    },
+
+    (* --- INCREMENT --- *)
+    for v in variables {
+        for u in variables {
+            Incr_<v>_L<u> => unit,
+            Incr_<v>_SEEN_<u> => Unit.pt
+        },
+        Incr_<v>_TERM => term,
+        Incr_<v>_LPAREN => Unit.pt,
+        Incr_<v>_done => unit
+    },
+
+    (* --- FOUND --- *)
+    for v in variables {
+        for u in variables {
+            Found_<v>_L<u> => unit
+        },
+        Found_<v>_seen => Unit.pt,
+        Found_<v>_TERM => term,
+        Found_<v>_LPAREN => Unit.pt,
+        Found_<v>_done => unit
+    },
+
+    (* --- FREE --- *)
+    for v in variables {
+        for u in variables {
+            Free_<v>_L<u> => unit
+        },
+        Free_<v>_seen => Unit.pt,
+        Free_<v>_TERM => term,
+        Free_<v>_LPAREN => Unit.pt,
+        Free_<v>_done => unit,
+        Free_<v>_atom_UP => unit
+    },
+
+    (* --- Absorbing UP --- *)
+    Absorb_UP => split (var #0 shift) clos,
+    Absorb_WRAP_UP => Term.runit_inv (term #0 shift) clos,
+
+    (* --- Reduce --- *)
+    Reduce_1 => var,
+    Reduce_WRAP => term,
+    for v in variables {
+        Reduce_FREE_<v> => <v>
+    },
+    for v in variables {
+        Reduce_L<v> => unit term
+    },
+    for ctx in [ ACTIVE, LPAREN ] {
+        Reduce_<ctx>_ATOM => term
+    },
+    Reduce_TERM_ATOM => app,
+    for v in variables {
+        Close_L<v>_RPAREN => Term.lunit lambda,
+        Close_L<v>_end => Term.lunit lambda
+    },
+    Reduce_PAREN => term,
+    Reduce_ACTIVE_end => term
+]

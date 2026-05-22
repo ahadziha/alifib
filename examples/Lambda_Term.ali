@@ -1,0 +1,260 @@
+(***
+	Parser for lambda terms with named variables.
+
+    Syntax:
+        x       variable (from index `variables`)
+        Lx.M    lambda abstraction (dot required, scope extends right)
+        M N     application (left-associative)
+        (M)     parenthesized term
+
+    The dot after L<v> is required; spaces are always
+    ignored. Lambda scope extends to the next unmatched
+    ')' or end of input:
+        Lx.x       = λ1
+        Lx.x x     = λ(1 1)
+        (Lx.x) x   = (λ1) x
+        Lx.Ly.x    = λλ2
+
+    Named variables are resolved to De Bruijn indices
+    during parsing via a LOOKUP/INCREMENT/FOUND
+    mechanism that scans the parse stack leftward.
+
+    Free variables are left as named constants.
+
+    Parse traces are turned into lambda-sigma diagrams
+    by the map LTerm in LambdaSigma.ali.
+    Usage: `LTerm.(run auto on parse "Lx.Ly.x" end)`
+***)
+
+@Type
+Term <<= {
+    here,
+
+    index variables = [ x, y, z, w, f, g, h ],
+
+    index characters = [ L, LPAREN, RPAREN, SPACE, DOT ],
+
+    for char in characters {
+    	<char>: here -> here
+    },
+    for v in variables {
+    	<v>: here -> here
+    },
+},
+
+Parser <<= Term {
+    parse: here -> here,
+    end: here -> here,
+    ACTIVE: here -> here,
+    CURSOR: here -> here,
+
+    TERM: here -> here,
+    ATOM: here -> here,
+
+    1: here -> here,
+    WRAP: here -> here,
+
+	(* Binding contexts *)
+    for v in variables {
+    	L<v>: here -> here
+    },
+    
+    (* Lookup machinery *)
+    UP: here -> here,
+    for v in variables {
+    	VAR_<v>: here -> here,
+    	LOOKUP_<v>: here -> here,
+        INCREMENT_<v>: here -> here,
+        FOUND_<v>: here -> here,
+        FREE_<v>: here -> here,
+        SEEN_<v>: here -> here,
+        FREE_<v>_atom: here -> here
+    },
+
+    (* --- Initiating parsing --- *)
+    Init: parse -> ACTIVE CURSOR,
+
+    (* --- Combining L + variable + dot into binding lambda --- *)
+    for v in variables {
+    	Combine_L<v>: L <v> DOT -> L<v>
+    },
+
+    (* --- Skipping spaces --- *)
+    Skip_SPACE: CURSOR SPACE -> CURSOR,
+
+    (* --- Shifting variables and lambdas --- *)
+    for v in variables {
+    	for ctx in [ ACTIVE, LPAREN, TERM ] {
+        	Shift_<ctx>_<v>:
+            	<ctx> CURSOR <v> -> <ctx> <v> CURSOR,
+            Shift_<ctx>_L<v>:
+            	<ctx> CURSOR L<v> -> <ctx> L<v> CURSOR
+        },
+        for u in variables {
+        	Shift_L<u>_<v>:
+            	L<u> CURSOR <v> -> L<u> <v> CURSOR,
+            Shift_L<u>_L<v>:
+            	L<u> CURSOR L<v> -> L<u> L<v> CURSOR
+        }
+    },
+
+    (* --- Shifting LPAREN --- *)
+    for ctx in [ ACTIVE, LPAREN, TERM ] {
+    	Shift_<ctx>_LPAREN:
+        	<ctx> CURSOR LPAREN -> <ctx> LPAREN CURSOR
+    },
+    for v in variables {
+    	Shift_L<v>_LPAREN:
+        	L<v> CURSOR LPAREN -> L<v> LPAREN CURSOR
+    },
+
+    (* --- Shifting end --- *)
+    Shift_TERM_end:
+    	TERM CURSOR end -> TERM end CURSOR,
+
+    (* --- Variable lookup entry --- *)
+    for v in variables {
+    	Enter_<v>: <v> CURSOR -> LOOKUP_<v> VAR_<v> CURSOR
+    },
+
+    (* ====================== *)
+    (* === LOOKUP leftward === *)
+    (* ====================== *)
+
+    for v in variables {
+    	(* Match: found the binding lambda *)
+    	Lookup_<v>_match: L<v> LOOKUP_<v> -> L<v> FOUND_<v>,
+
+        (* Skip non-matching named lambda *)
+        for u in variables {
+        	Lookup_<v>_seen_L<u>:
+            	L<u> SEEN_<v> LOOKUP_<v>
+                -> LOOKUP_<v> L<u> SEEN_<v>
+        },
+
+        (* Skip reduced terms *)
+        Lookup_<v>_TERM:
+        	TERM LOOKUP_<v> -> LOOKUP_<v> TERM,
+
+        (* Pass through LPAREN *)
+        Lookup_<v>_LPAREN:
+        	LPAREN LOOKUP_<v> -> LOOKUP_<v> LPAREN,
+
+        (* Boundary: variable is free *)
+        Lookup_<v>_ACTIVE:
+        	ACTIVE LOOKUP_<v> -> ACTIVE FREE_<v>
+    },
+
+    for v in variables {
+    	for u in variables bar [<v>] {
+        	Lookup_<v>_skip_L<u>:
+            	L<u> LOOKUP_<v> -> L<u> SEEN_<v> INCREMENT_<v>
+        }
+    },
+
+    (* ======================== *)
+    (* === INCREMENT right === *)
+    (* ======================== *)
+
+    for v in variables {
+    	for u in variables {
+        	Incr_<v>_L<u>:
+            	INCREMENT_<v> L<u> -> L<u> INCREMENT_<v>,
+            Incr_<v>_SEEN_<u>:
+            	INCREMENT_<v> SEEN_<u> -> SEEN_<u> INCREMENT_<v>
+        },
+        Incr_<v>_TERM:
+        	INCREMENT_<v> TERM -> TERM INCREMENT_<v>,
+        Incr_<v>_LPAREN:
+        	INCREMENT_<v> LPAREN -> LPAREN INCREMENT_<v>,
+
+    	Incr_<v>_done:
+        	INCREMENT_<v> VAR_<v> -> LOOKUP_<v> VAR_<v> UP
+    },
+
+    (* ===================== *)
+    (* === FOUND right === *)
+    (* ===================== *)
+
+    for v in variables {
+    	for u in variables {
+        	Found_<v>_L<u>:
+            	FOUND_<v> L<u> -> L<u> FOUND_<v>
+        },
+        Found_<v>_seen:
+        	FOUND_<v> SEEN_<v> -> FOUND_<v>,
+        Found_<v>_TERM:
+        	FOUND_<v> TERM -> TERM FOUND_<v>,
+        Found_<v>_LPAREN:
+        	FOUND_<v> LPAREN -> LPAREN FOUND_<v>,
+
+    	Found_<v>_done:
+        	FOUND_<v> VAR_<v> -> 1
+    },
+
+    (* ==================== *)
+    (* === FREE right === *)
+    (* ==================== *)
+
+    for v in variables {
+    	for u in variables {
+        	Free_<v>_L<u>:
+            	FREE_<v> L<u> -> L<u> FREE_<v>
+        },
+        Free_<v>_seen:
+        	FREE_<v> SEEN_<v> -> FREE_<v>,
+        Free_<v>_TERM:
+        	FREE_<v> TERM -> TERM FREE_<v>,
+        Free_<v>_LPAREN:
+        	FREE_<v> LPAREN -> LPAREN FREE_<v>,
+
+    	Free_<v>_done:
+        	FREE_<v> VAR_<v> -> FREE_<v>_atom,
+        Free_<v>_atom_UP:
+        	FREE_<v>_atom UP -> FREE_<v>_atom
+    },
+
+    (* --- Absorbing UP --- *)
+    Absorb_UP: 1 UP -> WRAP,
+    Absorb_WRAP_UP: WRAP UP -> WRAP,
+
+    (* --- Reducing to ATOM --- *)
+    Reduce_1: 1 CURSOR -> ATOM CURSOR,
+    Reduce_WRAP: WRAP CURSOR -> ATOM CURSOR,
+
+    (* --- Reducing free variable atoms --- *)
+    for v in variables {
+    	Reduce_FREE_<v>:
+    		FREE_<v>_atom CURSOR -> ATOM CURSOR
+    },
+
+    (* --- Lambda reductions --- *)
+    for v in variables {
+    	Reduce_L<v>: L<v> ATOM CURSOR -> L<v> TERM CURSOR
+    },
+
+    (* --- Promoting ATOM to TERM --- *)
+    for ctx in [ ACTIVE, LPAREN ] {
+    	Reduce_<ctx>_ATOM:
+        	<ctx> ATOM CURSOR -> <ctx> TERM CURSOR
+    },
+
+    (* --- Application: TERM absorbs ATOM --- *)
+    Reduce_TERM_ATOM:
+    	TERM ATOM CURSOR -> TERM CURSOR,
+
+    (* --- Closing lambda scope --- *)
+    for v in variables {
+    	Close_L<v>_RPAREN:
+        	L<v> TERM CURSOR RPAREN -> TERM CURSOR RPAREN,
+        Close_L<v>_end:
+        	L<v> TERM end CURSOR -> TERM end CURSOR
+    },
+    (* --- Parenthesized term --- *)
+    Reduce_PAREN:
+    	LPAREN TERM CURSOR RPAREN -> ATOM CURSOR,
+
+    (* --- End of input --- *)
+    Reduce_ACTIVE_end:
+    	ACTIVE TERM end CURSOR -> ACTIVE TERM CURSOR
+}

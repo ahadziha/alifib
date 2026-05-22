@@ -33,6 +33,7 @@ pub fn lexer<'src>(
             "as" => Token::As,
             "index" => Token::Index,
             "for" => Token::For,
+            "bar" => Token::Bar,
             "run" => Token::Run,
             _ => {
                 if s.chars().all(|c| c.is_ascii_digit()) {
@@ -124,7 +125,13 @@ mod tests {
         assert_eq!(lex("along"), vec![Token::Along]);
         assert_eq!(lex("assert"), vec![Token::Assert]);
         assert_eq!(lex("as"), vec![Token::As]);
+        assert_eq!(lex("bar"), vec![Token::Bar]);
         assert_eq!(lex("run"), vec![Token::Run]);
+    }
+
+    #[test]
+    fn test_bar_keyword_prefix() {
+        assert_eq!(lex("barring"), vec![Token::Ident("barring")]);
     }
 
     #[test]
@@ -219,21 +226,21 @@ mod tests {
 
     #[test]
     fn test_whitespace_between_tokens() {
-        assert_eq!(lex("foo   bar"), vec![Token::Ident("foo"), Token::Ident("bar")]);
+        assert_eq!(lex("foo   baz"), vec![Token::Ident("foo"), Token::Ident("baz")]);
     }
 
     #[test]
     fn test_newlines_ignored() {
-        assert_eq!(lex("foo\nbar"), vec![Token::Ident("foo"), Token::Ident("bar")]);
+        assert_eq!(lex("foo\nbaz"), vec![Token::Ident("foo"), Token::Ident("baz")]);
     }
 
     // --- Comments ---
 
     #[test]
     fn test_comment_between_tokens() {
-        assert_eq!(lex("foo (* comment *) bar"), vec![
+        assert_eq!(lex("foo (* comment *) baz"), vec![
             Token::Ident("foo"),
-            Token::Ident("bar"),
+            Token::Ident("baz"),
         ]);
     }
 
@@ -251,17 +258,17 @@ mod tests {
     #[test]
     fn test_comment_adjacent_to_tokens() {
         // No whitespace between comment and tokens.
-        assert_eq!(lex("foo(**)bar"), vec![
+        assert_eq!(lex("foo(**)baz"), vec![
             Token::Ident("foo"),
-            Token::Ident("bar"),
+            Token::Ident("baz"),
         ]);
     }
 
     #[test]
     fn test_multiple_comments() {
-        assert_eq!(lex("(* a *) foo (* b *) bar (* c *) foo"), vec![
+        assert_eq!(lex("(* a *) foo (* b *) baz (* c *) foo"), vec![
             Token::Ident("foo"),
-            Token::Ident("bar"),
+            Token::Ident("baz"),
             Token::Ident("foo"),
         ]);
     }
@@ -411,9 +418,9 @@ mod tests {
 
     #[test]
     fn test_span_two_tokens() {
-        assert_eq!(lex_spanned("foo bar"), vec![
+        assert_eq!(lex_spanned("foo baz"), vec![
             (Token::Ident("foo"), (0, 3)),
-            (Token::Ident("bar"), (4, 7)),
+            (Token::Ident("baz"), (4, 7)),
         ]);
     }
 

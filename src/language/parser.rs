@@ -513,7 +513,7 @@ fn for_body<'tokens, 'src: 'tokens>()
         })
 }
 
-/// Parse `for name in (Name | [values]) { body }`.
+/// Parse `for name in (Name | [values]) [bar (Name | [values])] { body }`.
 fn for_block<'tokens, 'src: 'tokens>()
 -> impl Parser<'tokens, TokenInput<'tokens, 'src>, Spanned<ForBlock>, E<'tokens, 'src>> + Clone {
     t(Token::For)
@@ -523,9 +523,17 @@ fn for_block<'tokens, 'src: 'tokens>()
             name().map(ForIndex::Named),
             index_list().map(ForIndex::Inline),
         )))
+        .then(
+            t(Token::Bar)
+                .ignore_then(choice((
+                    name().map(ForIndex::Named),
+                    index_list().map(ForIndex::Inline),
+                )))
+                .or_not()
+        )
         .then(for_body())
-        .map_with(|((variable, index), body_span), e| {
-            sp(ForBlock { variable, index, body_span, body_text: String::new() }, cspan(e.span()))
+        .map_with(|(((variable, index), exclude), body_span), e| {
+            sp(ForBlock { variable, index, exclude, body_span, body_text: String::new() }, cspan(e.span()))
         })
 }
 

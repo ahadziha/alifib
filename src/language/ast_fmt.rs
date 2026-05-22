@@ -315,15 +315,25 @@ fn pp_index_decl(f: &mut fmt::Formatter, idx: &IndexDecl, d: usize) -> fmt::Resu
     writeln!(f, "index {} = [{}]", idx.name.inner, vals.join(", "))
 }
 
-fn pp_for_block(f: &mut fmt::Formatter, fb: &ForBlock, d: usize) -> fmt::Result {
-    pad(f, d)?;
-    match &fb.index {
-        ForIndex::Named(n) => writeln!(f, "for {} in {} {{ ... }}", fb.variable.inner, n.inner),
+fn pp_for_index(f: &mut fmt::Formatter, index: &ForIndex) -> fmt::Result {
+    match index {
+        ForIndex::Named(n) => write!(f, "{}", n.inner),
         ForIndex::Inline(vals) => {
             let vs: Vec<&str> = vals.iter().map(|v| v.inner.as_str()).collect();
-            writeln!(f, "for {} in [{}] {{ ... }}", fb.variable.inner, vs.join(", "))
+            write!(f, "[{}]", vs.join(", "))
         }
     }
+}
+
+fn pp_for_block(f: &mut fmt::Formatter, fb: &ForBlock, d: usize) -> fmt::Result {
+    pad(f, d)?;
+    write!(f, "for {} in ", fb.variable.inner)?;
+    pp_for_index(f, &fb.index)?;
+    if let Some(ref exclude) = fb.exclude {
+        write!(f, " bar ")?;
+        pp_for_index(f, exclude)?;
+    }
+    writeln!(f, " {{ ... }}")
 }
 
 fn pp_complex_tree(f: &mut fmt::Formatter, c: &Complex, d: usize) -> fmt::Result {

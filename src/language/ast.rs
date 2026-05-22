@@ -238,6 +238,7 @@ pub struct IndexDecl {
 pub struct ForBlock {
     pub variable: Spanned<String>,
     pub index: ForIndex,
+    pub exclude: Option<ForIndex>,
     pub body_span: Span,
     pub body_text: String,
 }

@@ -3,7 +3,7 @@ import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { Tag } from '@lezer/highlight';
 import { tags } from '@lezer/highlight';
 
-const KEYWORDS_CONTROL = new Set(['attach', 'along', 'include', 'assert', 'for', 'index']);
+const KEYWORDS_CONTROL = new Set(['attach', 'along', 'include', 'assert', 'for', 'bar', 'index']);
 const KEYWORDS_OTHER   = new Set(['let', 'def', 'as', 'total', 'map', 'run', 'in', 'out', 'on']);
 
 export const aliTags = {
