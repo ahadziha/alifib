@@ -7,7 +7,7 @@
 use super::diagram::{CellData, Diagram};
 use super::partial_map::PartialMap;
 use crate::aux::{GlobalId, LocalId, ModuleId, Tag};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 /// The domain of a map entry: either a type or a module.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -46,7 +46,7 @@ struct Generators {
     /// Reverse index: generator tag -> generator name.
     by_tag: HashMap<Tag, LocalId>,
     /// Dimension index: dim -> generator names in that dim.
-    by_dim: HashMap<usize, HashSet<LocalId>>,
+    by_dim: HashMap<usize, BTreeSet<LocalId>>,
     /// Classifier diagram for each generator name.
     classifiers: HashMap<LocalId, Diagram>,
     /// Counter for assigning insertion order to generators.
