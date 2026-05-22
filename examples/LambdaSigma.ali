@@ -1,6 +1,30 @@
 (***
 	An implementation of the lambda-sigma calculus
     (Abadi, Cardelli, Curien, Lévy)
+
+    Can be fed lambda-sigma terms (with de Bruijn indices)
+    as well as classical lambda-terms (with named variables
+    from a fixed set; can be changed) as follows:
+    ```
+    	@LambdaSigma
+        let <name> = LSTerm.(run auto on parse "<term>")
+
+        @LambdaSigma_var
+        let <name> = LTerm.(run auto on parse "<term>" end)
+    ```
+    (note the end marker for LTerms).
+    
+    Consult LambdaSigma_Term.ali and Lambda_Term.ali
+    for the full syntax.
+
+    Examples:
+    ```
+    	@LambdaSigma
+        let two = LSTerm.(run auto on parse "1[^]"),
+
+        @LambdaSigma_var
+        let true = LTerm.(run auto on parse "Lx.Ly.x" end)
+    ```
 ***)
 
 @Type
@@ -170,18 +194,9 @@ LambdaSigma <<= {
     	-> merge id
 },
 
-@LambdaSigma
-(* The first few De Bruijn indices *)
-let one = var,
-let two = split (var #0 shift) clos,
-let three = split (unit split)
-	(var #0 shift #0 shift) (term comp) clos,
-let four = split (unit split) (unit unit split)
-	(var #0 shift #0 shift #0 shift) 
-	(term subst comp) (term comp) clos,
-
 (***
 	Maps parse traces of Lambda-Sigma terms to LambdaSigma diagrams.
+    
 	Usage:
     	`LSTerm.(run auto on parse "<term>")`
     for example
@@ -244,10 +259,10 @@ let total LSTerm :: LambdaSigma_Term.Parser = [
 @Type
 (***
 	This extends LambdaSigma with named variables 
-    and metavariables 
-    (modelled as fresh constants with no non-structural rewrite rules);
+    and metavariables, modelled as fresh constants 
+    with no non-structural rewrite rules.
     
-    add variables to the indices as needed
+    Add variables to the indices as needed.
 ***)
 LambdaSigma_var <<= LambdaSigma {
 	index Term_variables = [ M, N, P ],
@@ -281,146 +296,13 @@ LambdaSigma_var <<= LambdaSigma {
 }
 
 (***
-	Some example terms
-***)
-@LambdaSigma_var
-(* 
-	(λ (1 1))[↑] 
-    --> λ (1 1)
-*)
-let example_1 =
-	split (unit split)
-	(one #0 one #0 shift)
-    (app subst)
-    (lambda subst)
-    clos,
-(*
-	((λ λ (1 2)) (λ 1))[id]
-    --> λ (1 (λ 1))
-*)
-let example_2 = 
-	split (unit split) (unit unit split)
-	(one #0 two #0 one #0 id)
-    (app #0 lambda #0 subst)
-    (lambda term subst)
-    (lambda term subst)
-    (app subst)
-    clos,
-(*
-	1[M . (N . ↑)] [P . id]
-    --> M[P . id]
-*)
-let example_3 =
-	split (unit split) (unit unit split) 
-    (unit unit unit split) (unit unit unit unit split)
-    (one #0 M #0 N #0 shift #0 P #0 id)
-    (term #0 term #0 cons #0 cons)
-    (term cons subst)
-    (clos subst)
-    clos,
-(*
-	(λ 1)[M . s] N
-	--> N
-*)
-let example_4 = 
-	split (unit split) (unit unit split)
-    (one #0 M #0 s #0 N)
-    (lambda #0 cons #0 term)
-    (clos term)
-    app,
-(*
-	((λ λ 1) M)[N . id]
-    --> λ 1
-*)
-let example_5 =
-	split (unit split) (unit unit split)
-    (one #0 M #0 N #0 id)
-    ((lambda lambda) #0 term #0 cons)
-    (app subst)
-    clos,
-(*
-	1[(M . id) ∘ (N . id)]
-    --> M[N . id]
-*)
-let example_6 = 
-	split (unit split) (unit unit split) (unit unit unit split)
-    (one #0 M #0 id #0 N #0 id)
-    (term #0 cons #0 cons)
-    (term comp)
-    clos,
-(*
-	(λ (1 2))[M . id]
-    --> λ (1 M[↑])
-*)
-let example_7 =
-	split (unit split) (unit unit split)
-    (one #0 two #0 M #0 id)
-    (app #0 cons)
-    (lambda subst)
-    clos,
-(*
-	((λ M)[s])[t]
-    --> λ M[1 . ((s ∘ t) ∘ ↑)]
-*)
-let example_8 = 
-	split (unit split)
-    (M #0 s #0 t)
-    (lambda subst subst)
-    (clos subst)
-    clos,
-(*
-	(λ ((λ (2 1)) 1))[M . id]
-    --> λ (1 1)
-*)
-let example_9 =
-	split (unit split) (unit unit split) (unit unit unit split)
-    (two #0 one #0 one #0 M #0 id)
-    (app #0 term #0 cons)
-    (lambda #0 term #0 subst)
-    (app subst)
-    (lambda subst)
-    clos,
-(*
-	1[id ∘ (M . ↑)] [N . id]
-    --> M[N . id]
-*)
-let example_10 = 
-	split (unit split) (unit unit split) 
-    (unit unit unit split) (unit unit unit unit split)
-    (one #0 id #0 M #0 shift #0 N #0 id)
-    (term #0 subst #0 cons #0 cons)
-    (term comp subst)
-    (clos subst)
-    clos,
-(*
-	(λ λ λ (3 (2 1)))[M . (N . id)]
-    --> λ λ λ (3 (2 1))
-*)
-let example_11 = 
-	split (unit split) (unit unit split) 
-    (unit unit unit split) (unit unit unit unit split)
-    (three #0 two #0 one #0 M #0 N #0 id)
-    (term #0 app #0 term #0 cons)
-    (app #0 cons)
-    ((lambda lambda lambda) subst)
-    clos,
-(*
-	((M N)[s])[P . t]
-    --> M[s ∘ (P . t)] N[s ∘ (P . t)]
-*)
-let example_12 =
-	split (unit split) (unit unit split) (unit unit unit split)
-    (M #0 N #0 s #0 P #0 t)
-    (app #0 subst #0 cons)
-    (clos subst)
-    clos,
-
-(***
-	Maps parse traces of lambda terms with named
+	Maps parse traces of lambda-terms with named
     variables to LambdaSigma_var diagrams.
+    
     Usage:
     	`LTerm.(run auto on parse "Lx.Ly.x" end)`
 ***)
+@LambdaSigma_var
 let total LTerm :: Lambda_Term.Parser = [
     (* --- Generators --- *)
     L => Unit.pt,
@@ -553,3 +435,152 @@ let total LTerm :: Lambda_Term.Parser = [
     Reduce_PAREN => term,
     Reduce_ACTIVE_end => term
 ]
+
+(***
+	Some example terms including metavariables,
+    in native alifib syntax. Uncomment to test.
+***)
+
+(* -----------------------------
+@LambdaSigma
+(* The first few De Bruijn indices *)
+let one = var,
+let two = split (var #0 shift) clos,
+let three = split (unit split)
+	(var #0 shift #0 shift) (term comp) clos,
+let four = split (unit split) (unit unit split)
+	(var #0 shift #0 shift #0 shift) 
+	(term subst comp) (term comp) clos,
+
+@LambdaSigma_var
+(* 
+	(λ (1 1))[↑] 
+    --> λ (1 1)
+*)
+let example_1 =
+	split (unit split)
+	(one #0 one #0 shift)
+    (app subst)
+    (lambda subst)
+    clos,
+(*
+	((λ λ (1 2)) (λ 1))[id]
+    --> λ (1 (λ 1))
+*)
+let example_2 = 
+	split (unit split) (unit unit split)
+	(one #0 two #0 one #0 id)
+    (app #0 lambda #0 subst)
+    (lambda term subst)
+    (lambda term subst)
+    (app subst)
+    clos,
+(*
+	1[M . (N . ↑)] [P . id]
+    --> M[P . id]
+*)
+let example_3 =
+	split (unit split) (unit unit split) 
+    (unit unit unit split) (unit unit unit unit split)
+    (one #0 M #0 N #0 shift #0 P #0 id)
+    (term #0 term #0 cons #0 cons)
+    (term cons subst)
+    (clos subst)
+    clos,
+(*
+	(λ 1)[M . s] N
+	--> N
+*)
+let example_4 = 
+	split (unit split) (unit unit split)
+    (one #0 M #0 s #0 N)
+    (lambda #0 cons #0 term)
+    (clos term)
+    app,
+(*
+	((λ λ 1) M)[N . id]
+    --> λ 1
+*)
+let example_5 =
+	split (unit split) (unit unit split)
+    (one #0 M #0 N #0 id)
+    ((lambda lambda) #0 term #0 cons)
+    (app subst)
+    clos,
+(*
+	1[(M . id) ∘ (N . id)]
+    --> M[N . id]
+*)
+let example_6 = 
+	split (unit split) (unit unit split) (unit unit unit split)
+    (one #0 M #0 id #0 N #0 id)
+    (term #0 cons #0 cons)
+    (term comp)
+    clos,
+(*
+	(λ (1 2))[M . id]
+    --> λ (1 M[↑])
+*)
+let example_7 =
+	split (unit split) (unit unit split)
+    (one #0 two #0 M #0 id)
+    (app #0 cons)
+    (lambda subst)
+    clos,
+(*
+	((λ M)[s])[t]
+    --> λ M[1 . ((s ∘ t) ∘ ↑)]
+*)
+let example_8 = 
+	split (unit split)
+    (M #0 s #0 t)
+    (lambda subst subst)
+    (clos subst)
+    clos,
+(*
+	(λ ((λ (2 1)) 1))[M . id]
+    --> λ (1 1)
+*)
+let example_9 =
+	split (unit split) (unit unit split) (unit unit unit split)
+    (two #0 one #0 one #0 M #0 id)
+    (app #0 term #0 cons)
+    (lambda #0 term #0 subst)
+    (app subst)
+    (lambda subst)
+    clos,
+(*
+	1[id ∘ (M . ↑)] [N . id]
+    --> M[N . id]
+*)
+let example_10 = 
+	split (unit split) (unit unit split) 
+    (unit unit unit split) (unit unit unit unit split)
+    (one #0 id #0 M #0 shift #0 N #0 id)
+    (term #0 subst #0 cons #0 cons)
+    (term comp subst)
+    (clos subst)
+    clos,
+(*
+	(λ λ λ (3 (2 1)))[M . (N . id)]
+    --> λ λ λ (3 (2 1))
+*)
+let example_11 = 
+	split (unit split) (unit unit split) 
+    (unit unit unit split) (unit unit unit unit split)
+    (three #0 two #0 one #0 M #0 N #0 id)
+    (term #0 app #0 term #0 cons)
+    (app #0 cons)
+    ((lambda lambda lambda) subst)
+    clos,
+(*
+	((M N)[s])[P . t]
+    --> M[s ∘ (P . t)] N[s ∘ (P . t)]
+*)
+let example_12 =
+	split (unit split) (unit unit split) (unit unit unit split)
+    (M #0 N #0 s #0 P #0 t)
+    (app #0 subst #0 cons)
+    (clos subst)
+    clos,
+---------------------------- *)
