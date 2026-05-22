@@ -442,7 +442,7 @@ let total LTerm :: Lambda_Term.Parser = [
 ***)
 
 (* -----------------------------
-@LambdaSigma
+@LambdaSigma_var
 (* The first few De Bruijn indices *)
 let one = var,
 let two = split (var #0 shift) clos,
@@ -452,7 +452,6 @@ let four = split (unit split) (unit unit split)
 	(var #0 shift #0 shift #0 shift) 
 	(term subst comp) (term comp) clos,
 
-@LambdaSigma_var
 (* 
 	(λ (1 1))[↑] 
     --> λ (1 1)
