@@ -479,13 +479,9 @@ fn extend_matching_map_images(
 
     for (_, generator_name, tag) in sorted_generators(map_domain) {
         match (left_map.map.is_defined_at(&tag), right_map.map.is_defined_at(&tag)) {
-            (false, false) => {}
+            (false, _) => {}
             (true, false) => return Err(aux::Error::new(format!(
                 "`{}` is in the domain of the first map but not the second",
-                generator_name
-            ))),
-            (false, true) => return Err(aux::Error::new(format!(
-                "`{}` is in the domain of the second map but not the first",
                 generator_name
             ))),
             (true, true) => {
@@ -499,6 +495,36 @@ fn extend_matching_map_images(
                         return Err(aux::Error::new("Failed to extend map (not enough information)"));
                     }
                 }
+            }
+        }
+    }
+
+    Ok(extended)
+}
+
+/// Map every image of an evaluated map to a constant 0-dimensional diagram.
+fn extend_map_to_constant(
+    context: &Context,
+    map: PartialMap,
+    domain: &Complex,
+    target: &Complex,
+    left_map: &EvalMap,
+    point: &Diagram,
+) -> Result<PartialMap, aux::Error> {
+    let map_domain = &*left_map.domain;
+    let mut extended = map;
+
+    for (_, _, tag) in sorted_generators(map_domain) {
+        if !left_map.map.is_defined_at(&tag) {
+            continue;
+        }
+        let left_image = left_map.map.image(&tag)?;
+        if left_image.is_cell() {
+            extended = extend_map_for_cell(context, extended, domain, target, left_image, point)?;
+        } else {
+            let all_defined = left_image.all_labels().all(|tag| extended.is_defined_at(tag));
+            if !all_defined {
+                return Err(aux::Error::new("Failed to extend map (not enough information)"));
             }
         }
     }
@@ -524,6 +550,9 @@ fn interpret_assign(
                 return Err(aux::Error::new("Not a well-formed assignment"));
             }
             extend_matching_map_images(context, map, domain, target, mc_left, mc_right)
+        }
+        (Term::Map(mc_left), Term::Diag(d_right)) if d_right.dim() == 0 => {
+            extend_map_to_constant(context, map, domain, target, mc_left, d_right)
         }
         _ => Err(aux::Error::new("Not a well-formed assignment")),
     }
