@@ -17,7 +17,7 @@ use crate::aux::Tag;
 use crate::aux::loader::{LoadFileError, Loader};
 use crate::core::complex::Complex;
 use crate::core::diagram::{CellData, Diagram, Sign};
-use crate::core::strdiag::StrDiag;
+use crate::analysis::strdiag::StrDiag;
 use crate::interpreter::{GlobalStore, InterpretedFile, LoadResult};
 use crate::language::error::Diagnostic;
 

@@ -383,7 +383,7 @@ fn dispatch_homology(store: &GlobalStore, canonical_path: &str, name: &str, disp
     match resolve_type(store, canonical_path, name) {
         Err(e) => display.error(&e),
         Ok(tc) => {
-            let h = crate::core::homology::compute_homology(&tc);
+            let h = crate::analysis::homology::compute_homology(&tc);
             if h.groups.is_empty() {
                 display.meta("  (no generators)");
             } else {

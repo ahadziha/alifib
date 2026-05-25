@@ -16,11 +16,11 @@
 //! The construction follows Hadzihasanovic's `rewalt` library.
 
 use crate::aux::Tag;
-use super::complex::Complex;
-use super::diagram::Diagram;
-use super::graph::DiGraph;
-use super::intset::{self, IntSet};
-use super::ogposet::Sign;
+use crate::aux::graph::DiGraph;
+use crate::aux::intset::{self, IntSet};
+use crate::core::complex::Complex;
+use crate::core::diagram::Diagram;
+use crate::core::ogposet::Sign;
 
 /// Whether a vertex represents a node (top-dim cell) or a wire (codim-1 cell).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,7 +60,7 @@ impl StrDiag {
     /// The diagram provides the shape (ogposet) and cell labels; the complex
     /// maps labels to generator names.
     pub fn from_diagram(diagram: &Diagram, complex: &Complex) -> Self {
-        let dim = diagram.shape.dim.max(0) as usize;
+        let dim = diagram.top_dim();
         Self::from_diagram_at_dim(diagram, complex, dim)
     }
 
@@ -234,7 +234,7 @@ fn resolve_tag(diagram: &Diagram, dim: usize, pos: usize) -> Option<Tag> {
 /// cell is included only if it is not "already accounted for" by the higher-dimensional
 /// flow.
 fn filtered_faces(
-    shape: &super::ogposet::Ogposet,
+    shape: &crate::core::ogposet::Ogposet,
     face_dim: usize,
     face_sign: Sign,
     sources: &IntSet,

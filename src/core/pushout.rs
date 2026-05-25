@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 use super::embeddings::{Embedding, NO_PREIMAGE};
-use super::intset::{self, IntSet};
+use crate::aux::intset::{self, IntSet};
 use super::ogposet::Ogposet;
 
 /// The result of a binary pushout: the colimit ogposet and the two

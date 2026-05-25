@@ -5,7 +5,7 @@
 //! then computes homology via Smith Normal Form.
 
 use std::collections::HashMap;
-use super::complex::Complex;
+use crate::core::complex::Complex;
 
 /// A finitely generated abelian group, represented as a free rank plus torsion invariants.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -175,7 +175,7 @@ pub fn compute_homology(complex: &Complex) -> Homology {
 
             // Output faces: +1 for each occurrence.
             for &face_pos in &classifier.shape.faces_of(
-                super::ogposet::Sign::Output, d, 0,
+                crate::core::ogposet::Sign::Output, d, 0,
             ) {
                 if let Some(tag) = labels_below.and_then(|ls| ls.get(face_pos)) {
                     if let Some(name) = complex.find_generator_by_tag(tag) {
@@ -188,7 +188,7 @@ pub fn compute_homology(complex: &Complex) -> Homology {
 
             // Input faces: -1 for each occurrence.
             for &face_pos in &classifier.shape.faces_of(
-                super::ogposet::Sign::Input, d, 0,
+                crate::core::ogposet::Sign::Input, d, 0,
             ) {
                 if let Some(tag) = labels_below.and_then(|ls| ls.get(face_pos)) {
                     if let Some(name) = complex.find_generator_by_tag(tag) {
@@ -1341,7 +1341,7 @@ Ob <<= {\n\
             let d = classifier.top_dim();
             if d < 1 { continue; }
             let labels_below = classifier.labels_at(d - 1);
-            for &face_pos in &classifier.shape.faces_of(super::super::ogposet::Sign::Output, d, 0) {
+            for &face_pos in &classifier.shape.faces_of(crate::core::ogposet::Sign::Output, d, 0) {
                 if let Some(tag) = labels_below.and_then(|ls| ls.get(face_pos)) {
                     if let Some(name) = complex.find_generator_by_tag(tag) {
                         if let Some(&row) = row_index.get(name.as_str()) {
@@ -1350,7 +1350,7 @@ Ob <<= {\n\
                     }
                 }
             }
-            for &face_pos in &classifier.shape.faces_of(super::super::ogposet::Sign::Input, d, 0) {
+            for &face_pos in &classifier.shape.faces_of(crate::core::ogposet::Sign::Input, d, 0) {
                 if let Some(tag) = labels_below.and_then(|ls| ls.get(face_pos)) {
                     if let Some(name) = complex.find_generator_by_tag(tag) {
                         if let Some(&row) = row_index.get(name.as_str()) {

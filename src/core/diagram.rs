@@ -106,7 +106,7 @@ struct BoundaryMatch {
 /// `paste_history[d]` stores source/target paste history at dimension `d`.
 #[derive(Debug, Clone)]
 pub struct Diagram {
-    pub(super) shape: Arc<Ogposet>,
+    pub(crate) shape: Arc<Ogposet>,
     pub(crate) labels: Vec<Vec<Tag>>,               // labels[dim][pos]
     pub(crate) paste_history: Vec<BoundaryHistory>, // paste_history[dim]
 }
@@ -796,7 +796,7 @@ fn paste_tree(
 /// For each of `n` top-boundary cells, produce a coface list pointing to the
 /// single new top cell (index 0) if the cell has a preimage in `inv`, or empty
 /// otherwise.
-fn cofaces_to_top(n: usize, inv: &[usize]) -> Vec<super::intset::IntSet> {
+fn cofaces_to_top(n: usize, inv: &[usize]) -> Vec<crate::aux::intset::IntSet> {
     (0..n)
         .map(|idx| {
             if inv.get(idx).copied().unwrap_or(NO_PREIMAGE) != NO_PREIMAGE {
@@ -822,10 +822,10 @@ fn build_cell_shape(
 ) -> Arc<Ogposet> {
     let sizes_bd = bd_uv.sizes();
 
-    let mut faces_in: Vec<Vec<super::intset::IntSet>> = Vec::new();
-    let mut faces_out: Vec<Vec<super::intset::IntSet>> = Vec::new();
-    let mut cofaces_in: Vec<Vec<super::intset::IntSet>> = Vec::new();
-    let mut cofaces_out: Vec<Vec<super::intset::IntSet>> = Vec::new();
+    let mut faces_in: Vec<Vec<crate::aux::intset::IntSet>> = Vec::new();
+    let mut faces_out: Vec<Vec<crate::aux::intset::IntSet>> = Vec::new();
+    let mut cofaces_in: Vec<Vec<crate::aux::intset::IntSet>> = Vec::new();
+    let mut cofaces_out: Vec<Vec<crate::aux::intset::IntSet>> = Vec::new();
 
     // Dims 0..d-1: interior boundary cells — copy faces and cofaces directly from bd_uv.
     for dim in 0..d {
@@ -850,8 +850,8 @@ fn build_cell_shape(
     // Dim d+1: the single new top cell — its source face is the inl image and
     // its target face is the inr image; it has no cofaces.
     {
-        let faces_source = super::intset::collect_sorted(inl.map[d].iter().copied());
-        let faces_target = super::intset::collect_sorted(inr.map[d].iter().copied());
+        let faces_source = crate::aux::intset::collect_sorted(inl.map[d].iter().copied());
+        let faces_target = crate::aux::intset::collect_sorted(inr.map[d].iter().copied());
         faces_in.push(vec![faces_source]);
         faces_out.push(vec![faces_target]);
         cofaces_in.push(vec![vec![]]);

@@ -12,12 +12,13 @@
 use std::sync::Arc;
 
 use crate::aux::{Error, Tag};
-use crate::core::bitset::BitSet;
+use crate::aux::bitset::BitSet;
+use crate::aux::graph;
+use crate::aux::intset::{self, IntSet};
 use super::complex::Complex;
 use super::diagram::{Diagram, PasteTree};
 use super::embeddings::{Embedding, NO_PREIMAGE};
-use super::graph;
-use super::intset::{self, IntSet};
+use super::flow;
 use super::ogposet::{self, Ogposet, Sign};
 
 /// A pre-diagram: an ogposet with labels but no paste history.
@@ -76,28 +77,28 @@ fn build_paste_tree(
     // maximal k-flow graph has at least one edge, falling back to 0.
     // For dim > 3, use the layering dimension.
     let (k, mf_graph, node_map) = if d == 1 {
-        let (g, nm) = graph::maximal_flow_graph(&pd.shape, 0);
+        let (g, nm) = flow::maximal_flow_graph(&pd.shape, 0);
         (0, g, nm)
     } else if d > 3 {
         let k = pd.shape.layering_dimension() as usize;
-        let (g, nm) = graph::maximal_flow_graph(&pd.shape, k);
+        let (g, nm) = flow::maximal_flow_graph(&pd.shape, k);
         (k, g, nm)
     } else {
         // dim 2 or 3: try descending k values, pick the first whose
         // maximal flow graph has at least one edge; fall back to 0.
-        let (g, nm) = graph::maximal_flow_graph(&pd.shape, d - 1);
+        let (g, nm) = flow::maximal_flow_graph(&pd.shape, d - 1);
         if g.has_any_edge() {
             (d - 1, g, nm)
         } else if d == 2 {
-            let (g0, nm0) = graph::maximal_flow_graph(&pd.shape, 0);
+            let (g0, nm0) = flow::maximal_flow_graph(&pd.shape, 0);
             (0, g0, nm0)
         } else {
             // d == 3
-            let (g1, nm1) = graph::maximal_flow_graph(&pd.shape, d - 2);
+            let (g1, nm1) = flow::maximal_flow_graph(&pd.shape, d - 2);
             if g1.has_any_edge() {
                 (d - 2, g1, nm1)
             } else {
-                let (g0, nm0) = graph::maximal_flow_graph(&pd.shape, 0);
+                let (g0, nm0) = flow::maximal_flow_graph(&pd.shape, 0);
                 (0, g0, nm0)
             }
         }

@@ -28,7 +28,7 @@ use crate::core::complex::{Complex, MapDomain};
 use crate::core::diagram::{CellData, Diagram, Sign};
 use crate::core::matching::MatchResult;
 use crate::core::partial_map::PartialMap;
-use crate::core::strdiag::{StrDiag, VertexKind};
+use crate::analysis::strdiag::{StrDiag, VertexKind};
 use crate::output::render_diagram;
 use super::engine::RewriteEngine;
 use super::render::render_step;
@@ -722,7 +722,7 @@ pub fn tag_to_json(tag: &Tag) -> serde_json::Value {
 
 /// Serialize a [`StrDiag`] to a JSON value.
 pub fn strdiag_to_json(sd: &StrDiag) -> serde_json::Value {
-    fn edges_json(graph: &crate::core::graph::DiGraph) -> Vec<[usize; 2]> {
+    fn edges_json(graph: &crate::aux::graph::DiGraph) -> Vec<[usize; 2]> {
         let mut edges = Vec::new();
         for (u, succs) in graph.successors.iter().enumerate() {
             for &v in succs {
@@ -963,7 +963,7 @@ pub fn build_homology_response(
     type_name: &str,
 ) -> Result<serde_json::Value, String> {
     let tc = super::engine::resolve_type(store, source_path, type_name)?;
-    let h = crate::core::homology::compute_homology(&tc);
+    let h = crate::analysis::homology::compute_homology(&tc);
     let groups: Vec<serde_json::Value> = h.groups.iter()
         .map(|(dim, g)| serde_json::json!({
             "dim": dim,

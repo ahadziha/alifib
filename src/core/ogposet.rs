@@ -12,9 +12,9 @@
 
 use std::sync::Arc;
 use crate::aux::Error;
-use super::bitset::BitSet;
+use crate::aux::bitset::BitSet;
 use super::embeddings::{Embedding, NO_PREIMAGE};
-use super::intset::{self, IntSet};
+use crate::aux::intset::{self, IntSet};
 
 fn set_map(f: impl Fn(usize) -> usize, s: &IntSet) -> IntSet {
     intset::collect_sorted(s.iter().map(|&x| f(x)))
@@ -32,7 +32,7 @@ fn set_filter_map(f: impl Fn(usize) -> Option<usize>, s: &IntSet) -> IntSet {
 /// written δ⁻) or target (`Output`, written δ⁺) face.  `Both` is a convenience
 /// variant meaning "either sign".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(super) enum Sign {
+pub(crate) enum Sign {
     Input,
     Output,
     Both,
@@ -103,7 +103,7 @@ impl Ogposet {
         (0..=(self.dim as usize)).map(|d| self.faces_in[d].len()).collect()
     }
 
-    pub(super) fn faces_of(&self, sign: Sign, dim: usize, pos: usize) -> IntSet {
+    pub(crate) fn faces_of(&self, sign: Sign, dim: usize, pos: usize) -> IntSet {
         match sign {
             Sign::Input  => self.faces_in[dim][pos].clone(),
             Sign::Output => self.faces_out[dim][pos].clone(),
@@ -111,7 +111,7 @@ impl Ogposet {
         }
     }
 
-    pub(super) fn cofaces_of(&self, sign: Sign, dim: usize, pos: usize) -> IntSet {
+    pub(crate) fn cofaces_of(&self, sign: Sign, dim: usize, pos: usize) -> IntSet {
         match sign {
             Sign::Input  => self.cofaces_in[dim][pos].clone(),
             Sign::Output => self.cofaces_out[dim][pos].clone(),

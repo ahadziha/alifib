@@ -1,8 +1,11 @@
 //! Auxiliary utilities shared across the interpreter: identifiers, path
 //! manipulation, file loading, and error reporting.
 
+pub(crate) mod bitset;
 pub mod error;
+pub(crate) mod graph;
 pub mod id;
+pub(crate) mod intset;
 pub mod loader;
 pub mod path;
 

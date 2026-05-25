@@ -13,8 +13,9 @@ use crate::aux::Error;
 use super::complex::Complex;
 use super::diagram::Diagram;
 use super::embeddings::{Embedding, NO_PREIMAGE};
-use super::graph::{self, DiGraph};
-use super::intset;
+use crate::aux::graph::DiGraph;
+use crate::aux::intset;
+use super::flow;
 use super::ogposet::{self, Sign};
 use super::pushout;
 use super::reconstruct;
@@ -102,7 +103,7 @@ impl<'a> TargetFlowData<'a> {
     fn new(target: &'a Diagram) -> Option<Self> {
         let n = target.top_dim();
         if n == 0 { return None; }
-        let (flow, node_map) = graph::flow_graph(&target.shape, n - 1);
+        let (flow, node_map) = flow::flow_graph(&target.shape, n - 1);
         let labels = node_map.iter()
             .map(|&(dim, pos)| &target.labels[dim][pos])
             .collect();
@@ -179,7 +180,7 @@ where
 
     let tfd = target_flow.expect("TargetFlowData required for n > 0");
 
-    let (p_flow, p_node_map) = graph::flow_graph(&pattern.shape, n - 1);
+    let (p_flow, p_node_map) = flow::flow_graph(&pattern.shape, n - 1);
     let p_labels: Vec<&crate::aux::Tag> = p_node_map.iter()
         .map(|&(dim, pos)| &pattern.labels[dim][pos])
         .collect();
