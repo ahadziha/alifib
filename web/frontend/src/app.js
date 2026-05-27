@@ -1005,29 +1005,16 @@ async function evaluateSource() {
   fileOutput.hidden = types.length === 0;
   buildModuleAccordion(types, fileOutput);
 
-  // Populate type selector, grouped by module when there are multiple
   selType.innerHTML = '<option value="">— select type —</option>';
-  const moduleSet = new Set(types.map(t => t.module || 'source'));
-  if (moduleSet.size <= 1) {
-    types.forEach(t => {
-      const opt = document.createElement('option');
-      opt.value = opt.textContent = t.name;
-      selType.appendChild(opt);
-    });
-  } else {
-    for (const mod of moduleSet) {
-      const group = document.createElement('optgroup');
-      group.label = displayModuleName(mod);
-      types.filter(t => (t.module || 'source') === mod).forEach(t => {
-        const opt = document.createElement('option');
-        opt.value = opt.textContent = t.name;
-        group.appendChild(opt);
-      });
-      selType.appendChild(group);
-    }
-  }
+  const sourceMod = tabName || 'source';
+  const sourceTypes = types.filter(t => (t.module || 'source') === sourceMod);
+  sourceTypes.forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = opt.textContent = t.name;
+    selType.appendChild(opt);
+  });
 
-  if (previousType && types.some(t => t.name === previousType)) {
+  if (previousType && sourceTypes.some(t => t.name === previousType)) {
     selType.value = previousType;
   }
 
