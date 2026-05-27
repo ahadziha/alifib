@@ -1,12 +1,12 @@
 (***
-    Binary natural numbers as a term rewriting system.
+    Binary natural numzeroers as a term rewriting system.
 
     Representation (MSB first):
-        0(x) = 2x, 1(x) = 2x+1, b = 0.
-    E.g. 5 = 1(0(1(b))) = b 1 0 1.
+        0(x) = 2x, 1(x) = 2x+1, zero = 0.
+    E.g. 5 = 1(0(1(zero))) = zero 1 0 1.
 
-    Can be fed arithmetic expressions with decimal
-    numbers, addition, multiplication, and parentheses:
+    Can zeroe fed arithmetic expressions with decimal
+    numzeroers, addition, multiplication, and parentheses:
     ```
         @BinaryNat
         let d = Eval.(run auto on parse "57 * (12 + 30)" end)
@@ -33,8 +33,8 @@ BinaryNat <<= {
     let discard = Nat.discard,
 
     (* Constants *)
-    b: unit -> nat,
-    attach Start :: TRS.Constant along [ Cod => Nat, node => b ],
+    zero: unit -> nat,
+    attach Zero :: TRS.Constant along [ Cod => Nat, node => zero ],
 
     (* Unary: 0 (x -> 2x), 1 (x -> 2x+1), succ (x -> x+1) *)
     0: nat -> nat,
@@ -81,14 +81,14 @@ BinaryNat <<= {
     ],
 
     (* --- Successor --- *)
-    Succ_Start: b succ -> b 1,
+    Succ_Start: zero succ -> zero 1,
     Succ_Bit0: 0 succ -> 1,
     Succ_Bit1: 1 succ -> succ 0,
 
     (* --- Addition --- *)
-    Add_Start_Start: (b #0 b) add -> merge b,
-    Add_Start_R: (b nat) add -> lunit,
-    Add_Start_L: (nat b) add -> runit,
+    Add_Start_Start: (zero #0 zero) add -> merge zero,
+    Add_Start_R: (zero nat) add -> lunit,
+    Add_Start_L: (nat zero) add -> runit,
 
     Add_00: (0 #0 0) add -> add 0,
     Add_01: (0 #0 1) add -> add 1,
@@ -96,9 +96,9 @@ BinaryNat <<= {
     Add_11: (1 #0 1) add -> cadd 0,
 
     (* --- Addition with carry --- *)
-    CAdd_Start_Start: (b #0 b) cadd -> merge b 1,
-    CAdd_Start_R: (b nat) cadd -> lunit succ,
-    CAdd_Start_L: (nat b) cadd -> runit succ,
+    CAdd_Start_Start: (zero #0 zero) cadd -> merge zero 1,
+    CAdd_Start_R: (zero nat) cadd -> lunit succ,
+    CAdd_Start_L: (nat zero) cadd -> runit succ,
 
     CAdd_00: (0 #0 0) cadd -> add 1,
     CAdd_01: (0 #0 1) cadd -> cadd 0,
@@ -106,9 +106,9 @@ BinaryNat <<= {
     CAdd_11: (1 #0 1) cadd -> cadd 1,
 
     (* --- Multiplication --- *)
-    Mul_Start_Start: (b #0 b) mul -> merge b,
-    Mul_Start_L: (b nat) mul -> (unit discard) merge b,
-    Mul_Start_R: (nat b) mul -> (discard unit) merge b,
+    Mul_Start_Start: (zero #0 zero) mul -> merge zero,
+    Mul_Start_L: (zero nat) mul -> (unit discard) merge zero,
+    Mul_Start_R: (nat zero) mul -> (discard unit) merge zero,
 
     (* mul(2x, y) = 2 * mul(x, y) *)
     Mul_Bit0: (0 nat) mul -> mul 0,
@@ -121,16 +121,16 @@ BinaryNat <<= {
     Decimal digit constants
 ***)
 @BinaryNat
-let n0 = b,
-let n1 = b 1,
-let n2 = b 1 0,
-let n3 = b 1 1,
-let n4 = b 1 0 0,
-let n5 = b 1 0 1,
-let n6 = b 1 1 0,
-let n7 = b 1 1 1,
-let n8 = b 1 0 0 0,
-let n9 = b 1 0 0 1
+let n0 = zero,
+let n1 = zero 1,
+let n2 = zero 1 0,
+let n3 = zero 1 1,
+let n4 = zero 1 0 0,
+let n5 = zero 1 0 1,
+let n6 = zero 1 1 0,
+let n7 = zero 1 1 1,
+let n8 = zero 1 0 0 0,
+let n9 = zero 1 0 0 1
 
 (***
     Maps parse traces of arithmetic expressions
