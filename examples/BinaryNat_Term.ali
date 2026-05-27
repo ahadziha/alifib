@@ -1,0 +1,139 @@
+(***
+    Parser for arithmetic expressions over natural numbers.
+
+    Syntax:
+        0-9     decimal digits
+        M + N   addition (left-associative)
+        M * N   multiplication (left-associative, higher precedence)
+        (M)     parenthesized expression
+
+    Spaces separate tokens; consecutive digits form a
+    single number literal.
+
+    Requires an `end` marker after the input string.
+
+    Feed an expression <expr> to the parser as the diagram
+    	`parse "<expr>" end`
+    e.g. parse "57 * (12 + 30)" end.
+    	`(run auto on parse "<expr>" end)`
+    returns the parsing trace.
+
+    Parse traces are turned into BinaryNat diagrams by the
+    map Eval in BinaryNat.ali.
+***)
+
+@Type
+Term <<= {
+    here,
+
+    index characters = [
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+        PLUS, STAR, LPAREN, RPAREN, SPACE
+    ],
+
+    for char in characters {
+    	<char>: here -> here
+    }
+},
+
+Parser <<= Term {
+    parse: here -> here,
+    end: here -> here,
+    ACTIVE: here -> here,
+    CURSOR: here -> here,
+
+    (* Non-terminals *)
+    NUM: here -> here,
+    ATOM: here -> here,
+    PROD: here -> here,
+    EXPR: here -> here,
+
+    (* --- Initiating parsing --- *)
+    Init: parse -> ACTIVE CURSOR,
+
+    (* --- Skipping spaces --- *)
+    for ctx in [ ACTIVE, LPAREN, PLUS, STAR ] {
+    	Skip_<ctx>_SPACE: <ctx> CURSOR SPACE -> <ctx> CURSOR
+    },
+
+    (* --- Shifting digits --- *)
+    for d in [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ] {
+    	for ctx in [ ACTIVE, LPAREN, PLUS, STAR ] {
+        	Shift_<ctx>_<d>:
+            	<ctx> CURSOR <d> -> <ctx> <d> CURSOR
+        },
+        Shift_NUM_<d>:
+        	NUM CURSOR <d> -> NUM <d> CURSOR
+    },
+
+    (* --- Reducing digit to NUM --- *)
+    for d in [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ] {
+    	for ctx in [ ACTIVE, LPAREN, PLUS, STAR ] {
+    		Reduce_<ctx>_<d>: <ctx> <d> CURSOR -> <ctx> NUM CURSOR
+    	}
+    },
+
+    (* --- NUM absorbs digit --- *)
+    for d in [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ] {
+    	Absorb_<d>: NUM <d> CURSOR -> NUM CURSOR
+    },
+
+    (* --- Promoting NUM to ATOM --- *)
+    Promote_NUM_SPACE:
+    	NUM CURSOR SPACE -> ATOM CURSOR,
+    for rctx in [ PLUS, STAR, RPAREN, end ] {
+    	Promote_NUM_<rctx>:
+        	NUM CURSOR <rctx> -> ATOM CURSOR <rctx>
+    },
+
+    (* --- Shifting LPAREN --- *)
+    for ctx in [ ACTIVE, LPAREN, PLUS, STAR ] {
+    	Shift_<ctx>_LPAREN:
+        	<ctx> CURSOR LPAREN -> <ctx> LPAREN CURSOR
+    },
+
+    (* --- Promoting ATOM to PROD --- *)
+    for ctx in [ ACTIVE, LPAREN, PLUS ] {
+    	Promote_<ctx>_ATOM:
+        	<ctx> ATOM CURSOR -> <ctx> PROD CURSOR
+    },
+
+    (* --- Promoting PROD to EXPR --- *)
+    for ctx in [ ACTIVE, LPAREN ] {
+    	for rctx in [ PLUS, RPAREN, end ] {
+    		Promote_<ctx>_PROD_<rctx>:
+        		<ctx> PROD CURSOR <rctx> -> <ctx> EXPR CURSOR <rctx>
+    	}
+    },
+
+    (* --- Shifting operators --- *)
+    Shift_PROD_STAR:
+    	PROD CURSOR STAR -> PROD STAR CURSOR,
+    Shift_EXPR_PLUS:
+    	EXPR CURSOR PLUS -> EXPR PLUS CURSOR,
+
+    (* --- Multiplication: PROD * ATOM -> PROD --- *)
+    Reduce_STAR:
+    	PROD STAR ATOM CURSOR -> PROD CURSOR,
+
+    (* --- Addition: EXPR + PROD -> EXPR --- *)
+    for rctx in [ PLUS, RPAREN, end ] {
+    	Reduce_PLUS_<rctx>:
+        	EXPR PLUS PROD CURSOR <rctx>
+            -> EXPR CURSOR <rctx>
+    },
+
+    (* --- Shifting closing delimiters --- *)
+    Shift_EXPR_RPAREN:
+    	EXPR CURSOR RPAREN -> EXPR RPAREN CURSOR,
+    Shift_EXPR_end:
+    	EXPR CURSOR end -> EXPR end CURSOR,
+
+    (* --- Parenthesized expression --- *)
+    Reduce_PAREN:
+    	LPAREN EXPR RPAREN CURSOR -> ATOM CURSOR,
+
+    (* --- End of input --- *)
+    Reduce_end:
+    	ACTIVE EXPR end CURSOR -> ACTIVE EXPR CURSOR
+}

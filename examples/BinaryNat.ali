@@ -4,10 +4,19 @@
     Representation (MSB first):
         bit0(x) = 2x, bit1(x) = 2x+1, zero = 0.
     E.g. 5 = bit1(bit0(bit1(zero))) = zero bit1 bit0 bit1.
+
+    Can be fed arithmetic expressions with decimal
+    numbers, addition, multiplication, and parentheses:
+    ```
+        @BinaryNat
+        let d = Eval.(run auto on parse "57 * (12 + 30)" end)
+    ```
+    Consult BinaryNat_Term.ali for the full syntax.
 ***)
 
 @Type
 include TRS,
+include BinaryNat_Term,
 
 BinaryNat <<= {
     include TRS.Unit as Unit,
@@ -19,6 +28,7 @@ BinaryNat <<= {
     let nat = Nat.wire,
     let lunit = Nat.lunit,
     let runit = Nat.runit,
+    let lunit_inv = Nat.lunit_inv,
     let copy = Nat.copy,
     let discard = Nat.discard,
 
@@ -135,3 +145,63 @@ let five_times_two = split (unit split)
     (n2 #0 n3 #0 n2)
     (add nat) mul,
 assert (run auto on five_times_two).out = n10
+
+(***
+    Maps parse traces of arithmetic expressions
+    to BinaryNat diagrams.
+
+    Usage:
+    	`Eval.(run auto on parse "<expr>" end)`
+    for example
+    	`Eval.(run auto on parse "57 * (12 + 30)" end)`
+
+    Consult BinaryNat_Term.ali for the full syntax.
+***)
+@BinaryNat
+let total Eval :: BinaryNat_Term.Parser = [
+    parse => Unit.pt, end => Unit.pt,
+    ACTIVE => Unit.pt, CURSOR => Unit.pt,
+    LPAREN => Unit.pt, RPAREN => Unit.pt,
+    SPACE => Unit.pt, PLUS => Unit.pt, STAR => Unit.pt,
+    for k in [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ] {
+        <k> => unit
+    },
+    NUM => nat, ATOM => nat, PROD => nat, EXPR => nat,
+    Init => Unit.pt,
+    for ctx in [ ACTIVE, LPAREN, PLUS, STAR ] {
+        Skip_<ctx>_SPACE => Unit.pt
+    },
+    Promote_NUM_SPACE => nat,
+    for k in [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ] {
+        for ctx in [ ACTIVE, LPAREN, PLUS, STAR ] {
+            Shift_<ctx>_<k> => unit,
+            Reduce_<ctx>_<k> => n<k>
+        },
+        Shift_NUM_<k> => nat unit,
+        Absorb_<k> => (lunit_inv #0 n<k>) (n10 nat nat) (mul nat) add
+    },
+    for rctx in [ PLUS, STAR, RPAREN, end ] {
+        Promote_NUM_<rctx> => nat
+    },
+    for ctx in [ ACTIVE, LPAREN, PLUS, STAR ] {
+        Shift_<ctx>_LPAREN => Unit.pt
+    },
+    for ctx in [ ACTIVE, LPAREN, PLUS ] {
+        Promote_<ctx>_ATOM => nat
+    },
+    for ctx in [ ACTIVE, LPAREN ] {
+        for rctx in [ PLUS, RPAREN, end ] {
+            Promote_<ctx>_PROD_<rctx> => nat
+        }
+    },
+    Shift_PROD_STAR => nat,
+    Shift_EXPR_PLUS => nat,
+    Reduce_STAR => mul,
+    for rctx in [ PLUS, RPAREN, end ] {
+        Reduce_PLUS_<rctx> => add
+    },
+    Shift_EXPR_RPAREN => nat,
+    Shift_EXPR_end => nat,
+    Reduce_PAREN => nat,
+    Reduce_end => nat
+]
