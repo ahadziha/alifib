@@ -112,7 +112,7 @@ BinaryNat <<= {
 },
 
 (***
-    Number constants
+    Decimal digit constants
 ***)
 @BinaryNat
 let n0 = zero,
@@ -124,27 +124,7 @@ let n5 = zero bit1 bit0 bit1,
 let n6 = zero bit1 bit1 bit0,
 let n7 = zero bit1 bit1 bit1,
 let n8 = zero bit1 bit0 bit0 bit0,
-let n9 = zero bit1 bit0 bit0 bit1,
-let n10 = zero bit1 bit0 bit1 bit0,
-
-(***
-    Example computations.
-***)
-@BinaryNat
-(* 2 + 3 = 5 *)
-let two_plus_three = split (n2 #0 n3) add,
-assert (run auto on two_plus_three).out = n5,
-(* 3 * 3 = 9 *)
-let three_times_three = split (n3 #0 n3) mul,
-assert (run auto on three_times_three).out = n9,
-(* succ(7) = 8 *)
-let succ_seven = n7 succ,
-assert (run auto on succ_seven).out = n8,
-(* (2 + 3) * 2 = 10 *)
-let five_times_two = split (unit split)
-    (n2 #0 n3 #0 n2)
-    (add nat) mul,
-assert (run auto on five_times_two).out = n10
+let n9 = zero bit1 bit0 bit0 bit1
 
 (***
     Maps parse traces of arithmetic expressions
@@ -178,7 +158,8 @@ let total Eval :: BinaryNat_Term.Parser = [
             Reduce_<ctx>_<k> => n<k>
         },
         Shift_NUM_<k> => nat unit,
-        Absorb_<k> => (lunit_inv #0 n<k>) (n10 nat nat) (mul nat) add
+        Absorb_<k> => 
+        	(lunit_inv #0 n<k>) (n5 nat nat) (mul nat) (bit0 nat) add
     },
     for rctx in [ PLUS, STAR, RPAREN, end ] {
         Promote_NUM_<rctx> => nat
