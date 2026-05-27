@@ -60,6 +60,8 @@ pub struct RulePattern {
     /// Embedding of [`pattern.shape`] into the rule's full (n+1) shape.
     /// Used as the right injection in the pushout that builds each step.
     pub(crate) pattern_to_rewrite: Embedding,
+    /// Whether this pattern was built for backward rewriting.
+    pub(crate) backward: bool,
 }
 
 impl RulePattern {
@@ -84,7 +86,7 @@ impl RulePattern {
         let pattern = Diagram::boundary_normal(diag_sign, n, rewrite)?;
         let (_, pattern_to_rewrite) =
             ogposet::boundary_traverse(og_sign, n, &rewrite.shape);
-        Ok(Self { pattern, pattern_to_rewrite })
+        Ok(Self { pattern, pattern_to_rewrite, backward })
     }
 }
 
@@ -518,7 +520,61 @@ fn construct_parallel_step(
         }).collect()
     }).collect();
 
-    reconstruct::reconstruct(&mp.tip, &labels, complex)
+    if mp.tip.dim <= 3 {
+        assemble_low_dim_step(&mp.tip, labels, complex, target, match_data, rule_patterns)
+    } else {
+        reconstruct::reconstruct(&mp.tip, &labels, complex)
+    }
+}
+
+/// Fast path for dim ≤ 3: assemble a step diagram directly from the pushout
+/// shape, labels, and a paste tree — without realising and re-checking.
+///
+/// In low dimensions the candidate paste tree is always valid, so we skip
+/// the expensive `realise_tree` + `check_sizes` round-trip. The paste
+/// history is assembled from the current diagram's history and the boundary
+/// trees of the applied rules.
+fn assemble_low_dim_step(
+    shape: &Arc<ogposet::Ogposet>,
+    labels: Vec<Vec<crate::aux::Tag>>,
+    complex: &Complex,
+    current: &Diagram,
+    match_data: &[(&str, &Embedding)],
+    rule_patterns: &HashMap<String, RulePattern>,
+) -> Result<Diagram, Error> {
+    use super::diagram::{Sign, PasteTree, BoundaryHistory};
+
+    let k = current.top_dim();
+    let tree = reconstruct::build_tree(shape, &labels, complex)?;
+
+    let backward = match_data.first()
+        .and_then(|(name, _)| rule_patterns.get(*name))
+        .is_some_and(|rp| rp.backward);
+    let derived_sign = if backward { Sign::Source } else { Sign::Target };
+
+    let get = |sign, dim| current.tree(sign, dim).cloned()
+        .unwrap_or_else(|| PasteTree::Leaf(crate::aux::Tag::Local("?".into())));
+
+    let derived_tree = tree.substitute(&|tag| {
+        let name = complex.find_generator_by_tag(tag)?;
+        let (_, dim) = complex.find_generator(name)?;
+        if dim != k + 1 { return None; }
+        complex.classifier(name)?.tree(derived_sign, k).cloned()
+    });
+
+    let mut history: Vec<BoundaryHistory> = (0..k)
+        .map(|j| BoundaryHistory::from_pair(get(Sign::Source, j), get(Sign::Target, j)))
+        .collect();
+
+    let (src_k, tgt_k) = if backward {
+        (derived_tree, get(Sign::Target, k))
+    } else {
+        (get(Sign::Source, k), derived_tree)
+    };
+    history.push(BoundaryHistory::from_pair(src_k, tgt_k));
+    history.push(BoundaryHistory::from_pair(tree.clone(), tree));
+
+    Ok(Diagram::make(Arc::clone(shape), labels, history))
 }
 
 /// Find maximal compatible families of matches (parallel rewrite candidates).

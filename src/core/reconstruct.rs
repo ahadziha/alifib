@@ -47,6 +47,22 @@ pub fn reconstruct(
     Ok(diagram)
 }
 
+/// Build a candidate paste tree for a pre-diagram without realising it.
+///
+/// Used by the dim ≤ 3 fast path in [`super::matching`], where realisation
+/// is unnecessary because the candidate tree is always valid.
+pub(super) fn build_tree(
+    shape: &Arc<Ogposet>,
+    labels: &[Vec<Tag>],
+    complex: &Complex,
+) -> Result<PasteTree, Error> {
+    let pd = PreDiagram {
+        shape: Arc::clone(shape),
+        labels: labels.to_vec(),
+    };
+    build_paste_tree(&pd, complex)
+}
+
 /// Check that the realised diagram has the same cell counts as the pre-diagram.
 fn check_sizes(pd: &PreDiagram, diagram: &Diagram) -> Result<(), Error> {
     let pd_sizes = pd.shape.sizes();

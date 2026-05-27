@@ -45,6 +45,21 @@ pub(crate) enum PasteTree {
     },
 }
 
+impl PasteTree {
+    /// Replace every leaf whose tag satisfies `f` with the tree `f` returns.
+    /// Leaves where `f` returns `None` are kept unchanged.
+    pub(crate) fn substitute(&self, f: &impl Fn(&Tag) -> Option<PasteTree>) -> PasteTree {
+        match self {
+            PasteTree::Leaf(tag) => f(tag).unwrap_or_else(|| self.clone()),
+            PasteTree::Node { dim, left, right } => PasteTree::Node {
+                dim: *dim,
+                left: Arc::new(left.substitute(f)),
+                right: Arc::new(right.substitute(f)),
+            },
+        }
+    }
+}
+
 /// Records which generators appear in the source and target boundaries of a
 /// diagram at one particular dimension.  One `BoundaryHistory` is stored per
 /// dimension in `Diagram::paste_history`.
