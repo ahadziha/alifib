@@ -2,8 +2,8 @@
     Binary natural numbers as a term rewriting system.
 
     Representation (MSB first):
-        bit0(x) = 2x, bit1(x) = 2x+1, zero = 0.
-    E.g. 5 = bit1(bit0(bit1(zero))) = zero bit1 bit0 bit1.
+        0(x) = 2x, 1(x) = 2x+1, b = 0.
+    E.g. 5 = 1(0(1(b))) = b 1 0 1.
 
     Can be fed arithmetic expressions with decimal
     numbers, addition, multiplication, and parentheses:
@@ -33,98 +33,104 @@ BinaryNat <<= {
     let discard = Nat.discard,
 
     (* Constants *)
-    attach Zero :: TRS.Constant along [ Cod => Nat ],
-    let zero = Zero.node,
+    b: unit -> nat,
+    attach Start :: TRS.Constant along [ Cod => Nat, node => b ],
 
-    (* Unary: bit0 (x -> 2x), bit1 (x -> 2x+1), succ (x -> x+1) *)
+    (* Unary: 0 (x -> 2x), 1 (x -> 2x+1), succ (x -> x+1) *)
+    0: nat -> nat,
     attach Bit0 :: TRS.Unary along [
-        Dom => Nat, Cod => Nat, Dom_Cod => Nat.Pair
+        Dom => Nat, Cod => Nat, Dom_Cod => Nat.Pair,
+        node => 0
     ],
-    let bit0 = Bit0.node,
 
+	1: nat -> nat,
     attach Bit1 :: TRS.Unary along [
-        Dom => Nat, Cod => Nat, Dom_Cod => Nat.Pair
+        Dom => Nat, Cod => Nat, Dom_Cod => Nat.Pair,
+        node => 1
     ],
-    let bit1 = Bit1.node,
 
+	succ: nat -> nat,
     attach Succ :: TRS.Unary along [
-        Dom => Nat, Cod => Nat, Dom_Cod => Nat.Pair
+        Dom => Nat, Cod => Nat, Dom_Cod => Nat.Pair,
+        node => succ
     ],
-    let succ = Succ.node,
 
     (* Binary: add, cadd (add-with-carry), mul *)
+    add: nat nat -> nat,
     attach Add :: TRS.Binary along [
         LDom => Nat, RDom => Nat, Cod => Nat,
         LDom_RDom => Nat.Pair, LDom_Cod => Nat.Pair,
-        RDom_Cod => Nat.Pair
+        RDom_Cod => Nat.Pair,
+        node => add
     ],
-    let add = Add.node,
 
+	cadd: nat nat -> nat,
     attach CAdd :: TRS.Binary along [
         LDom => Nat, RDom => Nat, Cod => Nat,
         LDom_RDom => Nat.Pair, LDom_Cod => Nat.Pair,
-        RDom_Cod => Nat.Pair
+        RDom_Cod => Nat.Pair,
+        node => cadd
     ],
-    let cadd = CAdd.node,
 
+	mul: nat nat -> nat,
     attach Mul :: TRS.Binary along [
         LDom => Nat, RDom => Nat, Cod => Nat,
         LDom_RDom => Nat.Pair, LDom_Cod => Nat.Pair,
-        RDom_Cod => Nat.Pair
+        RDom_Cod => Nat.Pair,
+        node => mul
     ],
-    let mul = Mul.node,
 
     (* --- Successor --- *)
-    Succ_Zero: zero succ -> zero bit1,
-    Succ_Bit0: bit0 succ -> bit1,
-    Succ_Bit1: bit1 succ -> succ bit0,
+    Succ_Start: b succ -> b 1,
+    Succ_Bit0: 0 succ -> 1,
+    Succ_Bit1: 1 succ -> succ 0,
 
     (* --- Addition --- *)
-    Add_Zero_Zero: (zero #0 zero) add -> merge zero,
-    Add_Zero_R: (zero nat) add -> lunit,
-    Add_Zero_L: (nat zero) add -> runit,
+    Add_Start_Start: (b #0 b) add -> merge b,
+    Add_Start_R: (b nat) add -> lunit,
+    Add_Start_L: (nat b) add -> runit,
 
-    Add_00: (bit0 #0 bit0) add -> add bit0,
-    Add_01: (bit0 #0 bit1) add -> add bit1,
-    Add_10: (bit1 #0 bit0) add -> add bit1,
-    Add_11: (bit1 #0 bit1) add -> cadd bit0,
+    Add_00: (0 #0 0) add -> add 0,
+    Add_01: (0 #0 1) add -> add 1,
+    Add_10: (1 #0 0) add -> add 1,
+    Add_11: (1 #0 1) add -> cadd 0,
 
     (* --- Addition with carry --- *)
-    CAdd_Zero_Zero: (zero #0 zero) cadd -> merge zero bit1,
-    CAdd_Zero_R: (zero nat) cadd -> lunit succ,
-    CAdd_Zero_L: (nat zero) cadd -> runit succ,
+    CAdd_Start_Start: (b #0 b) cadd -> merge b 1,
+    CAdd_Start_R: (b nat) cadd -> lunit succ,
+    CAdd_Start_L: (nat b) cadd -> runit succ,
 
-    CAdd_00: (bit0 #0 bit0) cadd -> add bit1,
-    CAdd_01: (bit0 #0 bit1) cadd -> cadd bit0,
-    CAdd_10: (bit1 #0 bit0) cadd -> cadd bit0,
-    CAdd_11: (bit1 #0 bit1) cadd -> cadd bit1,
+    CAdd_00: (0 #0 0) cadd -> add 1,
+    CAdd_01: (0 #0 1) cadd -> cadd 0,
+    CAdd_10: (1 #0 0) cadd -> cadd 0,
+    CAdd_11: (1 #0 1) cadd -> cadd 1,
 
     (* --- Multiplication --- *)
-    Mul_Zero_Zero: (zero #0 zero) mul -> merge zero,
-    Mul_Zero_L: (zero nat) mul -> (unit discard) merge zero,
-    Mul_Zero_R: (nat zero) mul -> (discard unit) merge zero,
+    Mul_Start_Start: (b #0 b) mul -> merge b,
+    Mul_Start_L: (b nat) mul -> (unit discard) merge b,
+    Mul_Start_R: (nat b) mul -> (discard unit) merge b,
 
     (* mul(2x, y) = 2 * mul(x, y) *)
-    Mul_Bit0: (bit0 nat) mul -> mul bit0,
+    Mul_Bit0: (0 nat) mul -> mul 0,
     (* mul(2x+1, y) = add(2 * mul(x, y), y) *)
-    Mul_Bit1: (bit1 nat) mul
-        -> (nat copy) (mul nat) (bit0 nat) add
+    Mul_Bit1: (1 nat) mul
+        -> (nat copy) (mul nat) (0 nat) add
 },
 
 (***
     Decimal digit constants
 ***)
 @BinaryNat
-let n0 = zero,
-let n1 = zero bit1,
-let n2 = zero bit1 bit0,
-let n3 = zero bit1 bit1,
-let n4 = zero bit1 bit0 bit0,
-let n5 = zero bit1 bit0 bit1,
-let n6 = zero bit1 bit1 bit0,
-let n7 = zero bit1 bit1 bit1,
-let n8 = zero bit1 bit0 bit0 bit0,
-let n9 = zero bit1 bit0 bit0 bit1
+let n0 = b,
+let n1 = b 1,
+let n2 = b 1 0,
+let n3 = b 1 1,
+let n4 = b 1 0 0,
+let n5 = b 1 0 1,
+let n6 = b 1 1 0,
+let n7 = b 1 1 1,
+let n8 = b 1 0 0 0,
+let n9 = b 1 0 0 1
 
 (***
     Maps parse traces of arithmetic expressions
@@ -159,7 +165,7 @@ let total Eval :: BinaryNat_Term.Parser = [
         },
         Shift_NUM_<k> => nat unit,
         Absorb_<k> => 
-        	(lunit_inv #0 n<k>) (n5 nat nat) (mul nat) (bit0 nat) add
+        	(lunit_inv #0 n<k>) (n5 nat nat) (mul nat) (0 nat) add
     },
     for rctx in [ PLUS, STAR, RPAREN, end ] {
         Promote_NUM_<rctx> => nat
