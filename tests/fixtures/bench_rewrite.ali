@@ -1,0 +1,115 @@
+@Type
+include LambdaSigma,
+
+@LambdaSigma.LambdaSigma_var
+
+let one = var,
+let two = split (var #0 shift) clos,
+let three = split (unit split)
+	(var #0 shift #0 shift) (term comp) clos,
+
+let example_1 =
+	split (unit split)
+	(one #0 one #0 shift)
+    (app subst)
+    (lambda subst)
+    clos,
+let normal_1 = (run auto on example_1),
+
+let example_2 =
+	split (unit split) (unit unit split)
+	(one #0 two #0 one #0 id)
+    (app #0 lambda #0 subst)
+    (lambda term subst)
+    (lambda term subst)
+    (app subst)
+    clos,
+let normal_2 = (run auto on example_2),
+
+let example_3 =
+	split (unit split) (unit unit split)
+    (unit unit unit split) (unit unit unit unit split)
+    (one #0 M #0 N #0 shift #0 P #0 id)
+    (term #0 term #0 cons #0 cons)
+    (term cons subst)
+    (clos subst)
+    clos,
+let normal_3 = (run auto on example_3),
+
+let example_4 =
+	split (unit split) (unit unit split)
+    (one #0 M #0 s #0 N)
+    (lambda #0 cons #0 term)
+    (clos term)
+    app,
+let normal_4 = (run auto on example_4),
+
+let example_5 =
+	split (unit split) (unit unit split)
+    (one #0 M #0 N #0 id)
+    ((lambda lambda) #0 term #0 cons)
+    (app subst)
+    clos,
+let normal_5 = (run auto on example_5),
+
+let example_6 =
+	split (unit split) (unit unit split) (unit unit unit split)
+    (one #0 M #0 id #0 N #0 id)
+    (term #0 cons #0 cons)
+    (term comp)
+    clos,
+let normal_6 = (run auto on example_6),
+
+let example_7 =
+	split (unit split) (unit unit split)
+    (one #0 two #0 M #0 id)
+    (app #0 cons)
+    (lambda subst)
+    clos,
+let normal_7 = (run auto on example_7),
+
+let example_8 =
+	split (unit split)
+    (M #0 s #0 t)
+    (lambda subst subst)
+    (clos subst)
+    clos,
+let normal_8 = (run auto on example_8),
+
+let example_9 =
+	split (unit split) (unit unit split) (unit unit unit split)
+    (two #0 one #0 one #0 M #0 id)
+    (app #0 term #0 cons)
+    (lambda #0 term #0 subst)
+    (app subst)
+    (lambda subst)
+    clos,
+let normal_9 = (run auto on example_9),
+
+let example_10 =
+	split (unit split) (unit unit split)
+    (unit unit unit split) (unit unit unit unit split)
+    (one #0 id #0 M #0 shift #0 N #0 id)
+    (term #0 subst #0 cons #0 cons)
+    (term comp subst)
+    (clos subst)
+    clos,
+let normal_10 = (run auto on example_10),
+
+let example_11 =
+	split (unit split) (unit unit split)
+    (unit unit unit split) (unit unit unit unit split)
+    (three #0 two #0 one #0 M #0 N #0 id)
+    (term #0 app #0 term #0 cons)
+    (app #0 cons)
+    ((lambda lambda lambda) subst)
+    clos,
+let normal_11 = (run auto on example_11),
+
+let example_12 =
+	split (unit split) (unit unit split) (unit unit unit split)
+    (M #0 N #0 s #0 P #0 t)
+    (app #0 subst #0 cons)
+    (clos subst)
+    clos,
+let normal_12 = (run auto on example_12),
