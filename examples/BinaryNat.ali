@@ -157,6 +157,7 @@ let total Eval :: BinaryNat_Term.Parser = [
     for ctx in [ ACTIVE, LPAREN, PLUS, STAR ] {
         Skip_<ctx>_SPACE => Unit.pt
     },
+    Skip_PROD_SPACE => nat,
     Promote_NUM_SPACE => nat,
     for k in [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 ] {
         for ctx in [ ACTIVE, LPAREN, PLUS, STAR ] {

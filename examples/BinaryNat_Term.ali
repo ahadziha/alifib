@@ -52,7 +52,7 @@ Parser <<= Term {
     Init: parse -> ACTIVE CURSOR,
 
     (* --- Skipping spaces --- *)
-    for ctx in [ ACTIVE, LPAREN, PLUS, STAR ] {
+    for ctx in [ ACTIVE, LPAREN, PLUS, STAR, PROD ] {
     	Skip_<ctx>_SPACE: <ctx> CURSOR SPACE -> <ctx> CURSOR
     },
 
