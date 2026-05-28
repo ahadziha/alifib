@@ -417,7 +417,8 @@ fn build_diagram<'tokens, 'src: 'tokens>() -> RDiagram<'tokens, 'src> {
                 Token::Nat(s) => DComponent::Name(s.to_string()),
             },
         ))
-        .map_with(|v, e| sp(v, cspan(e.span())));
+        .map_with(|v, e| sp(v, cspan(e.span())))
+        .boxed();
 
         let dexpr = dcomponent
             .clone()
