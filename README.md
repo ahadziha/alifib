@@ -19,6 +19,7 @@ modules, and verifies that partial maps are structure-preserving.
 | `alifib <file>` | One-shot interpret / `--ast` / `--print` / `--bench` | [Interpreter](#interpreter) |
 | `alifib repl <file>` | Interactive terminal REPL with readline, history, `store`/`save` | [REPL](#repl) |
 | `alifib serve` | JSON-lines daemon on stdin/stdout for editor plugins and agents | [Daemon](#daemon) |
+| `alifib mcp [<dir>]` | Model Context Protocol server exposing the engine as tools for AI agents | [Web GUI](#web-gui) |
 | `alifib web [<dir>]` | Localhost HTTP server + browser GUI (SSH-tunnel friendly) | [Web GUI](#web-gui) |
 | Static WASM build | Same frontend, interpreter in the browser (GitHub Pages etc.) | [Local preview](#local-preview) |
 
@@ -57,7 +58,7 @@ and grouping with parentheses.
 full dependency graph before elaboration. Set `ALIFIB_PATH` to a
 colon-separated list of directories to search for included files.
 
-See `examples/` for more, and `docs/grammar.md` for the full grammar.
+See `examples/` for more, and `docs/GRAMMAR.md` for the full grammar.
 
 ## Building
 
@@ -78,11 +79,12 @@ and builds separately through `wasm-pack` (see [Web GUI](#web-gui) below).
 ### Interpreter
 
 ```
-alifib <input.ali> [-o <output.ali>] [--ast] [--bench N]
+alifib <input.ali> [-o <output.ali>] [--ast] [--print] [--bench N]
 ```
 
 - `-o / --output` — write output to a file instead of stdout
 - `--ast` — print the parsed AST instead of interpreting
+- `--print` — pretty-print the source (re-emit the parsed program) instead of interpreting
 - `--bench N` — run N times and print average wall time in milliseconds
 
 ```
@@ -107,10 +109,11 @@ alifib repl examples/Idem.ali --type Idem --source lhs --target rhs
 After loading, the REPL is in **no-session** mode: inspection commands like
 `types`, `type <name>`, and `homology <name>` work immediately. Use
 `start <type> <source> [<target>]` to begin a rewrite session (target is
-optional). Composite diagram expressions can be quoted:
+optional), or `resume <type> <proof> [<target>]` to reopen a stored proof
+diagram as a live session. Composite diagram expressions can be quoted:
 
 ```
-start Mor 'comp #(f, comp #(g, h))' 'comp #(comp #(f, g), h)'
+start Idem 'id id id' id
 ```
 
 If `--type` and `--source` are given on the command line, the session starts
@@ -121,12 +124,13 @@ Key commands:
 | Command | Description |
 |---------|-------------|
 | `start <t> <s> [<g>]` | Start a rewrite session (target optional) |
+| `resume <t> <p> [<g>]` | Resume a session from a stored proof diagram (target optional) |
 | `apply <n>` | Apply rewrite at index `n` (alias `a`) |
-| `undo` | Undo last step (alias `u`) |
-| `redo` | Redo last undone step |
+| `undo [<n>]` | Undo last step, or back to step `n` (alias `u`) |
+| `redo [<n>]` | Redo last undone step, or forward to step `n` |
 | `rules` | List available rewrite rules (alias `r`) |
 | `proof` | Show the running proof diagram (alias `p`) |
-| `store <name>` | Register proof as a first-class generator |
+| `store <name>` | Store the current proof as a named diagram |
 | `save <path>` | Write source file with stored definitions appended |
 | `stop` | End the active session |
 | `help` | Full command list |
@@ -144,17 +148,19 @@ alifib serve [<file> --type <t> --source <s> [--target <t>]]
 One JSON object per line in each direction on stdin/stdout. Example:
 
 ```sh
-echo '{"command":"init","source_file":"examples/Idem.ali","type_name":"Idem","source_diagram":"lhs"}' \
+echo '{"command":"start","source_file":"examples/Idem.ali","type_name":"Idem","initial":"lhs"}' \
   | alifib serve
 ```
 
 Key requests:
 
 ```json
-{"command":"init","source_file":"...","type_name":"...","source_diagram":"..."}
+{"command":"start","source_file":"...","type_name":"...","initial":"..."}
+{"command":"resume","source_file":"...","type_name":"...","proof":"..."}
 {"command":"step","choice":0}
 {"command":"undo"}
 {"command":"redo"}
+{"command":"proof"}
 {"command":"store","name":"myproof"}
 {"command":"types"}
 {"command":"type","name":"Idem"}
@@ -241,9 +247,11 @@ web/
   frontend/    Browser frontend (index.html, app.js, style.css)
   shared/      alifib-web-shared crate — runtime example-directory scanner
   server/      alifib-web-server crate — localhost HTTP server for `alifib web`
+  mcp/         alifib-web-mcp crate — Model Context Protocol server (`alifib mcp`)
   wasm/        alifib-wasm crate — WebAssembly bindings (built via wasm-pack)
+editors/       Editor integrations (e.g. VS Code syntax highlighting)
 examples/      Example .ali files (served by `alifib web` at runtime)
-docs/          Grammar, interpreter description, formal semantics (LaTeX)
+docs/          Grammar, interpreter description, and design notes
 plugins/trs/   Plugin: convert term rewriting systems to alifib
 INTERACTIVE.md Full reference for the REPL, web GUI, and daemon
 ```

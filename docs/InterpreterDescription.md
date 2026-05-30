@@ -92,7 +92,12 @@ After successfully interpreting a file the interpreter reports:
 - Any holes, annotated with their inferred boundary.
 - Any errors (type mismatches, undefined names, boundary shape failures).
 
-The interpreter does not execute programs in a traditional sense: there is no
-runtime evaluation or reduction. Instead it *elaborates* the structure —
-checking that all declared generators and maps are well-formed and that all
-asserted equations hold — and records the resulting global state.
+At its core the interpreter *elaborates* structure rather than executing it: it
+checks that all declared generators and maps are well-formed and that all
+asserted equations hold, and records the resulting global state.
+
+On top of that, alifib can *rewrite*. A strategy expression such as
+`(run auto on d)` reduces a diagram by applying the ambient type's higher cells
+as directed rewrite rules until it reaches a normal form, and the interactive
+interfaces (REPL, web GUI, daemon) build such rewrites step by step — see
+[`INTERACTIVE.md`](../INTERACTIVE.md).

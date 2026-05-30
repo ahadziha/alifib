@@ -6,8 +6,9 @@ sitting, what is being computed and how the numbers come out.
 
 ## The one-sentence version
 
-alifib builds, for each type, a **regular directed complex** (in
-Hadzihasanovic's sense): every cell carries a designated source and a
+alifib builds, for each type, a **finite directed complex** (in
+Hadzihasanovic's sense) — a finite presheaf on the category of atoms
+and embeddings of atoms. Every cell carries a designated source and a
 designated target that together tile its boundary. Forgetting the
 source/target distinction — just remembering that the two halves glue
 to an `(n−1)`-sphere — gives an ordinary CW complex with one `n`-cell

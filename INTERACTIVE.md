@@ -23,7 +23,7 @@ command line, the session starts automatically.
 Composite diagram expressions can be quoted with `'` or `"`:
 
 ```
-start Mor 'comp #(f, comp #(g, h))' 'comp #(comp #(f, g), h)'
+start Idem 'id id id' id
 ```
 
 ### Always available
@@ -33,7 +33,8 @@ start Mor 'comp #(f, comp #(g, h))' 'comp #(comp #(f, g), h)'
 | `types` | List all types defined in the file |
 | `type <name>` | Inspect a type: generators, diagrams, maps |
 | `homology <name>` | Compute cellular homology of a type |
-| `start <t> <s> [<g>]` | Start a rewrite session (target optional) |
+| `start <t> <s> [<g>]` | Start a rewrite session from an initial diagram (target optional) |
+| `resume <t> <p> [<g>]` | Resume a session from a diagram `<p>`, replaying its steps (target optional) |
 | `status` / `show` | Session state, or module path when idle |
 | `print` | Print the full source file |
 | `stop` | End the active session |
@@ -59,7 +60,6 @@ start Mor 'comp #(f, comp #(g, h))' 'comp #(comp #(f, g), h)'
 | `proof` | `p` | Show the running (n+1)-dim proof diagram and its source/target |
 | `store <name>` | | Store the current proof as a named diagram in the type |
 | `save <path>` | | Write the original source file with stored definitions appended |
-| `load <path>` | `l <path>` | Load and replay a session file, replacing current state |
 
 ### Display
 
@@ -92,6 +92,14 @@ the session.
 
 `save <path>` writes the original `.ali` source file with all stored definitions
 appended as `@TypeName\nlet name = <expr>` blocks, making them permanent.
+
+### Resuming proofs
+
+`resume <type> <proof> [<target>]` reopens a stored proof as a live session: it
+decomposes the diagram into its rewrite steps, applies them all, and lets you
+undo, continue, or branch. `<proof>` is any diagram name or expression in the
+type. Toggle `backward on` first to run from the proof's output boundary toward
+its input; `<target>` is the goal you intend to reach, supplied separately.
 
 ---
 
@@ -148,31 +156,34 @@ and communicate via its stdio.
 
 If `<file>`, `--type`, and `--source` are provided, the session is pre-loaded
 and an initial state response is emitted before the request loop starts.
-Otherwise the daemon starts blank and waits for an `init` request.
+Otherwise the daemon starts blank and waits for a `start` request.
 
 ### Requests
 
 ```json
-{"command":"init","source_file":"...","type_name":"...","source_diagram":"...","target_diagram":"..."}
-{"command":"resume","session_file":"..."}
+{"command":"start","source_file":"...","type_name":"...","initial":"...","target":"..."}
+{"command":"resume","source_file":"...","type_name":"...","proof":"...","target":"...","backward":false}
 {"command":"step","choice":0}
 {"command":"undo"}
 {"command":"undo_to","step":2}
 {"command":"redo"}
 {"command":"redo_to","step":4}
 {"command":"show"}
-{"command":"save","path":"..."}
+{"command":"proof"}
 {"command":"list_rules"}
 {"command":"history"}
 {"command":"store","name":"myproof"}
 {"command":"types"}
 {"command":"type","name":"Idem"}
-{"command":"homology","name":"Idem"}
 {"command":"shutdown"}
 ```
 
-`target_diagram` in `init` is optional. All commands except `init` and `resume`
-require a session to be active.
+`start` begins a fresh session from `initial`; `resume` decomposes the diagram
+`proof` into its rewrite steps and opens the session with all of them applied.
+`target` is optional in both, and `backward` (default `false`) makes `resume`
+run from the proof's output boundary instead of its input. `proof` returns the
+current proof as a re-parseable expression (for saving). All commands except
+`start` and `resume` require a session to be active.
 
 ### Responses
 
@@ -190,16 +201,17 @@ The `data` object includes:
 | `step_count` | Number of active steps applied |
 | `can_redo` | Whether undone steps can be redone |
 | `current` | Current diagram (`DiagramInfo`) |
-| `source` | Source diagram (`DiagramInfo`) |
+| `initial` | Initial diagram (`DiagramInfo`) |
 | `target` | Target diagram (omitted if not set) |
 | `target_reached` | Whether current equals target |
+| `backward` | Whether this is a backward session |
 | `rewrites` | Available rewrites — each has `rule_name`, `match_positions`, `match_display`, source/target `DiagramInfo` |
 | `proof` | Running proof summary: dim, step_count, source/target labels (omitted if no steps taken) |
+| `proof_expr` | The current proof as a re-parseable expression (only in response to `proof`) |
 | `history` | Move list (only in response to `history` or `resume`) |
 | `rules` | All rewrite rules (only in response to `list_rules`) |
 | `types` | Type summaries (only in response to `types`) |
 | `type_detail` | Full type info (only in response to `type`) |
-| `homology` | Homology groups (only in response to `homology`) |
 
 `DiagramInfo` has: `label` (space-separated top-level names), `dim`,
 `cell_count`, `cells_by_dim` (labels at every dimension from 0 to top).
@@ -218,30 +230,21 @@ optional source/target boundaries), `diagrams` (including stored proofs
 with their expressions), and `maps`. Uses the live type complex for the current
 session type, so diagrams added via `store` are immediately visible.
 
-**`homology`** — computes the cellular homology of a named type. Returns an
-array of `{dim, display}` objects, one per dimension that has generators.
-
 ---
 
-## Session files
+## Persistence
 
-The REPL and the daemon can save and load session files (JSON). A session file
-records the source file path, type name, diagram names, and the ordered
-list of moves (choice index + rule name). It is sufficient to fully replay
-a session from scratch.
+A session has no file format of its own. Its durable form is the diagram it is
+building — the `(n+1)`-cell assembled from the steps applied so far.
 
-```json
-{
-  "source_file": "examples/Category.ali",
-  "type_name": "Category",
-  "source_diagram": "lhs",
-  "target_diagram": "rhs",
-  "moves": [
-    {"choice": 0, "rule_name": "assoc"},
-    {"choice": 0, "rule_name": "unit_l"}
-  ]
-}
-```
+- **Save** — `store <name>` registers the running proof as a named diagram in
+  the active type; `save <path>` (REPL) writes the `.ali` source with those
+  definitions appended. The proof is then an ordinary diagram in the source.
+- **Reopen** — `resume` decomposes such a diagram back into its rewrite steps,
+  with every step applied, so you can undo, continue, or branch from it. A
+  forward session resumes from the diagram's input boundary, a `backward` one
+  from its output; the target is supplied separately (it is the goal, not
+  inferred from the diagram).
 
-REPL: `save <path>` / `load <path>`.  
-Daemon: `{"command":"save","path":"..."}` / `{"command":"resume","session_file":"..."}`.
+So a session round-trips entirely through `.ali` — there is no separate
+session-file format.
