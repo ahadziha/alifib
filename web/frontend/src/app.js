@@ -1714,24 +1714,21 @@ const HELP_TEXT = `Always available:
   types               list all types in the file
   type <name>         inspect a type
   homology <name>     compute cellular homology of a type
-  start <t> <i> [<g>] start a rewrite session (target optional)
-  resume <t> <p> [<g>] resume a session from a proof diagram (target optional)
-  backward [on|off]   show or toggle backward rewrite mode   (default: off)
+  start <t> <i>       start a rewrite session (target optional)
+  resume <t> <p>      resume a session from a diagram (target optional)
+  backward [on|off]   show or toggle backward rewrite mode (default: off)
   stop                end the active session
   clear               clear the REPL output
   help / ?            show this message
 
 Session commands (require active session):
-  apply <n> [<n2>..]  apply rewrite(s) at given indices     (alias: a)
+  apply <n> [<n2>..]  apply rewrite(s) at given indices (alias: a)
   auto <n>            apply up to n rewrites automatically
-  parallel [on|off]   show or toggle parallel rewrite mode  (default: on)
+  parallel [on|off]   show or toggle parallel rewrite mode (default: on)
   random <n>          apply up to n randomly selected rewrites
-  undo (u)            undo last step
-  undo <n>            undo back to step n
-  undo all            undo all steps
-  redo                redo last undone step
-  redo <n>            redo forward to step n
-  restart             same as undo all
+  undo [<n>]          undo last step, or back to step n (alias: u)
+  redo [<n>]          redo last undone step, or forward to step n
+  undo all / restart  reset to the source diagram
   show / status       show current state
   rules (r)           list all rewrite rules
   history (h)         show move history

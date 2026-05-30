@@ -18,7 +18,7 @@
 //! types            List all types in the file
 //! type <name>      Inspect a type: generators, diagrams, maps
 //! homology <name>  Compute cellular homology of a type
-//! start <t> <s> [<g>]  Start a rewrite session  (target optional)
+//! start <t> <s> [<g>]  Start a rewrite session (target optional)
 //! status / show    Session state, or module path when idle
 //! print            Print the whole source file
 //! stop             End the active session
@@ -28,17 +28,17 @@
 //!
 //! Require active session:
 //! ```text
-//! apply <n>        Apply rewrite at index <n>            (alias: a)
+//! apply <n>        Apply rewrite at index <n> (alias: a)
 //! auto <n>         Apply up to <n> rewrites automatically, always picking index 0
 //! random <n>       Apply randomly selected rewrites automatically
-//! undo             Undo the last step                    (alias: u)
+//! undo             Undo the last step (alias: u)
 //! undo <n>         Undo back to step <n>
-//! undo all         Reset to source diagram               (= restart)
+//! undo all         Reset to source diagram (= restart)
 //! redo             Redo the last undone step
 //! redo <n>         Redo forward to step <n>
-//! rules            List rewrite rules at current dimension  (alias: r)
-//! history          Show the move history                 (alias: h)
-//! proof            Show the running proof diagram        (alias: p)
+//! rules            List rewrite rules at current dimension (alias: r)
+//! history          Show the move history (alias: h)
+//! proof            Show the running proof diagram (alias: p)
 //! store <name>     Store the current proof as a named diagram
 //! save <path>      Write source file with stored definitions appended
 //! ```
@@ -852,9 +852,9 @@ fn print_help(display: &Display) {
          \x20 types               List all types in the file\n\
          \x20 type <name>         Inspect a type: generators, diagrams, maps\n\
          \x20 homology <name>     Compute cellular homology of a type\n\
-         \x20 start <t> <s> [<g>] Start a rewrite session  (target optional)\n\
-         \x20 resume <t> <p> [<g>] Resume a session from a proof diagram  (target optional)\n\
-         \x20 backward [on|off]   Show or toggle backward rewrite mode   (default: off)\n\
+         \x20 start <t> <s>       Start a rewrite session (target optional)\n\
+         \x20 resume <t> <p>      Resume a session from a diagram (target optional)\n\
+         \x20 backward [on|off]   Show or toggle backward rewrite mode (default: off)\n\
          \x20 status / show       Session state, or module info when idle\n\
          \x20 print               Print the whole source file\n\
          \x20 stop                End the active session\n\
@@ -862,18 +862,16 @@ fn print_help(display: &Display) {
          \x20 quit / exit / q     Exit\n\
          \n\
          Session commands (require active session):\n\
-         \x20 apply <n> [<n2>..]  Apply rewrite(s) at given indices    (alias: a)\n\
+         \x20 apply <n> [<n2>..]  Apply rewrite(s) at given indices (alias: a)\n\
          \x20 auto <n>            Apply up to <n> rewrites automatically\n\
          \x20 random <n>          Apply randomly selected rewrites\n\
-         \x20 parallel [on|off]   Show or toggle parallel rewrite mode  (default: on)\n\
-         \x20 undo                Undo the last step                    (alias: u)\n\
-         \x20 undo <n>            Undo back to step <n>\n\
-         \x20 undo all            Reset to source diagram               (= restart)\n\
-         \x20 redo                Redo the last undone step\n\
-         \x20 redo <n>            Redo forward to step <n>\n\
-         \x20 rules               List rewrite rules at current dimension  (alias: r)\n\
-         \x20 history             Show the move history                 (alias: h)\n\
-         \x20 proof               Show the running proof diagram        (alias: p)\n\
+         \x20 parallel [on|off]   Show or toggle parallel rewrite mode (default: on)\n\
+         \x20 undo [<n>]          Undo the last step, or back to step <n> (alias: u)\n\
+         \x20 redo [<n>]          Redo the last undone step, or forward to step <n>\n\
+         \x20 undo all / restart  Reset to the source diagram\n\
+         \x20 rules               List rewrite rules at current dimension (alias: r)\n\
+         \x20 history             Show the move history (alias: h)\n\
+         \x20 proof               Show the running proof diagram (alias: p)\n\
          \x20 store <name>        Store the current proof as a named diagram\n\
          \x20 save <path>         Write source file with stored definitions appended"
     );
@@ -893,7 +891,7 @@ enum Cmd {
     Type(String),
     /// `start <type> <source> [<target>]` — start a rewrite session.
     Start(String, String, Option<String>),
-    /// `resume <type> <proof> [<target>]` — resume a session from a proof diagram.
+    /// `resume <type> <proof> [<target>]` — resume a session from a diagram.
     Resume(String, String, Option<String>),
     /// `apply <n> [<n2> ...]` — apply one or more candidate rewrites.
     Apply(Vec<usize>),
