@@ -16,8 +16,8 @@
 //!   completed proofs back into the `.ali` source file.
 //! - **`alifib serve`** (`daemon`, `protocol`): a long-lived JSON-lines
 //!   subprocess for editor integration; holds the engine in memory and returns
-//!   render-ready responses, persisting in-progress sessions to a
-//!   [`SessionFile`](session::SessionFile) via `save`/`resume`.
+//!   render-ready responses.  It has no file format of its own — a session is
+//!   saved by `store`ing its proof into the `.ali`, and reopened with `resume`.
 //! - **`alifib web`** / **`alifib mcp`** (`web`): the same engine wrapped in
 //!   [`WebRepl`](web::WebRepl), driven over HTTP/WASM by the browser GUI or as
 //!   tools by an MCP client.  Sessions are in-memory only; durable output is a
@@ -36,8 +36,7 @@
 //!
 //! | Submodule | Role |
 //! |-----------|------|
-//! | [`engine`] | [`RewriteEngine`](engine::RewriteEngine): in-memory session state, step/undo, accessors |
-//! | [`session`] | [`SessionFile`](session::SessionFile) + [`Move`](session::Move): JSON-serialised move log |
+//! | [`engine`] | [`RewriteEngine`](engine::RewriteEngine): in-memory session state, step/undo, resume, accessors |
 //! | [`repl`] | `run_repl` + command dispatch for `alifib repl` |
 //! | [`cli`] | Argument parsing and dispatch for the CLI subcommands |
 //! | [`daemon`] | JSON-lines request loop for `alifib serve` |
@@ -54,5 +53,4 @@ pub mod protocol;
 pub mod render;
 #[cfg(feature = "cli")]
 pub mod repl;
-pub mod session;
 pub mod web;

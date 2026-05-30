@@ -30,7 +30,7 @@ use crate::core::matching::MatchResult;
 use crate::core::partial_map::PartialMap;
 use crate::analysis::strdiag::{StrDiag, VertexKind};
 use crate::output::render_diagram;
-use super::engine::RewriteEngine;
+use super::engine::{RewriteEngine, StepKind};
 use super::render::render_step;
 
 // ── Requests ─────────────────────────────────────────────────────────────────
@@ -50,9 +50,16 @@ pub enum Request {
         #[serde(default)]
         backward: bool,
     },
-    /// Resume from a session file on disk.
+    /// Resume a session from a proof diagram, decomposing it into its steps.
+    /// `proof` and `target` are diagram names or expressions in the source.
     Resume {
-        session_file: String,
+        source_file: String,
+        type_name: String,
+        proof: String,
+        #[serde(default)]
+        target: Option<String>,
+        #[serde(default)]
+        backward: bool,
     },
     /// Apply the rewrite at the given choice index.
     Step {
@@ -86,10 +93,9 @@ pub enum Request {
     },
     /// Return the current state (no mutation).
     Show,
-    /// Save the current session to a file (for `resume`).
-    Save {
-        path: String,
-    },
+    /// Return the current proof as a re-parseable expression (for saving and
+    /// resuming); `None` when no steps have been applied.
+    Proof,
     /// List all rewrite rules in the type at the current dimension.
     ListRules,
     /// Return the full move history.
@@ -157,6 +163,9 @@ pub struct ResponseData {
     pub rewrites: Vec<RewriteInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub proof: Option<ProofInfo>,
+    /// The current proof as a re-parseable expression; only populated by `proof`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proof_expr: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub history: Vec<HistoryEntry>,
     /// All rewrite rules at the current dimension; only populated by `list_rules`.
@@ -471,15 +480,14 @@ pub fn build_response(engine: &RewriteEngine, include_history: bool) -> Response
     };
 
     let history = if include_history {
-        engine.history_moves()
+        engine.history()
             .enumerate()
-            .map(|(i, m)| HistoryEntry {
+            .map(|(i, e)| HistoryEntry {
                 step: i + 1,
-                rule_name: m.rule_name.clone(),
-                choice: if let Some(ref v) = m.choices {
-                    Some(v.clone())
-                } else {
-                    m.choice.map(|c| vec![c])
+                rule_name: e.rule_name.clone(),
+                choice: match &e.kind {
+                    StepKind::Chosen(v) => Some(v.clone()),
+                    StepKind::Derived => None,
                 },
             })
             .collect()
@@ -498,6 +506,7 @@ pub fn build_response(engine: &RewriteEngine, include_history: bool) -> Response
         backward,
         rewrites,
         proof,
+        proof_expr: None,
         history,
         rules: vec![],
         types: vec![],

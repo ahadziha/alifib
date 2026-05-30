@@ -10,13 +10,13 @@
 //!
 //! | Command | Description |
 //! |---------|-------------|
-//! | `init`  | Start a new session |
-//! | `resume` | Resume a saved session file |
+//! | `init`  | Start a new session from an initial (and optional target) diagram |
+//! | `resume` | Resume a session from a proof diagram (+ optional target, backward) |
 //! | `step` | Apply rewrite at choice index |
 //! | `undo` | Undo the last step |
 //! | `undo_to` | Undo back to a step count (0 = reset to source) |
 //! | `show` | Return current state |
-//! | `save` | Save session to a file |
+//! | `proof` | Return the current proof as a re-parseable expression |
 //! | `list_rules` | List all rewrite rules at the current dimension |
 //! | `history` | Return the full move history |
 //! | `store` | Register the current proof as a first-class generator |
@@ -45,7 +45,6 @@ use std::io::{BufRead, Write};
 
 use super::engine::RewriteEngine;
 use super::protocol::{Request, Response, build_response};
-use super::session::SessionFile;
 
 /// Run the daemon loop: read requests from stdin, write responses to stdout.
 ///
@@ -103,9 +102,9 @@ enum DispatchResult {
 }
 
 fn dispatch(engine: &mut Option<RewriteEngine>, req: Request) -> DispatchResult {
-    // Session transitions and Save are the daemon's own layer.  Everything
-    // else is an engine-level command — delegate to `engine.handle`, which
-    // is the shared surface used by `WebRepl` too.
+    // Session transitions (`init`/`resume`) are the daemon's own layer.
+    // Everything else is an engine-level command — delegate to `engine.handle`,
+    // the shared surface used by `WebRepl` too.
     let resp = match req {
         Request::Init { source_file, type_name, initial_diagram, target_diagram, backward } => {
             let ctx = super::engine::load_type_context(&source_file, &type_name);
@@ -123,21 +122,22 @@ fn dispatch(engine: &mut Option<RewriteEngine>, req: Request) -> DispatchResult 
                 Err(e) => Response::error(e),
             }
         }
-        Request::Resume { session_file } => match SessionFile::read(&session_file) {
-            Err(e) => Response::error(e),
-            Ok(sf) => match RewriteEngine::from_session(sf) {
-                Err(e) => Response::error(e),
+        Request::Resume { source_file, type_name, proof, target, backward } => {
+            let ctx = super::engine::load_type_context(&source_file, &type_name);
+            match ctx.and_then(|(store, tc, canonical_path)| {
+                RewriteEngine::resume(
+                    store, tc, &proof, target.as_deref(),
+                    canonical_path, type_name, backward,
+                )
+            }) {
                 Ok(e) => {
                     let data = build_response(&e, true);
                     *engine = Some(e);
                     Response::Ok { data }
                 }
-            },
-        },
-        Request::Save { path } => with_engine(engine, |e| {
-            e.to_session_file().write(&path)?;
-            Ok(build_response(e, false))
-        }),
+                Err(e) => Response::error(e),
+            }
+        }
         Request::Shutdown => return DispatchResult::Shutdown,
         Request::Homology { .. } => {
             // Homology queries bypass the engine — not wired into the daemon.

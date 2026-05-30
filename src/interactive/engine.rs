@@ -15,14 +15,23 @@ use crate::core::matching::{
 };
 use crate::core::paste_tree::{flatten_at, is_pseudo_normal, pseudo_normalise, realise_tree, top_generators};
 use crate::interpreter::{GlobalStore, InterpretedFile};
-use super::session::{Move, SessionFile};
 use rand_xoshiro::rand_core::{Rng, SeedableRng};
 use rand_xoshiro::Xoshiro256PlusPlus;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-struct HistoryEntry {
-    mov: Move,
+/// How a rewrite step was selected.  Display-only — replay no longer exists.
+pub(crate) enum StepKind {
+    /// The user picked these rewrite-menu indices (`apply`, single or parallel).
+    Chosen(Vec<usize>),
+    /// No manual index: an `auto` step or a step recovered by `resume`.
+    Derived,
+}
+
+/// One applied rewrite step in the session history.
+pub(crate) struct HistoryEntry {
+    pub(crate) rule_name: String,
+    pub(crate) kind: StepKind,
 }
 
 /// Cached assembled proof diagram at a known step count.
@@ -37,7 +46,7 @@ pub struct ProofCache {
 
 /// Stateful rewrite session engine.
 ///
-/// Load once with [`RewriteEngine::init`] or [`RewriteEngine::from_session`];
+/// Load once with [`RewriteEngine::init`] or [`RewriteEngine::resume`];
 /// then use [`step`](RewriteEngine::step), [`undo`](RewriteEngine::undo), and
 /// the accessor methods to drive the session without re-interpreting the
 /// source file.
@@ -391,9 +400,7 @@ impl RewriteEngine {
                 .collect::<Vec<_>>()
                 .join(", ");
             steps.push(step);
-            history.push(HistoryEntry {
-                mov: Move { choice: None, choices: None, rule_name, parallel: false },
-            });
+            history.push(HistoryEntry { rule_name, kind: StepKind::Derived });
         }
         if backward {
             steps.reverse();
@@ -490,94 +497,6 @@ impl RewriteEngine {
         })
     }
 
-    /// Load the source file and replay a saved session.
-    pub fn from_session(session: SessionFile) -> Result<Self, String> {
-        let backward = session.backward;
-        let (store, type_complex, initial_diagram, target_diagram) = load_context(
-            &session.source_file,
-            &session.type_name,
-            &session.initial_diagram,
-            session.target_diagram.as_deref(),
-        )?;
-        if let Some(ref target) = target_diagram {
-            check_parallel(&initial_diagram, target)?;
-        }
-
-        let n = initial_diagram.top_dim();
-        let rule_patterns = build_rule_patterns(&type_complex, n, backward)?;
-        let step_sign = if backward { Sign::Source } else { Sign::Target };
-        let mut current = initial_diagram.clone();
-        let mut steps: Vec<Diagram> = Vec::with_capacity(session.moves.len());
-        let mut history: Vec<HistoryEntry> = Vec::with_capacity(session.moves.len());
-
-        for (step_idx, mov) in session.moves.iter().enumerate() {
-            let step = if let Some(ref choices) = mov.choices {
-                let rewrites = collect_confirmed_matches(&type_complex, &rule_patterns, &current)
-                    .map_err(|e| format!("replay failed at step {}: {}", step_idx + 1, e))?;
-                let members: Vec<FamilyMember> = choices.iter().map(|&c| {
-                    rewrites.get(c).ok_or_else(|| format!(
-                        "replay failed at step {}: choice {} out of range ({} rewrite(s) available)",
-                        step_idx + 1, c, rewrites.len(),
-                    )).map(|r| r.members[0].clone())
-                }).collect::<Result<_, _>>()?;
-                try_family_from_members(
-                    members, &type_complex, &current, &rule_patterns,
-                ).ok_or_else(|| format!(
-                    "replay failed at step {}: parallel rewrite construction failed", step_idx + 1,
-                ))?.step
-            } else if mov.parallel {
-                greedy_parallel_auto_step(&type_complex, &rule_patterns, &current)
-                    .map_err(|e| format!("replay failed at step {}: {}", step_idx + 1, e))?
-                    .ok_or_else(|| format!(
-                        "replay failed at step {}: no parallel rewrite available", step_idx + 1,
-                    ))?.step
-            } else {
-                let choice = mov.choice.unwrap_or(0);
-                let rewrites = collect_confirmed_matches(&type_complex, &rule_patterns, &current)
-                    .map_err(|e| format!("replay failed at step {}: {}", step_idx + 1, e))?;
-                rewrites.get(choice).ok_or_else(|| {
-                    format!(
-                        "replay failed at step {}: choice {} out of range ({} rewrite(s) available)",
-                        step_idx + 1, choice, rewrites.len(),
-                    )
-                })?.step.clone()
-            };
-
-            history.push(HistoryEntry {
-                mov: mov.clone(),
-            });
-
-            current = Diagram::boundary(step_sign, n, &step)
-                .map_err(|e| format!("boundary at step {}: {}", step_idx + 1, e))?;
-            steps.push(step);
-        }
-
-        let rewrites = collect_confirmed_matches(
-            &type_complex, &rule_patterns, &current,
-        )?;
-
-        let active_len = steps.len();
-        Ok(Self {
-            current_diagram: current,
-            steps,
-            history,
-            active_len,
-            rewrites,
-            parallel: true,
-            backward,
-            rng: seeded_rng(),
-            rule_patterns,
-            proof_cache: None,
-            source_file: session.source_file.clone(),
-            type_name: session.type_name.clone(),
-            initial_diagram_name: session.initial_diagram.clone(),
-            target_diagram_name: session.target_diagram.clone(),
-            store,
-            type_complex,
-            initial_diagram,
-            target_diagram,
-        })
-    }
 }
 
 // ── Mutating operations ───────────────────────────────────────────────────────
@@ -641,13 +560,14 @@ impl RewriteEngine {
         self.steps.push(step);
 
         self.history.push(HistoryEntry {
-            mov: Move { choice: Some(choice), choices: None, rule_name: rule_name.clone(), parallel: false },
+            rule_name: rule_name.clone(),
+            kind: StepKind::Chosen(vec![choice]),
         });
         self.active_len = self.steps.len();
 
         self.refresh_rewrites()?;
 
-        Ok(&self.history.last().unwrap().mov.rule_name)
+        Ok(&self.history.last().unwrap().rule_name)
     }
 
     /// Apply multiple rewrites in parallel by their indices.
@@ -702,18 +622,14 @@ impl RewriteEngine {
         self.current_diagram = new_current;
         self.steps.push(pr.step);
         self.history.push(HistoryEntry {
-            mov: Move {
-                choice: None,
-                choices: Some(choices.to_vec()),
-                rule_name,
-                parallel: true,
-            },
+            rule_name,
+            kind: StepKind::Chosen(choices.to_vec()),
         });
         self.active_len = self.steps.len();
 
         self.refresh_rewrites()?;
 
-        Ok(&self.history.last().unwrap().mov.rule_name)
+        Ok(&self.history.last().unwrap().rule_name)
     }
 
     /// Move the cursor to `target` and restore the corresponding diagram.
@@ -805,12 +721,8 @@ impl RewriteEngine {
             self.current_diagram = new_current;
             self.steps.push(pr.step);
             self.history.push(HistoryEntry {
-                mov: Move {
-                    choice: if is_parallel { None } else { Some(0) },
-                    choices: None,
-                    rule_name,
-                    parallel: is_parallel,
-                },
+                rule_name,
+                kind: if is_parallel { StepKind::Derived } else { StepKind::Chosen(vec![0]) },
             });
             applied += 1;
         }
@@ -932,9 +844,32 @@ impl RewriteEngine {
     /// The type complex whose (n+1)-generators are the rewrite rules.
     pub fn type_complex(&self) -> &Complex { &self.type_complex }
 
-    /// Iterate over the active moves in history order.
-    pub fn history_moves(&self) -> impl Iterator<Item = &Move> {
-        self.history[..self.active_len].iter().map(|e| &e.mov)
+    /// Iterate over the active history entries in order.
+    pub(crate) fn history(&self) -> impl Iterator<Item = &HistoryEntry> {
+        self.history[..self.active_len].iter()
+    }
+
+    /// Render the active proof as a re-parseable expression — the steps in
+    /// session order joined at dimension `n`, reversed for backward — or `None`
+    /// when no steps have been applied.  This is the form `resume` consumes.
+    pub fn proof_expr(&self) -> Option<String> {
+        let steps = self.steps();
+        if steps.is_empty() {
+            return None;
+        }
+        let n = self.initial_diagram.top_dim();
+        let scope = &self.type_complex;
+        let ordered: Vec<&Diagram> = if self.backward {
+            steps.iter().rev().collect()
+        } else {
+            steps.iter().collect()
+        };
+        let mut it = ordered.into_iter();
+        let first = crate::output::render_diagram(it.next().unwrap(), scope);
+        let rest: String = it
+            .map(|s| format!("\n#{} {}", n, crate::output::render_diagram(s, scope)))
+            .collect();
+        Some(format!("{}{}", first, rest))
     }
 
     /// Canonical path to the `.ali` source file for this session.
@@ -1177,24 +1112,12 @@ impl RewriteEngine {
         Ok((Arc::clone(&self.store), Arc::clone(&self.type_complex)))
     }
 
-    /// Export the current session state as a [`SessionFile`] for disk persistence.
-    pub fn to_session_file(&self) -> SessionFile {
-        SessionFile {
-            source_file: self.source_file.clone(),
-            type_name: self.type_name.clone(),
-            initial_diagram: self.initial_diagram_name.clone(),
-            target_diagram: self.target_diagram_name.clone(),
-            backward: self.backward,
-            moves: self.history[..self.active_len].iter().map(|e| e.mov.clone()).collect(),
-        }
-    }
-
     /// Dispatch an engine-level [`Request`] to the matching method and return
     /// the response data.
     ///
     /// Returns `None` for variants that don't belong to this layer — session
-    /// transitions (`Init`, `Resume`, `Save`, `Shutdown`) and store-level
-    /// queries (`Homology`).  Callers handle those themselves.
+    /// transitions (`Init`, `Resume`, `Shutdown`) and store-level queries
+    /// (`Homology`).  Callers handle those themselves.
     ///
     /// Errors from the engine (bad choice index, nothing to undo, name
     /// already in use, …) are returned as `Some(Err(msg))`.
@@ -1258,36 +1181,18 @@ impl RewriteEngine {
             Request::TypeInfo { name } => build_type_info_response(self, name),
             Request::Cell { name } => build_cell_response(self, name),
             Request::Store { name } => {
-                // Render the proof expression from the current steps *before*
-                // registering — registration rewrites `type_complex`, and the
-                // rendered form should reflect the shape at the time of store.
-                let stored_info = if self.steps().is_empty() {
-                    Some(StoredInfo {
-                        type_name: self.type_name().to_owned(),
-                        def_name: name.clone(),
-                        expr: crate::output::render_diagram(self.initial_diagram(), self.type_complex()),
-                    })
-                } else {
-                    let n = self.initial_diagram().top_dim();
-                    let scope = self.type_complex();
-                    let ordered: Vec<_> = if self.backward {
-                        self.steps().iter().rev().collect()
-                    } else {
-                        self.steps().iter().collect()
-                    };
-                    let mut steps = ordered.iter();
-                    let first = crate::output::render_diagram(steps.next().unwrap(), scope);
-                    let rest: String = steps
-                        .map(|s| {
-                            format!("\n#{} {}", n, crate::output::render_diagram(s, scope))
-                        })
-                        .collect();
-                    Some(StoredInfo {
-                        type_name: self.type_name().to_owned(),
-                        def_name: name.clone(),
-                        expr: format!("{}{}", first, rest),
-                    })
-                };
+                // Render the proof expression *before* registering — registration
+                // rewrites `type_complex`, and the rendered form should reflect
+                // the shape at the time of store.  With no steps yet, store the
+                // initial diagram itself.
+                let expr = self.proof_expr().unwrap_or_else(|| {
+                    crate::output::render_diagram(self.initial_diagram(), self.type_complex())
+                });
+                let stored_info = Some(StoredInfo {
+                    type_name: self.type_name().to_owned(),
+                    def_name: name.clone(),
+                    expr,
+                });
                 match self.register_proof(name) {
                     Ok(_) => {
                         let mut data = build_response(self, false);
@@ -1296,6 +1201,11 @@ impl RewriteEngine {
                     }
                     Err(msg) => Err(msg),
                 }
+            }
+            Request::Proof => {
+                let mut data = build_response(self, false);
+                data.proof_expr = self.proof_expr();
+                Ok(data)
             }
             Request::Parallel { on } => {
                 self.set_parallel(*on);
@@ -1306,7 +1216,6 @@ impl RewriteEngine {
             }
             Request::Init { .. }
             | Request::Resume { .. }
-            | Request::Save { .. }
             | Request::Shutdown
             | Request::Homology { .. } => return None,
         };
@@ -1355,9 +1264,9 @@ mod resume_tests {
     fn reconstructs_non_pseudo_normal_proof() {
         let (engine, proof) = resume("inter", None, false);
         assert_eq!(engine.step_count(), 2, "interchange splits into two steps");
-        assert_eq!(engine.history_moves().count(), 2);
+        assert_eq!(engine.history().count(), 2);
         // The first step pastes two parallel `alpha` rewrites, the second one.
-        let labels: Vec<&str> = engine.history_moves().map(|m| m.rule_name.as_str()).collect();
+        let labels: Vec<&str> = engine.history().map(|e| e.rule_name.as_str()).collect();
         assert_eq!(labels, vec!["alpha, alpha", "alpha"]);
 
         let assembled = engine.assemble_proof().expect("assemble").expect("non-empty");
@@ -1383,6 +1292,32 @@ mod resume_tests {
             store, tc, "lhs2", Some("pt"), path, TYPE.to_owned(), false,
         ).err().expect("a 0-cell target is not parallel to the 1-cell initial");
         assert!(err.to_lowercase().contains("parallel") || err.contains("dimension"), "got: {err}");
+    }
+
+    /// The save → resume loop: a session's `proof_expr` (the daemon's `proof`
+    /// response, what the editor saves) resumes to an isomorphic proof with the
+    /// same step count.  The `Proof` request surfaces the same expression.
+    #[test]
+    fn proof_expr_round_trips() {
+        use crate::interactive::protocol::Request;
+        let (store, tc, path) = load();
+        let mut first = RewriteEngine::resume(
+            Arc::clone(&store), Arc::clone(&tc), "inter", None, path.clone(), TYPE.to_owned(), false,
+        ).unwrap();
+        let expr = first.proof_expr().expect("a proof with steps has an expression");
+        assert_eq!(
+            first.handle(&Request::Proof).unwrap().unwrap().proof_expr.as_deref(),
+            Some(expr.as_str()),
+            "the `proof` request returns proof_expr",
+        );
+        let proof1 = first.assemble_proof().unwrap().unwrap();
+
+        let again = RewriteEngine::resume(
+            store, tc, &expr, None, path, TYPE.to_owned(), false,
+        ).expect("resume from the saved proof expression");
+        assert_eq!(again.step_count(), first.step_count());
+        let proof2 = again.assemble_proof().unwrap().unwrap();
+        assert!(Diagram::isomorphic(&proof1, &proof2), "round-tripped proof differs");
     }
 
     /// Backward resumption reverses the steps and still reassembles the proof.

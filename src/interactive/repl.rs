@@ -6,7 +6,7 @@
 //!   `type`, `homology`, `status`, `print`.  Use `start <type> <source>
 //!   [<target>]` to begin a rewrite session.
 //! - **Session active** — engine running; `apply`, `undo`, `redo`,
-//!   `restart`, `stop`, `show`, `history`, `proof`, `save`, `load`, etc.
+//!   `restart`, `stop`, `show`, `history`, `proof`, `save`, etc.
 //!
 //! All human-readable output flows through a single [`Display`] value.
 //! Readline (with vi or emacs mode) is provided by `rustyline`.
@@ -41,7 +41,6 @@
 //! proof            Show the running proof diagram        (alias: p)
 //! store <name>     Store the current proof as a named diagram
 //! save <path>      Write source file with stored definitions appended
-//! load <path>      Load and replay a session file        (alias: l)
 //! ```
 
 use std::sync::Arc;
@@ -55,9 +54,8 @@ use crate::core::diagram::{CellData, Diagram, Sign};
 use crate::interpreter::GlobalStore;
 use crate::output::render_diagram;
 use super::display::Display;
-use super::engine::{RewriteEngine, load_file_context, resolve_type};
+use super::engine::{RewriteEngine, StepKind, load_file_context, resolve_type};
 use super::render::{print_history, print_state};
-use super::session::SessionFile;
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -801,15 +799,13 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
             dispatch_rules(engine.type_complex(), engine.store(), Some(n + 1), display);
         }
         Cmd::History => {
-            let sf = engine.to_session_file();
-            let entries: Vec<(Option<Vec<usize>>, &str)> = sf.moves.iter()
-                .map(|m| {
-                    let choice = if let Some(ref v) = m.choices {
-                        Some(v.clone())
-                    } else {
-                        m.choice.map(|c| vec![c])
+            let entries: Vec<(Option<Vec<usize>>, &str)> = engine.history()
+                .map(|e| {
+                    let choice = match &e.kind {
+                        StepKind::Chosen(v) => Some(v.clone()),
+                        StepKind::Derived => None,
                     };
-                    (choice, m.rule_name.as_str())
+                    (choice, e.rule_name.as_str())
                 })
                 .collect();
             print_history(display, engine.initial_diagram(), &entries, engine.type_complex());
@@ -838,19 +834,6 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
                      render_diagram(engine.current_diagram(), scope))
                 };
                 display.inspect(&format!("{} : {} -> {}", proof_expr, src, tgt));
-            }
-        }
-        Cmd::Load(path) => {
-            match SessionFile::read(&path) {
-                Err(e) => display.error(&e),
-                Ok(sf) => match RewriteEngine::from_session(sf) {
-                    Err(e) => display.error(&format!("loading session: {}", e)),
-                    Ok(new_engine) => {
-                        *engine = new_engine;
-                        display.meta(&format!("Loaded session from '{}'.", path));
-                        show_state(engine, display);
-                    }
-                }
             }
         }
         Cmd::Parallel(Some(on)) => {
@@ -898,8 +881,7 @@ fn print_help(display: &Display) {
          \x20 history             Show the move history                 (alias: h)\n\
          \x20 proof               Show the running proof diagram        (alias: p)\n\
          \x20 store <name>        Store the current proof as a named diagram\n\
-         \x20 save <path>         Write source file with stored definitions appended\n\
-         \x20 load <path>         Load and replay a session file        (alias: l)"
+         \x20 save <path>         Write source file with stored definitions appended"
     );
 }
 
@@ -946,8 +928,6 @@ enum Cmd {
     Store(String),
     /// `save <path>` — write the original file with stored definitions appended.
     Save(String),
-    /// `load <path>` — load and replay a session file.
-    Load(String),
     /// `homology <name>` — compute cellular homology of a type.
     Homology(String),
     /// `parallel [on|off]` — show or toggle parallel rewrite mode.
@@ -1080,10 +1060,6 @@ fn parse_command(line: &str) -> Cmd {
         "save" => {
             if rest.is_empty() { Cmd::UsageError("save <path>".to_owned()) }
             else { Cmd::Save(rest.to_owned()) }
-        }
-        "load" | "l" => {
-            if rest.is_empty() { Cmd::UsageError("load <path>".to_owned()) }
-            else { Cmd::Load(rest.to_owned()) }
         }
         "parallel" => {
             match rest {

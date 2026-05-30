@@ -258,9 +258,9 @@ impl WebRepl {
     /// `homology` goes through the stored `GlobalStore` directly because it
     /// can be queried without an active session.
     ///
-    /// Session-level commands (`init`, `resume`, `save`, `shutdown`) are
-    /// not applicable in web mode — creation/destruction of the engine is
-    /// driven by [`WebRepl::init_session`] + [`WebRepl::reset`].
+    /// Session-level commands (`init`, `resume`, `shutdown`) are not applicable
+    /// in web mode — creation/destruction of the engine is driven by
+    /// [`WebRepl::init_session`] / [`WebRepl::resume_session`] + [`WebRepl::reset`].
     pub fn run_command(&mut self, command_json: &str) -> String {
         let request: Request = match serde_json::from_str(command_json) {
             Ok(r) => r,
@@ -270,7 +270,6 @@ impl WebRepl {
         match &request {
             Request::Init { .. }
             | Request::Resume { .. }
-            | Request::Save { .. }
             | Request::Shutdown => return err_json("command not supported in web mode"),
             Request::Homology { name } => {
                 let name = name.clone();
