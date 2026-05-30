@@ -10,7 +10,7 @@
 //!
 //! | Command | Description |
 //! |---------|-------------|
-//! | `init`  | Start a new session from an initial (and optional target) diagram |
+//! | `start` | Start a new session from an initial (and optional target) diagram |
 //! | `resume` | Resume a session from a proof diagram (+ optional target, backward) |
 //! | `step` | Apply rewrite at choice index |
 //! | `undo` | Undo the last step |
@@ -28,7 +28,7 @@
 //! # Example session
 //!
 //! ```text
-//! → {"command":"init","source_file":"Idem.ali","type_name":"Idem","source_diagram":"lhs"}
+//! → {"command":"start","source_file":"Idem.ali","type_name":"Idem","initial":"lhs"}
 //! ← {"status":"ok","data":{"step_count":0,"current":{"label":"id id id",...},...}}
 //! → {"command":"step","choice":0}
 //! ← {"status":"ok","data":{"step_count":1,...}}
@@ -106,37 +106,17 @@ fn dispatch(engine: &mut Option<RewriteEngine>, req: Request) -> DispatchResult 
     // Everything else is an engine-level command — delegate to `engine.handle`,
     // the shared surface used by `WebRepl` too.
     let resp = match req {
-        Request::Init { source_file, type_name, initial_diagram, target_diagram, backward } => {
-            let ctx = super::engine::load_type_context(&source_file, &type_name);
-            match ctx.and_then(|(store, tc, canonical_path)| {
-                RewriteEngine::from_store(
-                    store, tc, &initial_diagram, target_diagram.as_deref(),
-                    canonical_path, type_name, backward,
-                )
-            }) {
-                Ok(e) => {
-                    let data = build_response(&e, false);
-                    *engine = Some(e);
-                    Response::Ok { data }
-                }
-                Err(e) => Response::error(e),
-            }
+        Request::Start { source_file, type_name, initial, target, backward } => {
+            install(engine, super::engine::load_type_context(&source_file, &type_name)
+                .and_then(|(store, tc, path)| RewriteEngine::from_store(
+                    store, tc, &initial, target.as_deref(), path, type_name, backward,
+                )))
         }
         Request::Resume { source_file, type_name, proof, target, backward } => {
-            let ctx = super::engine::load_type_context(&source_file, &type_name);
-            match ctx.and_then(|(store, tc, canonical_path)| {
-                RewriteEngine::resume(
-                    store, tc, &proof, target.as_deref(),
-                    canonical_path, type_name, backward,
-                )
-            }) {
-                Ok(e) => {
-                    let data = build_response(&e, true);
-                    *engine = Some(e);
-                    Response::Ok { data }
-                }
-                Err(e) => Response::error(e),
-            }
+            install(engine, super::engine::load_type_context(&source_file, &type_name)
+                .and_then(|(store, tc, path)| RewriteEngine::resume(
+                    store, tc, &proof, target.as_deref(), path, type_name, backward,
+                )))
         }
         Request::Shutdown => return DispatchResult::Shutdown,
         Request::Homology { .. } => {
@@ -153,12 +133,25 @@ fn dispatch(engine: &mut Option<RewriteEngine>, req: Request) -> DispatchResult 
     DispatchResult::Respond(resp)
 }
 
+/// Install a freshly constructed engine as the active session, or report the
+/// construction error.  Shared by the `start` and `resume` session transitions.
+fn install(engine: &mut Option<RewriteEngine>, built: Result<RewriteEngine, String>) -> Response {
+    match built {
+        Ok(e) => {
+            let data = build_response(&e, true);
+            *engine = Some(e);
+            Response::Ok { data }
+        }
+        Err(msg) => Response::error(msg),
+    }
+}
+
 fn with_engine(
     engine: &mut Option<RewriteEngine>,
     f: impl FnOnce(&mut RewriteEngine) -> Result<super::protocol::ResponseData, String>,
 ) -> Response {
     match engine.as_mut() {
-        None => Response::error("no session initialised — send 'init' or 'resume' first"),
+        None => Response::error("no session initialised — send 'start' or 'resume' first"),
         Some(e) => match f(e) {
             Ok(data) => Response::Ok { data },
             Err(msg) => Response::error(msg),

@@ -66,7 +66,7 @@ fn tools_list_advertises_expected_surface() {
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     for expected in [
         "load_source",
-        "init_session",
+        "start_session",
         "run_command",
         "get_types",
         "get_strdiag",

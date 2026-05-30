@@ -373,8 +373,8 @@ class WasmBackend {
     return this.inner.load_source(source, modulesJson, sourceName || null);
   }
 
-  async init_session(typeName, initialDiagram, targetDiagram, backward = false) {
-    return this.inner.init_session(typeName, initialDiagram, targetDiagram, backward);
+  async start_session(typeName, initial, target, backward = false) {
+    return this.inner.start_session(typeName, initial, target ?? null, backward);
   }
 
   async resume_session(typeName, proof, target, backward = false) {
@@ -436,14 +436,11 @@ class HttpBackend {
     return this.post('/api/load_source', body);
   }
 
-  async init_session(typeName, initialDiagram, targetDiagram, backward = false) {
-    const body = {
-      type_name: typeName,
-      initial_diagram: initialDiagram,
-      target_diagram: targetDiagram,
-    };
+  async start_session(typeName, initial, target, backward = false) {
+    const body = { type_name: typeName, initial };
+    if (target) body.target = target;
     if (backward) body.backward = true;
-    return this.post('/api/init_session', body);
+    return this.post('/api/start_session', body);
   }
 
   async resume_session(typeName, proof, target, backward = false) {
@@ -1247,7 +1244,7 @@ function resetSession() {
 }
 
 async function startSessionFromRepl(typeName, src, tgt, backward, rawCmd) {
-  await enterSession(repl.init_session(typeName, src, tgt, backward), rawCmd);
+  await enterSession(repl.start_session(typeName, src, tgt, backward), rawCmd);
 }
 
 async function startResumeFromRepl(typeName, proof, target, backward, rawCmd) {

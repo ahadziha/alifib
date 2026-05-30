@@ -6,7 +6,7 @@
 //! # Request format
 //!
 //! ```json
-//! {"command":"init","source_file":"Idem.ali","type_name":"Idem","initial_diagram":"lhs"}
+//! {"command":"start","source_file":"Idem.ali","type_name":"Idem","initial":"lhs"}
 //! {"command":"step","choice":0}
 //! {"command":"undo"}
 //! {"command":"show"}
@@ -30,7 +30,7 @@ use crate::core::matching::MatchResult;
 use crate::core::partial_map::PartialMap;
 use crate::analysis::strdiag::{StrDiag, VertexKind};
 use crate::output::render_diagram;
-use super::engine::{RewriteEngine, StepKind};
+use super::engine::RewriteEngine;
 use super::render::render_step;
 
 // ── Requests ─────────────────────────────────────────────────────────────────
@@ -39,14 +39,14 @@ use super::render::render_step;
 #[derive(Debug, Deserialize)]
 #[serde(tag = "command", rename_all = "snake_case")]
 pub enum Request {
-    /// Start a new rewrite session.
-    Init {
+    /// Start a new rewrite session from an initial (and optional target) diagram.
+    Start {
         source_file: String,
         type_name: String,
-        #[serde(alias = "source_diagram")]
-        initial_diagram: String,
-        #[serde(default)]
-        target_diagram: Option<String>,
+        #[serde(alias = "source_diagram", alias = "initial_diagram")]
+        initial: String,
+        #[serde(default, alias = "target_diagram")]
+        target: Option<String>,
         #[serde(default)]
         backward: bool,
     },
@@ -485,10 +485,7 @@ pub fn build_response(engine: &RewriteEngine, include_history: bool) -> Response
             .map(|(i, e)| HistoryEntry {
                 step: i + 1,
                 rule_name: e.rule_name.clone(),
-                choice: match &e.kind {
-                    StepKind::Chosen(v) => Some(v.clone()),
-                    StepKind::Derived => None,
-                },
+                choice: e.choice.clone(),
             })
             .collect()
     } else {

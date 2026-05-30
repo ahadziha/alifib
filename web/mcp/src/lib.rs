@@ -162,17 +162,17 @@ fn tool_descriptors() -> Vec<Value> {
             },
         }),
         json!({
-            "name": "init_session",
+            "name": "start_session",
             "description": "Begin a rewrite session on the named type. The initial diagram (and optional target) may be a name from the loaded source or an inline expression. Set backward:true for backward rewriting (match output boundaries, advance via input). Requires a prior load_source.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "type_name":         { "type": "string" },
-                    "initial_diagram":   { "type": "string" },
-                    "target_diagram":    { "type": "string" },
+                    "initial":           { "type": "string" },
+                    "target":            { "type": "string" },
                     "backward":          { "type": "boolean", "default": false },
                 },
-                "required": ["type_name", "initial_diagram"],
+                "required": ["type_name", "initial"],
             },
         }),
         json!({
@@ -304,24 +304,24 @@ fn dispatch(
             let source_name = args.get("source_name").and_then(|v| v.as_str());
             Ok(repl.load_source_with_modules(source, modules, source_name))
         }
-        "init_session" => {
+        "start_session" => {
             let type_name = args
                 .get("type_name")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| "init_session: missing 'type_name'".to_string())?;
-            let initial_diagram = args
-                .get("initial_diagram")
+                .ok_or_else(|| "start_session: missing 'type_name'".to_string())?;
+            let initial = args
+                .get("initial")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| "init_session: missing 'initial_diagram'".to_string())?;
+                .ok_or_else(|| "start_session: missing 'initial'".to_string())?;
             let target = args
-                .get("target_diagram")
+                .get("target")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
             let backward = args
                 .get("backward")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
-            Ok(repl.init_session(type_name, initial_diagram, target, backward))
+            Ok(repl.start_session(type_name, initial, target, backward))
         }
         "run_command" => {
             // command_json wins if both are given — explicit raw form.

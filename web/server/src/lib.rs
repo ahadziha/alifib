@@ -80,12 +80,12 @@ fn handle_connection(
                 repl.load_source_with_modules(&body.source, modules, body.source_name.as_deref()),
             )
         }
-        ("POST", "/api/init_session") => {
-            let body: InitSessionBody = parse_json_body(&request.body)?;
+        ("POST", "/api/start_session") => {
+            let body: StartSessionBody = parse_json_body(&request.body)?;
             write_json_response(
                 stream,
                 200,
-                repl.init_session(&body.type_name, &body.initial_diagram, body.target_diagram, body.backward),
+                repl.start_session(&body.type_name, &body.initial, body.target, body.backward),
             )
         }
         ("POST", "/api/resume_session") => {
@@ -302,12 +302,12 @@ struct LoadSourceBody {
 }
 
 #[derive(Deserialize)]
-struct InitSessionBody {
+struct StartSessionBody {
     type_name: String,
-    #[serde(alias = "source_diagram")]
-    initial_diagram: String,
-    #[serde(default)]
-    target_diagram: Option<String>,
+    #[serde(alias = "source_diagram", alias = "initial_diagram")]
+    initial: String,
+    #[serde(default, alias = "target_diagram")]
+    target: Option<String>,
     #[serde(default)]
     backward: bool,
 }

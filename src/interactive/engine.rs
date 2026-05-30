@@ -20,18 +20,13 @@ use rand_xoshiro::Xoshiro256PlusPlus;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// How a rewrite step was selected.  Display-only — replay no longer exists.
-pub(crate) enum StepKind {
-    /// The user picked these rewrite-menu indices (`apply`, single or parallel).
-    Chosen(Vec<usize>),
-    /// No manual index: an `auto` step or a step recovered by `resume`.
-    Derived,
-}
-
-/// One applied rewrite step in the session history.
+/// One applied rewrite step in the session history (display only — there is no
+/// replay).  `choice` holds the rewrite-menu indices the user picked, or `None`
+/// for a step with no manual choice (an `auto` step, or one recovered by
+/// `resume`).
 pub(crate) struct HistoryEntry {
     pub(crate) rule_name: String,
-    pub(crate) kind: StepKind,
+    pub(crate) choice: Option<Vec<usize>>,
 }
 
 /// Cached assembled proof diagram at a known step count.
@@ -400,7 +395,7 @@ impl RewriteEngine {
                 .collect::<Vec<_>>()
                 .join(", ");
             steps.push(step);
-            history.push(HistoryEntry { rule_name, kind: StepKind::Derived });
+            history.push(HistoryEntry { rule_name, choice: None });
         }
         if backward {
             steps.reverse();
@@ -561,7 +556,7 @@ impl RewriteEngine {
 
         self.history.push(HistoryEntry {
             rule_name: rule_name.clone(),
-            kind: StepKind::Chosen(vec![choice]),
+            choice: Some(vec![choice]),
         });
         self.active_len = self.steps.len();
 
@@ -623,7 +618,7 @@ impl RewriteEngine {
         self.steps.push(pr.step);
         self.history.push(HistoryEntry {
             rule_name,
-            kind: StepKind::Chosen(choices.to_vec()),
+            choice: Some(choices.to_vec()),
         });
         self.active_len = self.steps.len();
 
@@ -722,7 +717,7 @@ impl RewriteEngine {
             self.steps.push(pr.step);
             self.history.push(HistoryEntry {
                 rule_name,
-                kind: if is_parallel { StepKind::Derived } else { StepKind::Chosen(vec![0]) },
+                choice: if is_parallel { None } else { Some(vec![0]) },
             });
             applied += 1;
         }
@@ -849,9 +844,14 @@ impl RewriteEngine {
         self.history[..self.active_len].iter()
     }
 
-    /// Render the active proof as a re-parseable expression — the steps in
-    /// session order joined at dimension `n`, reversed for backward — or `None`
-    /// when no steps have been applied.  This is the form `resume` consumes.
+    /// Render the active proof as a re-parseable *source expression* — one
+    /// rewrite step per line, `d₁ #ₙ … #ₙ dₘ` in session order (reversed for
+    /// backward) — or `None` when no steps have been applied.
+    ///
+    /// This is the durable, step-structured form: what `store` writes into the
+    /// `.ali` and what `resume` consumes. Contrast [`proof_label`](Self::proof_label),
+    /// which flattens the whole proof to a single line for a status banner;
+    /// both denote the same diagram, but this one preserves the step layout.
     pub fn proof_expr(&self) -> Option<String> {
         let steps = self.steps();
         if steps.is_empty() {
@@ -994,12 +994,14 @@ impl RewriteEngine {
                 .unwrap_or(false)
     }
 
-    /// Render the assembled proof diagram as a `.ali` source expression, for
-    /// the completion message and the `store`/`save` commands.
+    /// Render the assembled proof as a single flattened term, for the REPL
+    /// completion banner (`proof : src -> tgt`).
     ///
-    /// Builds the full proof by pasting all recorded steps together — call
-    /// only when the rendered label is actually needed.  Returns
-    /// `Ok(None)` if no steps have been taken yet.
+    /// Builds the full proof by pasting all recorded steps and rendering the
+    /// result, so the `#ₙ` chain collapses to one line — unlike
+    /// [`proof_expr`](Self::proof_expr), which keeps one step per line for
+    /// storing and resuming.  Both denote the same diagram.  Returns `Ok(None)`
+    /// if no steps have been taken yet.
     pub fn proof_label(&self) -> Result<Option<String>, String> {
         Ok(self.assemble_proof()?
             .map(|d| crate::output::render_diagram(&d, &self.type_complex)))
@@ -1116,7 +1118,7 @@ impl RewriteEngine {
     /// the response data.
     ///
     /// Returns `None` for variants that don't belong to this layer — session
-    /// transitions (`Init`, `Resume`, `Shutdown`) and store-level queries
+    /// transitions (`Start`, `Resume`, `Shutdown`) and store-level queries
     /// (`Homology`).  Callers handle those themselves.
     ///
     /// Errors from the engine (bad choice index, nothing to undo, name
@@ -1214,7 +1216,7 @@ impl RewriteEngine {
             Request::SetTarget { name } => {
                 self.set_target(name).map(|_| build_response(self, false))
             }
-            Request::Init { .. }
+            Request::Start { .. }
             | Request::Resume { .. }
             | Request::Shutdown
             | Request::Homology { .. } => return None,

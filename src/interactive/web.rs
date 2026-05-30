@@ -4,7 +4,7 @@
 //! server at `web/server/` and the WASM bindings at `web/wasm/`.  Command
 //! dispatch delegates to [`RewriteEngine::handle`], which is the same
 //! surface the stdio daemon uses at `super::daemon`; the only per-backend
-//! work is session setup (`init_session`/`reset`) and the commands that
+//! work is session setup (`start_session`/`reset`) and the commands that
 //! bypass the engine (currently just `homology`, which queries the
 //! interpreter's global store directly).
 
@@ -38,7 +38,7 @@ pub const WEB_SOURCE_PATH: &str = "source.ali";
 /// 2. `load_source(text)` — parse and interpret `.ali` source text
 /// 3. `run_command(json)` — non-session commands (`types`, `type`, `homology`)
 ///    work immediately after loading
-/// 4. `init_session(type, src, tgt?)` — start a rewrite session on a type
+/// 4. `start_session(type, initial, tgt?)` — start a rewrite session on a type
 /// 5. `run_command(json)` — session commands (step/undo/show/…) plus the above
 pub struct WebRepl {
     state: State,
@@ -163,21 +163,15 @@ impl WebRepl {
         }
     }
 
-    /// Start a rewrite session for the named type.
-    ///
-    /// `initial_diagram` — name or expression for the starting diagram.
-    /// `target_diagram` — optional goal diagram (name or expression).
-    ///
-    /// Returns a daemon-protocol JSON response (same shape as `show`).
-    pub fn init_session(
+    /// Resolve the type and install a freshly constructed engine as the active
+    /// session.  Any existing session collapses back to `Loaded` first, so a
+    /// failed construction leaves the caller with at least the store they had.
+    /// `build` supplies the constructor (`from_store` for start, `resume`).
+    fn open_session(
         &mut self,
         type_name: &str,
-        initial_diagram: &str,
-        target_diagram: Option<String>,
-        backward: bool,
+        build: impl FnOnce(Arc<GlobalStore>, Arc<Complex>, String) -> Result<RewriteEngine, String>,
     ) -> String {
-        // Collapse any existing session back to Loaded so a failed init
-        // leaves the caller with at least the store they already had.
         let (store, root_path) = match std::mem::replace(&mut self.state, State::Empty) {
             State::Empty => return err_json("no source loaded; call load_source first"),
             State::Loaded { store, root_path } | State::Active { store, root_path, .. } => (store, root_path),
@@ -189,15 +183,7 @@ impl WebRepl {
             Err(e) => return err_json(&e),
         };
 
-        match RewriteEngine::from_store(
-            Arc::clone(&store),
-            type_complex,
-            initial_diagram,
-            target_diagram.as_deref(),
-            root_path.clone(),
-            type_name.to_string(),
-            backward,
-        ) {
+        match build(Arc::clone(&store), type_complex, root_path.clone()) {
             Ok(engine) => {
                 let data = build_response(&engine, false);
                 self.state = State::Active { store, root_path, engine };
@@ -207,12 +193,23 @@ impl WebRepl {
         }
     }
 
-    /// Resume a session from a proof diagram, decomposing it into its steps.
-    ///
-    /// `proof` — name or expression for the `(n+1)`-dimensional proof diagram.
-    /// `target` — optional goal to keep working toward (the original session's
-    /// target). Forward starts at `proof.in`, backward at `proof.out`.
+    /// Start a rewrite session from an initial diagram (and optional target).
     /// Returns a daemon-protocol JSON response (same shape as `show`).
+    pub fn start_session(
+        &mut self,
+        type_name: &str,
+        initial: &str,
+        target: Option<String>,
+        backward: bool,
+    ) -> String {
+        self.open_session(type_name, |store, tc, root| {
+            RewriteEngine::from_store(store, tc, initial, target.as_deref(), root, type_name.to_string(), backward)
+        })
+    }
+
+    /// Resume a session from a proof diagram, decomposing it into its steps.
+    /// `proof`/`target` are names or expressions; forward starts at `proof.in`,
+    /// backward at `proof.out`.
     pub fn resume_session(
         &mut self,
         type_name: &str,
@@ -220,33 +217,9 @@ impl WebRepl {
         target: Option<String>,
         backward: bool,
     ) -> String {
-        let (store, root_path) = match std::mem::replace(&mut self.state, State::Empty) {
-            State::Empty => return err_json("no source loaded; call load_source first"),
-            State::Loaded { store, root_path } | State::Active { store, root_path, .. } => (store, root_path),
-        };
-        self.state = State::Loaded { store: Arc::clone(&store), root_path: root_path.clone() };
-
-        let type_complex = match resolve_type(&store, &root_path, type_name) {
-            Ok(tc) => tc,
-            Err(e) => return err_json(&e),
-        };
-
-        match RewriteEngine::resume(
-            Arc::clone(&store),
-            type_complex,
-            proof,
-            target.as_deref(),
-            root_path.clone(),
-            type_name.to_string(),
-            backward,
-        ) {
-            Ok(engine) => {
-                let data = build_response(&engine, false);
-                self.state = State::Active { store, root_path, engine };
-                ok_json(data)
-            }
-            Err(e) => err_json(&e),
-        }
+        self.open_session(type_name, |store, tc, root| {
+            RewriteEngine::resume(store, tc, proof, target.as_deref(), root, type_name.to_string(), backward)
+        })
     }
 
     /// Send a daemon-protocol command and return a JSON response.
@@ -260,7 +233,7 @@ impl WebRepl {
     ///
     /// Session-level commands (`init`, `resume`, `shutdown`) are not applicable
     /// in web mode — creation/destruction of the engine is driven by
-    /// [`WebRepl::init_session`] / [`WebRepl::resume_session`] + [`WebRepl::reset`].
+    /// [`WebRepl::start_session`] / [`WebRepl::resume_session`] + [`WebRepl::reset`].
     pub fn run_command(&mut self, command_json: &str) -> String {
         let request: Request = match serde_json::from_str(command_json) {
             Ok(r) => r,
@@ -268,7 +241,7 @@ impl WebRepl {
         };
 
         match &request {
-            Request::Init { .. }
+            Request::Start { .. }
             | Request::Resume { .. }
             | Request::Shutdown => return err_json("command not supported in web mode"),
             Request::Homology { name } => {
@@ -427,7 +400,7 @@ impl WebRepl {
     /// Enable or disable proof view (incremental proof caching).
     pub fn set_proof_view(&mut self, on: bool) -> String {
         let Some(engine) = self.state.engine_mut() else {
-            return err_json("no session active; call init_session first");
+            return err_json("no session active; call start_session first");
         };
         if on {
             match engine.enable_proof_cache() {
@@ -449,7 +422,7 @@ impl WebRepl {
     /// naturally yields 0 nodes and all n-cells as wires.
     pub fn get_proof_strdiag(&mut self) -> String {
         let Some(engine) = self.state.engine_mut() else {
-            return err_json("no session active; call init_session first");
+            return err_json("no session active; call start_session first");
         };
 
         let proof = match engine.proof_diagram() {
@@ -482,7 +455,7 @@ impl WebRepl {
     fn need_engine<F: FnOnce(&RewriteEngine) -> String>(&self, f: F) -> String {
         match self.state.engine() {
             Some(e) => f(e),
-            None => err_json("no session active; call init_session first"),
+            None => err_json("no session active; call start_session first"),
         }
     }
 }

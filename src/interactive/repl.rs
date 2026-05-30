@@ -54,7 +54,7 @@ use crate::core::diagram::{CellData, Diagram, Sign};
 use crate::interpreter::GlobalStore;
 use crate::output::render_diagram;
 use super::display::Display;
-use super::engine::{RewriteEngine, StepKind, load_file_context, resolve_type};
+use super::engine::{RewriteEngine, load_file_context, resolve_type};
 use super::render::{print_history, print_state};
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -800,13 +800,7 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
         }
         Cmd::History => {
             let entries: Vec<(Option<Vec<usize>>, &str)> = engine.history()
-                .map(|e| {
-                    let choice = match &e.kind {
-                        StepKind::Chosen(v) => Some(v.clone()),
-                        StepKind::Derived => None,
-                    };
-                    (choice, e.rule_name.as_str())
-                })
+                .map(|e| (e.choice.clone(), e.rule_name.as_str()))
                 .collect();
             print_history(display, engine.initial_diagram(), &entries, engine.type_complex());
         }

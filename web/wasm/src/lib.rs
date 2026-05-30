@@ -13,7 +13,7 @@ use wasm_bindgen::prelude::*;
 /// Lifecycle:
 /// 1. `new()` — create an empty instance
 /// 2. `load_source(text)` — parse and interpret `.ali` source text
-/// 3. `init_session(type, src, tgt?)` — start a rewrite session on a type
+/// 3. `start_session(type, initial, tgt?)` — start a rewrite session on a type
 /// 4. `run_command(json)` — send daemon-protocol commands (step/undo/show/…)
 #[wasm_bindgen]
 pub struct WasmRepl {
@@ -57,20 +57,20 @@ impl WasmRepl {
 
     /// Start a rewrite session for the named type.
     ///
-    /// `initial_diagram` — name or expression for the starting diagram.
-    /// `target_diagram` — optional goal diagram (name or expression).
+    /// `initial` — name or expression for the starting diagram.
+    /// `target` — optional goal diagram (name or expression).
     /// `backward` — if true, match output boundaries and advance via input.
     ///
     /// Returns a daemon-protocol JSON response (same shape as `show`).
-    pub fn init_session(
+    pub fn start_session(
         &mut self,
         type_name: &str,
-        initial_diagram: &str,
-        target_diagram: Option<String>,
+        initial: &str,
+        target: Option<String>,
         backward: bool,
     ) -> String {
         self.inner
-            .init_session(type_name, initial_diagram, target_diagram, backward)
+            .start_session(type_name, initial, target, backward)
     }
 
     /// Resume a session from a proof diagram, decomposing it into its steps.
