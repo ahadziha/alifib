@@ -8,28 +8,28 @@
 //!
 //! # Interfaces
 //!
-//! The user-facing interfaces share the same [`engine::RewriteEngine`] core:
+//! The user-facing interfaces share the same [`engine::RewriteEngine`] core,
+//! differing only in transport and how (or whether) they persist:
 //!
-//! - **`alifib rewrite`** (`cli`): stateless CLI where each call loads the
-//!   source file, replays the saved move log, applies one action, and writes
-//!   the updated log back to disk.
 //! - **`alifib repl`** (`repl`): in-process interactive REPL with readline
 //!   support, live state, O(1) undo, and `store`/`save` commands to persist
 //!   completed proofs back into the `.ali` source file.
-//! - **`alifib serve`** (`daemon`, `protocol`): a JSON-lines subprocess daemon
-//!   suitable for editor integration.
-//! - **Web frontends** (`web`): shared browser-facing session API used by the
-//!   WASM bindings and the localhost GUI server (`alifib-web-server` crate).
+//! - **`alifib serve`** (`daemon`, `protocol`): a long-lived JSON-lines
+//!   subprocess for editor integration; holds the engine in memory and returns
+//!   render-ready responses, persisting in-progress sessions to a
+//!   [`SessionFile`](session::SessionFile) via `save`/`resume`.
+//! - **`alifib web`** / **`alifib mcp`** (`web`): the same engine wrapped in
+//!   [`WebRepl`](web::WebRepl), driven over HTTP/WASM by the browser GUI or as
+//!   tools by an MCP client.  Sessions are in-memory only; durable output is a
+//!   `store`d `.ali` diagram.
 //!
 //! # CLI usage
 //!
 //! ```text
-//! alifib rewrite init   --file <f> --type <t> --source <s> [--target <t>] --session <p> [--format text|json]
-//! alifib rewrite step   --session <p> --choice <n> [--format text|json]
-//! alifib rewrite undo   --session <p> [--format text|json]
-//! alifib rewrite show   --session <p> [--format text|json]
 //! alifib repl <file>    [--type <t>] [--source <s>] [--target <t>] [--emacs]
 //! alifib serve          [<file> --type <t> --source <s> [--target <t>]]
+//! alifib web            [<examples-dir>] [--bind <addr>]
+//! alifib mcp            [<examples-dir>]
 //! ```
 //!
 //! # Submodule overview
