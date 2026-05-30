@@ -88,6 +88,14 @@ fn handle_connection(
                 repl.init_session(&body.type_name, &body.initial_diagram, body.target_diagram, body.backward),
             )
         }
+        ("POST", "/api/explode_session") => {
+            let body: ExplodeSessionBody = parse_json_body(&request.body)?;
+            write_json_response(
+                stream,
+                200,
+                repl.explode_session(&body.type_name, &body.diagram, body.backward),
+            )
+        }
         ("POST", "/api/run_command") => {
             let body: RunCommandBody = parse_json_body(&request.body)?;
             write_json_response(stream, 200, repl.run_command(&body.command_json))
@@ -300,6 +308,14 @@ struct InitSessionBody {
     initial_diagram: String,
     #[serde(default)]
     target_diagram: Option<String>,
+    #[serde(default)]
+    backward: bool,
+}
+
+#[derive(Deserialize)]
+struct ExplodeSessionBody {
+    type_name: String,
+    diagram: String,
     #[serde(default)]
     backward: bool,
 }

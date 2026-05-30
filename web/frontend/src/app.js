@@ -377,6 +377,10 @@ class WasmBackend {
     return this.inner.init_session(typeName, initialDiagram, targetDiagram, backward);
   }
 
+  async explode_session(typeName, diagram, backward = false) {
+    return this.inner.explode_session(typeName, diagram, backward);
+  }
+
   async run_command(commandJson) {
     return this.inner.run_command(commandJson);
   }
@@ -440,6 +444,12 @@ class HttpBackend {
     };
     if (backward) body.backward = true;
     return this.post('/api/init_session', body);
+  }
+
+  async explode_session(typeName, diagram, backward = false) {
+    const body = { type_name: typeName, diagram };
+    if (backward) body.backward = true;
+    return this.post('/api/explode_session', body);
   }
 
   async run_command(commandJson) {
@@ -1236,7 +1246,15 @@ function resetSession() {
 }
 
 async function startSessionFromRepl(typeName, src, tgt, backward, rawCmd) {
-  const result = await parseReplResponse(repl.init_session(typeName, src, tgt, backward));
+  await enterSession(repl.init_session(typeName, src, tgt, backward), rawCmd);
+}
+
+async function startExplodeFromRepl(typeName, diagram, backward, rawCmd) {
+  await enterSession(repl.explode_session(typeName, diagram, backward), rawCmd);
+}
+
+async function enterSession(responsePromise, rawCmd) {
+  const result = await parseReplResponse(responsePromise);
   if (result.status === 'error') {
     appendReplEntry(rawCmd, formatError(result));
     return;
@@ -1430,6 +1448,20 @@ function buildCommand(cmd, arg, raw) {
       void startSessionFromRepl(typeName, src, tgt, chkBackward.checked, raw);
       return null;
     }
+    case 'explode': {
+      if (sessionActive) {
+        appendReplEntry(raw, formatError('session already active — use stop first'));
+        return null;
+      }
+      const parts = splitQuotedArgs(arg);
+      if (parts.length !== 2) {
+        appendReplEntry(raw, formatError('usage: explode <type> <diagram>'));
+        return null;
+      }
+      const [typeName, diagram] = parts;
+      void startExplodeFromRepl(typeName, diagram, chkBackward.checked, raw);
+      return null;
+    }
     default:
       appendReplEntry(raw, formatError(`unknown command '${cmd}' — type help for commands`));
       return null;
@@ -1565,7 +1597,7 @@ function renderHomology(data) {
 function renderHistory(hist) {
   if (!hist || !hist.length) return dim('(no moves yet)');
   return hist.map(h =>
-    `  ${dim(h.step + '.')} ${hi(h.rule_name)} ${dim(h.choice == null ? '[parallel]' : '[choice ' + h.choice.join(', ') + ']')}`
+    `  ${dim(h.step + '.')} ${hi(h.rule_name)} ${dim(h.choice == null ? '[n/a]' : '[choice ' + h.choice.join(', ') + ']')}`
   ).join('\n');
 }
 
@@ -1685,6 +1717,7 @@ const HELP_TEXT = `Always available:
   type <name>         inspect a type
   homology <name>     compute cellular homology of a type
   start <t> <i> [<g>] start a rewrite session (target optional)
+  explode <t> <d>     decompose a diagram into a rewrite session
   backward [on|off]   show or toggle backward rewrite mode   (default: off)
   stop                end the active session
   clear               clear the REPL output

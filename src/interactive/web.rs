@@ -207,6 +207,45 @@ impl WebRepl {
         }
     }
 
+    /// Start a session by exploding a proof diagram into its rewrite steps.
+    ///
+    /// `diagram` — name or expression for the (n+1)-dimensional proof diagram.
+    /// Forward mode runs from `d.in` to `d.out`; backward mode from `d.out` to
+    /// `d.in`.  Returns a daemon-protocol JSON response (same shape as `show`).
+    pub fn explode_session(
+        &mut self,
+        type_name: &str,
+        diagram: &str,
+        backward: bool,
+    ) -> String {
+        let (store, root_path) = match std::mem::replace(&mut self.state, State::Empty) {
+            State::Empty => return err_json("no source loaded; call load_source first"),
+            State::Loaded { store, root_path } | State::Active { store, root_path, .. } => (store, root_path),
+        };
+        self.state = State::Loaded { store: Arc::clone(&store), root_path: root_path.clone() };
+
+        let type_complex = match resolve_type(&store, &root_path, type_name) {
+            Ok(tc) => tc,
+            Err(e) => return err_json(&e),
+        };
+
+        match RewriteEngine::explode(
+            Arc::clone(&store),
+            type_complex,
+            diagram,
+            root_path.clone(),
+            type_name.to_string(),
+            backward,
+        ) {
+            Ok(engine) => {
+                let data = build_response(&engine, false);
+                self.state = State::Active { store, root_path, engine };
+                ok_json(data)
+            }
+            Err(e) => err_json(&e),
+        }
+    }
+
     /// Send a daemon-protocol command and return a JSON response.
     ///
     /// Engine-level commands (`step`, `auto`, `random`, `undo`, `undo_to`, `show`,

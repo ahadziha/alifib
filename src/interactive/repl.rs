@@ -246,6 +246,17 @@ pub fn run_repl(
                             );
                         }
                     }
+                    Cmd::Explode(type_arg, diagram_arg) => {
+                        if engine.is_some() {
+                            display.error("session already active — use 'stop' first");
+                        } else {
+                            try_explode_session(
+                                &store, &canonical_path, source_file,
+                                &type_arg, &diagram_arg,
+                                backward, &display, &mut engine,
+                            );
+                        }
+                    }
 
                     // ── Always dispatch errors regardless of engine state ──
                     Cmd::Unknown(s) => display.error(&format!("unrecognised command '{}' — type 'help' for a list", s)),
@@ -372,6 +383,34 @@ fn try_start_session(
                     show_diagram_or_name(tgt, tgt_diag, e.type_complex(), display);
                 }
             }
+        }
+        Err(e) => display.error(&e),
+    }
+}
+
+/// Resolve the type, then create a session by exploding a proof diagram.
+fn try_explode_session(
+    store: &Arc<GlobalStore>,
+    canonical_path: &str,
+    source_file: &str,
+    type_name: &str,
+    diagram_name: &str,
+    backward: bool,
+    display: &Display,
+    engine: &mut Option<RewriteEngine>,
+) {
+    let tc = match resolve_type(store, canonical_path, type_name) {
+        Ok(tc) => tc,
+        Err(e) => { display.error(&e); return; }
+    };
+    match RewriteEngine::explode(
+        Arc::clone(store), tc, diagram_name,
+        source_file.to_owned(), type_name.to_owned(), backward,
+    ) {
+        Ok(e) => {
+            *engine = Some(e);
+            display.meta("Ready.");
+            show_state(engine.as_ref().unwrap(), display);
         }
         Err(e) => display.error(&e),
     }
@@ -823,7 +862,7 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
         Cmd::Quit => {}   // handled by caller
         // These are all handled before dispatch_engine_cmd is reached
         Cmd::Stop | Cmd::Types | Cmd::PrintFile | Cmd::Type(_) | Cmd::Homology(_)
-        | Cmd::Status | Cmd::Start(..) | Cmd::Backward(_)
+        | Cmd::Status | Cmd::Start(..) | Cmd::Explode(..) | Cmd::Backward(_)
         | Cmd::Store(_) | Cmd::Save(_) | Cmd::Unknown(_) | Cmd::UsageError(_) => unreachable!(),
     }
 }
@@ -835,6 +874,7 @@ fn print_help(display: &Display) {
          \x20 type <name>         Inspect a type: generators, diagrams, maps\n\
          \x20 homology <name>     Compute cellular homology of a type\n\
          \x20 start <t> <s> [<g>] Start a rewrite session  (target optional)\n\
+         \x20 explode <t> <d>     Decompose a diagram into a rewrite session\n\
          \x20 backward [on|off]   Show or toggle backward rewrite mode   (default: off)\n\
          \x20 status / show       Session state, or module info when idle\n\
          \x20 print               Print the whole source file\n\
@@ -875,6 +915,8 @@ enum Cmd {
     Type(String),
     /// `start <type> <source> [<target>]` — start a rewrite session.
     Start(String, String, Option<String>),
+    /// `explode <type> <diagram>` — decompose a diagram into a rewrite session.
+    Explode(String, String),
     /// `apply <n> [<n2> ...]` — apply one or more candidate rewrites.
     Apply(Vec<usize>),
     /// `auto <n>` — apply up to `n` rewrites automatically, always picking the
@@ -971,6 +1013,13 @@ fn parse_command(line: &str) -> Cmd {
                 2 => Cmd::Start(args[0].clone(), args[1].clone(), None),
                 3 => Cmd::Start(args[0].clone(), args[1].clone(), Some(args[2].clone())),
                 _ => Cmd::UsageError("start <type> <source> [<target>]".to_owned()),
+            }
+        }
+        "explode" => {
+            let args = split_quoted_args(rest);
+            match args.len() {
+                2 => Cmd::Explode(args[0].clone(), args[1].clone()),
+                _ => Cmd::UsageError("explode <type> <diagram>".to_owned()),
             }
         }
         "apply" | "a" => {

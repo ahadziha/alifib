@@ -6,7 +6,8 @@
 
 use crate::aux::Tag;
 use crate::core::complex::Complex;
-use crate::core::diagram::{Diagram, PasteTree, Sign};
+use crate::core::diagram::{Diagram, Sign};
+use crate::core::paste_tree::PasteTree;
 use crate::core::matching::MatchResult;
 use crate::output::render_diagram;
 use super::display::Display;
@@ -164,7 +165,7 @@ pub fn print_history(
         let tag = match choice {
             Some(v) if v.len() == 1 => format!("choice {}", v[0]),
             Some(v) => format!("choice {}", v.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(", ")),
-            None => "parallel".into(),
+            None => "n/a".into(),
         };
         display.inspect(&format!("step {} — {} ({})", i + 1, rule, tag));
     }

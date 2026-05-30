@@ -16,7 +16,8 @@ use crate::aux::bitset::BitSet;
 use crate::aux::graph;
 use crate::aux::intset::{self, IntSet};
 use super::complex::Complex;
-use super::diagram::{Diagram, PasteTree};
+use super::diagram::Diagram;
+use super::paste_tree::{realise_tree, PasteTree};
 use super::embeddings::{Embedding, NO_PREIMAGE};
 use super::flow;
 use super::ogposet::{self, Ogposet, Sign};
@@ -42,7 +43,7 @@ pub fn reconstruct(
         labels: labels.to_vec(),
     };
     let tree = build_paste_tree(&pd, complex)?;
-    let diagram = Diagram::realise_tree(&tree, complex)?;
+    let diagram = realise_tree(&tree, complex)?;
     check_sizes(&pd, &diagram)?;
     Ok(diagram)
 }
@@ -124,7 +125,7 @@ fn build_paste_tree(
         // dim > 3: try topological sorts lazily; stop at the first that works.
         graph::try_topological_sorts(&mf_graph, 10_000, |sort| {
             let tree = try_sort(pd, complex, &node_map, sort, k).ok()?;
-            let diag = Diagram::realise_tree(&tree, complex).ok()?;
+            let diag = realise_tree(&tree, complex).ok()?;
             check_sizes(pd, &diag).ok()?;
             Some(tree)
         }).map_err(|msg| Error::new(format!("reconstruction failed: {}", msg)))

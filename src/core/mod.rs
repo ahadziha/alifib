@@ -5,5 +5,6 @@ pub(crate) mod flow;
 pub mod matching;
 pub(crate) mod ogposet;
 pub mod partial_map;
+pub(crate) mod paste_tree;
 mod pushout;
 pub mod reconstruct;

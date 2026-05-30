@@ -542,7 +542,8 @@ fn assemble_low_dim_step(
     match_data: &[(&str, &Embedding)],
     rule_patterns: &HashMap<String, RulePattern>,
 ) -> Result<Diagram, Error> {
-    use super::diagram::{Sign, PasteTree, BoundaryHistory};
+    use super::diagram::{Sign, BoundaryHistory};
+    use super::paste_tree::PasteTree;
 
     let k = current.top_dim();
     let tree = reconstruct::build_tree(shape, &labels, complex)?;

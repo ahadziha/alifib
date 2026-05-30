@@ -14,7 +14,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use crate::aux::{Error, Tag};
-use super::diagram::{BoundaryHistory, CellData, Diagram, PasteTree, Sign};
+use super::diagram::{BoundaryHistory, CellData, Diagram, Sign};
+use super::paste_tree::PasteTree;
 
 /// A single entry in a partial map: the source cell's boundary data and its image.
 #[derive(Debug, Clone)]

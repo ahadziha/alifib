@@ -9,8 +9,9 @@
 use crate::aux::{self, Tag};
 use crate::core::{
     complex::{Complex, MapDomain},
-    diagram::{CellData, Diagram, PasteTree, Sign},
+    diagram::{CellData, Diagram, Sign},
     partial_map::PartialMap,
+    paste_tree::PasteTree,
 };
 use crate::interpreter::{GlobalStore, InterpretedFile};
 use crate::interpreter::inference::{BdSlot, SolvedBd, SolvedHole};
