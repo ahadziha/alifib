@@ -124,8 +124,8 @@ pub struct NameWithBoundary {
 }
 
 pub struct Boundary {
-    pub source: Spanned<Diagram>,
-    pub target: Spanned<Diagram>,
+    pub input: Spanned<Diagram>,
+    pub output: Spanned<Diagram>,
 }
 
 pub struct LetDiag {

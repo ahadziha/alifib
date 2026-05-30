@@ -78,8 +78,8 @@ fn enrich_holes(
         });
 
         for (sign, boundary) in [
-            (DiagramSign::Source, boundary_in),
-            (DiagramSign::Target, boundary_out),
+            (DiagramSign::Input, boundary_in),
+            (DiagramSign::Output, boundary_out),
         ] {
             let slot = BdSlot { sign, dim: k };
             match PartialMap::apply(map, boundary) {
@@ -126,8 +126,8 @@ fn enrich_holes(
         let k = boundary_in.top_dim();
 
         for (sign, boundary) in [
-            (DiagramSign::Source, boundary_in),
-            (DiagramSign::Target, boundary_out),
+            (DiagramSign::Input, boundary_in),
+            (DiagramSign::Output, boundary_out),
         ] {
             new_hints.push((idx, PartialHint {
                 slot: BdSlot { sign, dim: k },
@@ -563,7 +563,7 @@ fn boundary_dependencies(cell_data: &CellData, map: &PartialMap) -> Vec<(Tag, Di
     let CellData::Boundary { boundary_in, boundary_out } = cell_data else {
         return vec![];
     };
-    [(boundary_in.as_ref(), DiagramSign::Source), (boundary_out.as_ref(), DiagramSign::Target)]
+    [(boundary_in.as_ref(), DiagramSign::Input), (boundary_out.as_ref(), DiagramSign::Output)]
         .into_iter()
         .flat_map(|(boundary, sign)| {
             let d = boundary.top_dim();
@@ -576,14 +576,14 @@ fn boundary_dependencies(cell_data: &CellData, map: &PartialMap) -> Vec<(Tag, Di
         .collect()
 }
 
-/// Extract the source or target boundary from cell data, or `None` for a 0-cell.
+/// Extract the input or output boundary from cell data, or `None` for a 0-cell.
 fn boundary_of_sign(
     cell_data: &CellData,
     sign: DiagramSign,
 ) -> Option<Arc<Diagram>> {
     match (cell_data, sign) {
-        (CellData::Boundary { boundary_in, .. }, DiagramSign::Source) => Some(boundary_in.clone()),
-        (CellData::Boundary { boundary_out, .. }, DiagramSign::Target) => Some(boundary_out.clone()),
+        (CellData::Boundary { boundary_in, .. }, DiagramSign::Input) => Some(boundary_in.clone()),
+        (CellData::Boundary { boundary_out, .. }, DiagramSign::Output) => Some(boundary_out.clone()),
         _ => None,
     }
 }

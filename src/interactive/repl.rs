@@ -633,8 +633,8 @@ fn dispatch_print_type(
         for (diag_name, diag) in &diag_list {
             let k = diag.top_dim().checked_sub(1);
             let boundary = k.and_then(|k| {
-                let src = crate::core::diagram::Diagram::boundary(Sign::Source, k, diag).ok()?;
-                let tgt = crate::core::diagram::Diagram::boundary(Sign::Target, k, diag).ok()?;
+                let src = crate::core::diagram::Diagram::boundary(Sign::Input, k, diag).ok()?;
+                let tgt = crate::core::diagram::Diagram::boundary(Sign::Output, k, diag).ok()?;
                 Some(format!("{} : {}  ->  {}", diag_name, render_diagram(&src, tc), render_diagram(&tgt, tc)))
             }).unwrap_or_else(|| diag_name.to_string());
             let expr = crate::output::render_diagram(diag, tc);
@@ -702,8 +702,8 @@ fn print_diagram_with_boundary(diag: &crate::core::diagram::Diagram, complex: &C
     let d = diag.top_dim();
     let k = d - 1;
     match (
-        crate::core::diagram::Diagram::boundary(Sign::Source, k, diag),
-        crate::core::diagram::Diagram::boundary(Sign::Target, k, diag),
+        crate::core::diagram::Diagram::boundary(Sign::Input, k, diag),
+        crate::core::diagram::Diagram::boundary(Sign::Output, k, diag),
     ) {
         (Ok(src), Ok(tgt)) => display.inspect(&format!(
             "  : {}  ->  {}",

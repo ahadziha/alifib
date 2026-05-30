@@ -56,8 +56,8 @@ impl std::fmt::Display for HoleId {
 /// A boundary slot: the combination of a sign and a dimension that identifies
 /// one specific boundary of a hole.
 ///
-/// For an n-cell hole the *principal* slot is `(Source, n-1)` and
-/// `(Target, n-1)`.  Lower-dimensional slots (e.g. `(Source, 0)`) represent
+/// For an n-cell hole the *principal* slot is `(Input, n-1)` and
+/// `(Output, n-1)`.  Lower-dimensional slots (e.g. `(Input, 0)`) represent
 /// the boundaries of boundaries and are derived by the solver.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BdSlot {
@@ -254,7 +254,7 @@ impl SolvedHole {
                 if !Diagram::isomorphic(&existing.diagram, diagram) {
                     self.inconsistencies.push(format!(
                         "conflicting ∂{}{}: from {}",
-                        match slot.sign { DiagramSign::Source => "⁻", DiagramSign::Target => "⁺" },
+                        match slot.sign { DiagramSign::Input => "⁻", DiagramSign::Output => "⁺" },
                         aux::dim_subscript(slot.dim),
                         origin
                     ));
@@ -342,7 +342,7 @@ fn process_constraint(hole: &mut SolvedHole, hole_id: HoleId, constraint: Constr
             if n > 0 {
                 // Emit only the two principal slots (sign, n-1); their processing
                 // will derive all globular sub-slots via globular_sub_boundaries.
-                for &sign in &[DiagramSign::Source, DiagramSign::Target] {
+                for &sign in &[DiagramSign::Input, DiagramSign::Output] {
                     if let Ok(bd) = Diagram::boundary_normal(sign, n - 1, &diagram) {
                         derived.push(Constraint::BoundaryEq {
                             hole: hole_id,
@@ -390,7 +390,7 @@ fn process_constraint(hole: &mut SolvedHole, hole_id: HoleId, constraint: Constr
 fn globular_sub_boundaries(slot: BdSlot, diagram: &Diagram) -> Vec<(BdSlot, Diagram)> {
     let mut result = vec![];
     for j in 0..slot.dim {
-        for &sign in &[DiagramSign::Source, DiagramSign::Target] {
+        for &sign in &[DiagramSign::Input, DiagramSign::Output] {
             if let Ok(bd) = Diagram::boundary_normal(sign, j, diagram) {
                 result.push((BdSlot { sign, dim: j }, bd));
             }
@@ -482,7 +482,7 @@ mod tests {
     fn solve_boundary_eq_fills_slot() {
         let id = HoleId::fresh();
         let diag = zero_cell("a");
-        let slot = BdSlot { sign: DiagramSign::Source, dim: 0 };
+        let slot = BdSlot { sign: DiagramSign::Input, dim: 0 };
         let c = Constraint::BoundaryEq {
             hole: id,
             slot,
@@ -499,7 +499,7 @@ mod tests {
     fn solve_boundary_eq_consistent_duplicates_no_inconsistency() {
         // Two BoundaryEq at the same slot with isomorphic diagrams: no conflict.
         let id = HoleId::fresh();
-        let slot = BdSlot { sign: DiagramSign::Source, dim: 0 };
+        let slot = BdSlot { sign: DiagramSign::Input, dim: 0 };
         let c1 = Constraint::BoundaryEq {
             hole: id, slot, diagram: zero_cell("a"), scope: empty_scope(),
             origin: ConstraintOrigin::Declaration,
@@ -516,7 +516,7 @@ mod tests {
     fn solve_boundary_eq_conflict_records_inconsistency() {
         // Two BoundaryEq at the same slot with *different* diagrams: one inconsistency.
         let id = HoleId::fresh();
-        let slot = BdSlot { sign: DiagramSign::Source, dim: 0 };
+        let slot = BdSlot { sign: DiagramSign::Input, dim: 0 };
         let c1 = Constraint::BoundaryEq {
             hole: id, slot, diagram: zero_cell("a"), scope: empty_scope(),
             origin: ConstraintOrigin::Declaration,
@@ -612,7 +612,7 @@ mod tests {
         // Two BoundaryEq at the same slot with the same diagram: no inconsistency,
         // slot is set once.
         let id = HoleId::fresh();
-        let slot = BdSlot { sign: DiagramSign::Source, dim: 0 };
+        let slot = BdSlot { sign: DiagramSign::Input, dim: 0 };
         let c1 = Constraint::BoundaryEq {
             hole: id, slot, diagram: zero_cell("a"), scope: empty_scope(),
             origin: ConstraintOrigin::Declaration,
@@ -629,7 +629,7 @@ mod tests {
     #[test]
     fn solve_value_higher_dim() {
         // A Value constraint on a 1-cell should derive DimEq(1) and BoundaryEq at
-        // the two principal slots (Source, 0) and (Target, 0).
+        // the two principal slots (Input, 0) and (Output, 0).
         use crate::core::diagram::{CellData, Diagram};
         use crate::aux::Tag;
 
@@ -650,15 +650,15 @@ mod tests {
         };
         let result = solve(&[entry(id)], &[c]);
         assert_eq!(result[0].dim, Some(1), "dim should be 1 for a 1-cell Value");
-        let src_slot = BdSlot { sign: DiagramSign::Source, dim: 0 };
-        let tgt_slot = BdSlot { sign: DiagramSign::Target, dim: 0 };
+        let src_slot = BdSlot { sign: DiagramSign::Input, dim: 0 };
+        let tgt_slot = BdSlot { sign: DiagramSign::Output, dim: 0 };
         assert!(
             result[0].boundaries.contains_key(&src_slot),
-            "source boundary should be set after Value derivation"
+            "input boundary should be set after Value derivation"
         );
         assert!(
             result[0].boundaries.contains_key(&tgt_slot),
-            "target boundary should be set after Value derivation"
+            "output boundary should be set after Value derivation"
         );
         assert!(result[0].inconsistencies.is_empty());
     }
@@ -677,22 +677,22 @@ mod tests {
         ).unwrap();
 
         let id = HoleId::fresh();
-        let slot = BdSlot { sign: DiagramSign::Source, dim: 1 };
+        let slot = BdSlot { sign: DiagramSign::Input, dim: 1 };
         let c = Constraint::BoundaryEq {
             hole: id, slot, diagram: f, scope: empty_scope(),
             origin: ConstraintOrigin::Declaration,
         };
         let result = solve(&[entry(id)], &[c]);
         // The BoundaryEq at dim 1 should cascade to fill dim-0 slots.
-        let sub_src = BdSlot { sign: DiagramSign::Source, dim: 0 };
-        let sub_tgt = BdSlot { sign: DiagramSign::Target, dim: 0 };
+        let sub_src = BdSlot { sign: DiagramSign::Input, dim: 0 };
+        let sub_tgt = BdSlot { sign: DiagramSign::Output, dim: 0 };
         assert!(
             result[0].boundaries.contains_key(&sub_src),
-            "globular cascade should fill (Source, 0)"
+            "globular cascade should fill (Input, 0)"
         );
         assert!(
             result[0].boundaries.contains_key(&sub_tgt),
-            "globular cascade should fill (Target, 0)"
+            "globular cascade should fill (Output, 0)"
         );
         assert!(result[0].inconsistencies.is_empty());
     }

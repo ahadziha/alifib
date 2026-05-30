@@ -84,7 +84,7 @@ impl fmt::Display for Diagram {
 
 impl fmt::Display for Boundary {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} -> {}", self.source.inner, self.target.inner)
+        write!(f, "{} -> {}", self.input.inner, self.output.inner)
     }
 }
 

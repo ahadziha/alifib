@@ -78,7 +78,7 @@ fn build_boundary<'tokens, 'src: 'tokens>(
         .clone()
         .then_ignore(t(Token::Arrow))
         .then(diagram)
-        .map_with(|(source, target), e| sp(Boundary { source, target }, cspan(e.span())))
+        .map_with(|(input, output), e| sp(Boundary { input, output }, cspan(e.span())))
 }
 
 fn build_name_with_boundary<'tokens, 'src: 'tokens>(

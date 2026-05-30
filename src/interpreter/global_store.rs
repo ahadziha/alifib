@@ -226,9 +226,9 @@ impl GlobalStore {
 
     /// Register a completed proof diagram as a first-class generator.
     ///
-    /// Extracts the source and target (dim-1)-boundaries from `diagram`,
+    /// Extracts the input and output (dim-1)-boundaries from `diagram`,
     /// constructs the [`CellData`], and delegates to [`register_generator`].
-    /// `dim` is the dimension of the proof cell (i.e. `source_diagram.top_dim() + 1`).
+    /// `dim` is the dimension of the proof cell (i.e. `input_diagram.top_dim() + 1`).
     pub fn register_proof_diagram(
         &mut self,
         type_gid: GlobalId,
@@ -238,12 +238,12 @@ impl GlobalStore {
     ) -> Result<GlobalId, String> {
         let n = dim - 1;
         let boundary_in = Arc::new(
-            Diagram::boundary(Sign::Source, n, &diagram)
-                .map_err(|e| format!("source boundary: {}", e))?,
+            Diagram::boundary(Sign::Input, n, &diagram)
+                .map_err(|e| format!("input boundary: {}", e))?,
         );
         let boundary_out = Arc::new(
-            Diagram::boundary(Sign::Target, n, &diagram)
-                .map_err(|e| format!("target boundary: {}", e))?,
+            Diagram::boundary(Sign::Output, n, &diagram)
+                .map_err(|e| format!("output boundary: {}", e))?,
         );
         let cell_data = CellData::Boundary { boundary_in, boundary_out };
         self.register_generator(type_gid, name, cell_data, Some(diagram))

@@ -28,8 +28,8 @@ fn set_filter_map(f: impl Fn(usize) -> Option<usize>, s: &IntSet) -> IntSet {
 
 /// Face sign in an oriented graded poset.
 ///
-/// Every face relation carries a sign indicating whether it is a source (`Input`,
-/// written δ⁻) or target (`Output`, written δ⁺) face.  `Both` is a convenience
+/// Every face relation carries a sign indicating whether it is an input (`Input`,
+/// written δ⁻) or output (`Output`, written δ⁺) face.  `Both` is a convenience
 /// variant meaning "either sign".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum Sign {
@@ -43,8 +43,8 @@ pub(crate) enum Sign {
 /// An oriented graded poset (ogposet): the combinatorial shape of a diagram.
 ///
 /// Cells are indexed per dimension, 0..=`dim`.  For a cell `p` at dimension `d`:
-/// - `faces_in[d][p]`    — input (source, δ⁻) faces at dimension d-1
-/// - `faces_out[d][p]`   — output (target, δ⁺) faces at dimension d-1
+/// - `faces_in[d][p]`    — input (δ⁻) faces at dimension d-1
+/// - `faces_out[d][p]`   — output (δ⁺) faces at dimension d-1
 /// - `cofaces_in[d][p]`  — cells at dimension d+1 that have `p` as an input face
 /// - `cofaces_out[d][p]` — cells at dimension d+1 that have `p` as an output face
 ///
@@ -125,17 +125,17 @@ impl Ogposet {
     }
 
     /// Cells at dimension `k` that are extremal in the given direction:
-    /// - `Input` extremal: no output cofaces (source boundary of the diagram)
-    /// - `Output` extremal: no input cofaces (target boundary)
+    /// - `Input` extremal: no output cofaces (input boundary of the diagram)
+    /// - `Output` extremal: no input cofaces (output boundary)
     pub(super) fn extremal(&self, sign: Sign, k: usize) -> IntSet {
         if self.dim < 0 || k > self.dim as usize {
             return vec![];
         }
         let n = self.faces_in[k].len();
         match sign {
-            // A source-boundary cell is one not yet "consumed" by any output coface.
+            // An input-boundary cell is one not yet "consumed" by any output coface.
             Sign::Input  => (0..n).filter(|&i| self.cofaces_out[k][i].is_empty()).collect(),
-            // A target-boundary cell is one not yet "consumed" by any input coface.
+            // An output-boundary cell is one not yet "consumed" by any input coface.
             Sign::Output => (0..n).filter(|&i| self.cofaces_in[k][i].is_empty()).collect(),
             Sign::Both   => (0..n).filter(|&i| {
                 self.cofaces_in[k][i].is_empty() || self.cofaces_out[k][i].is_empty()

@@ -30,10 +30,10 @@ fn magma_interpretation() {
 
     let norm = file.state.normalize();
 
-    let pt   = || Cell { name: "pt".into(),    src: String::new(),       tgt: String::new()       };
-    let ob   = || Cell { name: "ob".into(),    src: "pt".into(),         tgt: "pt".into()         };
-    let obpt = || Cell { name: "Ob.pt".into(), src: String::new(),       tgt: String::new()       };
-    let obob = || Cell { name: "Ob.ob".into(), src: "Ob.pt".into(),     tgt: "Ob.pt".into()      };
+    let pt   = || Cell { name: "pt".into(),    input: String::new(),       output: String::new()       };
+    let ob   = || Cell { name: "ob".into(),    input: "pt".into(),         output: "pt".into()         };
+    let obpt = || Cell { name: "Ob.pt".into(), input: String::new(),       output: String::new()       };
+    let obob = || Cell { name: "Ob.ob".into(), input: "Ob.pt".into(),     output: "Ob.pt".into()      };
 
     assert_eq!(norm, Store {
         cells_count: 12,
@@ -57,11 +57,11 @@ fn magma_interpretation() {
                         Dim { dim: 0, cells: vec![obpt()] },
                         Dim { dim: 1, cells: vec![obob()] },
                         Dim { dim: 2, cells: vec![
-                            Cell { name: "m".into(), src: "(Ob.ob #0 Ob.ob)".into(), tgt: "Ob.ob".into() },
+                            Cell { name: "m".into(), input: "(Ob.ob #0 Ob.ob)".into(), output: "Ob.ob".into() },
                         ]},
                     ],
                     diagrams: vec![
-                        Cell { name: "m".into(), src: "(Ob.ob #0 Ob.ob)".into(), tgt: "Ob.ob".into() },
+                        Cell { name: "m".into(), input: "(Ob.ob #0 Ob.ob)".into(), output: "Ob.ob".into() },
                     ],
                     maps: vec![Map { name: "Magma".into(), domain: "Magma".into() }, Map { name: "Ob".into(), domain: "Ob".into() }],
                 },
@@ -71,11 +71,11 @@ fn magma_interpretation() {
                         Dim { dim: 0, cells: vec![obpt()] },
                         Dim { dim: 1, cells: vec![obob()] },
                         Dim { dim: 2, cells: vec![
-                            Cell { name: "c".into(), src: "Ob.ob".into(), tgt: "(Ob.ob #0 Ob.ob)".into() },
+                            Cell { name: "c".into(), input: "Ob.ob".into(), output: "(Ob.ob #0 Ob.ob)".into() },
                         ]},
                     ],
                     diagrams: vec![
-                        Cell { name: "c".into(), src: "Ob.ob".into(), tgt: "(Ob.ob #0 Ob.ob)".into() },
+                        Cell { name: "c".into(), input: "Ob.ob".into(), output: "(Ob.ob #0 Ob.ob)".into() },
                     ],
                     maps: vec![Map { name: "Comagma".into(), domain: "Comagma".into() }, Map { name: "Ob".into(), domain: "Ob".into() }],
                 },
@@ -85,8 +85,8 @@ fn magma_interpretation() {
                         Dim { dim: 0, cells: vec![obpt()] },
                         Dim { dim: 1, cells: vec![obob()] },
                         Dim { dim: 2, cells: vec![
-                            Cell { name: "Comagma.c".into(), src: "Ob.ob".into(), tgt: "(Ob.ob #0 Ob.ob)".into() },
-                            Cell { name: "Magma.m".into(),   src: "(Ob.ob #0 Ob.ob)".into(), tgt: "Ob.ob".into() },
+                            Cell { name: "Comagma.c".into(), input: "Ob.ob".into(), output: "(Ob.ob #0 Ob.ob)".into() },
+                            Cell { name: "Magma.m".into(),   input: "(Ob.ob #0 Ob.ob)".into(), output: "Ob.ob".into() },
                         ]},
                     ],
                     diagrams: vec![],
@@ -112,7 +112,7 @@ fn empty2_single_type_with_one_cell() {
     assert_eq!(norm.cells_count, 1);
     assert_eq!(norm.types_count, 2);
     let c = norm.modules[0].types.iter().find(|t| t.name == "C").unwrap();
-    assert_eq!(c.dims, vec![Dim { dim: 0, cells: vec![Cell { name: "c".into(), src: String::new(), tgt: String::new() }] }]);
+    assert_eq!(c.dims, vec![Dim { dim: 0, cells: vec![Cell { name: "c".into(), input: String::new(), output: String::new() }] }]);
     assert_eq!(c.maps, vec![Map { name: "C".into(), domain: "C".into() }]);
 }
 
@@ -128,7 +128,7 @@ fn empty_maps_across_types() {
     let module = &norm.modules[0];
     // D reuses C's generators
     let d = module.types.iter().find(|t| t.name == "D").unwrap();
-    assert_eq!(d.dims, vec![Dim { dim: 0, cells: vec![Cell { name: "c".into(), src: String::new(), tgt: String::new() }] }]);
+    assert_eq!(d.dims, vec![Dim { dim: 0, cells: vec![Cell { name: "c".into(), input: String::new(), output: String::new() }] }]);
     // E has a module-level let g :: D = f, exposed as a map alongside f :: C
     let e = module.types.iter().find(|t| t.name == "E").unwrap();
     assert!(e.maps.contains(&Map { name: "f".into(), domain: "C".into() }));
@@ -148,7 +148,7 @@ fn total_composite_map() {
     // `let total F :: Arrow` should produce a map F :: Arrow
     assert!(graph.maps.contains(&Map { name: "F".into(), domain: "Arrow".into() }));
     // the mid cell is a diagram (it is explicitly named)
-    assert!(graph.diagrams.contains(&Cell { name: "mid".into(), src: "A.t".into(), tgt: "B.s".into() }));
+    assert!(graph.diagrams.contains(&Cell { name: "mid".into(), input: "A.t".into(), output: "B.s".into() }));
 }
 
 #[test]

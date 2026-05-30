@@ -22,7 +22,7 @@ use super::display::Display;
 /// parallel rewrites.
 pub fn render_step(step: &Diagram, scope: &Complex) -> String {
     let n_plus_1 = step.top_dim();
-    let tree = match step.tree(Sign::Source, n_plus_1) {
+    let tree = match step.tree(Sign::Input, n_plus_1) {
         Some(t) => t,
         None => return "?".to_string(),
     };
@@ -138,8 +138,8 @@ pub fn print_state(
                 .and_then(|tag| scope.find_generator_by_tag(tag))
                 .and_then(|name| scope.classifier(name))
                 .and_then(|classifier| {
-                    let src = Diagram::boundary(Sign::Source, n, classifier).ok()?;
-                    let tgt = Diagram::boundary(Sign::Target, n, classifier).ok()?;
+                    let src = Diagram::boundary(Sign::Input, n, classifier).ok()?;
+                    let tgt = Diagram::boundary(Sign::Output, n, classifier).ok()?;
                     Some((render_diagram(&src, scope), render_diagram(&tgt, scope)))
                 })
                 .unwrap_or_else(|| ("?".to_string(), "?".to_string()));

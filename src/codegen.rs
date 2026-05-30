@@ -177,8 +177,8 @@ pub fn compose_or_single(
 enum InstrRepr {
     Gen {
         name: String,
-        src: Option<DiagRepr>,
-        tgt: Option<DiagRepr>,
+        input: Option<DiagRepr>,
+        output: Option<DiagRepr>,
     },
     Attach {
         name: String,
@@ -189,13 +189,13 @@ enum InstrRepr {
 
 fn instr_to_ast(instr: InstrRepr) -> ast::Spanned<ast::ComplexInstr> {
     match instr {
-        InstrRepr::Gen { name, src, tgt } => {
+        InstrRepr::Gen { name, input, output } => {
             syn(ast::ComplexInstr::NameWithBoundary(ast::NameWithBoundary {
                 name: syn(name),
-                boundary: match (src, tgt) {
+                boundary: match (input, output) {
                     (Some(s), Some(t)) => Some(syn(ast::Boundary {
-                        source: syn(repr_to_ast(s)),
-                        target: syn(repr_to_ast(t)),
+                        input: syn(repr_to_ast(s)),
+                        output: syn(repr_to_ast(t)),
                     })),
                     _ => None,
                 },
@@ -226,7 +226,7 @@ fn instr_to_ast(instr: InstrRepr) -> ast::Spanned<ast::ComplexInstr> {
 
 fn instr_to_str(instr: &InstrRepr, indent: &str) -> String {
     match instr {
-        InstrRepr::Gen { name, src: Some(s), tgt: Some(t) } => {
+        InstrRepr::Gen { name, input: Some(s), output: Some(t) } => {
             format!("{}{} : {} -> {}", indent, name, repr_to_str(s), repr_to_str(t))
         }
         InstrRepr::Gen { name, .. } => format!("{}{}", indent, name),
@@ -265,16 +265,16 @@ impl TypeDef {
 
     /// Declare a 0-dimensional generator (no boundary).
     pub fn cell(mut self, name: &str) -> Self {
-        self.body.push(InstrRepr::Gen { name: name.to_owned(), src: None, tgt: None });
+        self.body.push(InstrRepr::Gen { name: name.to_owned(), input: None, output: None });
         self
     }
 
-    /// Declare a generator with source and target diagrams.
-    pub fn cell_bd(mut self, name: &str, src: Diag, tgt: Diag) -> Self {
+    /// Declare a generator with input and output boundary diagrams.
+    pub fn cell_bd(mut self, name: &str, input: Diag, output: Diag) -> Self {
         self.body.push(InstrRepr::Gen {
             name: name.to_owned(),
-            src: Some(src.0),
-            tgt: Some(tgt.0),
+            input: Some(input.0),
+            output: Some(output.0),
         });
         self
     }

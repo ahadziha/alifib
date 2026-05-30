@@ -147,7 +147,7 @@ impl WasmRepl {
         self.inner.get_target_strdiag()
     }
 
-    /// Return the string diagram for the target of rewrite `choice`.
+    /// Return the string diagram for the output of rewrite `choice`.
     ///
     /// This is the diagram that would result from applying the given rewrite.
     pub fn get_rewrite_preview_strdiag(&self, choice: usize) -> String {

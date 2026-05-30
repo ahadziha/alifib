@@ -1083,7 +1083,7 @@ function buildTypeAccordion(t) {
     g => buildGeneratorRow(g, t.name)));
   if (t.diagrams.length) body.appendChild(buildSection('Diagrams', t.diagrams,
     d => buildClickableRow(hi(d.name),
-      () => selectItem(t.name, { kind: 'diagram', name: d.name, src: d.src, tgt: d.tgt }))));
+      () => selectItem(t.name, { kind: 'diagram', name: d.name, input: d.input, output: d.output }))));
   if (t.maps.length) body.appendChild(buildSection('Maps', t.maps,
     m => buildClickableRow(hi(m.name),
       () => selectItem(t.name, { kind: 'map', name: m.name, domain: m.domain, generators: m.generators || [] }))));
@@ -1170,7 +1170,7 @@ function buildGeneratorRow(g, typeName) {
     if (selectedEl) selectedEl.classList.remove('acc-leaf--selected');
     selectedEl = div;
     div.classList.add('acc-leaf--selected');
-    void selectItem(typeName, { kind: 'generator', name: g.name, dim: g.dim, src: g.src, tgt: g.tgt });
+    void selectItem(typeName, { kind: 'generator', name: g.name, dim: g.dim, input: g.input, output: g.output });
   });
 
   return div;
@@ -1515,7 +1515,7 @@ function renderState(data) {
       const isFamily = r.family && r.family.length > 0;
       const label = isFamily
         ? `${hi(r.rule_name)}  (parallel ×${r.family.length})`
-        : `${hi(r.rule_name)}  ${src(r.source.label)} → ${tgt(r.target.label)}`;
+        : `${hi(r.rule_name)}  ${src(r.input.label)} → ${tgt(r.output.label)}`;
       out.push(`  [${hi(r.index)}] ${label}`);
       if (r.match_display) {
         const highlighted = esc(r.match_display).replace(/\[([^\]]*)\]/g,
@@ -1545,14 +1545,14 @@ function renderTypeDetail(d) {
   if (d.generators && d.generators.length) {
     out.push(dim('generators:'));
     d.generators.forEach(g => {
-      const bounds = g.source ? `  ${dim(g.source.label)} → ${dim(g.target.label)}` : '';
+      const bounds = g.input ? `  ${dim(g.input.label)} → ${dim(g.output.label)}` : '';
       out.push(`  ${hi(g.name)} ${dim(`(dim ${g.dim})`)}${bounds}`);
     });
   }
   if (d.diagrams && d.diagrams.length) {
     out.push(dim('diagrams:'));
     d.diagrams.forEach(g => {
-      const bounds = g.source ? `${hi(g.name)} : ${dim(g.source.label)} → ${dim(g.target.label)}` : hi(g.name);
+      const bounds = g.input ? `${hi(g.name)} : ${dim(g.input.label)} → ${dim(g.output.label)}` : hi(g.name);
       out.push(`  ${bounds}  = ${dim(g.expr)}`);
     });
   }
@@ -1570,7 +1570,7 @@ function renderTypeDetail(d) {
 function renderRules(rules) {
   if (!rules || !rules.length) return dim('(no rules)');
   return rules.map(r =>
-    `  ${hi(r.name)}  ${dim(r.source.label)} → ${dim(r.target.label)}`
+    `  ${hi(r.name)}  ${dim(r.input.label)} → ${dim(r.output.label)}`
   ).join('\n');
 }
 
@@ -2509,7 +2509,7 @@ async function refreshInfobox() {
       } else {
         const data = result.data;
         if (data.label) html += `<div class="infobox-label">${esc(data.label)}</div>`;
-        if (data.src || data.tgt) html += `<div class="infobox-boundary">${esc(data.src)} → ${esc(data.tgt)}</div>`;
+        if (data.input || data.output) html += `<div class="infobox-boundary">${esc(data.input)} → ${esc(data.output)}</div>`;
         currentLayout = layoutStrDiag(data.strdiag, selOrientation.value);
         const imageDim = data.dim ?? 0;
         if (bdDim == null && imageDim !== currentItemDim) {
@@ -2576,8 +2576,8 @@ async function refreshInfobox() {
   if (data.label) {
     html += `<div class="infobox-label">${esc(data.label)}</div>`;
   }
-  if (data.src || data.tgt) {
-    html += `<div class="infobox-boundary">${esc(data.src)} → ${esc(data.tgt)}</div>`;
+  if (data.input || data.output) {
+    html += `<div class="infobox-boundary">${esc(data.input)} → ${esc(data.output)}</div>`;
   }
   infoboxText.innerHTML = html;
 

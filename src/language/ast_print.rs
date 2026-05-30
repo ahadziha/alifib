@@ -277,9 +277,9 @@ impl Printer {
 
     /// `Diagram -> Diagram`
     fn boundary(&mut self, b: &Boundary) {
-        self.diagram(&b.source.inner);
+        self.diagram(&b.input.inner);
         self.s(" -> ");
-        self.diagram(&b.target.inner);
+        self.diagram(&b.output.inner);
     }
 
     /// Dot-separated identifier path.

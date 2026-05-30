@@ -223,9 +223,9 @@ pub struct GeneratorInfo {
     pub name: String,
     pub dim: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub source: Option<DiagramInfo>,
+    pub input: Option<DiagramInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub target: Option<DiagramInfo>,
+    pub output: Option<DiagramInfo>,
 }
 
 /// A let-binding or session-stored diagram entry.
@@ -234,9 +234,9 @@ pub struct DiagramEntryInfo {
     pub name: String,
     pub dim: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub source: Option<DiagramInfo>,
+    pub input: Option<DiagramInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub target: Option<DiagramInfo>,
+    pub output: Option<DiagramInfo>,
     /// The diagram expression as a source-language string.
     pub expr: String,
 }
@@ -275,9 +275,9 @@ pub struct CellDetailInfo {
     /// `"generator"` or `"diagram"`.
     pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub source: Option<DiagramInfo>,
+    pub input: Option<DiagramInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub target: Option<DiagramInfo>,
+    pub output: Option<DiagramInfo>,
     /// Source-language expression; only present for let-bindings / stored proofs.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expr: Option<String>,
@@ -308,8 +308,8 @@ pub struct DimSlice {
 pub struct RewriteInfo {
     pub index: usize,
     pub rule_name: String,
-    pub source: DiagramInfo,
-    pub target: DiagramInfo,
+    pub input: DiagramInfo,
+    pub output: DiagramInfo,
     /// Positions of the matched top-dim cells within the current diagram.
     pub match_positions: Vec<usize>,
     /// Current diagram with matched cells bracketed, e.g. `"[id id] id"`.
@@ -330,8 +330,8 @@ pub struct FamilyMember {
 #[derive(Debug, Serialize)]
 pub struct RuleInfo {
     pub name: String,
-    pub source: DiagramInfo,
-    pub target: DiagramInfo,
+    pub input: DiagramInfo,
+    pub output: DiagramInfo,
 }
 
 /// A summary of the running proof diagram.
@@ -339,8 +339,8 @@ pub struct RuleInfo {
 pub struct ProofInfo {
     pub dim: usize,
     pub step_count: usize,
-    pub source_label: String,
-    pub target_label: String,
+    pub input_label: String,
+    pub output_label: String,
 }
 
 /// A single entry in the move history.
@@ -464,7 +464,7 @@ pub fn build_response(engine: &RewriteEngine, include_history: bool) -> Response
         None
     } else {
         let n = engine.initial_diagram().top_dim();
-        let (source_label, target_label) = if backward {
+        let (input_label, output_label) = if backward {
             (render_diagram(engine.current_diagram(), scope),
              render_diagram(engine.initial_diagram(), scope))
         } else {
@@ -474,8 +474,8 @@ pub fn build_response(engine: &RewriteEngine, include_history: bool) -> Response
         Some(ProofInfo {
             dim: n + 1,
             step_count: engine.step_count(),
-            source_label,
-            target_label,
+            input_label,
+            output_label,
         })
     };
 
@@ -573,7 +573,7 @@ pub fn build_type_info_response(
             .generators_iter()
             .filter(|(n, _, _)| !n.is_empty())
             .map(|(gen_name, tag, dim)| {
-                let (source, target) = if dim > 0 {
+                let (input, output) = if dim > 0 {
                     match store.cell_data_for_tag(live_tc, tag) {
                         Some(CellData::Boundary { boundary_in, boundary_out }) => (
                             Some(diagram_info(&boundary_in, live_tc)),
@@ -584,7 +584,7 @@ pub fn build_type_info_response(
                 } else {
                     (None, None)
                 };
-                GeneratorInfo { name: gen_name.clone(), dim, source, target }
+                GeneratorInfo { name: gen_name.clone(), dim, input, output }
             })
             .collect();
 
@@ -594,23 +594,23 @@ pub fn build_type_info_response(
             .filter(|(n, _)| !n.is_empty())
             .map(|(diag_name, diag)| {
                 let dim = diag.top_dim();
-                let (source, target) = if dim > 0 {
+                let (input, output) = if dim > 0 {
                     let k = dim - 1;
-                    let src = Diagram::boundary(Sign::Source, k, diag)
+                    let inp = Diagram::boundary(Sign::Input, k, diag)
                         .ok()
                         .map(|d| diagram_info(&d, live_tc));
-                    let tgt = Diagram::boundary(Sign::Target, k, diag)
+                    let out = Diagram::boundary(Sign::Output, k, diag)
                         .ok()
                         .map(|d| diagram_info(&d, live_tc));
-                    (src, tgt)
+                    (inp, out)
                 } else {
                     (None, None)
                 };
                 DiagramEntryInfo {
                     name: diag_name.clone(),
                     dim,
-                    source,
-                    target,
+                    input,
+                    output,
                     expr: render_diagram(diag, live_tc),
                 }
             })
@@ -636,7 +636,7 @@ pub fn build_cell_response(engine: &RewriteEngine, name: &str) -> Result<Respons
         let store = engine.store();
 
         if let Some((tag, dim)) = scope.find_generator(name) {
-            let (source, target) = if dim > 0 {
+            let (input, output) = if dim > 0 {
                 match store.cell_data_for_tag(scope, tag) {
                     Some(CellData::Boundary { boundary_in, boundary_out }) => (
                         Some(diagram_info(&boundary_in, scope)),
@@ -651,21 +651,21 @@ pub fn build_cell_response(engine: &RewriteEngine, name: &str) -> Result<Respons
                 name: name.to_owned(),
                 dim,
                 kind: "generator".to_owned(),
-                source,
-                target,
+                input,
+                output,
                 expr: None,
             })
         } else if let Some(diag) = scope.find_diagram(name) {
             let dim = diag.top_dim();
-            let (source, target) = if dim > 0 {
+            let (input, output) = if dim > 0 {
                 let k = dim - 1;
-                let src = Diagram::boundary(Sign::Source, k, diag)
+                let inp = Diagram::boundary(Sign::Input, k, diag)
                     .ok()
                     .map(|d| diagram_info(&d, scope));
-                let tgt = Diagram::boundary(Sign::Target, k, diag)
+                let out = Diagram::boundary(Sign::Output, k, diag)
                     .ok()
                     .map(|d| diagram_info(&d, scope));
-                (src, tgt)
+                (inp, out)
             } else {
                 (None, None)
             };
@@ -673,8 +673,8 @@ pub fn build_cell_response(engine: &RewriteEngine, name: &str) -> Result<Respons
                 name: name.to_owned(),
                 dim,
                 kind: "diagram".to_owned(),
-                source,
-                target,
+                input,
+                output,
                 expr: Some(render_diagram(diag, scope)),
             })
         } else {
@@ -704,8 +704,8 @@ pub fn build_list_rules_response(engine: &RewriteEngine) -> ResponseData {
             match store.cell_data_for_tag(scope, tag)? {
                 CellData::Boundary { boundary_in, boundary_out } => Some(RuleInfo {
                     name: name.clone(),
-                    source: diagram_info(&boundary_in, scope),
-                    target: diagram_info(&boundary_out, scope),
+                    input: diagram_info(&boundary_in, scope),
+                    output: diagram_info(&boundary_out, scope),
                 }),
                 CellData::Zero => None,
             }
@@ -764,48 +764,48 @@ pub fn strdiag_to_json(sd: &StrDiag) -> serde_json::Value {
 ///
 /// Tries named diagrams first, then generator classifiers.
 /// If `boundary` is `Some((dim, sign))`, extracts the `(sign, dim)`-boundary
-/// of the diagram first. Returns a JSON object with `strdiag`, `dim`, `src`,
-/// and `tgt` fields.
+/// of the diagram first. Returns a JSON object with `strdiag`, `dim`, `input`,
+/// and `output` fields.
 fn diagram_strdiag_json(
     diagram: &Diagram,
     scope: &Complex,
     boundary: Option<(usize, &str)>,
 ) -> Result<serde_json::Value, String> {
-    let target_diagram = match boundary {
+    let rendered = match boundary {
         None => diagram.clone(),
         Some((k, sign_str)) => {
             let sign = match sign_str {
-                "input" => Sign::Source,
-                _ => Sign::Target,
+                "input" => Sign::Input,
+                _ => Sign::Output,
             };
             Diagram::boundary(sign, k, diagram)
                 .map_err(|e| format!("boundary extraction failed: {}", e))?
         }
     };
 
-    let dim = target_diagram.top_dim();
-    let (src, tgt) = if dim >= 1 {
-        let s = Diagram::boundary(Sign::Source, dim - 1, &target_diagram)
+    let dim = rendered.top_dim();
+    let (input, output) = if dim >= 1 {
+        let inp = Diagram::boundary(Sign::Input, dim - 1, &rendered)
             .map_err(|e| format!("{}", e))?;
-        let t = Diagram::boundary(Sign::Target, dim - 1, &target_diagram)
+        let out = Diagram::boundary(Sign::Output, dim - 1, &rendered)
             .map_err(|e| format!("{}", e))?;
         (
-            render_diagram(&s, scope),
-            render_diagram(&t, scope),
+            render_diagram(&inp, scope),
+            render_diagram(&out, scope),
         )
     } else {
         (String::new(), String::new())
     };
 
-    let label = render_diagram(&target_diagram, scope);
-    let sd = StrDiag::from_diagram(&target_diagram, scope);
+    let label = render_diagram(&rendered, scope);
+    let sd = StrDiag::from_diagram(&rendered, scope);
 
     Ok(serde_json::json!({
         "strdiag": strdiag_to_json(&sd),
         "dim": dim,
         "label": label,
-        "src": src,
-        "tgt": tgt,
+        "input": input,
+        "output": output,
     }))
 }
 
@@ -848,16 +848,16 @@ pub fn build_map_image_strdiag(
     diagram_strdiag_json(&image, &type_complex, boundary)
 }
 
-/// Build a StrDiag JSON for the target boundary of a step diagram.
-pub fn step_target_strdiag_json(
+/// Build a StrDiag JSON for the output boundary of a step diagram.
+pub fn step_output_strdiag_json(
     step: &Diagram,
     scope: &Complex,
 ) -> Result<serde_json::Value, String> {
     let n = step.top_dim().checked_sub(1)
         .ok_or_else(|| "step diagram has dim 0".to_string())?;
-    let tgt = Diagram::boundary(Sign::Target, n, step)
+    let out = Diagram::boundary(Sign::Output, n, step)
         .map_err(|e| format!("{}", e))?;
-    Ok(strdiag_json_from_diagram(&tgt, scope))
+    Ok(strdiag_json_from_diagram(&out, scope))
 }
 
 /// Build a StrDiag JSON directly from a diagram and complex.
@@ -913,7 +913,7 @@ pub fn build_type_detail_from_store(
         .generators_iter()
         .filter(|(n, _, _)| !n.is_empty())
         .map(|(gen_name, tag, dim)| {
-            let (source, target) = if dim > 0 {
+            let (input, output) = if dim > 0 {
                 match store.cell_data_for_tag(&type_complex, tag) {
                     Some(CellData::Boundary { boundary_in, boundary_out }) => (
                         Some(diagram_info(&boundary_in, &type_complex)),
@@ -924,7 +924,7 @@ pub fn build_type_detail_from_store(
             } else {
                 (None, None)
             };
-            GeneratorInfo { name: gen_name.clone(), dim, source, target }
+            GeneratorInfo { name: gen_name.clone(), dim, input, output }
         })
         .collect();
     generators.sort_by(|a, b| a.dim.cmp(&b.dim).then_with(|| a.name.cmp(&b.name)));
@@ -934,23 +934,23 @@ pub fn build_type_detail_from_store(
         .filter(|(n, _)| !n.is_empty())
         .map(|(diag_name, diag)| {
             let dim = diag.top_dim();
-            let (source, target) = if dim > 0 {
+            let (input, output) = if dim > 0 {
                 let k = dim - 1;
-                let src = Diagram::boundary(Sign::Source, k, diag)
+                let inp = Diagram::boundary(Sign::Input, k, diag)
                     .ok()
                     .map(|d| diagram_info(&d, &type_complex));
-                let tgt = Diagram::boundary(Sign::Target, k, diag)
+                let out = Diagram::boundary(Sign::Output, k, diag)
                     .ok()
                     .map(|d| diagram_info(&d, &type_complex));
-                (src, tgt)
+                (inp, out)
             } else {
                 (None, None)
             };
             DiagramEntryInfo {
                 name: diag_name.clone(),
                 dim,
-                source,
-                target,
+                input,
+                output,
                 expr: render_diagram(diag, &type_complex),
             }
         })
@@ -1001,27 +1001,27 @@ fn build_rewrite_info_from_family(
 
     let placeholder = || DiagramInfo { label: "?".into(), dim: 0, cell_count: 0, cells_by_dim: vec![] };
 
-    let (source, target) = if is_single {
+    let (input, output) = if is_single {
         let rule_tag = pr.step.labels_at(n_plus_1).and_then(|ls| ls.first());
         let classifier = rule_tag
             .and_then(|tag| scope.find_generator_by_tag(tag))
             .and_then(|name| scope.classifier(name));
         match classifier {
             Some(cl) => match (
-                Diagram::boundary(Sign::Source, n, cl),
-                Diagram::boundary(Sign::Target, n, cl),
+                Diagram::boundary(Sign::Input, n, cl),
+                Diagram::boundary(Sign::Output, n, cl),
             ) {
-                (Ok(src), Ok(tgt)) => (diagram_info(&src, scope), diagram_info(&tgt, scope)),
+                (Ok(inp), Ok(out)) => (diagram_info(&inp, scope), diagram_info(&out, scope)),
                 _ => (placeholder(), placeholder()),
             },
             None => (placeholder(), placeholder()),
         }
     } else {
         (
-            Diagram::boundary(Sign::Source, n, &pr.step)
+            Diagram::boundary(Sign::Input, n, &pr.step)
                 .map(|d| diagram_info(&d, scope))
                 .unwrap_or_else(|_| placeholder()),
-            Diagram::boundary(Sign::Target, n, &pr.step)
+            Diagram::boundary(Sign::Output, n, &pr.step)
                 .map(|d| diagram_info(&d, scope))
                 .unwrap_or_else(|_| placeholder()),
         )
@@ -1039,8 +1039,8 @@ fn build_rewrite_info_from_family(
     RewriteInfo {
         index,
         rule_name,
-        source,
-        target,
+        input,
+        output,
         match_positions: pr.image_positions.clone(),
         match_display,
         family,

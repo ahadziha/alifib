@@ -228,7 +228,7 @@ pub(crate) fn pseudo_normalise(t: &PasteTree, complex: &Complex) -> Result<Paste
     if pd1 >= pd2 {
         // Lift t1's root j > k:  (u1 *ⱼ u2) *ₖ t2.
         let (j, u1, u2) = split_node(&t1)?;
-        let bd = target_boundary_tree(j, &t2, complex)?;
+        let bd = output_boundary_tree(j, &t2, complex)?;
         Ok(paste_node(
             j,
             pseudo_normalise(&paste_node(k, u1, t2.clone()), complex)?,
@@ -237,7 +237,7 @@ pub(crate) fn pseudo_normalise(t: &PasteTree, complex: &Complex) -> Result<Paste
     } else {
         // Lift t2's root j > k:  t1 *ₖ (u1 *ⱼ u2).
         let (j, u1, u2) = split_node(&t2)?;
-        let bd = target_boundary_tree(j, &t1, complex)?;
+        let bd = output_boundary_tree(j, &t1, complex)?;
         Ok(paste_node(
             j,
             pseudo_normalise(&paste_node(k, t1.clone(), u1), complex)?,
@@ -246,14 +246,14 @@ pub(crate) fn pseudo_normalise(t: &PasteTree, complex: &Complex) -> Result<Paste
     }
 }
 
-/// The target `j`-boundary `∂⁺ⱼ` of the diagram `t` realises, returned as a
+/// The output `j`-boundary `∂⁺ⱼ` of the diagram `t` realises, returned as a
 /// paste tree ready to splice back into a larger tree.
-fn target_boundary_tree(j: usize, t: &PasteTree, complex: &Complex) -> Result<PasteTree, Error> {
+fn output_boundary_tree(j: usize, t: &PasteTree, complex: &Complex) -> Result<PasteTree, Error> {
     let diagram = realise_tree(t, complex)?;
-    let boundary = Diagram::boundary(Sign::Target, j, &diagram)?;
+    let boundary = Diagram::boundary(Sign::Output, j, &diagram)?;
     let top = boundary.top_dim();
     boundary
-        .tree(Sign::Source, top)
+        .tree(Sign::Input, top)
         .cloned()
         .ok_or_else(|| Error::new("boundary diagram carries no paste tree"))
 }
@@ -318,7 +318,7 @@ mod tests {
     /// isomorphism with the original.
     fn assert_realise_roundtrip(diagram: &Diagram, complex: &Complex, label: &str) {
         let n = diagram.top_dim();
-        let tree = diagram.tree(Sign::Source, n)
+        let tree = diagram.tree(Sign::Input, n)
             .unwrap_or_else(|| panic!("{}: no paste tree at dim {}", label, n));
         let reconstructed = realise_tree(tree, complex)
             .unwrap_or_else(|e| panic!("{}: realise_tree failed: {}", label, e));
@@ -372,7 +372,7 @@ mod tests {
 
     #[test]
     fn realise_idem_classifier() {
-        // idem : id id -> id — a 2-cell with composite source boundary.
+        // idem : id id -> id — a 2-cell with composite input boundary.
         let complex = load_type(&fixture("Idem.ali"), "Idem", vec![]);
         let idem_diag = complex.classifier("idem").expect("idem classifier");
         assert_realise_roundtrip(idem_diag, &complex, "idem");
@@ -393,7 +393,7 @@ mod tests {
     /// diagram.
     fn assert_pseudo_normal_roundtrip(diagram: &Diagram, complex: &Complex, label: &str) {
         let n = diagram.top_dim();
-        let tree = diagram.tree(Sign::Source, n)
+        let tree = diagram.tree(Sign::Input, n)
             .unwrap_or_else(|| panic!("{}: no paste tree at dim {}", label, n));
 
         let normalised = pseudo_normalise(tree, complex)
@@ -425,7 +425,7 @@ mod tests {
         let vert = Diagram::paste(1, alpha, alpha).expect("vertical paste");
         let diagram = Diagram::paste(0, &vert, alpha).expect("horizontal paste");
 
-        let tree = diagram.tree(Sign::Source, diagram.top_dim()).unwrap();
+        let tree = diagram.tree(Sign::Input, diagram.top_dim()).unwrap();
         assert!(!is_pseudo_normal(tree), "test setup: tree should not be pseudo-normal");
 
         assert_pseudo_normal_roundtrip(&diagram, &complex, "(α*₁α)*₀α");
@@ -440,7 +440,7 @@ mod tests {
         let vert = Diagram::paste(1, alpha, alpha).expect("vertical paste");
         let diagram = Diagram::paste(0, alpha, &vert).expect("horizontal paste");
 
-        let tree = diagram.tree(Sign::Source, diagram.top_dim()).unwrap();
+        let tree = diagram.tree(Sign::Input, diagram.top_dim()).unwrap();
         assert!(!is_pseudo_normal(tree), "test setup: tree should not be pseudo-normal");
 
         assert_pseudo_normal_roundtrip(&diagram, &complex, "α*₀(α*₁α)");
@@ -454,7 +454,7 @@ mod tests {
         let alpha = complex.classifier("alpha").expect("alpha classifier");
         let diagram = Diagram::paste(0, alpha, alpha).expect("horizontal paste");
 
-        let tree = diagram.tree(Sign::Source, diagram.top_dim()).unwrap();
+        let tree = diagram.tree(Sign::Input, diagram.top_dim()).unwrap();
         assert!(is_pseudo_normal(tree), "α*₀α should already be pseudo-normal");
         assert_pseudo_normal_roundtrip(&diagram, &complex, "α*₀α");
     }
@@ -472,7 +472,7 @@ mod tests {
                 continue;
             }
             let n = diagram.top_dim();
-            let Some(tree) = diagram.tree(Sign::Source, n) else { continue };
+            let Some(tree) = diagram.tree(Sign::Input, n) else { continue };
             if is_pseudo_normal(tree) {
                 continue;
             }

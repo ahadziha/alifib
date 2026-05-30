@@ -61,19 +61,19 @@ pub struct Dim {
 /// A named generator or diagram together with its boundary.
 ///
 /// The boundary is expressed as structured term expressions derived from the
-/// paste tree. Both `src` and `tgt` are empty for 0-dimensional generators,
-/// which have no boundary.
+/// paste tree. Both `input` and `output` are empty for 0-dimensional
+/// generators, which have no boundary.
 ///
-/// The [`std::fmt::Display`] impl renders this as `name : src -> tgt` for
+/// The [`std::fmt::Display`] impl renders this as `name : input -> output` for
 /// higher-dimensional cells and as `name` for 0-dimensional ones.
 #[derive(Debug, PartialEq)]
 pub struct Cell {
     /// Generator name. Empty string is displayed as `<empty>`.
     pub name: String,
-    /// Source boundary as a structured term expression (empty for 0-cells).
-    pub src: String,
-    /// Target boundary as a structured term expression (empty for 0-cells).
-    pub tgt: String,
+    /// Input boundary as a structured term expression (empty for 0-cells).
+    pub input: String,
+    /// Output boundary as a structured term expression (empty for 0-cells).
+    pub output: String,
 }
 
 /// A named map from a type to another type or module.
@@ -144,10 +144,10 @@ impl fmt::Display for Type {
 impl fmt::Display for Cell {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let label = if self.name.is_empty() { "<empty>" } else { &self.name };
-        if self.src.is_empty() && self.tgt.is_empty() {
+        if self.input.is_empty() && self.output.is_empty() {
             write!(f, "{}", label)
         } else {
-            write!(f, "{} : {} -> {}", label, self.src, self.tgt)
+            write!(f, "{} : {} -> {}", label, self.input, self.output)
         }
     }
 }

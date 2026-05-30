@@ -3,7 +3,7 @@
 //! An interactive session starts from a named n-diagram (the *source*) and lets
 //! the user apply rewrite rules — (n+1)-generators in the type complex — one at
 //! a time.  Each step extends a running proof cell by pasting on the new rewrite
-//! step.  When the running proof's target boundary matches the declared goal
+//! step.  When the running proof's output boundary matches the declared goal
 //! diagram (the *target*), the proof is complete.
 //!
 //! # Interfaces

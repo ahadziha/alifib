@@ -182,7 +182,7 @@ fn diagram_labels(diagram: &Diagram, scope: &Complex) -> Vec<String> {
 /// label rendering if no paste history is available.
 fn render_diagram_tree(diagram: &Diagram, scope: &Complex) -> String {
     let n = diagram.top_dim();
-    match diagram.tree(Sign::Source, n) {
+    match diagram.tree(Sign::Input, n) {
         Some(tree) => render_paste_tree(tree, scope),
         None => diagram_labels(diagram, scope).join(" "),
     }
@@ -198,7 +198,7 @@ pub fn render_diagram(diagram: &Diagram, scope: &Complex) -> String {
 /// rendered as `_`. Chains at the same dimension are flattened.
 pub fn render_boundary_partial(boundary: &Diagram, map: &PartialMap, scope: &Complex) -> String {
     let n = boundary.top_dim();
-    match boundary.tree(Sign::Source, n) {
+    match boundary.tree(Sign::Input, n) {
         Some(tree) => render_tree_partial(tree, map, scope),
         None => "_".to_string(),
     }
@@ -235,11 +235,11 @@ fn collect_chain_partial(tree: &PasteTree, k: usize, map: &PartialMap, scope: &C
 /// labels against `complex`.
 fn cell_from_data(name: &str, data: &CellData, complex: &Complex) -> Cell {
     match data {
-        CellData::Zero => Cell { name: name.to_owned(), src: String::new(), tgt: String::new() },
+        CellData::Zero => Cell { name: name.to_owned(), input: String::new(), output: String::new() },
         CellData::Boundary { boundary_in, boundary_out } => Cell {
             name: name.to_owned(),
-            src: render_diagram_tree(boundary_in, complex),
-            tgt: render_diagram_tree(boundary_out, complex),
+            input: render_diagram_tree(boundary_in, complex),
+            output: render_diagram_tree(boundary_out, complex),
         },
     }
 }
@@ -249,18 +249,18 @@ fn cell_from_data(name: &str, data: &CellData, complex: &Complex) -> Cell {
 /// 0-dimensional cell if the boundary cannot be computed.
 fn cell_from_diagram(name: &str, diag: &Diagram, complex: &Complex) -> Cell {
     let Some(k) = diag.top_dim().checked_sub(1) else {
-        return Cell { name: name.to_owned(), src: String::new(), tgt: String::new() };
+        return Cell { name: name.to_owned(), input: String::new(), output: String::new() };
     };
     let (Ok(src_diag), Ok(tgt_diag)) = (
-        Diagram::boundary(Sign::Source, k, diag),
-        Diagram::boundary(Sign::Target, k, diag),
+        Diagram::boundary(Sign::Input, k, diag),
+        Diagram::boundary(Sign::Output, k, diag),
     ) else {
-        return Cell { name: name.to_owned(), src: String::new(), tgt: String::new() };
+        return Cell { name: name.to_owned(), input: String::new(), output: String::new() };
     };
     Cell {
         name: name.to_owned(),
-        src: render_diagram_tree(&src_diag, complex),
-        tgt: render_diagram_tree(&tgt_diag, complex),
+        input: render_diagram_tree(&src_diag, complex),
+        output: render_diagram_tree(&tgt_diag, complex),
     }
 }
 
@@ -282,7 +282,7 @@ fn render_domain(domain: &MapDomain, module_complex: &Complex) -> String {
 
 /// Unicode superscript for a boundary sign: ⁻ for Source, ⁺ for Target.
 fn sign_superscript(sign: Sign) -> &'static str {
-    match sign { Sign::Source => "⁻", Sign::Target => "⁺" }
+    match sign { Sign::Input => "⁻", Sign::Output => "⁺" }
 }
 
 /// Format a boundary slot as `∂⁻ₖ` or `∂⁺ₖ`.
@@ -342,8 +342,8 @@ pub fn render_solved_hole(hole: &SolvedHole) -> String {
         }
         dims.into_iter()
             .filter(|&k| {
-                has_slot(BdSlot { sign: Sign::Source, dim: k })
-                    && has_slot(BdSlot { sign: Sign::Target, dim: k })
+                has_slot(BdSlot { sign: Sign::Input, dim: k })
+                    && has_slot(BdSlot { sign: Sign::Output, dim: k })
             })
             .max()
     };
@@ -352,8 +352,8 @@ pub fn render_solved_hole(hole: &SolvedHole) -> String {
     let best_k: Option<usize> = if let Some(n) = hole.dim {
         if n > 0 {
             let k = n - 1;
-            let has_principal = has_slot(BdSlot { sign: Sign::Source, dim: k })
-                && has_slot(BdSlot { sign: Sign::Target, dim: k });
+            let has_principal = has_slot(BdSlot { sign: Sign::Input, dim: k })
+                && has_slot(BdSlot { sign: Sign::Output, dim: k });
             if has_principal { Some(k) } else { paired_max_k() }
         } else {
             None
@@ -363,8 +363,8 @@ pub fn render_solved_hole(hole: &SolvedHole) -> String {
     };
 
     if let Some(k) = best_k {
-        let src_slot = BdSlot { sign: Sign::Source, dim: k };
-        let tgt_slot = BdSlot { sign: Sign::Target, dim: k };
+        let src_slot = BdSlot { sign: Sign::Input, dim: k };
+        let tgt_slot = BdSlot { sign: Sign::Output, dim: k };
         let src = render_slot_with_hint(src_slot, &hole.boundaries, &hole.partial_hints);
         let tgt = render_slot_with_hint(tgt_slot, &hole.boundaries, &hole.partial_hints);
         let mut msg = format!("{} -> {}", src, tgt);
@@ -396,7 +396,7 @@ pub fn render_solved_hole(hole: &SolvedHole) -> String {
     dims.sort_unstable();
 
     let parts: Vec<String> = dims.iter().rev().flat_map(|&k| {
-        [Sign::Source, Sign::Target].iter().filter_map(move |&sign| {
+        [Sign::Input, Sign::Output].iter().filter_map(move |&sign| {
             let slot = BdSlot { sign, dim: k };
             if has_slot(slot) {
                 Some(format!("{} = {}", format_slot(&slot),

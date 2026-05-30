@@ -25,7 +25,7 @@ use super::engine::{RewriteEngine, resolve_type};
 use super::protocol::{
     Request, Response, build_homology_response, build_map_entries, build_map_image_strdiag,
     build_response, build_strdiag_response, build_types_from_store, build_type_detail_from_store,
-    resolve_domain_complex, step_target_strdiag_json, strdiag_json_from_diagram,
+    resolve_domain_complex, step_output_strdiag_json, strdiag_json_from_diagram,
     strdiag_to_json, tag_to_json,
 };
 
@@ -380,7 +380,7 @@ impl WebRepl {
         })
     }
 
-    /// Return the string diagram for the target of rewrite `choice`.
+    /// Return the string diagram for the output of rewrite `choice`.
     ///
     /// This is the diagram that would result from applying the given rewrite.
     pub fn get_rewrite_preview_strdiag(&self, choice: usize) -> String {
@@ -390,7 +390,7 @@ impl WebRepl {
                 return err_json(&format!("choice {} out of range", choice));
             }
             let step = &rewrites[choice].step;
-            match step_target_strdiag_json(step, e.type_complex()) {
+            match step_output_strdiag_json(step, e.type_complex()) {
                 Ok(data) => ok_json(data),
                 Err(msg) => err_json(&msg),
             }
@@ -437,7 +437,7 @@ impl WebRepl {
 
         let sd = StrDiag::from_diagram_at_dim(&proof, scope, n + 1);
 
-        let current_sign = if engine.backward() { Sign::Source } else { Sign::Target };
+        let current_sign = if engine.backward() { Sign::Input } else { Sign::Output };
         let boundary_map = match Diagram::boundary_correspondence(
             current_sign, n, &proof, &current,
         ) {
@@ -555,8 +555,8 @@ fn type_summaries_json(store: &GlobalStore) -> Vec<serde_json::Value> {
                     serde_json::json!({
                         "name": c.name,
                         "dim": d.dim,
-                        "src": c.src,
-                        "tgt": c.tgt,
+                        "input": c.input,
+                        "output": c.output,
                         "tag": tag_json,
                         "face_tags": faces_json,
                     })
@@ -569,8 +569,8 @@ fn type_summaries_json(store: &GlobalStore) -> Vec<serde_json::Value> {
             .map(|c| {
                 serde_json::json!({
                     "name": c.name,
-                    "src": c.src,
-                    "tgt": c.tgt,
+                    "input": c.input,
+                    "output": c.output,
                 })
             })
             .collect();

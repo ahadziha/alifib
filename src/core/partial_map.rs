@@ -134,8 +134,8 @@ impl PartialMap {
             }
             (_, CellData::Boundary { boundary_in, boundary_out }) => {
                 let k = dim - 1;
-                check_boundary_match(&f, boundary_in, Sign::Source, k, &image)?;
-                check_boundary_match(&f, boundary_out, Sign::Target, k, &image)?;
+                check_boundary_match(&f, boundary_in, Sign::Input, k, &image)?;
+                check_boundary_match(&f, boundary_out, Sign::Output, k, &image)?;
                 f.cellular && image.is_cell() && image.dim() == dim as isize
             }
         };
@@ -150,7 +150,7 @@ impl PartialMap {
     /// Apply partial map f to a diagram by following its paste tree structure.
     pub fn apply(f: &PartialMap, diagram: &Diagram) -> Result<Diagram, Error> {
         let n = diagram.top_dim();
-        let Some(root_tree) = diagram.tree(Sign::Source, n) else {
+        let Some(root_tree) = diagram.tree(Sign::Input, n) else {
             return Err(Error::new("diagram has no tree"));
         };
 
@@ -167,8 +167,8 @@ impl PartialMap {
 
             let new_trees: Vec<BoundaryHistory> = diagram.paste_history.iter().map(|h| {
                 BoundaryHistory::from_pair(
-                    map_tree(&h.source, &cache),
-                    map_tree(&h.target, &cache),
+                    map_tree(&h.input, &cache),
+                    map_tree(&h.output, &cache),
                 )
             }).collect();
 
@@ -222,8 +222,8 @@ fn check_boundary_match(
         Ok(())
     } else {
         Err(Error::new(match sign {
-            Sign::Source => "input boundaries do not match",
-            Sign::Target => "output boundaries do not match",
+            Sign::Input => "input boundaries do not match",
+            Sign::Output => "output boundaries do not match",
         }))
     }
 }

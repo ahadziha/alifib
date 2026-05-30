@@ -12,46 +12,46 @@ use super::ogposet::{self, Ogposet, Sign as OgSign};
 use crate::aux::{Error, Tag};
 use std::sync::Arc;
 
-/// Source/target polarity for diagram boundaries.
+/// Input/output polarity for diagram boundaries (δ⁻ / δ⁺).
 ///
 /// Unlike [`OgSign`], which also has a `Both` variant used by traversal
 /// queries, diagram operations always act on exactly one boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Sign {
-    Source,
-    Target,
+    Input,
+    Output,
 }
 
 impl Sign {
     fn as_ogposet_sign(self) -> OgSign {
         match self {
-            Self::Source => OgSign::Input,
-            Self::Target => OgSign::Output,
+            Self::Input => OgSign::Input,
+            Self::Output => OgSign::Output,
         }
     }
 }
 
-/// Records which generators appear in the source and target boundaries of a
+/// Records which generators appear in the input and output boundaries of a
 /// diagram at one particular dimension.  One `BoundaryHistory` is stored per
 /// dimension in `Diagram::paste_history`.
 #[derive(Debug, Clone)]
 pub(crate) struct BoundaryHistory {
-    /// Paste-tree for the source (input) boundary at this dimension.
-    pub(crate) source: PasteTree,
-    /// Paste-tree for the target (output) boundary at this dimension.
-    pub(crate) target: PasteTree,
+    /// Paste-tree for the input boundary (δ⁻) at this dimension.
+    pub(crate) input: PasteTree,
+    /// Paste-tree for the output boundary (δ⁺) at this dimension.
+    pub(crate) output: PasteTree,
 }
 
 impl BoundaryHistory {
     fn get(&self, sign: Sign) -> &PasteTree {
         match sign {
-            Sign::Source => &self.source,
-            Sign::Target => &self.target,
+            Sign::Input => &self.input,
+            Sign::Output => &self.output,
         }
     }
 
-    pub(crate) fn from_pair(source: PasteTree, target: PasteTree) -> Self {
-        Self { source, target }
+    pub(crate) fn from_pair(input: PasteTree, output: PasteTree) -> Self {
+        Self { input, output }
     }
 }
 
@@ -60,11 +60,11 @@ impl BoundaryHistory {
 pub enum CellData {
     /// A 0-dimensional cell (a point); has no boundaries.
     Zero,
-    /// An n-cell (n > 0) with explicit source and target boundaries.
+    /// An n-cell (n > 0) with explicit input and output boundaries.
     Boundary {
-        /// The source (input) boundary: an (n−1)-diagram.
+        /// The input boundary (δ⁻): an (n−1)-diagram.
         boundary_in: Arc<Diagram>,
-        /// The target (output) boundary: an (n−1)-diagram.
+        /// The output boundary (δ⁺): an (n−1)-diagram.
         boundary_out: Arc<Diagram>,
     },
 }
@@ -85,11 +85,11 @@ struct BoundaryMatch {
 /// Representation invariants:
 /// - `labels[d][i]` labels the `i`-th cell of `shape` in dimension `d`
 /// - `labels[d].len() == shape.sizes()[d]` for every `d`
-/// - `paste_history[d]` stores only the two boundary histories (source/target)
+/// - `paste_history[d]` stores only the two boundary histories (input/output)
 ///   at that dimension; it is not indexed by cell position
-/// - for a genuine generating cell, the top source history is a `Leaf(tag)`
+/// - for a genuine generating cell, the top input history is a `Leaf(tag)`
 ///
-/// `paste_history[d]` stores source/target paste history at dimension `d`.
+/// `paste_history[d]` stores input/output paste history at dimension `d`.
 #[derive(Debug, Clone)]
 pub struct Diagram {
     pub(crate) shape: Arc<Ogposet>,
@@ -229,7 +229,7 @@ impl Diagram {
         self.shape.dim
     }
 
-    /// True if the diagram's source and target boundaries are equal (prerequisite for pasting).
+    /// True if the diagram's input and output boundaries are equal (prerequisite for pasting).
     pub fn is_round(&self) -> bool {
         self.shape.is_round()
     }
@@ -259,7 +259,7 @@ impl Diagram {
             return false;
         }
         let d = self.shape.dim as usize;
-        matches!(self.tree(Sign::Source, d), Some(PasteTree::Leaf(_)))
+        matches!(self.tree(Sign::Input, d), Some(PasteTree::Leaf(_)))
     }
 
     /// True if any cell in the diagram carries a local (non-global) tag.
@@ -431,23 +431,23 @@ impl Diagram {
     }
 
     /// Construct an n-dimensional cell with the given tag and parallel boundary diagrams.
-    fn cell_n(tag: Tag, source: &Diagram, target: &Diagram) -> Result<Diagram, Error> {
-        let (diagram, _) = Diagram::cell_with_source_embedding(tag, source, target)?;
+    fn cell_n(tag: Tag, input: &Diagram, output: &Diagram) -> Result<Diagram, Error> {
+        let (diagram, _) = Diagram::cell_with_input_embedding(tag, input, output)?;
         Ok(diagram)
     }
 
-    /// Like `cell_n` but also returns the embedding of the source boundary into the new cell.
+    /// Like `cell_n` but also returns the embedding of the input boundary into the new cell.
     ///
-    /// The embedding maps `source.shape` into the cell's shape, identifying source cells
+    /// The embedding maps `input.shape` into the cell's shape, identifying input cells
     /// with their positions in the merged boundary ogposet (dims 0..=n) of the cell.
-    pub(super) fn cell_with_source_embedding(
+    pub(super) fn cell_with_input_embedding(
         tag: Tag,
-        source: &Diagram,
-        target: &Diagram,
+        input: &Diagram,
+        output: &Diagram,
     ) -> Result<(Diagram, Embedding), Error> {
-        let m = Diagram::parallelism(source, target)?;
+        let m = Diagram::parallelism(input, output)?;
 
-        let d = source.top_dim();
+        let d = input.top_dim();
         let Pushout {
             tip: bd_uv,
             inl,
@@ -460,32 +460,32 @@ impl Diagram {
             &sizes_bd,
             &inl.map,
             &inr.map,
-            &source.labels,
-            &target.labels,
+            &input.labels,
+            &output.labels,
             "all boundary cells should be labelled",
         );
         labels_uv.push(vec![tag.clone()]);
 
         let history_uv =
-            build_cell_paste_history(d, &tag, &source.paste_history, &target.paste_history);
+            build_cell_paste_history(d, &tag, &input.paste_history, &output.paste_history);
 
         let diagram = Diagram::make(Arc::clone(&shape_uv), labels_uv, history_uv);
 
-        // The source embedding: source.shape → shape_uv.
-        // `inl` maps source.shape → bd_uv. In shape_uv, dims 0..=d are exactly bd_uv's
+        // The input embedding: input.shape → shape_uv.
+        // `inl` maps input.shape → bd_uv. In shape_uv, dims 0..=d are exactly bd_uv's
         // cells (same indices). Extend inl's inverse to cover dim d+1 (the new top cell,
-        // which has no preimage in the source).
-        let source_map = inl.map.clone();
-        let mut source_inv = inl.inv.clone();
-        source_inv.push(vec![NO_PREIMAGE]); // dim d+1: one cell, no preimage from source
-        let source_emb = Embedding::make(
-            Arc::clone(&source.shape),
+        // which has no preimage in the input).
+        let input_map = inl.map.clone();
+        let mut input_inv = inl.inv.clone();
+        input_inv.push(vec![NO_PREIMAGE]); // dim d+1: one cell, no preimage from input
+        let input_emb = Embedding::make(
+            Arc::clone(&input.shape),
             Arc::clone(&shape_uv),
-            source_map,
-            source_inv,
+            input_map,
+            input_inv,
         );
 
-        Ok((diagram, source_emb))
+        Ok((diagram, input_emb))
     }
 
     /// Construct the (n+1)-dimensional whiskered rewrite step S = U ∪_V R.
@@ -494,12 +494,12 @@ impl Diagram {
     /// - `current` (U): the n-dimensional current diagram
     /// - `match_emb` (ι): embedding V.shape → U.shape from subdiagram matching
     /// - `rule_tag`: the tag of the (n+1)-generator being applied
-    /// - `source` (V): the rule's source boundary (the matched pattern)
-    /// - `target` (T): the rule's target boundary (the replacement)
+    /// - `input` (V): the rule's input boundary (the matched pattern)
+    /// - `output` (T): the rule's output boundary (the replacement)
     ///
     /// Returns an (n+1)-dimensional diagram S with:
-    /// - Source n-boundary = U
-    /// - Target n-boundary = U[V → T]
+    /// - Input n-boundary = U
+    /// - Output n-boundary = U[V → T]
     /// - One interior (n+1)-cell (the whiskered rule application)
     ///
     /// Works uniformly for all n ≥ 0.
@@ -507,17 +507,17 @@ impl Diagram {
         current: &Diagram,
         match_emb: &Embedding,
         rule_tag: &Tag,
-        source: &Diagram,
-        target: &Diagram,
+        input: &Diagram,
+        output: &Diagram,
     ) -> Result<Diagram, Error> {
-        // Build rule cell R and get the source-boundary embedding σ: V → R.
-        let (rule_cell, source_into_rule) =
-            Diagram::cell_with_source_embedding(rule_tag.clone(), source, target)?;
+        // Build rule cell R and get the input-boundary embedding σ: V → R.
+        let (rule_cell, input_into_rule) =
+            Diagram::cell_with_input_embedding(rule_tag.clone(), input, output)?;
 
         // Pushout: S = U ∪_V R.
-        // match_emb: V → U   and   source_into_rule: V → R share dom = V.shape.
+        // match_emb: V → U   and   input_into_rule: V → R share dom = V.shape.
         let Pushout { tip, inl, inr } =
-            super::pushout::pushout(match_emb, &source_into_rule);
+            super::pushout::pushout(match_emb, &input_into_rule);
 
         // Merge labels from U (dims 0..n) and R (dims 0..n+1).
         let result_labels = merge_pushout_labels(
@@ -529,7 +529,7 @@ impl Diagram {
             "whisker rewrite: all cells should be labelled",
         );
 
-        // Paste history: inherit from current for dims 0..n-1; fix dim n target tree;
+        // Paste history: inherit from current for dims 0..n-1; fix dim n output tree;
         // add a properly whiskered tree at dim n+1.
         let n = current.top_dim();
         let mut history = current.paste_history.clone();
@@ -547,28 +547,28 @@ impl Diagram {
         let matched: &[usize] = &matched_buf;
 
         // Build the whiskered trees:
-        //   - dim n+1 source tree: idle cells + rule_tag + idle cells (= the whiskered rule)
-        //   - dim n+1 target tree: idle cells + target labels + idle cells
-        //   - dim n target tree:   same as dim n+1 target (= the rewritten n-boundary)
+        //   - dim n+1 input tree:  idle cells + rule_tag + idle cells (= the whiskered rule)
+        //   - dim n+1 output tree: idle cells + output labels + idle cells
+        //   - dim n output tree:   same as dim n+1 output (= the rewritten n-boundary)
         //
         // Paste dimension for folding the pieces: n-1 (or 0 if n == 0, but for n=0 there
         // is at most one piece so the fold dimension is never actually used in a Node).
         let paste_dim = n.saturating_sub(1);
         let num_top = current.labels.get(n).map(Vec::len).unwrap_or(0);
-        let tgt_top = target.labels.get(target.top_dim()).map(Vec::as_slice).unwrap_or(&[]);
+        let out_top = output.labels.get(output.top_dim()).map(Vec::as_slice).unwrap_or(&[]);
 
-        let mut src_pieces: Vec<PasteTree> = Vec::new();
-        let mut tgt_pieces: Vec<PasteTree> = Vec::new();
+        let mut in_pieces: Vec<PasteTree> = Vec::new();
+        let mut out_pieces: Vec<PasteTree> = Vec::new();
         let mut i = 0;
-        let mut tgt_i = 0;
+        let mut out_i = 0;
         while i < num_top {
             if matched.binary_search(&i).is_ok() {
                 // This is the start of the matched segment; the rule_tag covers it all.
-                src_pieces.push(PasteTree::Leaf(rule_tag.clone()));
-                // The target boundary's labels expand in place of the matched segment.
-                while tgt_i < tgt_top.len() {
-                    tgt_pieces.push(PasteTree::Leaf(tgt_top[tgt_i].clone()));
-                    tgt_i += 1;
+                in_pieces.push(PasteTree::Leaf(rule_tag.clone()));
+                // The output boundary's labels expand in place of the matched segment.
+                while out_i < out_top.len() {
+                    out_pieces.push(PasteTree::Leaf(out_top[out_i].clone()));
+                    out_i += 1;
                 }
                 // Skip all matched positions.
                 while i < num_top && matched.binary_search(&i).is_ok() {
@@ -576,23 +576,23 @@ impl Diagram {
                 }
             } else {
                 let idle = PasteTree::Leaf(current.labels[n][i].clone());
-                src_pieces.push(idle.clone());
-                tgt_pieces.push(idle);
+                in_pieces.push(idle.clone());
+                out_pieces.push(idle);
                 i += 1;
             }
         }
 
-        let src_tree = fold_trees(src_pieces, paste_dim);
-        let tgt_tree = fold_trees(tgt_pieces, paste_dim);
+        let in_tree = fold_trees(in_pieces, paste_dim);
+        let out_tree = fold_trees(out_pieces, paste_dim);
 
-        // Fix the dim-n history: source n-boundary is unchanged (= current); target
-        // n-boundary is the rewritten diagram, described by tgt_tree.
+        // Fix the dim-n history: input n-boundary is unchanged (= current); output
+        // n-boundary is the rewritten diagram, described by out_tree.
         history[n] = BoundaryHistory::from_pair(
-            history[n].source.clone(),
-            tgt_tree.clone(),
+            history[n].input.clone(),
+            out_tree.clone(),
         );
-        // Dim n+1: both source and target describe the whiskered (n+1)-cell.
-        history.push(BoundaryHistory::from_pair(src_tree, tgt_tree));
+        // Dim n+1: both input and output describe the whiskered (n+1)-cell.
+        history.push(BoundaryHistory::from_pair(in_tree, out_tree));
 
         Ok(Diagram::make(tip, result_labels, history))
     }
@@ -680,8 +680,8 @@ fn merge_pushout_labels(
 
 /// Compute the paste history for the `(sign, k)`-boundary of a diagram.
 ///
-/// Dimensions below `k` are copied unchanged; at dimension `k` both the source
-/// and target history are set to `histories[k][sign]` (collapsing the boundary).
+/// Dimensions below `k` are copied unchanged; at dimension `k` both the input
+/// and output history are set to `histories[k][sign]` (collapsing the boundary).
 fn boundary_history(histories: &[BoundaryHistory], sign: Sign, k: usize) -> Vec<BoundaryHistory> {
     (0..=k)
         .map(|k2| {
@@ -708,8 +708,8 @@ fn paste_histories(
 ) -> Vec<BoundaryHistory> {
     (0..num_dims)
         .map(|k| BoundaryHistory::from_pair(
-            paste_tree(u_hist, v_hist, n, k, Sign::Source),
-            paste_tree(u_hist, v_hist, n, k, Sign::Target),
+            paste_tree(u_hist, v_hist, n, k, Sign::Input),
+            paste_tree(u_hist, v_hist, n, k, Sign::Output),
         ))
         .collect()
 }
@@ -731,7 +731,7 @@ fn hist_tree_or_top(hist: &[BoundaryHistory], sign: Sign, k: usize) -> PasteTree
 /// The paste tree for `sign` at dimension `k` when pasting `u` and `v` at dimension `n`.
 ///
 /// - k < n:  inherit from u
-/// - k == n: source from u, target from v
+/// - k == n: input from u, output from v
 /// - k > n:  join u and v into a Node at dimension n
 ///
 /// When one side is lower-dimensional and has no tree at `k`, its own
@@ -746,7 +746,7 @@ fn paste_tree(
     if k < n {
         hist_tree_or_top(u_hist, sign, k)
     } else if k == n {
-        let hist = match sign { Sign::Source => u_hist, Sign::Target => v_hist };
+        let hist = match sign { Sign::Input => u_hist, Sign::Output => v_hist };
         hist_tree_or_top(hist, sign, n)
     } else {
         PasteTree::Node {
@@ -774,10 +774,10 @@ fn cofaces_to_top(n: usize, inv: &[usize]) -> Vec<crate::aux::intset::IntSet> {
 
 /// Build the ogposet shape for an n-dimensional generating cell.
 ///
-/// Given the pushout `bd_uv` of the source and target boundaries (with
-/// injections `inl` from source and `inr` from target), constructs a new
-/// ogposet with one extra cell at dimension `d + 1` whose source faces are
-/// the `inl` image and whose target faces are the `inr` image.
+/// Given the pushout `bd_uv` of the input and output boundaries (with
+/// injections `inl` from input and `inr` from output), constructs a new
+/// ogposet with one extra cell at dimension `d + 1` whose input faces are
+/// the `inl` image and whose output faces are the `inr` image.
 fn build_cell_shape(
     d: usize,
     bd_uv: &Arc<Ogposet>,
@@ -801,8 +801,8 @@ fn build_cell_shape(
     }
 
     // Dim d: top boundary cells — copy faces from bd_uv; cofaces point to the new
-    // top cell (index 0 at dim d+1) iff the cell appears in the source (inl) or
-    // target (inr) embedding respectively.
+    // top cell (index 0 at dim d+1) iff the cell appears in the input (inl) or
+    // output (inr) embedding respectively.
     {
         let n = sizes_bd.get(d).copied().unwrap_or(0);
         faces_in.push((0..n).map(|pos| bd_uv.faces_of(OgSign::Input, d, pos)).collect());
@@ -811,13 +811,13 @@ fn build_cell_shape(
         cofaces_out.push(cofaces_to_top(n, &inr.inv[d]));
     }
 
-    // Dim d+1: the single new top cell — its source face is the inl image and
-    // its target face is the inr image; it has no cofaces.
+    // Dim d+1: the single new top cell — its input face is the inl image and
+    // its output face is the inr image; it has no cofaces.
     {
-        let faces_source = crate::aux::intset::collect_sorted(inl.map[d].iter().copied());
-        let faces_target = crate::aux::intset::collect_sorted(inr.map[d].iter().copied());
-        faces_in.push(vec![faces_source]);
-        faces_out.push(vec![faces_target]);
+        let faces_input = crate::aux::intset::collect_sorted(inl.map[d].iter().copied());
+        let faces_output = crate::aux::intset::collect_sorted(inr.map[d].iter().copied());
+        faces_in.push(vec![faces_input]);
+        faces_out.push(vec![faces_output]);
         cofaces_in.push(vec![vec![]]);
         cofaces_out.push(vec![vec![]]);
     }
@@ -832,28 +832,28 @@ fn build_cell_shape(
 }
 
 /// Build the paste history for a new `d`-dimensional generating cell with
-/// the given source and target boundary histories.
+/// the given input and output boundary histories.
 ///
-/// - Dimensions below `d`: carry through the source boundary's history.
-/// - Dimension `d`: source from the source boundary, target from the target boundary.
+/// - Dimensions below `d`: carry through the input boundary's history.
+/// - Dimension `d`: input from the input boundary, output from the output boundary.
 /// - Dimension `d + 1`: both halves are a `Leaf(tag)` (the cell itself).
 fn build_cell_paste_history(
     d: usize,
     tag: &Tag,
-    source: &[BoundaryHistory],
-    target: &[BoundaryHistory],
+    input: &[BoundaryHistory],
+    output: &[BoundaryHistory],
 ) -> Vec<BoundaryHistory> {
     (0..=(d + 1))
         .map(|dim| {
             if dim < d {
                 BoundaryHistory::from_pair(
-                    history_tree(source, Sign::Source, dim, || PasteTree::Leaf(tag.clone())),
-                    history_tree(source, Sign::Target, dim, || PasteTree::Leaf(tag.clone())),
+                    history_tree(input, Sign::Input, dim, || PasteTree::Leaf(tag.clone())),
+                    history_tree(input, Sign::Output, dim, || PasteTree::Leaf(tag.clone())),
                 )
             } else if dim == d {
                 BoundaryHistory::from_pair(
-                    history_tree(source, Sign::Source, d, || PasteTree::Leaf(tag.clone())),
-                    history_tree(target, Sign::Target, d, || PasteTree::Leaf(tag.clone())),
+                    history_tree(input, Sign::Input, d, || PasteTree::Leaf(tag.clone())),
+                    history_tree(output, Sign::Output, d, || PasteTree::Leaf(tag.clone())),
                 )
             } else {
                 BoundaryHistory::from_pair(
@@ -874,7 +874,7 @@ mod tests {
     fn boundary_normal_clamps_history_to_top_dim() {
         let point = Diagram::cell(Tag::Local("pt".into()), &CellData::Zero).unwrap();
 
-        let boundary = Diagram::boundary_normal(Sign::Source, 5, &point).unwrap();
+        let boundary = Diagram::boundary_normal(Sign::Input, 5, &point).unwrap();
 
         assert_eq!(boundary.labels.len(), 1);
         assert_eq!(boundary.paste_history.len(), 1);

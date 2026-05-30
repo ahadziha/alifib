@@ -236,16 +236,16 @@ fn check_parallel(source: &Diagram, target: &Diagram) -> Result<(), String> {
         return Ok(());
     }
     let k = source.top_dim() - 1;
-    let src_in = Diagram::boundary_normal(Sign::Source, k, source)
+    let src_in = Diagram::boundary_normal(Sign::Input, k, source)
         .map_err(|e| format!("source input boundary: {}", e))?;
-    let tgt_in = Diagram::boundary_normal(Sign::Source, k, target)
+    let tgt_in = Diagram::boundary_normal(Sign::Input, k, target)
         .map_err(|e| format!("target input boundary: {}", e))?;
     if !Diagram::isomorphic(&src_in, &tgt_in) {
         return Err("source and target are not parallel: input boundaries do not match".to_owned());
     }
-    let src_out = Diagram::boundary_normal(Sign::Target, k, source)
+    let src_out = Diagram::boundary_normal(Sign::Output, k, source)
         .map_err(|e| format!("source output boundary: {}", e))?;
-    let tgt_out = Diagram::boundary_normal(Sign::Target, k, target)
+    let tgt_out = Diagram::boundary_normal(Sign::Output, k, target)
         .map_err(|e| format!("target output boundary: {}", e))?;
     if !Diagram::isomorphic(&src_out, &tgt_out) {
         return Err("source and target are not parallel: output boundaries do not match".to_owned());
@@ -376,7 +376,7 @@ impl RewriteEngine {
         let top = proof.top_dim(); // n + 1
         let n = top - 1;
 
-        let tree = proof.tree(Sign::Source, top)
+        let tree = proof.tree(Sign::Input, top)
             .ok_or_else(|| format!("'{}' has no paste tree", proof_name))?;
         let normalised = pseudo_normalise(tree, &type_complex).map_err(|e| e.to_string())?;
         debug_assert!(is_pseudo_normal(&normalised), "pseudo_normalise must return a pseudo-normal tree");
@@ -405,9 +405,9 @@ impl RewriteEngine {
         // Forward starts at the input boundary and steps along target
         // boundaries; backward is the dual.
         let (initial_sign, step_sign) = if backward {
-            (Sign::Target, Sign::Source)
+            (Sign::Output, Sign::Input)
         } else {
-            (Sign::Source, Sign::Target)
+            (Sign::Input, Sign::Output)
         };
         let initial_diagram = Diagram::boundary(initial_sign, n, &proof)
             .map_err(|e| format!("initial boundary: {}", e))?;
@@ -791,7 +791,7 @@ impl RewriteEngine {
     /// The boundary sign used to extract the new current diagram from a step.
     /// Forward: `Target` (output boundary). Backward: `Source` (input boundary).
     fn step_sign(&self) -> Sign {
-        if self.backward { Sign::Source } else { Sign::Target }
+        if self.backward { Sign::Input } else { Sign::Output }
     }
 
     /// The active (n+1)-dimensional rewrite steps, in order.
@@ -1023,7 +1023,7 @@ impl RewriteEngine {
         let diagram = &assembled;
 
         let n = self.initial_diagram.top_dim();
-        let check_sign = if self.backward { Sign::Target } else { Sign::Source };
+        let check_sign = if self.backward { Sign::Output } else { Sign::Input };
         let boundary = Diagram::boundary(check_sign, n, diagram)
             .map_err(|e| format!("boundary check failed: {}", e))?;
         if !Diagram::isomorphic(&boundary, &self.initial_diagram) {

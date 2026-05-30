@@ -55,7 +55,7 @@ pub struct FamilyMember {
 /// isomorphism check inside matching becomes a normalise-and-compare where the
 /// rule side is already normal.
 pub struct RulePattern {
-    /// The normalised input (source) n-boundary of the rule, as a diagram.
+    /// The normalised input n-boundary of the rule, as a diagram.
     pub pattern: Diagram,
     /// Embedding of [`pattern.shape`] into the rule's full (n+1) shape.
     /// Used as the right injection in the pushout that builds each step.
@@ -79,9 +79,9 @@ impl RulePattern {
         }
         let n = top - 1;
         let (diag_sign, og_sign) = if backward {
-            (super::diagram::Sign::Target, Sign::Output)
+            (super::diagram::Sign::Output, Sign::Output)
         } else {
-            (super::diagram::Sign::Source, Sign::Input)
+            (super::diagram::Sign::Input, Sign::Input)
         };
         let pattern = Diagram::boundary_normal(diag_sign, n, rewrite)?;
         let (_, pattern_to_rewrite) =
@@ -551,7 +551,7 @@ fn assemble_low_dim_step(
     let backward = match_data.first()
         .and_then(|(name, _)| rule_patterns.get(*name))
         .is_some_and(|rp| rp.backward);
-    let derived_sign = if backward { Sign::Source } else { Sign::Target };
+    let derived_sign = if backward { Sign::Input } else { Sign::Output };
 
     let get = |sign, dim| current.tree(sign, dim).cloned()
         .unwrap_or_else(|| PasteTree::Leaf(crate::aux::Tag::Local("?".into())));
@@ -564,13 +564,13 @@ fn assemble_low_dim_step(
     });
 
     let mut history: Vec<BoundaryHistory> = (0..k)
-        .map(|j| BoundaryHistory::from_pair(get(Sign::Source, j), get(Sign::Target, j)))
+        .map(|j| BoundaryHistory::from_pair(get(Sign::Input, j), get(Sign::Output, j)))
         .collect();
 
     let (src_k, tgt_k) = if backward {
-        (derived_tree, get(Sign::Target, k))
+        (derived_tree, get(Sign::Output, k))
     } else {
-        (get(Sign::Source, k), derived_tree)
+        (get(Sign::Input, k), derived_tree)
     };
     history.push(BoundaryHistory::from_pair(src_k, tgt_k));
     history.push(BoundaryHistory::from_pair(tree.clone(), tree));
@@ -955,7 +955,7 @@ mod tests {
             let (_store, complex) = load_type(&fixture("Idem.ali"), "Idem");
             let (rewrite, rname) = get_rewrite(&complex, "idem");
             let n = rewrite.top_dim().saturating_sub(1);
-            let idem_src = Diagram::boundary(Sign::Source, n, &rewrite).unwrap();
+            let idem_src = Diagram::boundary(Sign::Input, n, &rewrite).unwrap();
             let matches = find_matches(&complex, &rewrite, &idem_src, &rname);
             assert_eq!(matches.len(), 1, "expected 1 match of idem in its own source");
         }
@@ -999,13 +999,13 @@ mod tests {
             let matches1 = find_matches(&complex, &rewrite, &lhs, &rname);
             assert!(!matches1.is_empty());
             let step1 = &matches1[0].step;
-            let after1 = Diagram::boundary(Sign::Target, n, step1).unwrap();
+            let after1 = Diagram::boundary(Sign::Output, n, step1).unwrap();
 
             // Second application.
             let matches2 = find_matches(&complex, &rewrite, &after1, &rname);
             assert_eq!(matches2.len(), 1);
             let step2 = &matches2[0].step;
-            let after2 = Diagram::boundary(Sign::Target, n, step2).unwrap();
+            let after2 = Diagram::boundary(Sign::Output, n, step2).unwrap();
 
             assert!(Diagram::isomorphic(&after2, &rhs), "after two rewrites, should reach rhs");
         }
@@ -1065,9 +1065,9 @@ mod tests {
             // The parallel step should be (n+1)-dimensional.
             assert_eq!(fam.step.top_dim(), target.top_dim() + 1);
 
-            // Its target boundary should be "id id" (two applications of idem in parallel).
+            // Its output boundary should be "id id" (two applications of idem in parallel).
             let n = target.top_dim();
-            let after = Diagram::boundary(Sign::Target, n, &fam.step).unwrap();
+            let after = Diagram::boundary(Sign::Output, n, &fam.step).unwrap();
             let id_id = Diagram::paste(0, &id_diag, &id_diag).unwrap();
             assert!(Diagram::isomorphic(&after, &id_id),
                 "parallel application of two idem to id id id id should yield id id");
@@ -1129,7 +1129,7 @@ mod tests {
             assert_eq!(result.image_positions, vec![0, 1, 2, 3]);
 
             let n = target.top_dim();
-            let after = Diagram::boundary(Sign::Target, n, &result.step).unwrap();
+            let after = Diagram::boundary(Sign::Output, n, &result.step).unwrap();
             let id_id = Diagram::paste(0, &id_diag, &id_diag).unwrap();
             assert!(Diagram::isomorphic(&after, &id_id),
                 "parallel idem on id id id id should yield id id");
