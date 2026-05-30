@@ -207,15 +207,17 @@ impl WebRepl {
         }
     }
 
-    /// Start a session by exploding a proof diagram into its rewrite steps.
+    /// Resume a session from a proof diagram, decomposing it into its steps.
     ///
-    /// `diagram` — name or expression for the (n+1)-dimensional proof diagram.
-    /// Forward mode runs from `d.in` to `d.out`; backward mode from `d.out` to
-    /// `d.in`.  Returns a daemon-protocol JSON response (same shape as `show`).
-    pub fn explode_session(
+    /// `proof` — name or expression for the `(n+1)`-dimensional proof diagram.
+    /// `target` — optional goal to keep working toward (the original session's
+    /// target). Forward starts at `proof.in`, backward at `proof.out`.
+    /// Returns a daemon-protocol JSON response (same shape as `show`).
+    pub fn resume_session(
         &mut self,
         type_name: &str,
-        diagram: &str,
+        proof: &str,
+        target: Option<String>,
         backward: bool,
     ) -> String {
         let (store, root_path) = match std::mem::replace(&mut self.state, State::Empty) {
@@ -229,10 +231,11 @@ impl WebRepl {
             Err(e) => return err_json(&e),
         };
 
-        match RewriteEngine::explode(
+        match RewriteEngine::resume(
             Arc::clone(&store),
             type_complex,
-            diagram,
+            proof,
+            target.as_deref(),
             root_path.clone(),
             type_name.to_string(),
             backward,

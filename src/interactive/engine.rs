@@ -337,38 +337,43 @@ impl RewriteEngine {
         })
     }
 
-    /// Build a session by "exploding" a proof diagram into its rewrite steps.
+    /// Resume a session from a proof diagram: decompose it into the rewrite
+    /// steps that produce it, with those steps already applied.
     ///
-    /// `diagram_name` must resolve to a diagram `d` of dimension `n+1 > 0`.
+    /// `proof_name` must resolve to a diagram `d` of dimension `n+1 > 0`.
     /// Pseudo-normalising its paste tree makes every dimension-`n` paste
     /// outermost; flattening that chain expresses `d = d₁ #ₙ … #ₙ dₘ` with each
     /// `dᵢ` pasted below dimension `n`.  The `dᵢ` become the rewrite steps —
     /// reversed in backward mode — and each step's history label lists the
-    /// `(n+1)`-dimensional generators it applies.  A forward session runs from
-    /// `d.in` to `d.out`; a backward one from `d.out` to `d.in`.
+    /// `(n+1)`-dimensional generators it applies.
     ///
-    /// The session is returned with every step already applied, so the assembled
-    /// proof is `d`; it behaves like any other session (undo, redo, continue).
-    pub fn explode(
+    /// The session starts at `d`'s input boundary (forward) or output boundary
+    /// (backward), with every step applied, so the current diagram is the
+    /// opposite boundary and the assembled proof is `d`.  `target` is the goal
+    /// to keep working toward — the *original* session's target, never inferred
+    /// from `d`'s own boundary — or `None` to resume open-ended.  The result
+    /// behaves like any other session (undo, redo, continue).
+    pub fn resume(
         store: Arc<GlobalStore>,
         type_complex: Arc<Complex>,
-        diagram_name: &str,
+        proof_name: &str,
+        target_name: Option<&str>,
         source_file: String,
         type_name: String,
         backward: bool,
     ) -> Result<Self, String> {
-        let proof = eval_diagram_expr(&store, &type_complex, &source_file, diagram_name)?;
+        let proof = eval_diagram_expr(&store, &type_complex, &source_file, proof_name)?;
         if proof.dim() < 1 {
             return Err(format!(
-                "'{}' has dimension {}; explode needs a diagram of dimension > 0",
-                diagram_name, proof.dim().max(0),
+                "'{}' has dimension {}; resume needs a proof diagram of dimension > 0",
+                proof_name, proof.dim().max(0),
             ));
         }
         let top = proof.top_dim(); // n + 1
         let n = top - 1;
 
         let tree = proof.tree(Sign::Source, top)
-            .ok_or_else(|| format!("'{}' has no paste tree", diagram_name))?;
+            .ok_or_else(|| format!("'{}' has no paste tree", proof_name))?;
         let normalised = pseudo_normalise(tree, &type_complex).map_err(|e| e.to_string())?;
         debug_assert!(is_pseudo_normal(&normalised), "pseudo_normalise must return a pseudo-normal tree");
 
@@ -395,7 +400,8 @@ impl RewriteEngine {
             history.reverse();
         }
 
-        // Forward: in → out, stepping along target boundaries; backward: the dual.
+        // Forward starts at the input boundary and steps along target
+        // boundaries; backward is the dual.
         let (initial_sign, step_sign) = if backward {
             (Sign::Target, Sign::Source)
         } else {
@@ -403,13 +409,20 @@ impl RewriteEngine {
         };
         let initial_diagram = Diagram::boundary(initial_sign, n, &proof)
             .map_err(|e| format!("initial boundary: {}", e))?;
-        let target_diagram = Diagram::boundary(step_sign, n, &proof)
-            .map_err(|e| format!("target boundary: {}", e))?;
         let current_diagram = match steps.last() {
             Some(last) => Diagram::boundary(step_sign, n, last)
                 .map_err(|e| format!("current boundary: {}", e))?,
             None => initial_diagram.clone(),
         };
+
+        // The target is the supplied goal — never `d`'s own boundary.
+        let target_diagram = match target_name {
+            Some(t) => Some(eval_diagram_expr(&store, &type_complex, &source_file, t)?),
+            None => None,
+        };
+        if let Some(ref target) = target_diagram {
+            check_parallel(&initial_diagram, target)?;
+        }
 
         let rule_patterns = build_rule_patterns(&type_complex, n, backward)?;
         let rewrites = collect_confirmed_matches(&type_complex, &rule_patterns, &current_diagram)?;
@@ -428,12 +441,12 @@ impl RewriteEngine {
             proof_cache: None,
             source_file,
             type_name,
-            initial_diagram_name: diagram_name.to_owned(),
-            target_diagram_name: None,
+            initial_diagram_name: proof_name.to_owned(),
+            target_diagram_name: target_name.map(str::to_owned),
             store,
             type_complex,
             initial_diagram,
-            target_diagram: Some(target_diagram),
+            target_diagram,
         })
     }
 
@@ -1302,7 +1315,7 @@ impl RewriteEngine {
 }
 
 #[cfg(test)]
-mod explode_tests {
+mod resume_tests {
     use super::*;
     use crate::aux::loader::Loader;
     use std::path::PathBuf;
@@ -1325,22 +1338,22 @@ mod explode_tests {
         (store, tc, path)
     }
 
-    fn explode(name: &str, backward: bool) -> (RewriteEngine, Diagram, Arc<Complex>) {
+    fn resume(proof: &str, target: Option<&str>, backward: bool) -> (RewriteEngine, Diagram) {
         let (store, tc, path) = load();
-        let proof = eval_diagram_expr(&store, &tc, &path, name).expect("proof diagram");
-        let engine = RewriteEngine::explode(
-            store, Arc::clone(&tc), name, path, TYPE.to_owned(), backward,
-        ).expect("explode");
-        (engine, proof, tc)
+        let proof_diag = eval_diagram_expr(&store, &tc, &path, proof).expect("proof diagram");
+        let engine = RewriteEngine::resume(
+            store, tc, proof, target, path, TYPE.to_owned(), backward,
+        ).expect("resume");
+        (engine, proof_diag)
     }
 
     /// `inter = (alpha alpha) #0 alpha` is not pseudo-normal: its pasting at
-    /// dimension 0 sits above a dimension-1 paste.  Exploding it must
+    /// dimension 0 sits above a dimension-1 paste.  Resuming it must
     /// pseudo-normalise first, yielding two interchange steps `[alpha·alpha, alpha]`
     /// whose reassembly reconstructs `inter`.
     #[test]
-    fn forward_reconstructs_non_pseudo_normal_proof() {
-        let (engine, proof, _) = explode("inter", false);
+    fn reconstructs_non_pseudo_normal_proof() {
+        let (engine, proof) = resume("inter", None, false);
         assert_eq!(engine.step_count(), 2, "interchange splits into two steps");
         assert_eq!(engine.history_moves().count(), 2);
         // The first step pastes two parallel `alpha` rewrites, the second one.
@@ -1349,39 +1362,44 @@ mod explode_tests {
 
         let assembled = engine.assemble_proof().expect("assemble").expect("non-empty");
         assert!(Diagram::isomorphic(&assembled, &proof), "assembled proof ≠ original");
-        assert!(engine.target_reached(), "forward session should end at the target");
     }
 
-    /// Forward initial/target are `d.in`/`d.out`; backward swaps them.  A single
-    /// load is shared so the boundary comparisons hit exact equality.
+    /// The target is the supplied goal, not inferred from the proof: with no
+    /// target the session has none; with a matching one it is already reached;
+    /// a non-parallel target is rejected.
     #[test]
-    fn backward_swaps_endpoints() {
+    fn target_is_explicit() {
+        // `lhs2 = alpha alpha alpha`; its boundaries are the 1-cell `a`.
+        let (open, _) = resume("lhs2", None, false);
+        assert!(open.target_diagram().is_none(), "no target supplied ⇒ no target");
+        assert!(!open.target_reached());
+
+        let (goal, _) = resume("lhs2", Some("a"), false);
+        assert!(goal.target_diagram().is_some());
+        assert!(goal.target_reached(), "current = lhs2.out = a = target");
+
         let (store, tc, path) = load();
-        let proof = eval_diagram_expr(&store, &tc, &path, "lhs2").unwrap();
-        let n = proof.top_dim() - 1;
-        let d_in = Diagram::boundary(Sign::Source, n, &proof).unwrap();
-        let d_out = Diagram::boundary(Sign::Target, n, &proof).unwrap();
-
-        let fwd = RewriteEngine::explode(
-            Arc::clone(&store), Arc::clone(&tc), "lhs2", path.clone(), TYPE.to_owned(), false,
-        ).unwrap();
-        assert!(Diagram::isomorphic(fwd.initial_diagram(), &d_in));
-        assert!(Diagram::isomorphic(fwd.target_diagram().unwrap(), &d_out));
-
-        let bwd = RewriteEngine::explode(
-            store, tc, "lhs2", path, TYPE.to_owned(), true,
-        ).unwrap();
-        assert!(Diagram::isomorphic(bwd.initial_diagram(), &d_out));
-        assert!(Diagram::isomorphic(bwd.target_diagram().unwrap(), &d_in));
-        assert!(bwd.target_reached());
+        let err = RewriteEngine::resume(
+            store, tc, "lhs2", Some("pt"), path, TYPE.to_owned(), false,
+        ).err().expect("a 0-cell target is not parallel to the 1-cell initial");
+        assert!(err.to_lowercase().contains("parallel") || err.contains("dimension"), "got: {err}");
     }
 
-    /// An exploded session behaves like a normal one: undo to the source and
-    /// redo back to the end restore the corresponding diagrams.
+    /// Backward resumption reverses the steps and still reassembles the proof.
+    #[test]
+    fn backward_reassembles() {
+        let (engine, proof) = resume("lhs2", Some("a"), true);
+        assert_eq!(engine.step_count(), 3);
+        let assembled = engine.assemble_proof().expect("assemble").expect("non-empty");
+        assert!(Diagram::isomorphic(&assembled, &proof));
+        assert!(engine.target_reached());
+    }
+
+    /// A resumed session behaves like a normal one: undo to the start and redo
+    /// back to the end restore the corresponding diagrams.
     #[test]
     fn undo_redo_roundtrip() {
-        // `lhs2 = alpha alpha alpha` — three sequential rewrite steps.
-        let (mut engine, _, _) = explode("lhs2", false);
+        let (mut engine, _) = resume("lhs2", None, false);
         let steps = engine.step_count();
         assert_eq!(steps, 3);
         let end = engine.current_diagram().clone();
@@ -1400,13 +1418,13 @@ mod explode_tests {
     fn rejects_dimension_zero_and_unknown() {
         let (store, tc, path) = load();
         // `pt` is a 0-cell.
-        let err = RewriteEngine::explode(
-            Arc::clone(&store), Arc::clone(&tc), "pt", path.clone(), TYPE.to_owned(), false,
+        let err = RewriteEngine::resume(
+            Arc::clone(&store), Arc::clone(&tc), "pt", None, path.clone(), TYPE.to_owned(), false,
         ).err().expect("dimension-0 diagram should be rejected");
         assert!(err.contains("dimension"), "got: {err}");
 
-        let err = RewriteEngine::explode(
-            store, tc, "nope", path, TYPE.to_owned(), false,
+        let err = RewriteEngine::resume(
+            store, tc, "nope", None, path, TYPE.to_owned(), false,
         ).err().expect("unknown diagram should be rejected");
         assert!(err.contains("nope"), "got: {err}");
     }

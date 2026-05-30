@@ -121,7 +121,7 @@ pub(crate) fn top_generators(tree: &PasteTree, complex: &Complex) -> Result<Vec<
 // dimensional paste slide above or below a lower-dimensional one.  Pseudo-
 // normalisation picks a canonical representative: strip units (`remove_units`),
 // then repeatedly lift the highest-dimensional paste to the root by interchange
-// (`pseudo_normalise`).  `explode` (the rewrite engine) uses this to recover the
+// (`pseudo_normalise`).  The rewrite engine's `resume` uses this to recover the
 // rewrite steps of a proof diagram.
 
 /// The dimension of the generator a leaf names, looked up in `complex`.

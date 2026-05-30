@@ -377,8 +377,8 @@ class WasmBackend {
     return this.inner.init_session(typeName, initialDiagram, targetDiagram, backward);
   }
 
-  async explode_session(typeName, diagram, backward = false) {
-    return this.inner.explode_session(typeName, diagram, backward);
+  async resume_session(typeName, proof, target, backward = false) {
+    return this.inner.resume_session(typeName, proof, target ?? null, backward);
   }
 
   async run_command(commandJson) {
@@ -446,10 +446,11 @@ class HttpBackend {
     return this.post('/api/init_session', body);
   }
 
-  async explode_session(typeName, diagram, backward = false) {
-    const body = { type_name: typeName, diagram };
+  async resume_session(typeName, proof, target, backward = false) {
+    const body = { type_name: typeName, proof };
+    if (target) body.target = target;
     if (backward) body.backward = true;
-    return this.post('/api/explode_session', body);
+    return this.post('/api/resume_session', body);
   }
 
   async run_command(commandJson) {
@@ -1249,8 +1250,8 @@ async function startSessionFromRepl(typeName, src, tgt, backward, rawCmd) {
   await enterSession(repl.init_session(typeName, src, tgt, backward), rawCmd);
 }
 
-async function startExplodeFromRepl(typeName, diagram, backward, rawCmd) {
-  await enterSession(repl.explode_session(typeName, diagram, backward), rawCmd);
+async function startResumeFromRepl(typeName, proof, target, backward, rawCmd) {
+  await enterSession(repl.resume_session(typeName, proof, target, backward), rawCmd);
 }
 
 async function enterSession(responsePromise, rawCmd) {
@@ -1448,18 +1449,18 @@ function buildCommand(cmd, arg, raw) {
       void startSessionFromRepl(typeName, src, tgt, chkBackward.checked, raw);
       return null;
     }
-    case 'explode': {
+    case 'resume': {
       if (sessionActive) {
         appendReplEntry(raw, formatError('session already active — use stop first'));
         return null;
       }
       const parts = splitQuotedArgs(arg);
-      if (parts.length !== 2) {
-        appendReplEntry(raw, formatError('usage: explode <type> <diagram>'));
+      if (parts.length < 2 || parts.length > 3) {
+        appendReplEntry(raw, formatError('usage: resume <type> <proof> [<target>]'));
         return null;
       }
-      const [typeName, diagram] = parts;
-      void startExplodeFromRepl(typeName, diagram, chkBackward.checked, raw);
+      const [typeName, proof, target] = parts;
+      void startResumeFromRepl(typeName, proof, target, chkBackward.checked, raw);
       return null;
     }
     default:
@@ -1717,7 +1718,7 @@ const HELP_TEXT = `Always available:
   type <name>         inspect a type
   homology <name>     compute cellular homology of a type
   start <t> <i> [<g>] start a rewrite session (target optional)
-  explode <t> <d>     decompose a diagram into a rewrite session
+  resume <t> <p> [<g>] resume a session from a proof diagram (target optional)
   backward [on|off]   show or toggle backward rewrite mode   (default: off)
   stop                end the active session
   clear               clear the REPL output

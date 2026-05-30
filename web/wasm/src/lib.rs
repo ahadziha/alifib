@@ -73,19 +73,21 @@ impl WasmRepl {
             .init_session(type_name, initial_diagram, target_diagram, backward)
     }
 
-    /// Start a session by exploding a proof diagram into its rewrite steps.
+    /// Resume a session from a proof diagram, decomposing it into its steps.
     ///
-    /// `diagram` — name or expression for the (n+1)-dimensional proof diagram.
-    /// `backward` — if true, run from `d.out` to `d.in` rather than `d.in` to `d.out`.
+    /// `proof` — name or expression for the `(n+1)`-dimensional proof diagram.
+    /// `target` — optional goal to keep working toward.
+    /// `backward` — if true, start at `proof.out` rather than `proof.in`.
     ///
     /// Returns a daemon-protocol JSON response (same shape as `show`).
-    pub fn explode_session(
+    pub fn resume_session(
         &mut self,
         type_name: &str,
-        diagram: &str,
+        proof: &str,
+        target: Option<String>,
         backward: bool,
     ) -> String {
-        self.inner.explode_session(type_name, diagram, backward)
+        self.inner.resume_session(type_name, proof, target, backward)
     }
 
     /// Send a daemon-protocol command and return a JSON response.
