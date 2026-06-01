@@ -43,11 +43,14 @@
 //! save <path>      Write source file with stored definitions appended
 //! ```
 
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
-use rustyline::EditMode;
+use rustyline::highlight::Highlighter;
+use rustyline::history::FileHistory;
+use rustyline::{EditMode, Editor};
 
 use crate::core::complex::Complex;
 use crate::core::diagram::{CellData, Diagram, Sign};
@@ -57,64 +60,37 @@ use super::display::Display;
 use super::engine::{RewriteEngine, load_file_context, resolve_type};
 use super::render::{print_history, print_state};
 
-// ── Public types ──────────────────────────────────────────────────────────────
+// ── Readline editor with a coloured prompt ──────────────────────────────────────
 
-/// Outcome of a goal sub-loop.
-pub enum GoalOutcome {
-    /// The user accepted the proof (typed `done` or `accept`).
-    Done,
-    /// The user abandoned the goal (typed `abandon`, `quit`, or EOF).
-    Abandoned,
+/// Minimal rustyline helper that renders the prompt in colour.
+///
+/// The `derive` feature is off, so the marker traits are implemented by hand;
+/// only [`Highlighter::highlight_prompt`] does any work.
+struct ReplHelper {
+    prompt: String,
 }
 
-/// Result of dispatching a single rewrite command.
-#[derive(PartialEq, Eq)]
-pub enum DispatchResult { Continue, Quit }
-
-// ── Public entry points ───────────────────────────────────────────────────────
-
-/// Run the inner goal loop on an already-initialised engine.
-///
-/// Accepts all standard rewrite commands plus `done`/`accept` to finish the
-/// proof. Returns [`GoalOutcome::Done`] when the user accepts, or
-/// [`GoalOutcome::Abandoned`] on `abandon` / `quit` / EOF.
-pub fn run_goal_loop(
-    engine: &mut RewriteEngine,
-    display: &Display,
-    rl: &mut rustyline::DefaultEditor,
-) -> GoalOutcome {
-    show_state(engine, display);
-    loop {
-        match rl.readline("goal> ") {
-            Err(ReadlineError::Eof) | Err(ReadlineError::Interrupted) => {
-                return GoalOutcome::Abandoned;
-            }
-            Err(e) => {
-                display.error(&format!("read error: {e}"));
-                return GoalOutcome::Abandoned;
-            }
-            Ok(line) => {
-                let line = line.trim().to_owned();
-                if line.is_empty() { continue; }
-                rl.add_history_entry(&line).ok();
-
-                for part in line.split(';') {
-                    let part = part.trim();
-                    if part.is_empty() { continue; }
-                    match part {
-                        "done" | "accept" | "d" | "a" => return GoalOutcome::Done,
-                        "abandon" => return GoalOutcome::Abandoned,
-                        _ => {
-                            if dispatch_rewrite_command(engine, part, display) == DispatchResult::Quit {
-                                return GoalOutcome::Abandoned;
-                            }
-                        }
-                    }
-                }
-            }
-        }
+impl rustyline::completion::Completer for ReplHelper {
+    type Candidate = String;
+}
+impl rustyline::hint::Hinter for ReplHelper {
+    type Hint = String;
+}
+impl rustyline::validate::Validator for ReplHelper {}
+impl Highlighter for ReplHelper {
+    fn highlight_prompt<'b, 's: 'b, 'p: 'b>(
+        &'s self,
+        _prompt: &'p str,
+        _default: bool,
+    ) -> Cow<'b, str> {
+        Cow::Borrowed(&self.prompt)
     }
 }
+impl rustyline::Helper for ReplHelper {}
+
+type ReplEditor = Editor<ReplHelper, FileHistory>;
+
+// ── Public entry points ───────────────────────────────────────────────────────
 
 /// Write the original file content with stored definitions appended as local blocks.
 ///
@@ -160,7 +136,7 @@ pub fn run_repl(
 
     display.meta(&format!("Loaded {}", source_file));
 
-    let mut rl = make_editor(emacs_mode);
+    let mut rl = make_editor(emacs_mode, &display);
     let mut engine: Option<RewriteEngine> = None;
     let mut stored_defs: Vec<(String, String, String)> = Vec::new();
     let mut backward = false;
@@ -168,13 +144,13 @@ pub fn run_repl(
     // Auto-start from CLI flags when type and source are given.
     if let (Some(tn), Some(src)) = (type_name, initial_diagram) {
         try_start_session(
-            &store, &canonical_path, source_file, tn, src, target_diagram,
+            &store, &canonical_path, tn, src, target_diagram,
             backward, &display, &mut engine,
         );
     }
 
     'repl: loop {
-        match rl.readline("> ") {
+        match rl.readline("❯ ") {
             Err(ReadlineError::Eof) | Err(ReadlineError::Interrupted) => break,
             Err(e) => { display.error(&format!("read error: {e}")); break; }
             Ok(line) => {
@@ -238,7 +214,7 @@ pub fn run_repl(
                             display.error("session already active — use 'stop' first");
                         } else {
                             try_start_session(
-                                &store, &canonical_path, source_file,
+                                &store, &canonical_path,
                                 &type_arg, &source_arg, target_arg.as_deref(),
                                 backward, &display, &mut engine,
                             );
@@ -249,7 +225,7 @@ pub fn run_repl(
                             display.error("session already active — use 'stop' first");
                         } else {
                             try_resume_session(
-                                &store, &canonical_path, source_file,
+                                &store, &canonical_path,
                                 &type_arg, &proof_arg, target_arg.as_deref(),
                                 backward, &display, &mut engine,
                             );
@@ -317,45 +293,28 @@ pub fn run_repl(
     Ok(())
 }
 
-/// Dispatch a single rewrite command to an existing engine.
-///
-/// Used by [`run_goal_loop`].  Returns [`DispatchResult::Quit`] if the command
-/// was `quit`/`exit`/`q`, otherwise [`DispatchResult::Continue`].
-pub fn dispatch_rewrite_command(
-    engine: &mut RewriteEngine,
-    line: &str,
-    display: &Display,
-) -> DispatchResult {
-    match parse_command(line) {
-        Cmd::Quit => return DispatchResult::Quit,
-        Cmd::Stop | Cmd::Types | Cmd::PrintFile | Cmd::Start(..) => {
-            display.error("command not available here");
-        }
-        Cmd::Type(_) | Cmd::Homology(_) => display.error("command not available here"),
-        Cmd::Backward(_) => {
-            let on = engine.backward();
-            display.meta(&format!("Backward mode {}.", if on { "on" } else { "off" }));
-        }
-        Cmd::Status => show_state(engine, display),
-        cmd => dispatch_engine_cmd(engine, cmd, display),
-    }
-    DispatchResult::Continue
-}
-
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
-fn make_editor(emacs_mode: bool) -> rustyline::DefaultEditor {
-    let mut rl = rustyline::DefaultEditor::new().expect("readline init failed");
+/// Build the readline editor with a coloured prompt.
+///
+/// rustyline measures prompt width from the string passed to `readline`, so we
+/// pass the plain `❯ ` there and let [`ReplHelper`] substitute the coloured form
+/// at render time — keeping the cursor correctly positioned.
+fn make_editor(emacs_mode: bool, display: &Display) -> ReplEditor {
+    let mut rl = ReplEditor::new().expect("readline init failed");
     rl.set_edit_mode(if emacs_mode { EditMode::Emacs } else { EditMode::Vi });
+    rl.set_helper(Some(ReplHelper { prompt: display.acc("❯ ") }));
     rl
 }
 
 /// Resolve type, source, and optional target, then create the engine.
+///
+/// `canonical_path` is the store's module key (from [`load_file_context`]); the
+/// engine uses it for in-store lookups such as `store`/`register_proof`.
 #[allow(clippy::too_many_arguments)]
 fn try_start_session(
     store: &Arc<GlobalStore>,
     canonical_path: &str,
-    source_file: &str,
     type_name: &str,
     source_name: &str,
     target_name: Option<&str>,
@@ -369,7 +328,7 @@ fn try_start_session(
     };
     match RewriteEngine::from_store(
         Arc::clone(store), tc, source_name, target_name,
-        source_file.to_owned(), type_name.to_owned(), backward,
+        canonical_path.to_owned(), type_name.to_owned(), backward,
     ) {
         Ok(e) => {
             *engine = Some(e);
@@ -387,11 +346,13 @@ fn try_start_session(
 }
 
 /// Resolve the type, then create a session by resuming from a proof diagram.
+///
+/// `canonical_path` is the store's module key (from [`load_file_context`]); the
+/// engine uses it for in-store lookups such as `store`/`register_proof`.
 #[allow(clippy::too_many_arguments)]
 fn try_resume_session(
     store: &Arc<GlobalStore>,
     canonical_path: &str,
-    source_file: &str,
     type_name: &str,
     proof_name: &str,
     target_name: Option<&str>,
@@ -405,7 +366,7 @@ fn try_resume_session(
     };
     match RewriteEngine::resume(
         Arc::clone(store), tc, proof_name, target_name,
-        source_file.to_owned(), type_name.to_owned(), backward,
+        canonical_path.to_owned(), type_name.to_owned(), backward,
     ) {
         Ok(e) => {
             *engine = Some(e);
@@ -847,34 +808,39 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
 }
 
 fn print_help(display: &Display) {
-    display.meta(
-        "Always available:\n\
-         \x20 types               List all types in the file\n\
-         \x20 type <name>         Inspect a type: generators, diagrams, maps\n\
-         \x20 homology <name>     Compute cellular homology of a type\n\
-         \x20 start <t> <s>       Start a rewrite session (target optional)\n\
-         \x20 resume <t> <p>      Resume a session from a diagram (target optional)\n\
-         \x20 backward [on|off]   Show or toggle backward rewrite mode (default: off)\n\
-         \x20 status / show       Session state, or module info when idle\n\
-         \x20 print               Print the whole source file\n\
-         \x20 stop                End the active session\n\
-         \x20 help / ?            Show this help\n\
-         \x20 quit / exit / q     Exit\n\
-         \n\
-         Session commands (require active session):\n\
-         \x20 apply <n> [<n2>..]  Apply rewrite(s) at given indices (alias: a)\n\
-         \x20 auto <n>            Apply up to <n> rewrites automatically\n\
-         \x20 random <n>          Apply randomly selected rewrites\n\
-         \x20 parallel [on|off]   Show or toggle parallel rewrite mode (default: on)\n\
-         \x20 undo [<n>]          Undo the last step, or back to step <n> (alias: u)\n\
-         \x20 redo [<n>]          Redo the last undone step, or forward to step <n>\n\
-         \x20 undo all / restart  Reset to the source diagram\n\
-         \x20 rules               List rewrite rules at current dimension (alias: r)\n\
-         \x20 history             Show the move history (alias: h)\n\
-         \x20 proof               Show the running proof diagram (alias: p)\n\
-         \x20 store <name>        Store the current proof as a named diagram\n\
-         \x20 save <path>         Write source file with stored definitions appended"
-    );
+    // Command token in accent, left-justified in a 20-column field (measured on
+    // the plain token, since painting changes byte length), then the description.
+    let cmd = |tok: &str, desc: &str| {
+        let pad = " ".repeat(20usize.saturating_sub(tok.len()));
+        display.inspect_rich(&format!("  {}{}{}", display.acc(tok), pad, desc));
+    };
+
+    display.inspect_rich(&display.sec("Always available:"));
+    cmd("types",            "List all types in the file");
+    cmd("type <name>",      "Inspect a type: generators, diagrams, maps");
+    cmd("homology <name>",  "Compute cellular homology of a type");
+    cmd("start <t> <s>",    "Start a rewrite session (target optional)");
+    cmd("resume <t> <p>",   "Resume a session from a diagram (target optional)");
+    cmd("backward [on|off]", "Show or toggle backward rewrite mode (default: off)");
+    cmd("status / show",    "Session state, or module info when idle");
+    cmd("print",            "Print the whole source file");
+    cmd("stop",             "End the active session");
+    cmd("help / ?",         "Show this help");
+    cmd("quit / exit / q",  "Exit");
+    display.blank();
+    display.inspect_rich(&display.sec("Session commands (require active session):"));
+    cmd("apply <n> [<n2>..]", "Apply rewrite(s) at given indices (alias: a)");
+    cmd("auto <n>",         "Apply up to <n> rewrites automatically");
+    cmd("random <n>",       "Apply randomly selected rewrites");
+    cmd("parallel [on|off]", "Show or toggle parallel rewrite mode (default: on)");
+    cmd("undo [<n>]",       "Undo the last step, or back to step <n> (alias: u)");
+    cmd("redo [<n>]",       "Redo the last undone step, or forward to step <n>");
+    cmd("undo all / restart", "Reset to the source diagram");
+    cmd("rules",            "List rewrite rules at current dimension (alias: r)");
+    cmd("history",          "Show the move history (alias: h)");
+    cmd("proof",            "Show the running proof diagram (alias: p)");
+    cmd("store <name>",     "Store the current proof as a named diagram");
+    cmd("save <path>",      "Write source file with stored definitions appended");
 }
 
 // ── Command parsing ───────────────────────────────────────────────────────────
