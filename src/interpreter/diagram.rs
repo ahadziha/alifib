@@ -105,61 +105,193 @@ pub(super) fn is_pure_hole_dexpr(expr: &ast::DExpr) -> bool {
 
 // ---- Diagram interpretation ----
 
-/// Compute a boundary term from a diagram at one dimension below its top.
-fn boundary_term_from_diagram(
-    diagram: &Diagram,
-    sign: DiagramSign,
-    span: Span,
-    mut result: InterpResult,
-) -> (Option<Term>, InterpResult) {
-    let Some(boundary_dim) = diagram.top_dim().checked_sub(1) else {
-        result.add_error(make_error(span, "diagram has no principal boundary"));
-        return (None, result);
-    };
-    match Diagram::boundary(sign, boundary_dim, diagram) {
-        Ok(boundary) => (Some(Term::Diag(boundary)), result),
-        Err(error) => {
-            result.add_error(make_error_from_core(span, error));
-            (None, result)
+/// A structural decomposition of a dotted expression into deferred parts.
+///
+/// A well-formed dotted expression is a prefix of partial maps, then a single
+/// basic diagram, then a suffix of boundary operators.  Rather than composing
+/// maps and applying them eagerly while walking the chain, [`decompose`] just
+/// collects the pieces — doing only cheap name lookups and map evaluation — and
+/// [`execute`] performs the heavy work in the efficient order: take the
+/// diagram's boundary *directly* in one call, then apply the maps to that
+/// (small) boundary from the innermost outward.  No composite map is ever built.
+enum Decomp {
+    /// Maps (outermost first; `maps[0]` is applied last) wrapping a diagram,
+    /// then boundary operators in source order, each tagged with its span.
+    Diagram {
+        maps: Vec<EvalMap>,
+        diagram: Diagram,
+        diagram_span: Span,
+        bds: Vec<(DiagramSign, Span)>,
+    },
+    /// A non-empty map chain denoting the composite `maps[0] ∘ … ∘ maps[last]`.
+    Map { maps: Vec<EvalMap> },
+    /// The expression contains a hole (`?`), which has been recorded.
+    Hole,
+}
+
+/// Collect a dotted expression into a [`Decomp`] without composing or applying.
+///
+/// Mirrors the scoping of the eager reading exactly: the whole-expression
+/// fast-path (a qualified name) is retried at every prefix level against the
+/// *outer* `scope`, while a `field` following a map prefix is resolved in that
+/// map's own domain.  A failed or hole-terminated base swallows the rest.
+fn decompose(
+    context: &Context,
+    scope: &Complex,
+    expr: &Spanned<DExpr>,
+) -> (Option<Decomp>, InterpResult) {
+    match &expr.inner {
+        DExpr::Component(comp) => {
+            let (comp_opt, mut result) = interpret_dcomponent(context, scope, comp, expr.span);
+            match comp_opt {
+                None => (None, result),
+                Some(Component::Value(Term::Diag(diagram))) => (
+                    Some(Decomp::Diagram {
+                        maps: Vec::new(),
+                        diagram,
+                        diagram_span: expr.span,
+                        bds: Vec::new(),
+                    }),
+                    result,
+                ),
+                Some(Component::Value(Term::Map(m))) => {
+                    (Some(Decomp::Map { maps: vec![m] }), result)
+                }
+                Some(Component::Hole) => {
+                    result.add_hole(HoleInfo::new(expr.span));
+                    (Some(Decomp::Hole), result)
+                }
+                Some(Component::Bd(_)) => {
+                    result.add_error(make_error(expr.span, "Not a diagram or map"));
+                    (None, result)
+                }
+            }
+        }
+        DExpr::Dot { base, field } => {
+            // Fast path: the entire dotted name is a generator or diagram in scope.
+            if let Some(dotted) = try_dotted_name(&expr.inner) {
+                if let Some(found) = scope.find_diagram(&dotted).or_else(|| scope.classifier(&dotted)) {
+                    return (
+                        Some(Decomp::Diagram {
+                            maps: Vec::new(),
+                            diagram: found.clone(),
+                            diagram_span: expr.span,
+                            bds: Vec::new(),
+                        }),
+                        InterpResult::ok(context.clone()),
+                    );
+                }
+            }
+
+            let (base_opt, base_result) = decompose(context, scope, base);
+            let base_decomp = match base_opt {
+                None => return (None, base_result),
+                Some(Decomp::Hole) => return (Some(Decomp::Hole), base_result),
+                Some(d) => d,
+            };
+
+            match base_decomp {
+                // After a diagram, only boundary operators may follow.
+                Decomp::Diagram { maps, diagram, diagram_span, mut bds } => {
+                    let (comp_opt, comp_result) =
+                        interpret_dcomponent(&base_result.context, scope, &field.inner, field.span);
+                    let mut combined = base_result.merge(comp_result);
+                    match comp_opt {
+                        None => (None, combined),
+                        Some(Component::Bd(sign)) => {
+                            bds.push((sign, field.span));
+                            (Some(Decomp::Diagram { maps, diagram, diagram_span, bds }), combined)
+                        }
+                        Some(Component::Hole) => {
+                            combined.add_hole(HoleInfo::new(field.span));
+                            (Some(Decomp::Hole), combined)
+                        }
+                        Some(Component::Value(_)) => {
+                            combined.add_error(make_error(field.span, "Not a well-formed diagram expression"));
+                            (None, combined)
+                        }
+                    }
+                }
+                // The field is resolved in the innermost map's domain.
+                Decomp::Map { mut maps } => {
+                    let domain = maps.last().expect("Map decomp is non-empty").domain.clone();
+                    let (comp_opt, comp_result) =
+                        interpret_dcomponent(&base_result.context, &domain, &field.inner, field.span);
+                    let mut combined = base_result.merge(comp_result);
+                    match comp_opt {
+                        None => (None, combined),
+                        Some(Component::Value(Term::Map(m))) => {
+                            maps.push(m);
+                            (Some(Decomp::Map { maps }), combined)
+                        }
+                        Some(Component::Value(Term::Diag(diagram))) => (
+                            Some(Decomp::Diagram { maps, diagram, diagram_span: field.span, bds: Vec::new() }),
+                            combined,
+                        ),
+                        Some(Component::Hole) => {
+                            combined.add_hole(HoleInfo::new(field.span));
+                            (Some(Decomp::Hole), combined)
+                        }
+                        Some(Component::Bd(_)) => {
+                            combined.add_error(make_error(field.span, "Not a diagram or map"));
+                            (None, combined)
+                        }
+                    }
+                }
+                Decomp::Hole => unreachable!("hole bases return early"),
+            }
         }
     }
 }
 
-/// Apply a partial map to a component, producing the image term.
+/// Execute a [`Decomp`]: take the boundary directly, then apply maps inward-out.
 ///
-/// Diagrams are mapped by `PartialMap::apply`; inner maps are composed.
-/// A hole produces a recorded `HoleInfo`; a boundary direction is an error.
-fn apply_map_component(
-    eval_map: &EvalMap,
-    component: Component,
-    span: Span,
-    mut result: InterpResult,
-) -> (Option<Term>, InterpResult) {
-    match component {
-        Component::Hole => {
-            result.add_hole(HoleInfo::new(span));
-            (None, result)
-        }
-        Component::Bd(_) => {
-            result.add_error(make_error(span, "Not a diagram or map"));
-            (None, result)
-        }
-        Component::Value(Term::Diag(diagram)) => match PartialMap::apply(&eval_map.map, &diagram) {
-            Ok(image_diagram) => (Some(Term::Diag(image_diagram)), result),
-            Err(error) => {
-                result.add_error(make_error_from_core(span, error));
-                (None, result)
+/// The boundary suffix collapses to a single [`Diagram::boundary`] call — only
+/// the last operator's polarity and the number of operators matter.  Because
+/// maps preserve boundaries, applying them *after* the boundary (to the small
+/// boundary diagram) agrees with the eager reading while touching far fewer
+/// cells.  A pure map chain is composed once, from the innermost map outward.
+fn execute(decomp: Option<Decomp>, mut result: InterpResult) -> (Option<Term>, InterpResult) {
+    match decomp {
+        None | Some(Decomp::Hole) => (None, result),
+        Some(Decomp::Diagram { maps, diagram, diagram_span, bds }) => {
+            let mut current = diagram;
+            if let Some(&(last_sign, last_span)) = bds.last() {
+                let n = current.top_dim();
+                if bds.len() > n {
+                    // The first operator that drops below dimension 0.
+                    result.add_error(make_error(bds[n].1, "diagram has no principal boundary"));
+                    return (None, result);
+                }
+                match Diagram::boundary(last_sign, n - bds.len(), &current) {
+                    Ok(b) => current = b,
+                    Err(error) => {
+                        result.add_error(make_error_from_core(last_span, error));
+                        return (None, result);
+                    }
+                }
             }
-        },
-        Component::Value(Term::Map(inner_map)) => {
-            let composed = PartialMap::compose(&eval_map.map, &inner_map.map);
-            (
-                Some(Term::Map(EvalMap {
-                    map: composed,
-                    domain: inner_map.domain,
-                })),
-                result,
-            )
+            // Apply maps from the innermost (nearest the diagram) outward.
+            for m in maps.iter().rev() {
+                match PartialMap::apply(&m.map, &current) {
+                    Ok(image) => current = image,
+                    Err(error) => {
+                        result.add_error(make_error_from_core(diagram_span, error));
+                        return (None, result);
+                    }
+                }
+            }
+            (Some(Term::Diag(current)), result)
+        }
+        Some(Decomp::Map { maps }) => {
+            let mut inner_to_outer = maps.into_iter().rev();
+            let innermost = inner_to_outer.next().expect("Map decomp is non-empty");
+            let domain = innermost.domain;
+            let mut composed = innermost.map;
+            for m in inner_to_outer {
+                composed = PartialMap::compose(&m.map, &composed);
+            }
+            (Some(Term::Map(EvalMap { map: composed, domain })), result)
         }
     }
 }
@@ -205,66 +337,9 @@ pub fn interpret_dexpr(
                 Some(Component::Value(t)) => (Some(t), result),
             }
         }
-        DExpr::Dot { base, field } => {
-            if let Some(dotted) = try_dotted_name(&d_expr.inner) {
-                if let Some(diagram) = scope.find_diagram(&dotted) {
-                    return (Some(Term::Diag(diagram.clone())), InterpResult::ok(context.clone()));
-                }
-                if let Some(classifier) = scope.classifier(&dotted) {
-                    return (Some(Term::Diag(classifier.clone())), InterpResult::ok(context.clone()));
-                }
-            }
-            interpret_dot_access(context, scope, base, field)
-        }
-    }
-}
-
-/// Interpret a dot-access expression: `expr.field`.
-///
-/// If `expr` evaluates to a diagram, `field` must be `.in` or `.out` (a boundary selector).
-/// If `expr` evaluates to a partial map, `field` is applied as a map component.
-fn interpret_dot_access(
-    context: &Context,
-    scope: &Complex,
-    base: &Spanned<DExpr>,
-    field: &Spanned<DComponent>,
-) -> (Option<Term>, InterpResult) {
-    let (left_opt, left_result) = interpret_dexpr(context, scope, base);
-    match left_opt {
-        None => (None, left_result),
-        Some(Term::Diag(diagram)) => {
-            let (comp_opt, comp_result) =
-                interpret_dcomponent(&left_result.context, scope, &field.inner, field.span);
-            let combined = left_result.merge(comp_result);
-            match comp_opt {
-                None => (None, combined),
-                Some(Component::Bd(sign)) => {
-                    boundary_term_from_diagram(&diagram, sign, field.span, combined)
-                }
-                Some(Component::Hole) => {
-                    let mut r = combined;
-                    r.add_hole(HoleInfo::new(field.span));
-                    (None, r)
-                }
-                Some(Component::Value(_)) => {
-                    let mut r = combined;
-                    r.add_error(make_error(field.span, "Not a well-formed diagram expression"));
-                    (None, r)
-                }
-            }
-        }
-        Some(Term::Map(eval_map)) => {
-            let (comp_opt, comp_result) = interpret_dcomponent(
-                &left_result.context,
-                &eval_map.domain,
-                &field.inner,
-                field.span,
-            );
-            let combined = left_result.merge(comp_result);
-            match comp_opt {
-                None => (None, combined),
-                Some(component) => apply_map_component(&eval_map, component, field.span, combined),
-            }
+        DExpr::Dot { .. } => {
+            let (decomp, result) = decompose(context, scope, d_expr);
+            execute(decomp, result)
         }
     }
 }
@@ -857,5 +932,114 @@ pub fn check_assert(pair: &TermPair) -> Result<(), String> {
             }
             Ok(())
         }
+    }
+}
+
+#[cfg(test)]
+mod dotted_expr_tests {
+    //! Behaviour of the deferred [`decompose`]/[`execute`] evaluation of dotted
+    //! diagram expressions: boundary suffixes collapse to one direct call, and
+    //! maps are applied *after* the boundary (relying on `φ(∂x) = ∂(φx)`).
+
+    use crate::aux::Tag;
+    use crate::aux::loader::Loader;
+    use crate::core::complex::Complex;
+    use crate::core::diagram::{Diagram, Sign};
+    use crate::interactive::engine::eval_diagram_expr;
+    use crate::interpreter::{GlobalStore, InterpretedFile};
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    /// Load a fixture and return its store, the named type's complex, and path.
+    fn load(file: &str, type_name: &str) -> (Arc<GlobalStore>, Arc<Complex>, String) {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join(file)
+            .to_string_lossy()
+            .into_owned();
+        let f = InterpretedFile::load(&Loader::default(vec![]), &path)
+            .ok()
+            .expect("fixture should interpret");
+        let store = Arc::clone(&f.state);
+        let module = store.find_module(&f.path).expect("module");
+        let gid = match module.find_generator(type_name) {
+            Some((Tag::Global(gid), _)) => *gid,
+            _ => panic!("type `{type_name}` not found"),
+        };
+        let tc = store.find_type(gid).expect("type entry").complex.clone();
+        (store, tc, f.path)
+    }
+
+    fn eval(store: &Arc<GlobalStore>, tc: &Complex, path: &str, expr: &str) -> Diagram {
+        eval_diagram_expr(store, tc, path, expr).unwrap_or_else(|e| panic!("`{expr}`: {e}"))
+    }
+
+    #[test]
+    fn boundary_suffix_collapses_to_one_direct_call() {
+        let (store, tc, path) = load("tests/fixtures/Assoc.ali", "Assoc");
+        let lhs2 = eval(&store, &tc, &path, "lhs2");
+        assert_eq!(lhs2.top_dim(), 2);
+
+        // A single boundary equals the direct codim-1 call.
+        assert!(Diagram::isomorphic(
+            &eval(&store, &tc, &path, "lhs2.in"),
+            &Diagram::boundary(Sign::Input, 1, &lhs2).unwrap(),
+        ));
+        assert!(Diagram::isomorphic(
+            &eval(&store, &tc, &path, "lhs2.out"),
+            &Diagram::boundary(Sign::Output, 1, &lhs2).unwrap(),
+        ));
+
+        // Two ops collapse: only the last polarity and the count matter, so a
+        // length-2 suffix lands at dimension n-2 with the last op's polarity.
+        assert!(Diagram::isomorphic(
+            &eval(&store, &tc, &path, "lhs2.in.out"),
+            &Diagram::boundary(Sign::Output, 0, &lhs2).unwrap(),
+        ));
+        assert!(Diagram::isomorphic(
+            &eval(&store, &tc, &path, "lhs2.out.in"),
+            &Diagram::boundary(Sign::Input, 0, &lhs2).unwrap(),
+        ));
+
+        // The collapse relations ∂ⁱⁿ∂ⁱⁿ = ∂ᵒᵘᵗ∂ⁱⁿ and ∂ⁱⁿ∂ᵒᵘᵗ = ∂ᵒᵘᵗ∂ᵒᵘᵗ.
+        assert!(Diagram::isomorphic(
+            &eval(&store, &tc, &path, "lhs2.in.in"),
+            &eval(&store, &tc, &path, "lhs2.out.in"),
+        ));
+        assert!(Diagram::isomorphic(
+            &eval(&store, &tc, &path, "lhs2.in.out"),
+            &eval(&store, &tc, &path, "lhs2.out.out"),
+        ));
+    }
+
+    #[test]
+    fn boundary_underflow_is_rejected() {
+        let (store, tc, path) = load("tests/fixtures/Assoc.ali", "Assoc");
+        // Three boundary ops on a 2-diagram drop below dimension 0.
+        assert!(eval_diagram_expr(&store, &tc, &path, "lhs2.in.in.in").is_err());
+        // A 0-diagram has no principal boundary.
+        let err = eval_diagram_expr(&store, &tc, &path, "pt.in").unwrap_err();
+        assert!(err.contains("principal boundary"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn maps_are_applied_after_the_boundary() {
+        // F : Arrow -> Graph sends s ↦ A.s, t ↦ B.t, arr ↦ (A.arr mid B.arr).
+        let (store, tc, path) = load("legacy/examples/Total.ali", "Graph");
+
+        // `F.arr.in` takes ∂ⁱⁿ(arr) = s first, then applies F, giving A.s — and
+        // dually `F.arr.out` = B.t.  This is the reordered evaluation.
+        assert!(Diagram::isomorphic(
+            &eval(&store, &tc, &path, "F.arr.in"),
+            &eval(&store, &tc, &path, "A.s"),
+        ));
+        assert!(Diagram::isomorphic(
+            &eval(&store, &tc, &path, "F.arr.out"),
+            &eval(&store, &tc, &path, "B.t"),
+        ));
+        // Plain application of the map to a 0-cell (no boundary).
+        assert!(Diagram::isomorphic(
+            &eval(&store, &tc, &path, "F.s"),
+            &eval(&store, &tc, &path, "A.s"),
+        ));
     }
 }

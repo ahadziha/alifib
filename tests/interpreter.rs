@@ -20,6 +20,26 @@ fn legacy_example(name: &str) -> String {
         .into_owned()
 }
 
+fn example(name: &str) -> String {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("examples")
+        .join(name)
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// `Delta.ali` asserts the cosimplicial simplicial identities (`d0.d1 = d2.d0`, …),
+/// which are pure map-composition equalities — exercising the dotted-expression
+/// *map* form, where the whole chain is collected and composed in one pass.  A
+/// clean load means every assertion held.
+#[test]
+fn delta_simplicial_identities_hold() {
+    let file = InterpretedFile::load(&Loader::default(vec![]), &example("Delta.ali"))
+        .ok()
+        .expect("Delta.ali should interpret without errors (simplicial identities hold)");
+    assert!(!file.has_holes());
+}
+
 #[test]
 fn magma_interpretation() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("Magma.ali"))
