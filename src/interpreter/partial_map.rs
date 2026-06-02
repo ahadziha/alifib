@@ -768,6 +768,7 @@ fn check_map_totality(
     result: &mut InterpResult,
     domain: &Complex,
     map: &PartialMap,
+    holes: &[MapHole],
     map_name: &str,
     name_span: Span,
     is_total: bool,
@@ -776,8 +777,12 @@ fn check_map_totality(
         return;
     }
 
+    // A generator counts as covered if it is committed *or* has a pending entry
+    // (a hole or conditional): `total` is for catching missed generators, and a
+    // hole is a deliberate placeholder, not an omission.
     for (generator_name, tag, _) in domain.generators_iter() {
-        if !map.is_defined_at(tag) {
+        let covered = map.is_defined_at(tag) || holes.iter().any(|h| &h.source == tag);
+        if !covered {
             result.add_error(make_error(
                 name_span,
                 format!("Total map `{}` is not defined on generator `{}`", map_name, generator_name),
@@ -806,7 +811,7 @@ fn finish_def_pmap(
         return (None, combined);
     };
 
-    check_map_totality(&mut combined, domain, &eval_map.map, &dp.name.inner, dp.name.span, dp.total);
+    check_map_totality(&mut combined, domain, &eval_map.map, &eval_map.holes, &dp.name.inner, dp.name.span, dp.total);
     if combined.has_errors() {
         return (None, combined);
     }

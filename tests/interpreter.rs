@@ -279,6 +279,16 @@ fn redundant_hole_then_value_commits() {
     assert_eq!(hole_count(&file, "A", "H"), 0, "the `?` should be upgraded to `arr => f` and committed");
 }
 
+/// A `total` map may use holes as placeholders: a generator covered by a hole
+/// counts as covered, so `total H :: One = [ x => ? ]` is accepted.
+#[test]
+fn total_map_accepts_holes() {
+    let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("TotalHole.ali"))
+        .ok()
+        .expect("a total map whose only generator is a hole should be accepted");
+    assert_eq!(hole_count(&file, "A", "H"), 1, "the hole should still be recorded");
+}
+
 /// `arr => ?` on an already-defined generator does nothing — no error, no hole.
 #[test]
 fn hole_on_defined_generator_is_noop() {

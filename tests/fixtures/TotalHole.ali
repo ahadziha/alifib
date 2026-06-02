@@ -1,0 +1,10 @@
+@Type
+
+One <<= { x },
+
+A <<= { u },
+
+@A
+  (* `total` with a hole: the hole covers `x`, so totality holds even though the
+     real map is not yet total. *)
+  let total H :: One = [ x => ? ]
