@@ -57,12 +57,16 @@ use rustyline::history::FileHistory;
 use rustyline::{EditMode, Editor};
 
 use crate::analysis::homology::compute_homology;
+use crate::core::complex::Complex;
+use crate::core::diagram::Sign;
+use crate::interpreter::GlobalStore;
+use crate::output::render_diagram;
 use super::display::Display;
 use super::engine::resolve_type;
-use super::protocol::{build_type_detail_from_store, build_types_from_store, Request, ResponseData};
+use super::protocol::{Request, ResponseData};
 use super::render::{
     render_auto, render_history, render_holes, render_homology, render_proof, render_rules,
-    render_state, render_store, render_type_detail, render_types, render_zero_cell,
+    render_state, render_store, render_zero_cell,
 };
 use super::session::Session;
 
@@ -196,15 +200,17 @@ fn handle_command(cmd: Cmd, session: &mut Session, source_file: &str, display: &
         }
 
         // ── Read-only queries, served straight from the loaded store ──────
-        Cmd::Types => {
-            let types = build_types_from_store(session.store(), session.root_path());
-            show(display, render_types(display, &types));
-        }
+        // `types`/`type` keep the CLI's own layout (generators by dimension with
+        // boundaries, diagrams with `= expr`, maps) rather than the web's terse
+        // summary — the one deliberate exception to web-style rendering.
+        Cmd::Types => dispatch_types(session.store(), session.root_path(), display),
         Cmd::Type(name) => {
-            match build_type_detail_from_store(session.store(), session.root_path(), &name) {
-                Ok(detail) => show(display, render_type_detail(display, &detail)),
-                Err(e) => display.error(&e),
-            }
+            // Prefer the active session's live complex (includes stored proofs)
+            // when it is the type being inspected.
+            let live = session.active_engine()
+                .filter(|e| e.type_name() == name)
+                .map(|e| e.type_complex());
+            dispatch_print_type(session.store(), session.root_path(), &name, live, display);
         }
         Cmd::Homology(name) => match resolve_type(session.store(), session.root_path(), &name) {
             Ok(tc) => show(display, render_homology(display, &compute_homology(&tc))),
@@ -306,6 +312,125 @@ fn render_session_state(display: &Display, data: &ResponseData) -> String {
 /// Print a rendered (possibly multi-line, already-coloured) transcript block.
 fn show(display: &Display, block: String) {
     display.inspect_rich(&block);
+}
+
+// ── `types` / `type` (CLI-specific layout) ───────────────────────────────────────
+
+/// List all types declared in the file, each with a one-line `(dim …, N
+/// generators, …)` summary.
+fn dispatch_types(store: &GlobalStore, canonical_path: &str, display: &Display) {
+    let normalized = store.normalize();
+    let Some(module) = normalized.modules.iter().find(|m| m.path == canonical_path) else {
+        display.error("Module not found");
+        return;
+    };
+    if module.types.is_empty() {
+        display.meta("  (No types found)");
+        return;
+    }
+    for ty in module.types.iter().filter(|t| !t.name.is_empty()) {
+        let total_generators: usize = ty.dims.iter().map(|d| d.cells.len()).sum();
+        let max_dim = ty.dims.iter().map(|d| d.dim).max();
+        let mut parts = Vec::new();
+        if let Some(d) = max_dim {
+            parts.push(format!("dim {}", d));
+        }
+        if total_generators > 0 {
+            parts.push(format!("{} generator{}", total_generators, if total_generators == 1 { "" } else { "s" }));
+        }
+        if !ty.diagrams.is_empty() {
+            let n = ty.diagrams.len();
+            parts.push(format!("{} diagram{}", n, if n == 1 { "" } else { "s" }));
+        }
+        if !ty.maps.is_empty() {
+            let n = ty.maps.len();
+            parts.push(format!("{} map{}", n, if n == 1 { "" } else { "s" }));
+        }
+        if parts.is_empty() {
+            display.inspect_rich(&format!("  {}", display.code(&ty.name)));
+        } else {
+            display.inspect_rich(&format!("  {} ({})", display.code(&ty.name), parts.join(", ")));
+        }
+    }
+}
+
+/// Print a named type: generators grouped by dimension, named diagrams with
+/// their `= expr`, and maps.  Diagrams are read from `live_complex` when given,
+/// so session-stored proofs appear; otherwise from the global store's snapshot.
+fn dispatch_print_type(
+    store: &GlobalStore,
+    canonical_path: &str,
+    name: &str,
+    live_complex: Option<&Complex>,
+    display: &Display,
+) {
+    use crate::aux::Tag;
+    use std::fmt::Write as _;
+
+    let normalized = store.normalize();
+    let module = normalized.modules.iter().find(|m| m.path == canonical_path);
+    let Some(module) = module else {
+        display.error(&format!("Module '{}' not found", canonical_path));
+        return;
+    };
+    let Some(ty) = module.types.iter().find(|t| t.name == name) else {
+        display.error(&format!("Type '{}' not found in file", name));
+        return;
+    };
+
+    // Resolve the type complex: prefer the live one (includes session additions),
+    // fall back to the global store's snapshot.
+    let store_complex = (|| -> Option<&Complex> {
+        let mc = store.find_module(canonical_path)?;
+        let (tag, _) = mc.find_generator(name)?;
+        let gid = match tag { Tag::Global(gid) => *gid, _ => return None };
+        store.find_type(gid).map(|e| e.complex.as_ref())
+    })();
+    let tc: &Complex = match live_complex.or(store_complex) {
+        Some(c) => c,
+        None => { display.file(ty.to_string().trim_end()); return; }
+    };
+
+    // Build output manually so we can append `= expr` for each diagram.
+    let mut out = String::new();
+    let label = if ty.name.is_empty() { "<empty>" } else { &ty.name };
+    writeln!(out, "Type {}", label).ok();
+    if ty.dims.is_empty() {
+        writeln!(out, "  (no cells)").ok();
+    } else {
+        for dg in &ty.dims {
+            writeln!(out, "  [{}]", dg.dim).ok();
+            for cell in &dg.cells {
+                writeln!(out, "    {}", cell).ok();
+            }
+        }
+    }
+    // Iterate the live complex's diagrams so session-stored proofs appear too.
+    let mut diag_list: Vec<(&str, &crate::core::diagram::Diagram)> =
+        tc.diagrams_iter().map(|(n, d)| (n.as_str(), d)).collect();
+    diag_list.sort_by_key(|(n, _)| *n);
+    if !diag_list.is_empty() {
+        writeln!(out, "  Diagrams").ok();
+        for (diag_name, diag) in &diag_list {
+            let k = diag.top_dim().checked_sub(1);
+            let header = k.and_then(|k| {
+                let src = crate::core::diagram::Diagram::boundary(Sign::Input, k, diag).ok()?;
+                let tgt = crate::core::diagram::Diagram::boundary(Sign::Output, k, diag).ok()?;
+                Some(format!("{} : {} -> {}", diag_name, render_diagram(&src, tc), render_diagram(&tgt, tc)))
+            }).unwrap_or_else(|| diag_name.to_string());
+            let expr = render_diagram(diag, tc);
+            writeln!(out, "    {}", header).ok();
+            writeln!(out, "      = {}", expr).ok();
+        }
+    }
+    if !ty.maps.is_empty() {
+        writeln!(out, "  Maps").ok();
+        for map in &ty.maps {
+            writeln!(out, "    {}", map).ok();
+        }
+    }
+
+    display.file(out.trim_end());
 }
 
 // ── Editor ──────────────────────────────────────────────────────────────────────

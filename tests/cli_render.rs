@@ -12,10 +12,9 @@
 use std::path::PathBuf;
 
 use alifib::interactive::display::Display;
-use alifib::interactive::protocol::{build_type_detail_from_store, build_types_from_store, Request};
+use alifib::interactive::protocol::Request;
 use alifib::interactive::render::{
     render_history, render_holes, render_proof, render_rules, render_state, render_store,
-    render_type_detail, render_types,
 };
 use alifib::interactive::session::Session;
 use alifib::interactive::web::WebRepl;
@@ -94,29 +93,10 @@ fn cli_transcript_matches_web_style() {
     let data = s.apply(Request::History).expect("history");
     assert_eq!(render_history(&d, &data), "  1. idem [choice 0]");
 
-    // types  (read-only query, served from the store)
-    let types = build_types_from_store(s.store(), &root);
-    assert_eq!(render_types(&d, &types), "Idem — 3 gen, 6 diag, dim 2");
-
-    // type Idem  (reflects the just-stored `p`)
-    let detail = build_type_detail_from_store(s.store(), &root, "Idem").expect("type detail");
-    assert_eq!(
-        render_type_detail(&d, &detail),
-        "Idem\n\
-         generators:\n\
-         \x20 ob (dim 0)\n\
-         \x20 id (dim 1)  ob → ob\n\
-         \x20 idem (dim 2)  (id #0 id) → id\n\
-         diagrams:\n\
-         \x20 id : ob → ob  = id\n\
-         \x20 idem : (id #0 id) → id  = idem\n\
-         \x20 lhs : ob → ob  = (id #0 id #0 id)\n\
-         \x20 ob  = ob\n\
-         \x20 p : (id #0 id #0 id) → (id #0 id)  = (idem #0 id)\n\
-         \x20 rhs : ob → ob  = id\n\
-         maps:\n\
-         \x20 Idem :: Idem"
-    );
+    // `types` / `type` keep the CLI's own layout (generators by dimension,
+    // diagrams with `= expr`, maps) — the deliberate exception to web-style
+    // rendering — and print straight through `Display`, so they are not pinned
+    // against the web here.
 
     // stop  (message-only command: canonical, capital-first, no period)
     let data = s.apply(Request::Stop).expect("stop");

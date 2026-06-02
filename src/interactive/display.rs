@@ -6,18 +6,23 @@
 use std::io::IsTerminal;
 
 // ── Colour palette ────────────────────────────────────────────────────────────
-// Colour is reserved for semantic information only, mirroring syntax
-// highlighting: alifib expressions are one colour, the active redex stands out,
-// and success/error/prompt each have a role.  Everything else — labels,
-// headers, indices, connectives — is left in the default foreground.
-// 16-colour ANSI for portability; swap a line for a 24-bit code to retheme.
+// 24-bit truecolor matching the web REPL's dark theme, so the two front-ends
+// share one palette.  Colour is reserved for semantic roles, mirroring the web's
+// span classes: bright text for values, dim grey for labels and connectives,
+// amber for the input/redex side of a rewrite, blue for the output side and
+// section titles, green for success, red for errors, violet for the prompt.
+// Everything else stays in the default foreground.
 
-const C_CODE:   &str = "\x1b[33m";    // yellow:      alifib expressions (the "syntax" colour)
-const C_REDEX:  &str = "\x1b[1;33m";  // bold yellow: the matched redex within a rewrite
-const C_OK:     &str = "\x1b[32m";    // green:       success
-const C_ERR:    &str = "\x1b[31m";    // red:         errors
-const C_PROMPT: &str = "\x1b[35m";    // magenta:     the input prompt marker
+const C_HI:     &str = "\x1b[38;2;244;244;245m";  // --text-em:  values (diagrams, names, counts)
+const C_DIM:    &str = "\x1b[38;2;113;113;122m";  // --text-dim: labels, secondary, connectives
+const C_OK:     &str = "\x1b[38;2;74;222;128m";   // --ok:       success
+const C_ERR:    &str = "\x1b[38;2;248;113;113m";  // --err:      errors
+const C_SRC:    &str = "\x1b[38;2;251;191;36m";   // --warn:     input side / alifib code
+const C_TGT:    &str = "\x1b[38;2;95;168;211m";   // --accent2:  output side / section titles
+const C_PROMPT: &str = "\x1b[38;2;124;106;242m";  // --accent:   the input prompt marker
+const C_REDEX:  &str = "\x1b[1;38;2;251;191;36m"; // bold amber: the matched redex within a rewrite
 
+const BOLD: &str = "\x1b[1m";
 const RESET: &str = "\x1b[0m";
 
 // ── Display ───────────────────────────────────────────────────────────────────
@@ -45,9 +50,9 @@ impl Display {
 
     /// Print a meta-level line.
     ///
-    /// The body is left in the default colour so callers add emphasis with
-    /// [`hi`](Self::hi)/[`acc`](Self::acc)/[`sec`](Self::sec).  Output is
-    /// unprefixed — only user input carries the `❯` prompt.
+    /// The body is left in the default colour so callers add emphasis with the
+    /// painting helpers.  Output is unprefixed — only user input carries the
+    /// `❯` prompt.
     pub fn meta(&self, text: &str) {
         for line in text.split('\n') {
             println!("{line}");
@@ -55,12 +60,10 @@ impl Display {
     }
 
     /// Print an alifib expression / inspection line in the code colour.
-    ///
-    /// Used by `print cell` and `print type` output.
     pub fn inspect(&self, text: &str) {
         for line in text.split('\n') {
             if self.color {
-                println!("{C_CODE}{line}{RESET}");
+                println!("{C_SRC}{line}{RESET}");
             } else {
                 println!("{line}");
             }
@@ -70,7 +73,7 @@ impl Display {
     /// Print a cell (diagram) line in the code colour, no prefix.
     pub fn cell(&self, text: &str) {
         if self.color {
-            println!("{C_CODE}{text}{RESET}");
+            println!("{C_SRC}{text}{RESET}");
         } else {
             println!("{text}");
         }
@@ -89,7 +92,7 @@ impl Display {
     pub fn file(&self, text: &str) {
         for line in text.split('\n') {
             if self.color {
-                println!("{C_CODE}{line}{RESET}");
+                println!("{C_SRC}{line}{RESET}");
             } else {
                 println!("{line}");
             }
@@ -110,27 +113,41 @@ impl Display {
     // ── Inline painting helpers ─────────────────────────────────────────────
     // Return a coloured fragment (or `s` unchanged when colour is off) so
     // callers can compose styled lines and print them via `inspect_rich`.
+    // The roles mirror the web REPL's span classes one-to-one.
 
     fn paint(&self, code: &str, s: &str) -> String {
         if self.color { format!("{code}{s}{RESET}") } else { s.to_string() }
     }
 
-    /// An alifib expression (yellow) — the one "syntax" colour.
-    pub fn code(&self, s: &str) -> String { self.paint(C_CODE, s) }
+    /// An alifib expression in the code colour (amber).
+    pub fn code(&self, s: &str) -> String { self.paint(C_SRC, s) }
+    /// A highlighted value — a diagram, name, or count (bright text).
+    pub fn hi(&self, s: &str)  -> String { self.paint(C_HI, s) }
+    /// A label, connective, or secondary text (dim grey).
+    pub fn dim(&self, s: &str) -> String { self.paint(C_DIM, s) }
     /// Success (green).
     pub fn ok(&self, s: &str)  -> String { self.paint(C_OK, s) }
-    /// The input prompt marker (magenta).
+    /// The input side of a rewrite (amber).
+    pub fn src(&self, s: &str) -> String { self.paint(C_SRC, s) }
+    /// The output side of a rewrite (blue).
+    pub fn tgt(&self, s: &str) -> String { self.paint(C_TGT, s) }
+    /// A section title (bold blue).
+    pub fn sec(&self, s: &str) -> String {
+        if self.color { format!("{BOLD}{C_TGT}{s}{RESET}") } else { s.to_string() }
+    }
+    /// The input prompt marker (violet).
     pub fn acc(&self, s: &str) -> String { self.paint(C_PROMPT, s) }
 
-    /// Render a rewrite candidate: the expression in the code colour, with the
-    /// matched redex (the `[…]` segment) in bold.  Brackets do not nest in our
-    /// output so a single scan suffices.
+    /// Render a rewrite candidate's match: the expression in the dim colour, with
+    /// the matched redex (the `[…]` segment) in bold amber.  Brackets are kept so
+    /// the redex stays legible without colour; they do not nest in our output, so
+    /// a single scan suffices.
     pub fn colorize_match_display(&self, s: &str) -> String {
         if !self.color {
             return s.to_string();
         }
         let mut result = String::with_capacity(s.len() + 32);
-        result.push_str(C_CODE);
+        result.push_str(C_DIM);
         let mut chars = s.chars();
         while let Some(ch) = chars.next() {
             if ch == '[' {
@@ -139,9 +156,9 @@ impl Display {
                 for ch2 in chars.by_ref() {
                     result.push(ch2);
                     if ch2 == ']' {
-                        // End the bold redex, resume the base code colour.
+                        // End the bold redex, resume the dim base colour.
                         result.push_str(RESET);
-                        result.push_str(C_CODE);
+                        result.push_str(C_DIM);
                         break;
                     }
                 }
