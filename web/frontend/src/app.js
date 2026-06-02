@@ -1411,16 +1411,19 @@ function buildZeroCellChoices(choices) {
 async function chooseZeroCell(choice) {
   if (!repl) return;
   const result = await parseReplResponse(repl.run_command(JSON.stringify({ command: 'step', choice })));
-  if (result.status === 'ok' && result.data) await showZeroCellFill(result.data);
-  else appendReplEntry('step', formatError(result));
+  if (result.status === 'error') { appendReplEntry(`apply ${choice}`, formatError(result)); return; }
+  // Log the choice to the transcript, exactly as clicking a rewrite does.
+  appendReplEntry(`apply ${choice}`, renderSegments(result.rendered));
+  await showZeroCellFill(result.data);
 }
 
 // Undo/redo within a 0-cell fill.
 async function zeroCellCmd(command) {
   if (!repl) return;
   const result = await parseReplResponse(repl.run_command(JSON.stringify({ command })));
-  if (result.status === 'ok' && result.data) await showZeroCellFill(result.data);
-  else appendReplEntry(command, formatError(result));
+  if (result.status === 'error') { appendReplEntry(command, formatError(result)); return; }
+  appendReplEntry(command, renderSegments(result.rendered));
+  await showZeroCellFill(result.data);
 }
 
 // Route a typed session command while a 0-cell fill is active, mirroring the CLI:
