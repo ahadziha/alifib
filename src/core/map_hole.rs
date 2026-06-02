@@ -43,10 +43,19 @@ pub struct MapHole {
     pub(crate) boundary_in: Option<PasteTree>,
     /// Output boundary of the image, dual to `boundary_in`.  `None` for a 0-cell.
     pub(crate) boundary_out: Option<PasteTree>,
-    /// The metavariables referenced by either boundary tree — the holes this one
-    /// depends on, which must be filled first.  Used to order filling and to
-    /// render the dependency hierarchy.
-    pub(crate) deps: BTreeSet<HoleId>,
+}
+
+impl MapHole {
+    /// The metavariables this entry still depends on: the holes appearing in its
+    /// boundary trees.  Derived from the boundaries (their single source of
+    /// truth) — a conditional whose `deps` are empty is ready to commit.
+    pub(crate) fn deps(&self) -> BTreeSet<HoleId> {
+        let mut deps = self.boundary_in.as_ref().map(collect_hole_deps).unwrap_or_default();
+        if let Some(out) = &self.boundary_out {
+            deps.extend(collect_hole_deps(out));
+        }
+        deps
+    }
 }
 
 /// Collect the metavariables (`Tag::Hole`) appearing as leaves of `tree`.

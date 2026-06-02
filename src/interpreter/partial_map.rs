@@ -8,12 +8,12 @@ use crate::aux::{self, HoleId, LocalId, Tag};
 use crate::core::{
     complex::{Complex, MapDomain},
     diagram::{CellData, Diagram, Sign as DiagramSign},
-    map_hole::{collect_hole_deps, MapHole},
+    map_hole::MapHole,
     partial_map::PartialMap,
     paste_tree::PasteTree,
 };
 use crate::language::ast::{self, DefPartialMap, ForBlock, PMapEntry, PartialMapBasic, PartialMapClause, PartialMapDef, PartialMapExt, Span, Spanned};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 // ---- Maps with holes ----
@@ -30,14 +30,6 @@ impl MapBuild {
     /// Position of the pending entry for `tag`, if any.
     fn entry_index(&self, tag: &Tag) -> Option<usize> {
         self.holes.iter().position(|h| &h.source == tag)
-    }
-}
-
-/// The dimension of a cell from its boundary data.
-fn cell_dim(cell_data: &CellData) -> usize {
-    match cell_data {
-        CellData::Zero => 0,
-        CellData::Boundary { boundary_in, .. } => boundary_in.top_dim() + 1,
     }
 }
 
@@ -119,8 +111,8 @@ fn assign_cell(
     for (face_tag, _) in &undefined {
         ensure_hole(build, context, domain, face_tag)?;
     }
-    let (boundary_in, boundary_out, deps) = transport_cell_boundaries(build, domain, &cell_data)?;
-    upsert_entry(build, tag, dim, image.cloned(), boundary_in, boundary_out, deps);
+    let (boundary_in, boundary_out) = transport_cell_boundaries(build, domain, &cell_data)?;
+    upsert_entry(build, tag, dim, image.cloned(), boundary_in, boundary_out);
     Ok(())
 }
 
@@ -142,8 +134,8 @@ fn ensure_hole(
     for (sub, _) in boundary_dependencies(&cell_data, &build.map) {
         ensure_hole(build, context, domain, &sub)?;
     }
-    let dim = cell_dim(&cell_data);
-    let (boundary_in, boundary_out, deps) = transport_cell_boundaries(build, domain, &cell_data)?;
+    let dim = cell_data.dim();
+    let (boundary_in, boundary_out) = transport_cell_boundaries(build, domain, &cell_data)?;
     build.holes.push(MapHole {
         meta: HoleId::fresh(),
         source: face_tag.clone(),
@@ -151,7 +143,6 @@ fn ensure_hole(
         image: None,
         boundary_in,
         boundary_out,
-        deps,
     });
     Ok(())
 }
@@ -165,7 +156,6 @@ fn upsert_entry(
     image: Option<Diagram>,
     boundary_in: Option<PasteTree>,
     boundary_out: Option<PasteTree>,
-    deps: BTreeSet<HoleId>,
 ) {
     if let Some(i) = build.entry_index(&tag) {
         let h = &mut build.holes[i];
@@ -174,7 +164,6 @@ fn upsert_entry(
         }
         h.boundary_in = boundary_in;
         h.boundary_out = boundary_out;
-        h.deps = deps;
     } else {
         build.holes.push(MapHole {
             meta: HoleId::fresh(),
@@ -183,7 +172,6 @@ fn upsert_entry(
             image,
             boundary_in,
             boundary_out,
-            deps,
         });
     }
 }
@@ -253,18 +241,11 @@ fn commit_one(
     };
     for h in &mut build.holes {
         if let Some(t) = &h.boundary_in {
-            let new = t.substitute(&subst);
-            h.boundary_in = Some(new);
+            h.boundary_in = Some(t.substitute(&subst));
         }
         if let Some(t) = &h.boundary_out {
-            let new = t.substitute(&subst);
-            h.boundary_out = Some(new);
+            h.boundary_out = Some(t.substitute(&subst));
         }
-        let mut deps = h.boundary_in.as_ref().map(collect_hole_deps).unwrap_or_default();
-        if let Some(t) = &h.boundary_out {
-            deps.extend(collect_hole_deps(t));
-        }
-        h.deps = deps;
     }
     Ok(())
 }
@@ -276,7 +257,7 @@ fn cascade(build: &mut MapBuild, context: &Context, domain: &Complex) -> Result<
         let ready = build
             .holes
             .iter()
-            .find(|h| h.image.is_some() && h.deps.is_empty())
+            .find(|h| h.image.is_some() && h.deps().is_empty())
             .map(|h| (h.source.clone(), h.dim, h.image.clone().unwrap()));
         let Some((source, dim, image)) = ready else { return Ok(()); };
         let cell_data = get_cell_data(context, domain, &source)
@@ -286,20 +267,18 @@ fn cascade(build: &mut MapBuild, context: &Context, domain: &Complex) -> Result<
 }
 
 /// Transport a cell's boundaries through the build, as paste trees over
-/// committed images and metavariables.  Returns `(input, output, deps)`.
+/// committed images and metavariables.  Returns `(input, output)`.
 fn transport_cell_boundaries(
     build: &MapBuild,
     domain: &Complex,
     cell_data: &CellData,
-) -> Result<(Option<PasteTree>, Option<PasteTree>, BTreeSet<HoleId>), aux::Error> {
+) -> Result<(Option<PasteTree>, Option<PasteTree>), aux::Error> {
     let CellData::Boundary { boundary_in, boundary_out } = cell_data else {
-        return Ok((None, None, BTreeSet::new()));
+        return Ok((None, None));
     };
     let in_tree = transport_boundary(build, domain, boundary_in)?;
     let out_tree = transport_boundary(build, domain, boundary_out)?;
-    let mut deps = collect_hole_deps(&in_tree);
-    deps.extend(collect_hole_deps(&out_tree));
-    Ok((Some(in_tree), Some(out_tree), deps))
+    Ok((Some(in_tree), Some(out_tree)))
 }
 
 /// Transport one boundary diagram through the build: rewrite every leaf to the

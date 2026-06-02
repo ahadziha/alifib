@@ -18,7 +18,7 @@ use super::include::{
 use super::partial_map::{interpret_def_pmap, interpret_def_pmap_module};
 use super::resolve::resolve_type_scope;
 use super::binding::{
-    cell_dim, create_generator_diagram,
+    create_generator_diagram,
     insert_complex_diagram_binding, insert_complex_map_binding, insert_module_diagram_binding,
     insert_module_map_binding, insert_type_diagram_binding, insert_type_map_binding,
     interpret_generator_boundaries, interpret_items, interpret_items_in_complex_scope,
@@ -359,7 +359,7 @@ fn interpret_complex_generator(
             Arc::make_mut(&mut result.context.state).set_cell(id, dim, boundaries);
         }
         Mode::Local => {
-            let dim = cell_dim(&boundaries);
+            let dim = boundaries.dim();
             let tag = Tag::Local(name.clone());
             let classifier = match create_generator_diagram(bounds_span, tag.clone(), &boundaries) {
                 Ok(c) => c,

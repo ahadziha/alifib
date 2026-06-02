@@ -69,6 +69,16 @@ pub enum CellData {
     },
 }
 
+impl CellData {
+    /// The dimension of a cell with this boundary data.
+    pub fn dim(&self) -> usize {
+        match self {
+            CellData::Zero => 0,
+            CellData::Boundary { boundary_in, .. } => boundary_in.top_dim() + 1,
+        }
+    }
+}
+
 /// Witness that two diagrams share matching boundaries.
 ///
 /// Produced by `parallelism` and `pastability`; the two embeddings map the

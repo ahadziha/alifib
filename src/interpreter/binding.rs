@@ -243,14 +243,6 @@ pub fn interpret_generator_boundaries(
     }
 }
 
-/// Returns the dimension of a cell with the given boundary data.
-pub fn cell_dim(cell_data: &CellData) -> usize {
-    match cell_data {
-        CellData::Zero => 0,
-        CellData::Boundary { boundary_in, .. } => boundary_in.top_dim() + 1,
-    }
-}
-
 /// Create a cell diagram for a generator, wrapping core errors as language errors at `span`.
 pub fn create_generator_diagram(
     span: Span,
