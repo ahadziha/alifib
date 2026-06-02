@@ -40,11 +40,30 @@ fn web_fill_one_dim_hole() {
 
     let done = cmd(&mut repl, r#"{"command":"done"}"#);
     assert_eq!(done["status"], "ok");
+    // The report matches the CLI: "Filled ?x with <filler> : in -> out".
+    assert!(done["data"]["message"].as_str().unwrap().starts_with("Filled ?x with "),
+        "message: {}", done["data"]["message"]);
     let new_source = done["data"]["source"].as_str().unwrap();
     assert!(new_source.contains("x =>"), "the clause is appended: {}", new_source);
 
     let after = cmd(&mut repl, r#"{"command":"holes"}"#);
     assert!(after["data"]["holes"].as_array().unwrap().is_empty(), "no holes left");
+}
+
+/// The `backward` flag is honoured, swapping initial/target (as in the CLI).
+#[test]
+fn web_fill_respects_backward() {
+    let mut fwd = WebRepl::new();
+    fwd.load_source(&fixture("RewriteFill.ali"));
+    let f = cmd(&mut fwd, r#"{"command":"fill","index":0}"#);
+    assert_eq!(f["data"]["current"]["label"], "p");
+    assert_eq!(f["data"]["target"]["label"], "q");
+
+    let mut bwd = WebRepl::new();
+    bwd.load_source(&fixture("RewriteFill.ali"));
+    let b = cmd(&mut bwd, r#"{"command":"fill","index":0,"backward":true}"#);
+    assert_eq!(b["data"]["current"]["label"], "q", "backward swaps initial");
+    assert_eq!(b["data"]["target"]["label"], "p", "backward swaps target");
 }
 
 /// `done` before the target is reached errors and leaves the session intact —
@@ -94,11 +113,27 @@ fn web_fill_zero_cell_session() {
     let choices = started["data"]["zero_cell"]["choices"].as_array().unwrap();
     let x = choices.iter().find(|c| c["name"] == "x").unwrap();
 
+    // `show` (used by the text REPL's show/status/rules) lists the candidates.
+    let shown = cmd(&mut repl, r#"{"command":"show"}"#);
+    assert_eq!(shown["data"]["zero_cell"]["choices"].as_array().unwrap().len(), choices.len());
+
     let chosen = cmd(&mut repl, &format!(r#"{{"command":"step","choice":{}}}"#, x["index"]));
     assert_eq!(chosen["data"]["zero_cell"]["chosen"], "x");
+    assert_eq!(chosen["data"]["zero_cell"]["target_reached"], true);
+    // Once chosen, the candidate list is empty — no silent re-selection.
+    assert!(chosen["data"]["zero_cell"]["choices"].as_array().unwrap().is_empty());
+
+    // Undo reopens the candidates; redo restores the pick — like a session.
+    let undone = cmd(&mut repl, r#"{"command":"undo"}"#);
+    assert_eq!(undone["data"]["zero_cell"]["target_reached"], false);
+    assert!(!undone["data"]["zero_cell"]["choices"].as_array().unwrap().is_empty());
+    assert_eq!(undone["data"]["zero_cell"]["can_redo"], true);
+    let redone = cmd(&mut repl, r#"{"command":"redo"}"#);
+    assert_eq!(redone["data"]["zero_cell"]["chosen"], "x");
 
     let done = cmd(&mut repl, r#"{"command":"done"}"#);
     assert_eq!(done["status"], "ok");
+    assert_eq!(done["data"]["message"], "Filled ?a1 with x");
     assert!(done["data"]["source"].as_str().unwrap().contains("a1 => x"));
 
     // `a1` filled, `e` now the only — and unblocked — hole.

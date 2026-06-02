@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use crate::aux::{GlobalId, HoleId, Tag};
 use crate::core::complex::{Complex, MapDomain};
-use crate::core::diagram::{CellData, Diagram};
+use crate::core::diagram::{CellData, Diagram, Sign};
 use crate::core::map_hole::MapHole;
 use crate::core::paste_tree::realise_tree;
 use crate::interpreter::GlobalStore;
@@ -51,14 +51,74 @@ pub struct FillContext {
     pub map_name: String,
     pub domain_name: String,
     pub source_name: String,
+    /// Dimension of the hole (0 → a 0-cell choice; ≥1 → a rewrite session).
+    pub dim: usize,
     /// Pre-rendered hole boundary, `?name : in -> out` (or `?name` for a 0-cell).
     pub boundary: String,
+}
+
+/// A boundaryless 0-cell fill: choosing one of `T`'s 0-cells.  Choosing is a
+/// reversible step so the session feels like a rewrite — `undo` reopens the
+/// candidates, `redo` re-picks — and `target_reached` holds once a cell is chosen.
+#[derive(Debug, Clone)]
+pub struct ZeroCellFill {
+    /// Candidate 0-cells of `T`, `(tag, name)`.
+    pub choices: Vec<(Tag, String)>,
+    /// The current pick (the single applied step), if any.
+    pub chosen: Option<Tag>,
+    /// The last undone pick, available for `redo`.
+    pub undone: Option<Tag>,
+}
+
+impl ZeroCellFill {
+    pub fn new(choices: Vec<(Tag, String)>) -> Self {
+        Self { choices, chosen: None, undone: None }
+    }
+
+    /// Pick candidate `k` (a step).
+    pub fn choose(&mut self, k: usize) -> Result<(), String> {
+        let (tag, _) = self.choices.get(k)
+            .ok_or_else(|| format!("no 0-cell numbered {}", k))?;
+        self.chosen = Some(tag.clone());
+        self.undone = None;
+        Ok(())
+    }
+
+    pub fn undo(&mut self) -> Result<(), String> {
+        match self.chosen.take() {
+            Some(c) => { self.undone = Some(c); Ok(()) }
+            None => Err("nothing to undo".to_owned()),
+        }
+    }
+
+    pub fn redo(&mut self) -> Result<(), String> {
+        match self.undone.take() {
+            Some(c) => { self.chosen = Some(c); Ok(()) }
+            None => Err("nothing to redo".to_owned()),
+        }
+    }
+
+    pub fn target_reached(&self) -> bool { self.chosen.is_some() }
+    pub fn can_redo(&self) -> bool { self.undone.is_some() }
+
+    /// Display name of the chosen 0-cell, if any.
+    pub fn chosen_name(&self) -> Option<&str> {
+        let tag = self.chosen.as_ref()?;
+        self.choices.iter().find(|(t, _)| t == tag).map(|(_, n)| n.as_str())
+    }
+
+    /// The filler diagram: the chosen 0-cell.
+    pub fn filler(&self) -> Result<Diagram, String> {
+        let tag = self.chosen.as_ref()
+            .ok_or_else(|| "choose a 0-cell first".to_owned())?;
+        Diagram::cell(tag.clone(), &CellData::Zero).map_err(|e| format!("{}", e))
+    }
 }
 
 /// An in-progress fill: a rewrite session (m ≥ 1) or a 0-cell choice.
 pub enum FillSession {
     Rewrite(RewriteEngine),
-    ZeroCell { choices: Vec<(Tag, String)>, chosen: Option<Diagram> },
+    ZeroCell(ZeroCellFill),
 }
 
 impl FillSession {
@@ -71,9 +131,7 @@ impl FillSession {
                 }
                 engine.assemble_proof()?.ok_or_else(|| "no proof assembled".to_owned())
             }
-            FillSession::ZeroCell { chosen, .. } => {
-                chosen.clone().ok_or_else(|| "choose a 0-cell first (apply <n>)".to_owned())
-            }
+            FillSession::ZeroCell(zc) => zc.filler(),
         }
     }
 }
@@ -177,6 +235,7 @@ pub fn start_fill(
         map_name: href.map_name.clone(),
         domain_name: href.domain_name.clone(),
         source_name: href.source_name.clone(),
+        dim: href.dim,
         boundary: href.boundary.clone(),
     };
 
@@ -186,7 +245,7 @@ pub fn start_fill(
             .filter(|(_, _, d)| *d == 0)
             .map(|(name, tag, _)| (tag.clone(), name.clone()))
             .collect();
-        FillSession::ZeroCell { choices, chosen: None }
+        FillSession::ZeroCell(ZeroCellFill::new(choices))
     } else {
         let (ind, outd) = realise_boundaries(&tc, &href)?;
         let (initial, target) = if backward { (outd, ind) } else { (ind, outd) };
@@ -252,6 +311,21 @@ fn blocking_holes(store: &GlobalStore, list: &[HoleRef], href: &HoleRef) -> Vec<
     result.into_iter().collect()
 }
 
+/// The shared "Filled ?x with <filler> : in -> out" report — the boundary is
+/// read off the *filler* (empty for a 0-cell, and correct even when the filler
+/// is a lower-dimensional/degenerate diagram).  Used by both REPLs.
+pub fn filled_message(ctx: &FillContext, filler: &Diagram, scope: &Complex) -> String {
+    let expr = crate::output::render_diagram(filler, scope);
+    let boundary = filler.top_dim().checked_sub(1).and_then(|k| {
+        let inp = Diagram::boundary(Sign::Input, k, filler).ok()?;
+        let out = Diagram::boundary(Sign::Output, k, filler).ok()?;
+        Some(format!(" : {} -> {}",
+            crate::output::render_diagram(&inp, scope),
+            crate::output::render_diagram(&out, scope)))
+    }).unwrap_or_default();
+    format!("Filled ?{} with {}{}", ctx.source_name, expr, boundary)
+}
+
 /// Finalise a fill: append `x => <filler>` to `F`'s definition in `source` and
 /// re-evaluate.  Returns the new store and the edited source on success; on an
 /// inconsistent fill the interpreter errors and nothing is changed.
@@ -301,13 +375,17 @@ fn edit_map_definition(source: &str, type_name: &str, map_name: &str, clause: &s
             let close = source[..value.span.end].rfind(']')
                 .ok_or_else(|| "could not find the closing `]` of the clause list".to_owned())?;
             // Trim trailing space off the prefix so the comma sits flush against
-            // the last clause; a newline then sets the new clause on its own line.
+            // the last clause; a newline then sets the new clause on its own line,
+            // indented to match the line the last clause sits on.
             let prefix = source[..close].trim_end();
             let suffix = &source[close..];
             if ext.clauses.is_empty() {
                 Ok(format!("{} {} {}", prefix, clause, suffix))
             } else {
-                Ok(format!("{},\n{} {}", prefix, clause, suffix))
+                let line_start = prefix.rfind('\n').map(|i| i + 1).unwrap_or(0);
+                let indent: String = prefix[line_start..]
+                    .chars().take_while(|c| c.is_whitespace()).collect();
+                Ok(format!("{},\n{}{} {}", prefix, indent, clause, suffix))
             }
         }
         PartialMapDef::PartialMap(_) => {
@@ -347,7 +425,3 @@ fn complex_matches(c: &Spanned<ast::Complex>, type_name: &str) -> bool {
     }).unwrap_or(false)
 }
 
-/// Build the 0-cell diagram chosen in a `ZeroCell` session.
-pub fn zero_cell_diagram(tag: &Tag) -> Result<Diagram, String> {
-    Diagram::cell(tag.clone(), &CellData::Zero).map_err(|e| format!("{}", e))
-}

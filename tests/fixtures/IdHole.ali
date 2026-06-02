@@ -1,0 +1,10 @@
+@Type
+
+D <<= { a, b, x : a -> b },
+
+T <<= { p },
+
+@T
+  (* a and b both map to p, so x's image is a 1-cell p -> p — the identity,
+     reachable at step 0 with no rewrites. *)
+  let H :: D = [ a => p, b => p, x => ? ]

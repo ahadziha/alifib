@@ -22,7 +22,7 @@ use crate::interpreter::{GlobalStore, InterpretedFile, LoadResult};
 use crate::language::error::Diagnostic;
 
 use super::engine::{RewriteEngine, resolve_type};
-use super::fill::{edit_for_fill, list_open_holes, start_fill, zero_cell_diagram, FillContext, FillSession};
+use super::fill::{edit_for_fill, filled_message, list_open_holes, start_fill, FillContext, FillSession, ZeroCellFill};
 use super::protocol::{
     FillInfo, Request, Response, build_homology_response, build_map_entries, build_map_image_strdiag,
     build_response, build_strdiag_response, build_types_from_store, build_type_detail_from_store,
@@ -70,15 +70,14 @@ enum State {
         engine: RewriteEngine,
         fill: Option<FillContext>,
     },
-    /// A boundaryless 0-cell fill: the only move is choosing one of the type's
-    /// 0-cells.  Not a [`RewriteEngine`], so it lives in its own state.
+    /// A boundaryless 0-cell fill: the moves are choosing/undoing/redoing one of
+    /// the type's 0-cells.  Not a [`RewriteEngine`], so it lives in its own state.
     ZeroFill {
         store: Arc<GlobalStore>,
         root_path: String,
         source: String,
         ctx: FillContext,
-        choices: Vec<(Tag, String)>,
-        chosen: Option<Diagram>,
+        fill: ZeroCellFill,
     },
 }
 
@@ -301,7 +300,7 @@ impl WebRepl {
                 let Some(store) = self.state.store() else { return err_json("no source loaded"); };
                 return ok_json(holes_json(store, self.state.root_path()));
             }
-            Request::Fill { index } => return self.start_fill_session(*index),
+            Request::Fill { index, backward } => return self.start_fill_session(*index, *backward),
             Request::Done => return self.finalize_fill(),
             _ => {}
         }
@@ -511,52 +510,43 @@ impl WebRepl {
     /// Start a hole-filling session for the 0-based hole `index`.  Requires the
     /// loaded (no-session) state; installs a rewrite engine (m ≥ 1) or a 0-cell
     /// chooser (m = 0).
-    fn start_fill_session(&mut self, index: usize) -> String {
+    fn start_fill_session(&mut self, index: usize, backward: bool) -> String {
         let (store, root_path, source) = match std::mem::replace(&mut self.state, State::Empty) {
             State::Loaded { store, root_path, source } => (store, root_path, source),
             other => { self.state = other; return err_json("session already active; stop it first"); }
         };
-        match start_fill(&store, &root_path, &root_path, index, false) {
+        match start_fill(&store, &root_path, &root_path, index, backward) {
             Ok((ctx, FillSession::Rewrite(engine))) => {
                 let mut data = build_response(&engine, false);
-                data.fill = Some(fill_info(&ctx, engine.initial_diagram().top_dim() + 1));
+                data.fill = Some(fill_info(&ctx, ctx.dim));
                 self.state = State::Active { store, root_path, source, engine, fill: Some(ctx) };
                 ok_json(data)
             }
-            Ok((ctx, FillSession::ZeroCell { choices, chosen })) => {
-                let payload = zero_fill_response(&ctx, &choices, &chosen);
-                self.state = State::ZeroFill { store, root_path, source, ctx, choices, chosen };
+            Ok((ctx, FillSession::ZeroCell(fill))) => {
+                let payload = zero_fill_response(&ctx, &fill);
+                self.state = State::ZeroFill { store, root_path, source, ctx, fill };
                 payload
             }
             Err(e) => { self.state = State::Loaded { store, root_path, source }; err_json(&e) }
         }
     }
 
-    /// Handle a command while a 0-cell fill is active: `step` chooses a 0-cell,
-    /// `show` re-renders the choice list.
+    /// Handle a command while a 0-cell fill is active.  Choosing/undoing/redoing
+    /// mirror a rewrite session's `step`/`undo`/`redo`.
     fn handle_zero_fill(&mut self, request: &Request) -> String {
-        match request {
-            Request::Show => match &self.state {
-                State::ZeroFill { ctx, choices, chosen, .. } => zero_fill_response(ctx, choices, chosen),
-                _ => err_json("no active fill"),
-            },
-            Request::Step { choice } => {
-                let State::ZeroFill { choices, chosen, .. } = &mut self.state else {
-                    return err_json("no active fill");
-                };
-                let Some((tag, _)) = choices.get(*choice) else {
-                    return err_json(&format!("no 0-cell numbered {}", choice));
-                };
-                match zero_cell_diagram(tag) {
-                    Ok(d) => *chosen = Some(d),
-                    Err(e) => return err_json(&e),
-                }
-                match &self.state {
-                    State::ZeroFill { ctx, choices, chosen, .. } => zero_fill_response(ctx, choices, chosen),
-                    _ => unreachable!(),
-                }
-            }
-            _ => err_json("only 'step', 'show', 'done' apply in a 0-cell fill"),
+        let State::ZeroFill { ctx, fill, .. } = &mut self.state else {
+            return err_json("no active fill");
+        };
+        let result = match request {
+            Request::Show => Ok(()),
+            Request::Step { choice } => fill.choose(*choice),
+            Request::Undo | Request::UndoTo { .. } => fill.undo(),
+            Request::Redo | Request::RedoTo { .. } => fill.redo(),
+            _ => return err_json("in a 0-cell fill use 'step', 'undo', 'redo', or 'done'"),
+        };
+        match result {
+            Ok(()) => zero_fill_response(ctx, fill),
+            Err(e) => err_json(&e),
         }
     }
 
@@ -575,8 +565,10 @@ impl WebRepl {
                     Err(e) => return err_json(&e),
                 }
             }
-            State::ZeroFill { chosen: Some(d), .. } => d.clone(),
-            State::ZeroFill { chosen: None, .. } => return err_json("choose a 0-cell first (step <n>)"),
+            State::ZeroFill { fill, .. } => match fill.filler() {
+                Ok(d) => d,
+                Err(e) => return err_json(&e),
+            },
             _ => return err_json("no active fill"),
         };
 
@@ -585,7 +577,10 @@ impl WebRepl {
             | State::ZeroFill { store, root_path, source, ctx, .. } => (store, root_path, source, ctx),
             _ => return err_json("no active fill"),
         };
-        let filled = ctx.source_name.clone();
+        // Compose the report (same wording as the CLI) before the store changes.
+        let message = store.find_type(ctx.type_gid)
+            .map(|t| filled_message(ctx, &filler, &t.complex))
+            .unwrap_or_else(|| format!("Filled ?{}", ctx.source_name));
         let root_path_owned = root_path.clone();
         let new_source = match edit_for_fill(store, ctx, &filler, source) {
             Ok(s) => s,
@@ -598,7 +593,7 @@ impl WebRepl {
             Ok(new_store) => {
                 let types = type_summaries_json(&new_store);
                 let payload = ok_json(serde_json::json!({
-                    "filled": filled,
+                    "message": message,
                     "source": new_source.clone(),
                     "types": types,
                 }));
@@ -854,23 +849,26 @@ fn fill_info(ctx: &FillContext, dim: usize) -> FillInfo {
     }
 }
 
-/// The response for a 0-cell fill: the candidate 0-cells (a clickable list, with
-/// no step diagram) and the current choice, if any.
-fn zero_fill_response(ctx: &FillContext, choices: &[(Tag, String)], chosen: &Option<Diagram>) -> String {
-    let candidates: Vec<serde_json::Value> = choices
-        .iter()
-        .enumerate()
-        .map(|(i, (_, name))| serde_json::json!({ "index": i, "name": name }))
-        .collect();
-    let chosen_name = chosen
-        .as_ref()
-        .and_then(|d| d.top_label())
-        .and_then(|tag| choices.iter().find(|(t, _)| t == tag).map(|(_, n)| n.clone()));
+/// The response for a 0-cell fill: session-like fields plus the candidate 0-cells
+/// (a clickable list, offered only while unchosen — there is never a step diagram).
+fn zero_fill_response(ctx: &FillContext, fill: &ZeroCellFill) -> String {
+    // Candidates are offered only while no cell is chosen — once chosen, the
+    // session is "at the target" and (like a normal session) has no moves.
+    let candidates: Vec<serde_json::Value> = if fill.chosen.is_some() {
+        Vec::new()
+    } else {
+        fill.choices.iter().enumerate()
+            .map(|(i, (_, name))| serde_json::json!({ "index": i, "name": name }))
+            .collect()
+    };
     ok_json(serde_json::json!({
         "fill": fill_info(ctx, 0),
         "zero_cell": {
             "choices": candidates,
-            "chosen": chosen_name,
+            "chosen": fill.chosen_name(),
+            "target_reached": fill.target_reached(),
+            "can_undo": fill.chosen.is_some(),
+            "can_redo": fill.can_redo(),
         },
     }))
 }

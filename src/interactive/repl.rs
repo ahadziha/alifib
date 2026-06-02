@@ -58,7 +58,7 @@ use crate::interpreter::GlobalStore;
 use crate::output::render_diagram;
 use super::display::Display;
 use super::engine::{RewriteEngine, load_file_context, resolve_type};
-use super::fill::{finalize, list_open_holes, start_fill, zero_cell_diagram, FillContext, FillSession};
+use super::fill::{filled_message, finalize, list_open_holes, start_fill, FillContext, FillSession, ZeroCellFill};
 use super::render::{print_history, print_state};
 
 // ── Readline editor with a coloured prompt ──────────────────────────────────────
@@ -293,19 +293,16 @@ pub fn run_repl(
                         Some((ctx, session)) => match session.filler() {
                             Err(e) => display.error(&e),
                             Ok(filler) => {
-                                // Render the filler and compose the report before
-                                // finalising swaps the store out: `?x with <d> : in -> out`.
-                                let filler_str = store.find_type(ctx.type_gid)
-                                    .map(|t| render_diagram(&filler, &t.complex))
-                                    .unwrap_or_else(|| "?".to_owned());
-                                let head = format!("?{}", ctx.source_name);
-                                let tail = ctx.boundary.strip_prefix(&head).unwrap_or("").to_owned();
+                                // Compose the report before finalising swaps the store out.
+                                let message = store.find_type(ctx.type_gid)
+                                    .map(|t| filled_message(ctx, &filler, &t.complex))
+                                    .unwrap_or_else(|| format!("Filled ?{}", ctx.source_name));
                                 match finalize(&store, ctx, &filler, &canonical_path, &source) {
                                     Ok((new_store, new_source)) => {
                                         store = new_store;
                                         source = new_source;
                                         fill = None;
-                                        display.meta(&format!("Filled {} with {}{}", head, filler_str, tail));
+                                        display.meta(&message);
                                     }
                                     Err(e) => display.error(&e),
                                 }
@@ -321,7 +318,7 @@ pub fn run_repl(
                     Cmd::Store(name) if fill.is_some() => {
                         match &mut fill.as_mut().unwrap().1 {
                             FillSession::Rewrite(e) => store_proof(e, &name, &mut store, &mut source, &display),
-                            FillSession::ZeroCell { .. } => display.error("Nothing to store in a 0-cell fill"),
+                            FillSession::ZeroCell(_) => display.error("Nothing to store in a 0-cell fill"),
                         }
                     }
                     cmd if fill.is_some() => {
@@ -500,8 +497,12 @@ fn show_state(engine: &RewriteEngine, display: &Display) {
         .map(|t| render_diagram(t, engine.type_complex()));
 
     let proof_label = if engine.target_reached() {
-        if let Err(e) = engine.typecheck_proof() {
-            display.error(&format!("Proof typecheck failed: {}", e));
+        // Skip the typecheck on a step-0 (identity) proof: it is the initial
+        // diagram, not a genuine (n+1)-cell, and `done` validates by re-evaluation.
+        if engine.step_count() > 0 {
+            if let Err(e) = engine.typecheck_proof() {
+                display.error(&format!("Proof typecheck failed: {}", e));
+            }
         }
         match engine.proof_label() {
             Ok(pl) => pl,
@@ -726,31 +727,32 @@ fn dispatch_holes(store: &GlobalStore, canonical_path: &str, display: &Display) 
 /// candidate 0-cells to choose from (boundaryless).
 fn announce_fill(ctx: &FillContext, session: &FillSession, display: &Display) {
     display.meta(&format!("Filling {}", ctx.boundary));
-    match session {
-        FillSession::Rewrite(e) => show_state(e, display),
-        FillSession::ZeroCell { choices, .. } => show_zero_cell_choices(choices, display),
-    }
+    show_fill_state(ctx, session, display);
 }
 
 /// Report the state of an active fill (delegating to the engine for rewrites).
-fn show_fill_state(ctx: &FillContext, session: &FillSession, display: &Display) {
+fn show_fill_state(_ctx: &FillContext, session: &FillSession, display: &Display) {
     match session {
         FillSession::Rewrite(e) => show_state(e, display),
-        FillSession::ZeroCell { choices, chosen } => {
-            display.meta(&format!("Filling 0-cell '{}'", ctx.source_name));
-            match chosen {
-                Some(_) => display.meta("  (Chosen — use 'done' to finalise)"),
-                None => show_zero_cell_choices(choices, display),
-            }
-        }
+        FillSession::ZeroCell(zc) => show_zero_cell_state(zc, display),
     }
 }
 
-/// List the candidate 0-cells of a boundaryless fill, numbered for `apply`.
-fn show_zero_cell_choices(choices: &[(crate::aux::Tag, String)], display: &Display) {
-    display.inspect_rich("Choose a 0-cell:");
-    for (i, (_, name)) in choices.iter().enumerate() {
-        display.inspect_rich(&format!("  {} {}", display.acc(&format!("({i})")), display.code(name)));
+/// Render a 0-cell fill like a session: the candidates while unchosen, or the
+/// chosen cell with a target-reached banner once picked (`undo` to re-choose).
+fn show_zero_cell_state(zc: &ZeroCellFill, display: &Display) {
+    match zc.chosen_name() {
+        Some(name) => {
+            display.inspect_rich(&format!("current   {}", display.code(name)));
+            display.blank();
+            display.inspect_rich(&display.ok("✓ Target reached"));
+        }
+        None => {
+            display.inspect_rich("Choose a 0-cell:");
+            for (i, (_, name)) in zc.choices.iter().enumerate() {
+                display.inspect_rich(&format!("  {} {}", display.acc(&format!("({i})")), display.code(name)));
+            }
+        }
     }
 }
 
@@ -758,27 +760,25 @@ fn show_zero_cell_choices(choices: &[(crate::aux::Tag, String)], display: &Displ
 fn dispatch_fill_cmd(session: &mut FillSession, cmd: Cmd, display: &Display) {
     match session {
         FillSession::Rewrite(e) => dispatch_engine_cmd(e, cmd, display),
-        FillSession::ZeroCell { choices, chosen } => match cmd {
-            Cmd::Rules => show_zero_cell_choices(choices, display),
-            Cmd::Apply(ref v) => {
-                let k = v[0];
-                match choices.get(k) {
-                    Some((tag, name)) => match zero_cell_diagram(tag) {
-                        Ok(d) => {
-                            *chosen = Some(d);
-                            display.meta(&format!("Chose '{}' — use 'done' to finalise", name));
-                        }
-                        Err(e) => display.error(&e),
-                    },
-                    None => display.error(&format!("No 0-cell numbered {}", k)),
+        FillSession::ZeroCell(zc) => match cmd {
+            Cmd::Apply(ref v) => match zc.choose(v[0]) {
+                Ok(()) => {
+                    display.meta(&format!("Chose {}", zc.chosen_name().unwrap_or("?")));
+                    show_zero_cell_state(zc, display);
                 }
-            }
-            Cmd::Proof => match chosen {
-                Some(_) => display.meta("(0-cell chosen)"),
-                None => display.meta("(No 0-cell chosen yet)"),
+                Err(e) => display.error(&e),
             },
+            Cmd::Undo(_) | Cmd::UndoAll | Cmd::Restart => match zc.undo() {
+                Ok(()) => show_zero_cell_state(zc, display),
+                Err(e) => display.error(&e),
+            },
+            Cmd::Redo(_) => match zc.redo() {
+                Ok(()) => show_zero_cell_state(zc, display),
+                Err(e) => display.error(&e),
+            },
+            Cmd::Rules => show_zero_cell_state(zc, display),
             Cmd::Help => print_help(display),
-            _ => display.error("Only 'apply <n>', 'rules', 'done' apply in a 0-cell fill"),
+            _ => display.error("In a 0-cell fill use 'apply <n>', 'undo', 'redo', or 'done'"),
         },
     }
 }

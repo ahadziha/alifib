@@ -842,7 +842,9 @@ impl RewriteEngine {
     pub fn steps(&self) -> &[Diagram] { &self.steps[..self.active_len] }
 
     /// Paste the recorded rewrite steps together into the full (n+1)-dimensional
-    /// proof diagram.  Returns `Ok(None)` if no steps have been taken.
+    /// proof diagram.  With no steps the proof is the initial diagram itself (the
+    /// identity / degenerate proof) — the same thing `store` and `proof_diagram`
+    /// record at step 0.
     ///
     /// This is the one place where the "diagram up to now" is actually built —
     /// call it only when the assembled proof is needed (storing, typechecking,
@@ -851,7 +853,9 @@ impl RewriteEngine {
         let n = self.initial_diagram.top_dim();
         let active = &self.steps[..self.active_len];
         let mut iter = active.iter();
-        let Some(first) = iter.next() else { return Ok(None); };
+        let Some(first) = iter.next() else {
+            return Ok(Some(self.initial_diagram.clone()));
+        };
         let mut acc = first.clone();
         for step in iter {
             let (left, right) = if self.backward { (step, &acc) } else { (&acc, step) };
@@ -1024,14 +1028,13 @@ impl RewriteEngine {
         Ok(())
     }
 
-    /// Returns true only if the current diagram is isomorphic to the target AND
-    /// at least one rewrite step has been applied.  Regular directed complexes
-    /// have no identities, so source == target at the start is never a valid proof.
+    /// Returns true when the current diagram is isomorphic to the target — including
+    /// at step 0, where the initial diagram already meets the target (the identity /
+    /// degenerate proof, which is a perfectly valid filler).
     pub fn target_reached(&self) -> bool {
-        self.active_len > 0
-            && self.target_diagram.as_ref()
-                .map(|t| Diagram::isomorphic(&self.current_diagram, t))
-                .unwrap_or(false)
+        self.target_diagram.as_ref()
+            .map(|t| Diagram::isomorphic(&self.current_diagram, t))
+            .unwrap_or(false)
     }
 
     /// Render the assembled proof as a single flattened term, for the REPL

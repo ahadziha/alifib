@@ -767,6 +767,41 @@ header {
   color: var(--text-dim);
   margin-top: 2px;
 }
+/* Open holes of a map, shown above the "Image of" selector. */
+.infobox-holes {
+  margin-top: 6px;
+}
+.infobox-holes-title {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.infobox-hole {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 3px;
+}
+.infobox-hole-bd {
+  flex: 1;
+  font-family: var(--font-mono, monospace);
+}
+.btn-fill-hole {
+  padding: 2px 10px;
+  font-size: 11px;
+}
+/* The fill session's Done button, sized to match the other infobox actions. */
+.btn-done-fill {
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 8px;
+}
+.btn-done-fill:disabled { cursor: not-allowed; }
+/* Transient highlight over a clause inserted by `done`. */
+.cm-fill-flash {
+  background: var(--ok-a10);
+  border-radius: 2px;
+  animation: banner-in 0.4s ease-out;
+}
 .infobox-map-gen {
   margin-top: 4px;
 }

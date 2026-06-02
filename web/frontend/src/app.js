@@ -1,5 +1,5 @@
-import { EditorView, keymap, lineNumbers, drawSelection, highlightActiveLine } from '@codemirror/view';
-import { EditorState, Compartment } from '@codemirror/state';
+import { EditorView, keymap, lineNumbers, drawSelection, highlightActiveLine, Decoration } from '@codemirror/view';
+import { EditorState, Compartment, StateField, StateEffect } from '@codemirror/state';
 import { defaultKeymap, insertTab, indentLess, history as cmHistory, historyKeymap } from '@codemirror/commands';
 import { indentUnit, bracketMatching } from '@codemirror/language';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
@@ -24,10 +24,31 @@ const fullyThinTags = new Set();
 let proofView = false;
 let proofLayout = null;
 let proofBoundaryMap = null;
+let openHoles = [];        // open holes of the module, from the `holes` command
+let fillSession = null;    // { index, boundary, sourceName } when a fill is active
 
 // ── Theme ────────────────────────────────────────────────────────────────────
 
 const themeComp = new Compartment();
+
+// ── Fill-clause flash highlight ───────────────────────────────────────────────
+// A transient mark over the clause `done` inserts, cleared after a moment.
+
+const setFlash = StateEffect.define();
+const clearFlash = StateEffect.define();
+const flashMark = Decoration.mark({ class: 'cm-fill-flash' });
+const flashField = StateField.define({
+  create() { return Decoration.none; },
+  update(deco, tr) {
+    deco = deco.map(tr.changes);
+    for (const e of tr.effects) {
+      if (e.is(setFlash)) deco = Decoration.set([flashMark.range(e.value.from, e.value.to)]);
+      else if (e.is(clearFlash)) deco = Decoration.none;
+    }
+    return deco;
+  },
+  provide: f => EditorView.decorations.from(f),
+});
 
 function isDark() {
   return document.documentElement.dataset.theme !== 'light';
@@ -196,6 +217,7 @@ function makeEditorState(doc) {
       bracketMatching(),
       closeBrackets(),
       search({ caseSensitive: true }),
+      flashField,
       themeComp.of(themeExtensions()),
       keymap.of([
         ...closeBracketsKeymap,
@@ -969,7 +991,7 @@ btnTheme.addEventListener('click', () => applyTheme(!isDark()));
 
 btnEval.addEventListener('click', () => { void evaluateSource(); });
 
-async function evaluateSource() {
+async function evaluateSource(silent = false) {
   if (!repl) return;
   const src = getEditorText();
   if (!src.trim()) return;
@@ -985,7 +1007,7 @@ async function evaluateSource() {
   if (result.status === 'error') {
     fileOutput.innerHTML = '';
     fileOutput.hidden = true;
-    appendReplEntry('(evaluate)', formatError(result));
+    appendReplEntry('', formatError(result));
     resetSession();
     sessionSetup.hidden = true;
     replInput.disabled = true;
@@ -1013,6 +1035,8 @@ async function evaluateSource() {
   fileOutput.hidden = types.length === 0;
   buildModuleAccordion(types, fileOutput);
 
+  await fetchHoles();
+
   selType.innerHTML = '<option value="">— select type —</option>';
   const sourceMod = tabName || 'source';
   const sourceTypes = types.filter(t => (t.module || 'source') === sourceMod);
@@ -1030,11 +1054,32 @@ async function evaluateSource() {
   sessionSetup.hidden = false;
   replInput.disabled = false;
   syncAnalysisLayout();
-  appendReplEntry('(evaluate)', formatOk(
-    types.length
-      ? `Loaded ${types.length} type${types.length !== 1 ? 's' : ''}.`
-      : 'Loaded (no named types found).'
-  ));
+  // Suppress the success notice for an implicit re-evaluation (e.g. after
+  // `done`), so finalising a fill feels seamless; errors are always shown.
+  if (!silent) {
+    appendReplEntry('', formatOk(
+      types.length
+        ? `Loaded ${types.length} type${types.length !== 1 ? 's' : ''}.`
+        : 'Loaded (no named types found).'
+    ));
+  }
+}
+
+// ── Holes ──────────────────────────────────────────────────────────────────
+
+// Refresh the module's open holes from the backend.  Holes are shown in a map's
+// infobox, not the accordion, so this just refreshes the cache.
+async function fetchHoles() {
+  openHoles = [];
+  if (!repl) return;
+  const result = await parseReplResponse(repl.run_command('{"command":"holes"}'));
+  if (result.status === 'ok' && result.data && Array.isArray(result.data.holes)) {
+    openHoles = result.data.holes;
+  }
+}
+
+function holesForMap(typeName, mapName) {
+  return openHoles.filter(h => h.type_name === typeName && h.map_name === mapName);
 }
 
 // ── Accordion builders ───────────────────────────────────────────────────────
@@ -1216,6 +1261,7 @@ async function startSession() {
 function resetSession() {
   const wasActive = sessionActive;
   sessionActive = false;
+  fillSession = null;
   sessionStop.hidden = true;
   if (wasActive) sessionSetup.hidden = false;
   if (selectedEl) {
@@ -1271,6 +1317,204 @@ async function enterSession(responsePromise, rawCmd) {
   await showSessionDiagram(result.data);
 }
 
+// ── Hole-filling ──────────────────────────────────────────────────────────────
+
+// Start a fill session for the hole with the given (0-based) index.  A fill is
+// just a rewrite session in the backend, so it reuses the session machinery; a
+// 0-cell hole has no rewrites and is filled by choosing one of the type's
+// 0-cells.
+async function startFill(index) {
+  if (!repl) return;
+  const hole = openHoles.find(h => h.index === index);
+  const result = await parseReplResponse(repl.run_command(JSON.stringify({ command: 'fill', index, backward: chkBackward.checked })));
+  if (result.status === 'error') {
+    appendReplEntry(`fill ${index}`, formatError(result));
+    return;
+  }
+  sessionActive = true;
+  fillSession = {
+    index,
+    dim: result.data.fill ? result.data.fill.dim : (hole ? hole.dim : 1),
+  };
+  sessionSetup.hidden = true;
+  sessionStop.hidden = false;
+  if (selectedEl) {
+    selectedEl.classList.remove('acc-item--selected');
+    selectedEl.classList.remove('acc-leaf--selected');
+    selectedEl = null;
+  }
+  currentItem = null;
+  // Print the session state immediately, exactly as starting a normal session.
+  const isZero = !!result.data.zero_cell;
+  const state = isZero ? renderZeroCell(result.data.zero_cell) : renderState(result.data);
+  appendReplEntry(`fill ${index}`, state);
+  if (isZero) {
+    await showZeroCellFill(result.data);
+  } else {
+    await showSessionDiagram(result.data);
+  }
+}
+
+// Render a boundaryless 0-cell fill so it feels like a normal session: an
+// Undo/Redo/Done action row, the candidate 0-cells as a clickable list while
+// unchosen, the chosen cell + target-reached once picked.  Never a string diagram.
+async function showZeroCellFill(data) {
+  selectedRewrite = null;
+  previewActive = false;
+  infobox.hidden = false;
+  boundaryControls.hidden = true;
+  const zc = data.zero_cell || { choices: [], chosen: null, target_reached: false, can_undo: false, can_redo: false };
+
+  let buttons = '';
+  buttons += `<button id="btn-undo-vis" class="btn-undo-vis btn-secondary" title="Undo"${zc.can_undo ? '' : ' disabled'}>&#x21A9;</button>`;
+  buttons += `<button id="btn-redo-vis" class="btn-redo-vis btn-secondary" title="Redo"${zc.can_redo ? '' : ' disabled'}>&#x21AA;</button>`;
+  buttons += `<button id="btn-done-fill" class="btn-done-fill btn-secondary" title="Finalise this fill"${zc.target_reached ? '' : ' disabled'}>Done</button>`;
+  // A 0-cell has no current/target diagram; choosing one completes the proof.
+  let html = `<div class="infobox-actions">${buttons}</div>`;
+  if (zc.chosen) {
+    html += `<span class="infobox-qual">Chosen 0-cell</span>`;
+    html += `<div class="infobox-name">${hi(zc.chosen)}</div>`;
+    html += `<div class="target-reached-banner">&#x2714; target reached</div>`;
+  } else {
+    html += `<span class="infobox-qual">Choose a 0-cell</span>`;
+  }
+  infoboxText.innerHTML = html;
+  document.getElementById('btn-undo-vis')?.addEventListener('click', () => { void zeroCellCmd('undo'); });
+  document.getElementById('btn-redo-vis')?.addEventListener('click', () => { void zeroCellCmd('redo'); });
+  document.getElementById('btn-done-fill')?.addEventListener('click', () => { void finishFill(); });
+
+  // A 0-cell fill never draws a string diagram.
+  resetZoom();
+  currentLayout = null;
+  visContainer.hidden = true;
+  visControls.hidden = true;
+
+  buildZeroCellChoices(zc.choices);
+  syncAnalysisLayout();
+}
+
+// Clickable list of candidate 0-cells, in the rewrite-list slot.  Empty once a
+// cell is chosen (the backend offers candidates only while unchosen).
+function buildZeroCellChoices(choices) {
+  rewriteList.innerHTML = '';
+  if (!choices.length) { rewriteList.hidden = true; return; }
+  rewriteList.hidden = false;
+  for (const c of choices) {
+    const row = document.createElement('div');
+    row.className = 'rewrite-row';
+    row.innerHTML = `<span class="rw-content"><span class="rw-name">${esc(c.name)}</span></span>`;
+    row.addEventListener('click', () => { void chooseZeroCell(c.index); });
+    rewriteList.appendChild(row);
+  }
+}
+
+async function chooseZeroCell(choice) {
+  if (!repl) return;
+  const result = await parseReplResponse(repl.run_command(JSON.stringify({ command: 'step', choice })));
+  if (result.status === 'ok' && result.data) await showZeroCellFill(result.data);
+  else appendReplEntry('step', formatError(result));
+}
+
+// Undo/redo within a 0-cell fill.
+async function zeroCellCmd(command) {
+  if (!repl) return;
+  const result = await parseReplResponse(repl.run_command(JSON.stringify({ command })));
+  if (result.status === 'ok' && result.data) await showZeroCellFill(result.data);
+  else appendReplEntry(command, formatError(result));
+}
+
+// Route a typed session command while a 0-cell fill is active, mirroring the CLI:
+// updates both the analysis pane and the transcript.
+async function runZeroCellText(raw, cmd, arg) {
+  if (cmd === 'stop') {
+    void repl.stop_session();
+    resetSession();
+    appendReplEntry(raw, formatOk('Session stopped.'));
+    return;
+  }
+  let req;
+  switch (cmd) {
+    case 'apply': case 'a': {
+      const n = parseInt(arg.split(/\s+/)[0], 10);
+      if (Number.isNaN(n)) { appendReplEntry(raw, formatError('usage: apply <n>')); return; }
+      req = { command: 'step', choice: n };
+      break;
+    }
+    case 'undo': case 'u': case 'restart': req = { command: 'undo' }; break;
+    case 'redo':                            req = { command: 'redo' }; break;
+    case 'show': case 'status': case 'rules': case 'r': req = { command: 'show' }; break;
+    default:
+      appendReplEntry(raw, formatError("in a 0-cell fill use 'apply <n>', 'undo', 'redo', or 'done'"));
+      return;
+  }
+  const result = await parseReplResponse(repl.run_command(JSON.stringify(req)));
+  if (result.status === 'error') { appendReplEntry(raw, formatError(result)); return; }
+  await showZeroCellFill(result.data);
+  appendReplEntry(raw, renderZeroCell(result.data.zero_cell));
+}
+
+// Text rendering of a 0-cell fill state, mirroring `renderState` — but a 0-cell
+// has no current/target diagram; the chosen cell is the *proof*.
+function renderZeroCell(zc) {
+  if (!zc) return dim('(no fill)');
+  const out = [dim('step:') + ' ' + hi(zc.chosen ? 1 : 0)];
+  if (zc.target_reached) out.push(ok('✓ target reached'));
+  const choices = zc.choices || [];
+  if (choices.length) {
+    out.push('');
+    out.push(sec('available rewrites:'));
+    choices.forEach(c => out.push(`  [${hi(c.index)}] ${hi(c.name)}`));
+  } else {
+    out.push(dim('no rewrites available'));
+  }
+  return out.join('\n');
+}
+
+// Finalise the active fill: the backend appends the clause and returns the
+// updated source, which we drop into the editor (flashing the new clause) and
+// re-evaluate.
+async function finishFill() {
+  if (!repl) return;
+  const before = getEditorText();
+  const result = await parseReplResponse(repl.run_command('{"command":"done"}'));
+  if (result.status === 'error') {
+    appendReplEntry('done', formatError(result));
+    return;
+  }
+  const message = result.data.message || 'Filled.';
+  const newSource = result.data.source || before;
+  appendReplEntry('done', formatOk(message));
+  fillSession = null;
+  resetSession();
+  replaceEditorSource(newSource, before);
+  await evaluateSource(true);
+  // The silent re-evaluation reflows the layout after the last scroll, so
+  // re-pin the transcript to the bottom (where the `done` message is).
+  replOutput.scrollTop = replOutput.scrollHeight;
+}
+
+// Replace the editor contents with `next` and briefly flash the inserted span
+// (located by diffing against `prev`).
+function replaceEditorSource(next, prev) {
+  if (!view) return;
+  // Common prefix / suffix → the inserted middle.
+  let p = 0;
+  const maxP = Math.min(prev.length, next.length);
+  while (p < maxP && prev[p] === next[p]) p++;
+  let s = 0;
+  while (s < (maxP - p) && prev[prev.length - 1 - s] === next[next.length - 1 - s]) s++;
+  const from = p;
+  const to = next.length - s;
+
+  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: next } });
+  if (to > from && to <= view.state.doc.length) {
+    view.dispatch({
+      effects: [setFlash.of({ from, to }), EditorView.scrollIntoView(from, { y: 'center' })],
+    });
+    setTimeout(() => { if (view) view.dispatch({ effects: clearFlash.of(null) }); }, 1600);
+  }
+}
+
 // ── REPL input ────────────────────────────────────────────────────────────────
 
 replInput.addEventListener('keydown', e => {
@@ -1298,6 +1542,30 @@ async function handleCommand(raw) {
 
   if (cmd === 'help' || cmd === '?') {
     appendReplEntry(raw, { cls: 'repl-result', text: HELP_TEXT });
+    return;
+  }
+
+  // Hole-filling commands drive the same flows as the GUI buttons.
+  if (cmd === 'holes') {
+    await fetchHoles();
+    appendReplEntry(raw, renderHoles());
+    return;
+  }
+  if (cmd === 'fill') {
+    const n = parseInt(arg, 10);
+    if (Number.isNaN(n)) { appendReplEntry(raw, formatError({ message: 'usage: fill <n>' })); return; }
+    await startFill(n);
+    return;
+  }
+  if (cmd === 'done') {
+    await finishFill();
+    return;
+  }
+
+  // In a 0-cell fill the text REPL acts like a rewrite session: `show`/`rules`
+  // list the candidate 0-cells, `apply <n>` chooses, `undo`/`redo` reverse it.
+  if (fillSession && fillSession.dim === 0) {
+    await runZeroCellText(raw, cmd, arg);
     return;
   }
 
@@ -1523,7 +1791,7 @@ function renderState(data) {
         out.push(`      match: ${highlighted}`);
       }
     });
-  } else if (data.step_count > 0) {
+  } else {
     out.push(dim('no rewrites available'));
   }
 
@@ -1572,6 +1840,15 @@ function renderRules(rules) {
   return rules.map(r =>
     `  ${hi(r.name)}  ${dim(r.input.label)} → ${dim(r.output.label)}`
   ).join('\n');
+}
+
+// The current module's open holes, numbered for `fill <n>` (mirrors the CLI).
+function renderHoles() {
+  if (!openHoles.length) return dim('(no open holes)');
+  const lines = openHoles.map(h =>
+    `  [${hi(h.index)}] @${esc(h.type_name)} ${esc(h.map_name)} :: ${esc(h.domain_name)}\n      ${hi(h.boundary)}`
+  );
+  return sec('open holes:') + '\n' + lines.join('\n');
 }
 
 function renderStore(data) {
@@ -1677,10 +1954,14 @@ function appendReplEntry(cmdText, result) {
   const entry = document.createElement('div');
   entry.className = 'repl-entry';
 
-  const cmdEl = document.createElement('div');
-  cmdEl.className = 'repl-cmd';
-  cmdEl.textContent = cmdText;
-  entry.appendChild(cmdEl);
+  // Omit the `> cmd` line for entries that aren't real commands (e.g. the
+  // implicit re-evaluation after editing or `done`).
+  if (cmdText) {
+    const cmdEl = document.createElement('div');
+    cmdEl.className = 'repl-cmd';
+    cmdEl.textContent = cmdText;
+    entry.appendChild(cmdEl);
+  }
 
   if (result) {
     const resEl = document.createElement('div');
@@ -1716,6 +1997,8 @@ const HELP_TEXT = `Always available:
   homology <name>     compute cellular homology of a type
   start <t> <i>       start a rewrite session (target optional)
   resume <t> <p>      resume a session from a diagram (target optional)
+  holes               list open holes of maps in this module
+  fill <n>            start a hole-filling session for hole <n>
   backward [on|off]   show or toggle backward rewrite mode (default: off)
   stop                end the active session
   clear               clear the REPL output
@@ -1733,6 +2016,7 @@ Session commands (require active session):
   rules (r)           list all rewrite rules
   history (h)         show move history
   store <name>        store the current proof as a named diagram
+  done                finalise the active fill, extending the map
 
 Keyboard: ↑/↓ navigate history · Ctrl+Enter evaluate file`;
 
@@ -2045,6 +2329,7 @@ async function showSessionDiagram(data) {
   buttons += `<button id="btn-redo-vis" class="btn-redo-vis btn-secondary" title="Redo"${!data.can_redo ? ' disabled' : ''}>&#x21AA;</button>`;
   const viewLabel = proofView ? 'Step view' : 'Proof view';
   buttons += `<button id="btn-view-toggle" class="btn-view-toggle" title="${viewLabel}">${viewLabel}</button>`;
+  if (fillSession) buttons += `<button id="btn-done-fill" class="btn-done-fill btn-secondary" title="Finalise this fill"${data.target_reached ? '' : ' disabled'}>Done</button>`;
   html += `<div class="infobox-actions">${buttons}</div>`;
   html += `<span class="infobox-qual">Current diagram</span>`;
   html += `<div class="infobox-name">${hi(data.current.label || '—')} <span class="acc-dim">dim ${data.current.dim}, step ${data.step_count}</span></div>`;
@@ -2076,6 +2361,8 @@ async function showSessionDiagram(data) {
   }
   const btnViewToggle = document.getElementById('btn-view-toggle');
   if (btnViewToggle) btnViewToggle.addEventListener('click', () => { void toggleProofView(); });
+  const btnDoneFill = document.getElementById('btn-done-fill');
+  if (btnDoneFill) btnDoneFill.addEventListener('click', () => { void finishFill(); });
 
   // Render the string diagram.
   resetZoom();
@@ -2488,6 +2775,18 @@ async function refreshInfobox() {
 
   if (item.kind === 'map') {
     html += `<div class="infobox-boundary">:: ${esc(item.domain)}</div>`;
+    const mapHoles = holesForMap(typeName, item.name);
+    if (mapHoles.length) {
+      html += `<div class="infobox-holes">`;
+      html += `<div class="infobox-holes-title">Open holes</div>`;
+      for (const h of mapHoles) {
+        html += `<div class="infobox-hole">`
+              + `<span class="infobox-hole-bd">${hi(h.boundary)}</span>`
+              + `<button class="btn-fill-hole btn-secondary" data-hole-index="${h.index}">Fill</button>`
+              + `</div>`;
+      }
+      html += `</div>`;
+    }
     if (item.generators && item.generators.length) {
       html += `<div class="setup-row infobox-map-gen"><label for="sel-map-gen">Image of</label><select id="sel-map-gen">`;
       html += `<option value="">— select generator —</option>`;
@@ -2533,6 +2832,13 @@ async function refreshInfobox() {
     }
 
     infoboxText.innerHTML = html;
+
+    infoboxText.querySelectorAll('.btn-fill-hole').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        void startFill(parseInt(btn.dataset.holeIndex, 10));
+      });
+    });
 
     const selMapGen = document.getElementById('sel-map-gen');
     if (selMapGen) {

@@ -133,6 +133,8 @@ pub enum Request {
     /// by `holes`).
     Fill {
         index: usize,
+        #[serde(default)]
+        backward: bool,
     },
     /// Finalise the active fill, extending the map's definition and returning the
     /// updated source.
