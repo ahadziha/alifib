@@ -13,7 +13,6 @@ use crate::core::{
     paste_tree::PasteTree,
 };
 use crate::language::ast::{self, DefPartialMap, ForBlock, PMapEntry, PartialMapBasic, PartialMapClause, PartialMapDef, PartialMapExt, Span, Spanned};
-use std::collections::HashMap;
 use std::sync::Arc;
 
 // ---- Maps with holes ----
@@ -67,21 +66,17 @@ fn assign_cell(
         return Ok(());
     }
 
+    // Already a pending hole and no image to add: idempotent (`x => ?` twice, or
+    // a face re-reached during transport).  Filling it requires an actual image.
+    if image.is_none() && build.entry_index(&tag).is_some() {
+        return Ok(());
+    }
+
     let cell_data = get_cell_data(context, domain, &tag)
         .ok_or_else(|| aux::Error::new("Cannot find cell data for generator"))?;
 
-    // Collapse inference: if the image is unknown but a boundary of `x` is already
-    // mapped to a diagram of dimension below `n - 1` (a collapse), then the only
-    // possible image of the n-cell `x` is that diagram — so infer it instead of
-    // making a hole.  Any incompatibility with the other boundary is caught by the
-    // commit's boundary check.
-    if image.is_none() {
-        if let Some(d) = collapsed_boundary_image(&build.map, &cell_data, dim) {
-            return assign_cell(build, context, domain, x_diag, Some(&d));
-        }
-    }
-
-    // Case 1 (sound): a whole boundary that is a single cell has its image forced.
+    // Case 1 (sound): when the image is known and a whole boundary is a single
+    // cell, that cell's image is forced.
     if let Some(a) = image {
         for sign in [DiagramSign::Input, DiagramSign::Output] {
             let Some(source_boundary) = boundary_of_sign(&cell_data, sign) else { continue; };
@@ -97,54 +92,52 @@ fn assign_cell(
         }
     }
 
-    let undefined = boundary_dependencies(&cell_data, &build.map);
+    // Force the map to be defined (committed or holed) on every still-undefined
+    // face.  Collapse inference inside these calls may resolve some faces to
+    // concrete images, which can in turn collapse `x` itself — hence we test for
+    // collapse only *after* the faces are settled.
+    for (face_tag, _) in boundary_dependencies(&cell_data, &build.map) {
+        ensure_defined(build, context, domain, &face_tag)?;
+    }
 
-    // Fully determined with a known image: commit directly (+ reconcile/cascade).
-    if undefined.is_empty() {
-        if let Some(a) = image {
+    let fully_defined = boundary_dependencies(&cell_data, &build.map).is_empty();
+    if let Some(a) = image {
+        // Fully determined with a known image: commit directly (+ reconcile/cascade).
+        if fully_defined {
             return commit(build, context, domain, tag, dim, cell_data, a.clone());
         }
+    } else if let Some(d) = collapsed_boundary_image(&build.map, &cell_data, dim) {
+        // A boundary has collapsed below dimension n-1, so the only possible image
+        // of the n-cell `x` is that diagram — infer it instead of making a hole.
+        // Any incompatibility with the other boundary is caught by the commit.
+        return assign_cell(build, context, domain, x_diag, Some(&d));
     }
 
-    // Incomplete information (or a bare hole): hole every undefined face, then
-    // record/upgrade the pending entry for `x`.
-    for (face_tag, _) in &undefined {
-        ensure_hole(build, context, domain, face_tag)?;
-    }
+    // Otherwise record a pending entry: a conditional (`image` Some) or pure hole.
     let (boundary_in, boundary_out) = transport_cell_boundaries(build, domain, &cell_data)?;
     upsert_entry(build, tag, dim, image.cloned(), boundary_in, boundary_out);
     Ok(())
 }
 
-/// Ensure a pending pure-hole entry exists for an undefined boundary face,
-/// recursing into the face's own undefined faces.  No-op if the face is already
-/// committed or already pending.
-fn ensure_hole(
+/// Ensure the map is committed, or has a pending entry, on `tag`.  When the
+/// logic forces the map to be defined on a cell (a boundary face), this is how
+/// we record it: by assigning it a hole — which [`assign_cell`] may instead
+/// resolve to a concrete image by collapse inference, if a boundary forces it.
+/// A cell genuinely never required stays untouched (and so undefined).
+fn ensure_defined(
     build: &mut MapBuild,
     context: &Context,
     domain: &Complex,
-    face_tag: &Tag,
+    tag: &Tag,
 ) -> Result<(), aux::Error> {
-    if build.map.is_defined_at(face_tag) || build.entry_index(face_tag).is_some() {
+    if build.map.is_defined_at(tag) || build.entry_index(tag).is_some() {
         return Ok(());
     }
-    let cell_data = get_cell_data(context, domain, face_tag).ok_or_else(|| {
-        aux::Error::new(format!("Cannot find cell data for boundary cell {}", face_tag))
+    let cell_data = get_cell_data(context, domain, tag).ok_or_else(|| {
+        aux::Error::new(format!("Cannot find cell data for boundary cell {}", tag))
     })?;
-    for (sub, _) in boundary_dependencies(&cell_data, &build.map) {
-        ensure_hole(build, context, domain, &sub)?;
-    }
-    let dim = cell_data.dim();
-    let (boundary_in, boundary_out) = transport_cell_boundaries(build, domain, &cell_data)?;
-    build.holes.push(MapHole {
-        meta: HoleId::fresh(),
-        source: face_tag.clone(),
-        dim,
-        image: None,
-        boundary_in,
-        boundary_out,
-    });
-    Ok(())
+    let cell = Diagram::cell(tag.clone(), &cell_data)?;
+    assign_cell(build, context, domain, &cell, None)
 }
 
 /// Insert or upgrade the pending entry for `tag`.  An existing entry keeps its
@@ -193,7 +186,7 @@ fn hole_map_image(
         }
         let image = f_map.map.image(&tag)?;
         for label in image.all_labels() {
-            ensure_hole(build, context, domain, label)?;
+            ensure_defined(build, context, domain, label)?;
         }
     }
     Ok(())
@@ -223,6 +216,10 @@ fn commit_one(
     cell_data: CellData,
     actual_image: Diagram,
 ) -> Result<(), aux::Error> {
+    debug_assert!(
+        !actual_image.all_labels().any(|t| matches!(t, Tag::Hole(_))),
+        "a committed image must never contain a metavariable",
+    );
     let map = std::mem::replace(&mut build.map, PartialMap::empty());
     build.map = PartialMap::extend(map, tag.clone(), dim, cell_data, actual_image.clone())?;
 
@@ -292,51 +289,36 @@ fn transport_boundary(
     let tree = boundary
         .tree(DiagramSign::Input, n)
         .ok_or_else(|| aux::Error::new("boundary diagram has no paste tree"))?;
-    let mut rewrites: HashMap<Tag, PasteTree> = HashMap::new();
-    collect_leaf_rewrites(tree, domain, build, &mut rewrites)?;
-    Ok(tree.substitute(&|t| rewrites.get(t).cloned()))
+    tree.try_substitute(&|tag| transport_leaf(build, domain, tag))
 }
 
-/// Record, for each leaf of `tree`, the paste tree it should become: the
-/// committed image's tree, or a `Tag::Hole` metavariable for a pending face.
-fn collect_leaf_rewrites(
-    tree: &PasteTree,
-    domain: &Complex,
+/// The replacement for one boundary leaf: the committed image's paste tree, or a
+/// `Tag::Hole` metavariable for a pending face.  Every face is map-or-holed by
+/// `assign_cell`/`ensure_defined` before transport, so the final arm is an
+/// invariant violation rather than a user error.
+fn transport_leaf(
     build: &MapBuild,
-    rewrites: &mut HashMap<Tag, PasteTree>,
-) -> Result<(), aux::Error> {
-    match tree {
-        PasteTree::Leaf(tag) => {
-            if rewrites.contains_key(tag) {
-                return Ok(());
-            }
-            if build.map.is_defined_at(tag) {
-                let image = build.map.image(tag)?;
-                let img_tree = image
-                    .tree(DiagramSign::Input, image.top_dim())
-                    .ok_or_else(|| aux::Error::new("map image has no paste tree"))?
-                    .clone();
-                rewrites.insert(tag.clone(), img_tree);
-                Ok(())
-            } else if let Some(i) = build.entry_index(tag) {
-                rewrites.insert(tag.clone(), PasteTree::Leaf(Tag::Hole(build.holes[i].meta)));
-                Ok(())
-            } else {
-                // Invariant: assign_cell/ensure_hole map-or-hole every face first.
-                let name = domain
-                    .find_generator_by_tag(tag)
-                    .cloned()
-                    .unwrap_or_else(|| format!("{}", tag));
-                Err(aux::Error::new(format!(
-                    "internal: boundary references `{}`, which is neither mapped nor a hole",
-                    name
-                )))
-            }
-        }
-        PasteTree::Node { left, right, .. } => {
-            collect_leaf_rewrites(left, domain, build, rewrites)?;
-            collect_leaf_rewrites(right, domain, build, rewrites)
-        }
+    domain: &Complex,
+    tag: &Tag,
+) -> Result<Option<PasteTree>, aux::Error> {
+    if build.map.is_defined_at(tag) {
+        let image = build.map.image(tag)?;
+        let img_tree = image
+            .tree(DiagramSign::Input, image.top_dim())
+            .ok_or_else(|| aux::Error::new("map image has no paste tree"))?
+            .clone();
+        Ok(Some(img_tree))
+    } else if let Some(i) = build.entry_index(tag) {
+        Ok(Some(PasteTree::Leaf(Tag::Hole(build.holes[i].meta))))
+    } else {
+        let name = domain
+            .find_generator_by_tag(tag)
+            .cloned()
+            .unwrap_or_else(|| format!("{}", tag));
+        Err(aux::Error::new(format!(
+            "internal: boundary references `{}`, which is neither mapped nor a hole",
+            name
+        )))
     }
 }
 

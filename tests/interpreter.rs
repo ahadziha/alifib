@@ -290,6 +290,17 @@ fn collapsed_boundary_infers_image() {
     assert_eq!(hole_count(&file, "A", "H"), 0, "x => ? should infer x => p, not a hole");
 }
 
+/// Collapse inference fires for implicit faces and cascades: `w => ?` (a 3-cell)
+/// holes its 2-cell faces a, b, which collapse to the 0-cell p (their 1-cell
+/// boundaries do), which in turn collapses w — all inferred, no holes left.
+#[test]
+fn collapse_inference_cascades_through_implicit_faces() {
+    let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("Cascade.ali"))
+        .ok()
+        .expect("Cascade.ali should interpret without errors");
+    assert_eq!(hole_count(&file, "A", "H"), 0, "a, b and w should all be inferred to p");
+}
+
 /// Case-1 inference is parametric in the *source* cell's dimension: mapping a
 /// 2-cell `x` to a 1-cell `e` must send `x.in` to `boundary Input 1 e` (= `e`,
 /// clamped) and not to `e.in`.  A wrong (image-dimension) computation would map

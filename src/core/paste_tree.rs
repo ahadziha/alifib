@@ -49,6 +49,22 @@ impl PasteTree {
             },
         }
     }
+
+    /// Fallible [`substitute`](Self::substitute): replace each leaf with the tree
+    /// `f` returns (`Ok(Some)`), keep it (`Ok(None)`), or abort with `f`'s error.
+    pub(crate) fn try_substitute<E>(
+        &self,
+        f: &impl Fn(&Tag) -> Result<Option<PasteTree>, E>,
+    ) -> Result<PasteTree, E> {
+        match self {
+            PasteTree::Leaf(tag) => Ok(f(tag)?.unwrap_or_else(|| self.clone())),
+            PasteTree::Node { dim, left, right } => Ok(PasteTree::Node {
+                dim: *dim,
+                left: Arc::new(left.try_substitute(f)?),
+                right: Arc::new(right.try_substitute(f)?),
+            }),
+        }
+    }
 }
 
 /// Reconstruct a diagram from a paste tree by looking up each leaf's classifier

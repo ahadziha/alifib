@@ -1,0 +1,18 @@
+@Type
+
+Tower <<= {
+  z0, z1,
+  u : z0 -> z1,
+  v : z0 -> z1,
+  a : u -> v,
+  b : u -> v,
+  w : a -> b
+},
+
+A <<= { p },
+
+@A
+  (* u, v collapse to the 0-cell p; then the 2-cells a, b (= u -> v) collapse to
+     p as implicit faces of w; and in turn the 3-cell w (= a -> b) collapses to
+     p.  `w => ?` must infer all of them, leaving no hole. *)
+  let H :: Tower = [ u => p, v => p, w => ? ]
