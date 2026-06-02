@@ -1,22 +1,21 @@
 //! CLI rendering parity with the web front-end.
 //!
-//! Both the CLI ([`render`]) and the web (`web/frontend/src/app.js`) render the
-//! *same* shared [`ResponseData`] produced by [`Session::apply`].  This test
-//! drives a scripted session and pins the CLI's textual rendering, which mirrors
-//! the web's `render*` functions line for line (the redex `[brackets]` are the
-//! terminal analogue of the web's `repl-src` span; `→` and the `field:` labels
-//! are identical).  A second pass drives the same script through [`WebRepl`] and
-//! asserts the underlying `ResponseData` is byte-identical to the CLI's — so the
-//! two front-ends can never diverge in substance, only in medium.
+//! Both front-ends render the *same* shared [`RichText`] produced by
+//! [`render_response`] from the [`ResponseData`] that [`Session::apply`] returns
+//! — the CLI styles it to ANSI (here, via [`Display::style`] in plain mode), the
+//! web to CSS spans.  `cli_transcript_matches_web_style` pins the styled CLI
+//! transcript; `cli_and_web_responses_are_identical` drives the same script
+//! through [`WebRepl`] and asserts both the underlying `data` *and* the carried
+//! `rendered` segments are byte-identical to the CLI's — so the two front-ends
+//! cannot diverge in layout or content, only in medium.
 
 use std::path::PathBuf;
 
 use alifib::interactive::display::Display;
-use alifib::interactive::protocol::{build_type_detail_from_store, build_types_from_store, Request};
-use alifib::interactive::render::{
-    render_history, render_holes, render_proof, render_rules, render_state, render_store,
-    render_type_detail, render_types,
+use alifib::interactive::protocol::{
+    build_type_detail_from_store, build_types_from_store, Request, ResponseData,
 };
+use alifib::interactive::richtext::{render_response, RenderKind};
 use alifib::interactive::session::Session;
 use alifib::interactive::web::WebRepl;
 
@@ -33,6 +32,7 @@ fn cli_transcript_matches_web_style() {
     let d = Display::plain();
     let mut s = Session::from_disk(&fixture("Idem.ali")).expect("load Idem");
     let root = s.root_path().to_owned();
+    let styled = |kind, data: &ResponseData| d.style(&render_response(kind, data));
 
     // start Idem lhs rhs
     let data = s
@@ -45,7 +45,7 @@ fn cli_transcript_matches_web_style() {
         })
         .expect("start");
     assert_eq!(
-        render_state(&d, &data),
+        styled(RenderKind::State, &data),
         "step: 0\n\
          current: (id #0 id #0 id)\n\
          target: id\n\
@@ -60,12 +60,12 @@ fn cli_transcript_matches_web_style() {
     // proof at step 0 — a zero-step proof is still a proof: the identity on the
     // initial diagram, exactly what `store` would persist here.
     let data = s.apply(Request::Proof).expect("proof at step 0");
-    assert_eq!(render_proof(&d, &data), "proof:\n  (id #0 id #0 id)");
+    assert_eq!(styled(RenderKind::Proof, &data), "proof:\n  (id #0 id #0 id)");
 
     // apply 0
     let data = s.apply(Request::Step { choice: 0 }).expect("step");
     assert_eq!(
-        render_state(&d, &data),
+        styled(RenderKind::State, &data),
         "step: 1\n\
          current: (id #0 id)\n\
          target: id\n\
@@ -77,33 +77,34 @@ fn cli_transcript_matches_web_style() {
 
     // rules
     let data = s.apply(Request::ListRules).expect("rules");
-    assert_eq!(render_rules(&d, &data.rules), "  idem  (id #0 id) → id");
+    assert_eq!(styled(RenderKind::Rules, &data), "  idem  (id #0 id) → id");
 
     // proof — the re-parseable expression `store` would persist, with boundary
     let data = s.apply(Request::Proof).expect("proof");
     assert_eq!(
-        render_proof(&d, &data),
+        styled(RenderKind::Proof, &data),
         "proof : (id #0 id #0 id) → (id #0 id)\n  (idem #0 id)"
     );
 
     // store p
     let data = s.apply(Request::Store { name: "p".to_owned() }).expect("store");
-    assert_eq!(render_store(&d, &data), "Stored 'p'\n  let p = (idem #0 id)");
+    assert_eq!(styled(RenderKind::Store, &data), "Stored 'p'\n  let p = (idem #0 id)");
 
     // history
     let data = s.apply(Request::History).expect("history");
-    assert_eq!(render_history(&d, &data), "  1. idem [choice 0]");
+    assert_eq!(styled(RenderKind::History, &data), "  1. idem [choice 0]");
 
-    // types — CLI's own layout (the deliberate exception to web style), but now
-    // shared verbatim with the web and rendered from the same data.
-    let types = build_types_from_store(s.store(), &root);
-    assert_eq!(render_types(&d, &types), "  Idem (dim 2, 3 generators, 6 diagrams, 1 map)");
+    // types — CLI's own layout, shared verbatim with the web from the same data.
+    let mut data = ResponseData::empty();
+    data.types = build_types_from_store(s.store(), &root);
+    assert_eq!(styled(RenderKind::Types, &data), "  Idem (dim 2, 3 generators, 6 diagrams, 1 map)");
 
     // type Idem — generators by dimension, diagrams with `= expr` (incl. the
     // just-stored `p`), maps.
-    let detail = build_type_detail_from_store(s.store(), &root, "Idem").expect("type detail");
+    let mut data = ResponseData::empty();
+    data.type_detail = Some(build_type_detail_from_store(s.store(), &root, "Idem").expect("type detail"));
     assert_eq!(
-        render_type_detail(&d, &detail),
+        styled(RenderKind::TypeDetail, &data),
         "Type Idem\n  [0]\n    ob\n  [1]\n    id : ob → ob\n  [2]\n    idem : (id #0 id) → id\n  \
          Diagrams\n    id : ob → ob\n      = id\n    idem : (id #0 id) → id\n      = idem\n    \
          lhs : ob → ob\n      = (id #0 id #0 id)\n    ob\n      = ob\n    \
@@ -117,13 +118,13 @@ fn cli_transcript_matches_web_style() {
 
     // holes
     let data = s.apply(Request::Holes).expect("holes");
-    assert_eq!(render_holes(&d, &data.holes), "(no open holes)");
+    assert_eq!(styled(RenderKind::Holes, &data), "(no open holes)");
 }
 
-/// The CLI and web front-ends drive the very same [`Session`] machine, so the
-/// `ResponseData` they each receive for a given command must be byte-identical.
-/// We compare the serialized payloads from a `Session` (CLI/daemon path) and a
-/// `WebRepl` (web path) along a short script.
+/// The CLI and web front-ends drive the very same [`Session`] machine and share
+/// one [`render_response`], so for a given command both the `ResponseData` and
+/// the carried `RichText` must be byte-identical.  We compare the `Session`
+/// (CLI/daemon) path against the `WebRepl` (web) path along a short script.
 #[test]
 fn cli_and_web_responses_are_identical() {
     // CLI/daemon path.
@@ -141,10 +142,8 @@ fn cli_and_web_responses_are_identical() {
     let cli_proof0 = s.apply(Request::Proof).expect("cli proof at step 0");
     let cli_step = s.apply(Request::Step { choice: 0 }).expect("cli step");
     let cli_proof = s.apply(Request::Proof).expect("cli proof");
-    // `type` is served from the store (not Session::apply) on both front-ends.
-    let cli_type = build_type_detail_from_store(s.store(), &root, "Idem").expect("cli type");
 
-    // Web path: load the same source, then the same two commands.
+    // Web path: load the same source, then run the same script.
     let mut web = WebRepl::new();
     let source = std::fs::read_to_string(fixture("Idem.ali")).unwrap();
     web.load_source(&source);
@@ -159,16 +158,28 @@ fn cli_and_web_responses_are_identical() {
     let web_type: serde_json::Value =
         serde_json::from_str(&web.run_command(r#"{"command":"type","name":"Idem"}"#)).unwrap();
 
-    // The web wraps payloads as {"status":"ok","data":{...}}; compare `data`
-    // against the CLI's serialized `ResponseData`.
-    let cli_start_json: serde_json::Value = serde_json::to_value(&cli_start).unwrap();
-    let cli_proof0_json: serde_json::Value = serde_json::to_value(&cli_proof0).unwrap();
-    let cli_step_json: serde_json::Value = serde_json::to_value(&cli_step).unwrap();
-    let cli_proof_json: serde_json::Value = serde_json::to_value(&cli_proof).unwrap();
-    assert_eq!(web_start["data"], cli_start_json, "start responses differ");
-    assert_eq!(web_proof0["data"], cli_proof0_json, "step-0 proof responses differ");
-    assert_eq!(web_step["data"], cli_step_json, "step responses differ");
-    assert_eq!(web_proof["data"], cli_proof_json, "proof responses differ");
-    assert_eq!(web_type["data"]["type_detail"], serde_json::to_value(&cli_type).unwrap(),
-        "type detail differs");
+    // The web wraps payloads as {"status":"ok","data":{…},"rendered":{…}}: the
+    // `data` matches the CLI's `ResponseData`, and `rendered` matches the shared
+    // `render_response` for that data — pinning both content and layout parity.
+    let check = |web: &serde_json::Value, cli: &ResponseData, kind, what: &str| {
+        assert_eq!(web["data"], serde_json::to_value(cli).unwrap(), "{what} data differs");
+        assert_eq!(web["rendered"], serde_json::to_value(render_response(kind, cli)).unwrap(),
+            "{what} rendered differs");
+    };
+    check(&web_start, &cli_start, RenderKind::State, "start");
+    check(&web_proof0, &cli_proof0, RenderKind::Proof, "step-0 proof");
+    check(&web_step, &cli_step, RenderKind::State, "step");
+    check(&web_proof, &cli_proof, RenderKind::Proof, "proof");
+
+    // `type` is served from the store on both; the data and rendering must match.
+    let cli_type = {
+        let mut d = ResponseData::empty();
+        d.type_detail = Some(build_type_detail_from_store(s.store(), &root, "Idem").expect("cli type"));
+        d
+    };
+    assert_eq!(web_type["data"]["type_detail"],
+        serde_json::to_value(cli_type.type_detail.as_ref().unwrap()).unwrap(), "type detail differs");
+    assert_eq!(web_type["rendered"],
+        serde_json::to_value(render_response(RenderKind::TypeDetail, &cli_type)).unwrap(),
+        "type rendered differs");
 }

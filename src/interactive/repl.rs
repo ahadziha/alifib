@@ -56,14 +56,11 @@ use rustyline::highlight::Highlighter;
 use rustyline::history::FileHistory;
 use rustyline::{EditMode, Editor};
 
-use crate::analysis::homology::compute_homology;
 use super::display::Display;
-use super::engine::resolve_type;
-use super::protocol::{build_type_detail_from_store, build_types_from_store, Request, ResponseData};
-use super::render::{
-    render_auto, render_history, render_holes, render_homology, render_proof, render_rules,
-    render_state, render_store, render_type_detail, render_types, render_zero_cell,
+use super::protocol::{
+    build_homology_data, build_type_detail_from_store, build_types_from_store, Request, ResponseData,
 };
+use super::richtext::{render_kind_for, render_response, RenderKind};
 use super::session::Session;
 
 // ── Readline editor with a coloured prompt ──────────────────────────────────────
@@ -130,7 +127,7 @@ pub fn run_repl(
             target: target_diagram.map(str::to_owned),
             backward: session.backward(),
         };
-        dispatch_request(&mut session, req, Render::State, &display);
+        dispatch_request(&mut session, req, &display);
     }
 
     'repl: loop {
@@ -159,22 +156,6 @@ pub fn run_repl(
 
 // ── Command handling ────────────────────────────────────────────────────────────
 
-/// Which renderer turns the resulting [`ResponseData`] into a transcript line.
-///
-/// Mirrors the web front-end's `renderCommandResult` switch: most commands show
-/// the rewrite state; a few have a bespoke list/summary; message-only commands
-/// (`stop`/`done`/`save`/`backward`) echo the canonical `data.message`.
-enum Render {
-    State,
-    Auto,
-    Rules,
-    History,
-    Proof,
-    Store,
-    Holes,
-    Message,
-}
-
 /// Perform one parsed command.  Returns `true` when the REPL should quit.
 fn handle_command(cmd: Cmd, session: &mut Session, source_file: &str, display: &Display) -> bool {
     match cmd {
@@ -189,29 +170,34 @@ fn handle_command(cmd: Cmd, session: &mut Session, source_file: &str, display: &
         Cmd::Status => {
             if session.session_active() {
                 let data = session.state();
-                show(display, render_session_state(display, &data));
+                show(display, RenderKind::State, &data);
             } else {
                 display.meta(&format!("Module: {}", source_file));
             }
         }
 
         // ── Read-only queries, served straight from the loaded store ──────
-        // `types`/`type` keep the CLI's own layout (generators by dimension with
-        // boundaries, diagrams with `= expr`, maps) rather than the web's terse
-        // summary — the one deliberate exception to web-style rendering, shared
-        // verbatim with the web REPL.
         Cmd::Types => {
-            let types = build_types_from_store(session.store(), session.root_path());
-            show(display, render_types(display, &types));
+            let mut data = ResponseData::empty();
+            data.types = build_types_from_store(session.store(), session.root_path());
+            show(display, RenderKind::Types, &data);
         }
         Cmd::Type(name) => {
             match build_type_detail_from_store(session.store(), session.root_path(), &name) {
-                Ok(detail) => show(display, render_type_detail(display, &detail)),
+                Ok(detail) => {
+                    let mut data = ResponseData::empty();
+                    data.type_detail = Some(detail);
+                    show(display, RenderKind::TypeDetail, &data);
+                }
                 Err(e) => display.error(&e),
             }
         }
-        Cmd::Homology(name) => match resolve_type(session.store(), session.root_path(), &name) {
-            Ok(tc) => show(display, render_homology(display, &compute_homology(&tc))),
+        Cmd::Homology(name) => match build_homology_data(session.store(), session.root_path(), &name) {
+            Ok(h) => {
+                let mut data = ResponseData::empty();
+                data.homology = Some(h);
+                show(display, RenderKind::Homology, &data);
+            }
             Err(e) => display.error(&e),
         },
 
@@ -235,81 +221,60 @@ fn handle_command(cmd: Cmd, session: &mut Session, source_file: &str, display: &
         }
 
         // ── Everything else routes through the shared Session ─────────────
-        other => {
-            let (req, render) = to_request(other, session);
-            dispatch_request(session, req, render, display);
-        }
+        other => dispatch_request(session, to_request(other, session), display),
     }
     false
 }
 
-/// Map a session-bearing [`Cmd`] to its [`Request`] and the renderer for the
-/// reply.  `session.backward()` seeds `start`/`resume`/`fill` with the idle
-/// backward-mode flag.
-fn to_request(cmd: Cmd, session: &Session) -> (Request, Render) {
+/// Map a session-bearing [`Cmd`] to its [`Request`].  `session.backward()` seeds
+/// `start`/`resume`/`fill` with the idle backward-mode flag.
+fn to_request(cmd: Cmd, session: &Session) -> Request {
     let backward = session.backward();
+    let root = session.root_path().to_owned();
     match cmd {
-        Cmd::Start(t, s, g) => (Request::Start {
-            source_file: session.root_path().to_owned(),
-            type_name: t, initial: s, target: g, backward,
-        }, Render::State),
-        Cmd::Resume(t, p, g) => (Request::Resume {
-            source_file: session.root_path().to_owned(),
-            type_name: t, proof: p, target: g, backward,
-        }, Render::State),
-        Cmd::Holes => (Request::Holes, Render::Holes),
-        Cmd::Fill(n) => (Request::Fill { index: n, backward }, Render::State),
-        Cmd::Done => (Request::Done, Render::Message),
-        Cmd::Apply(v) if v.len() == 1 => (Request::Step { choice: v[0] }, Render::State),
-        Cmd::Apply(v) => (Request::StepMulti { choices: v }, Render::State),
-        Cmd::Auto(n) => (Request::Auto { max_steps: n }, Render::Auto),
-        Cmd::Random(n) => (Request::Random { max_steps: n }, Render::Auto),
-        Cmd::Undo(None) => (Request::Undo, Render::State),
-        Cmd::Undo(Some(s)) => (Request::UndoTo { step: s }, Render::State),
-        Cmd::UndoAll | Cmd::Restart => (Request::UndoTo { step: 0 }, Render::State),
-        Cmd::Redo(None) => (Request::Redo, Render::State),
-        Cmd::Redo(Some(s)) => (Request::RedoTo { step: s }, Render::State),
-        Cmd::Stop => (Request::Stop, Render::Message),
-        Cmd::Rules => (Request::ListRules, Render::Rules),
-        Cmd::History => (Request::History, Render::History),
-        Cmd::Proof => (Request::Proof, Render::Proof),
-        Cmd::Store(name) => (Request::Store { name }, Render::Store),
-        Cmd::Save(path) => (Request::Save { path: Some(path) }, Render::Message),
-        Cmd::Backward(on) => (Request::Backward { on }, Render::Message),
-        // The variants above are routed before `to_request`; all front-end and
-        // query commands are handled in `handle_command`.
+        Cmd::Start(t, s, g) => Request::Start { source_file: root, type_name: t, initial: s, target: g, backward },
+        Cmd::Resume(t, p, g) => Request::Resume { source_file: root, type_name: t, proof: p, target: g, backward },
+        Cmd::Holes => Request::Holes,
+        Cmd::Fill(n) => Request::Fill { index: n, backward },
+        Cmd::Done => Request::Done,
+        Cmd::Apply(v) if v.len() == 1 => Request::Step { choice: v[0] },
+        Cmd::Apply(v) => Request::StepMulti { choices: v },
+        Cmd::Auto(n) => Request::Auto { max_steps: n },
+        Cmd::Random(n) => Request::Random { max_steps: n },
+        Cmd::Undo(None) => Request::Undo,
+        Cmd::Undo(Some(s)) => Request::UndoTo { step: s },
+        Cmd::UndoAll | Cmd::Restart => Request::UndoTo { step: 0 },
+        Cmd::Redo(None) => Request::Redo,
+        Cmd::Redo(Some(s)) => Request::RedoTo { step: s },
+        Cmd::Stop => Request::Stop,
+        Cmd::Rules => Request::ListRules,
+        Cmd::History => Request::History,
+        Cmd::Proof => Request::Proof,
+        Cmd::Store(name) => Request::Store { name },
+        Cmd::Save(path) => Request::Save { path: Some(path) },
+        Cmd::Backward(on) => Request::Backward { on },
+        // Front-end and query commands are handled in `handle_command`.
         _ => unreachable!("non-session command reached to_request"),
     }
 }
 
-/// Apply a request to the session and render (or report) the reply.
-fn dispatch_request(session: &mut Session, req: Request, render: Render, display: &Display) {
+/// Apply a request and render its reply: the shared [`RichText`] view when the
+/// request has one, else the canonical `data.message` (`stop`/`done`/`save`/
+/// `backward`).
+fn dispatch_request(session: &mut Session, req: Request, display: &Display) {
+    let kind = render_kind_for(&req);
     match session.apply(req) {
         Err(e) => display.error(&e),
-        Ok(data) => match render {
-            Render::Message => if let Some(m) = &data.message { display.meta(m); },
-            Render::State => show(display, render_session_state(display, &data)),
-            Render::Auto => show(display, render_auto(display, &data)),
-            Render::Rules => show(display, render_rules(display, &data.rules)),
-            Render::History => show(display, render_history(display, &data)),
-            Render::Proof => show(display, render_proof(display, &data)),
-            Render::Store => show(display, render_store(display, &data)),
-            Render::Holes => show(display, render_holes(display, &data.holes)),
+        Ok(data) => match kind {
+            Some(k) => show(display, k, &data),
+            None => if let Some(m) = &data.message { display.meta(m); },
         },
     }
 }
 
-/// Render a rewrite state, picking the 0-cell fill view when one is active.
-fn render_session_state(display: &Display, data: &ResponseData) -> String {
-    match &data.zero_cell {
-        Some(zc) => render_zero_cell(display, zc),
-        None => render_state(display, data),
-    }
-}
-
-/// Print a rendered (possibly multi-line, already-coloured) transcript block.
-fn show(display: &Display, block: String) {
-    display.inspect_rich(&block);
+/// Style a response in the requested view and print it.
+fn show(display: &Display, kind: RenderKind, data: &ResponseData) {
+    display.inspect_rich(&display.style(&render_response(kind, data)));
 }
 
 // ── Editor ──────────────────────────────────────────────────────────────────────

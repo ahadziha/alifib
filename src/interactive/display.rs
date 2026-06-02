@@ -5,6 +5,8 @@
 
 use std::io::IsTerminal;
 
+use super::richtext::{RichText, Role, Segment};
+
 // ── Colour palette ────────────────────────────────────────────────────────────
 // Standard 16-colour ANSI, chosen as the closest analogues of the web REPL's
 // dark-theme roles, so the two front-ends read alike on any terminal.  Colour is
@@ -139,36 +141,29 @@ impl Display {
     /// The input prompt marker (violet).
     pub fn acc(&self, s: &str) -> String { self.paint(C_PROMPT, s) }
 
-    /// Render a rewrite candidate's match: the expression in the dim colour, with
-    /// the matched redex (the `[…]` segment) in bold amber.  Brackets are kept so
-    /// the redex stays legible without colour; they do not nest in our output, so
-    /// a single scan suffices.
-    pub fn colorize_match_display(&self, s: &str) -> String {
-        if !self.color {
-            return s.to_string();
+    /// Style a [`RichText`] to a terminal string: each segment painted by its
+    /// role, lines joined by newlines.  This is the CLI half of the shared
+    /// renderer — the web styles the same `RichText` with CSS spans.
+    pub fn style(&self, rt: &RichText) -> String {
+        rt.lines.iter()
+            .map(|line| line.iter().map(|seg| self.style_segment(seg)).collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn style_segment(&self, seg: &Segment) -> String {
+        match seg.role {
+            Role::Plain => seg.text.clone(),
+            Role::Label => self.dim(&seg.text),
+            Role::Value => self.hi(&seg.text),
+            Role::Src => self.src(&seg.text),
+            Role::Tgt => self.tgt(&seg.text),
+            Role::Section => self.sec(&seg.text),
+            Role::Ok => self.ok(&seg.text),
+            // The matched redex: bold amber when coloured, else `[bracketed]` so
+            // it stays legible in plain text.
+            Role::Redex => if self.color { self.paint(C_REDEX, &seg.text) } else { format!("[{}]", seg.text) },
         }
-        let mut result = String::with_capacity(s.len() + 32);
-        result.push_str(C_DIM);
-        let mut chars = s.chars();
-        while let Some(ch) = chars.next() {
-            if ch == '[' {
-                result.push_str(C_REDEX);
-                result.push('[');
-                for ch2 in chars.by_ref() {
-                    result.push(ch2);
-                    if ch2 == ']' {
-                        // End the bold redex, resume the dim base colour.
-                        result.push_str(RESET);
-                        result.push_str(C_DIM);
-                        break;
-                    }
-                }
-            } else {
-                result.push(ch);
-            }
-        }
-        result.push_str(RESET);
-        result
     }
 
     /// Print a blank line.

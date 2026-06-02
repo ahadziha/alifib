@@ -42,8 +42,9 @@
 //! | [`daemon`] | JSON-lines request loop for `alifib serve` |
 //! | [`protocol`] | JSON request/response types used by the daemon |
 //! | [`web`] | shared browser-facing session API used by the web frontends |
-//! | [`display`] | [`Display`](display::Display): all terminal output with optional ANSI colour |
-//! | [`render`] | web-style `render_*` builders turning a `ResponseData` into a transcript block |
+//! | [`display`] | [`Display`](display::Display): terminal output + the ANSI styler for [`RichText`](richtext::RichText) |
+//! | [`richtext`] | the single shared producer: `ResponseData` → role-tagged [`RichText`](richtext::RichText), styled per medium |
+//! | [`render`] | `render_step`: the bracketed match-display string builder used by [`protocol`] |
 //! | [`session`] | [`Session`](session::Session): the shared command state machine all front-ends drive |
 
 pub mod cli;
@@ -53,6 +54,7 @@ pub mod engine;
 pub mod fill;
 pub mod protocol;
 pub mod render;
+pub mod richtext;
 pub mod session;
 #[cfg(feature = "cli")]
 pub mod repl;

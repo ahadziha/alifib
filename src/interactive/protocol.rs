@@ -239,6 +239,9 @@ pub struct ResponseData {
     /// The updated running source; populated by `done`/`save`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    /// Cellular homology; only populated by `homology`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub homology: Option<HomologyInfo>,
 }
 
 impl ResponseData {
@@ -269,8 +272,23 @@ impl ResponseData {
             holes: vec![],
             zero_cell: None,
             source: None,
+            homology: None,
         }
     }
+}
+
+/// Cellular homology of a type, for the `homology` response.
+#[derive(Debug, Clone, Serialize)]
+pub struct HomologyInfo {
+    pub groups: Vec<HomologyGroupInfo>,
+    pub euler_characteristic: i64,
+}
+
+/// One homology group `H_d`, with its display string (e.g. `Z`, `Z/2`).
+#[derive(Debug, Clone, Serialize)]
+pub struct HomologyGroupInfo {
+    pub dim: usize,
+    pub display: String,
 }
 
 /// One open hole of a map in the current module, numbered for `fill`.
@@ -656,6 +674,7 @@ pub fn build_response(engine: &RewriteEngine, include_history: bool) -> Response
         holes: vec![],
         zero_cell: None,
         source: None,
+        homology: None,
     }
 }
 
@@ -993,24 +1012,21 @@ pub fn build_type_detail_from_store(
     Ok(TypeDetailInfo { name: name.to_owned(), generators, diagrams, maps })
 }
 
-/// Compute cellular homology of a named type and return as JSON.
-pub fn build_homology_response(
+/// Compute cellular homology of a named type as a [`HomologyInfo`] — the shared
+/// data both front-ends render from.
+pub fn build_homology_data(
     store: &crate::interpreter::GlobalStore,
     source_path: &str,
     type_name: &str,
-) -> Result<serde_json::Value, String> {
+) -> Result<HomologyInfo, String> {
     let tc = super::engine::resolve_type(store, source_path, type_name)?;
     let h = crate::analysis::homology::compute_homology(&tc);
-    let groups: Vec<serde_json::Value> = h.groups.iter()
-        .map(|(dim, g)| serde_json::json!({
-            "dim": dim,
-            "display": format!("{}", g),
-        }))
-        .collect();
-    Ok(serde_json::json!({
-        "homology": groups,
-        "euler_characteristic": h.euler_characteristic,
-    }))
+    Ok(HomologyInfo {
+        groups: h.groups.iter()
+            .map(|(dim, g)| HomologyGroupInfo { dim: *dim, display: format!("{}", g) })
+            .collect(),
+        euler_characteristic: h.euler_characteristic,
+    })
 }
 
 fn build_rewrite_info_from_family(

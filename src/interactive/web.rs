@@ -22,11 +22,12 @@ use crate::language::error::Diagnostic;
 
 use super::engine::RewriteEngine;
 use super::protocol::{
-    Request, build_cell_response, build_homology_response, build_map_entries,
+    Request, ResponseData, build_cell_response, build_homology_data, build_map_entries,
     build_map_image_strdiag, build_strdiag_response, build_types_from_store,
     build_type_detail_from_store, resolve_domain_complex, step_output_strdiag_json,
     strdiag_json_from_diagram, strdiag_to_json, tag_to_json,
 };
+use super::richtext::{render_kind_for, render_response, RenderKind};
 use super::session::{LoadStrategy, Session};
 
 pub const WEB_SOURCE_PATH: &str = "source.ali";
@@ -178,10 +179,17 @@ impl WebRepl {
         match request {
             Request::Start { .. } | Request::Resume { .. } | Request::Load { .. } | Request::Shutdown =>
                 err_json("command not supported in web mode"),
-            Request::Types =>
-                ok_json(serde_json::json!({ "types": build_types_from_store(s.store(), s.root_path()) })),
+            Request::Types => {
+                let mut data = ResponseData::empty();
+                data.types = build_types_from_store(s.store(), s.root_path());
+                ok_rendered(&data, Some(RenderKind::Types))
+            }
             Request::TypeInfo { name } => match build_type_detail_from_store(s.store(), s.root_path(), &name) {
-                Ok(detail) => ok_json(serde_json::json!({ "type_detail": detail })),
+                Ok(detail) => {
+                    let mut data = ResponseData::empty();
+                    data.type_detail = Some(detail);
+                    ok_rendered(&data, Some(RenderKind::TypeDetail))
+                }
                 Err(msg) => err_json(&msg),
             },
             Request::Cell { name } => match s.active_engine() {
@@ -191,8 +199,12 @@ impl WebRepl {
                 },
                 None => err_json("no session active — 'cell' needs a session for its type context"),
             },
-            Request::Homology { name } => match build_homology_response(s.store(), s.root_path(), &name) {
-                Ok(data) => ok_json(data),
+            Request::Homology { name } => match build_homology_data(s.store(), s.root_path(), &name) {
+                Ok(h) => {
+                    let mut data = ResponseData::empty();
+                    data.homology = Some(h);
+                    ok_rendered(&data, Some(RenderKind::Homology))
+                }
                 Err(msg) => err_json(&msg),
             },
             req => apply_json(s, req),
@@ -327,8 +339,9 @@ impl WebRepl {
 }
 
 fn apply_json(session: &mut Session, req: Request) -> String {
+    let kind = render_kind_for(&req);
     match session.apply(req) {
-        Ok(data) => ok_json(data),
+        Ok(data) => ok_rendered(&data, kind),
         Err(msg) => err_json(&msg),
     }
 }
@@ -531,4 +544,18 @@ fn err_json(msg: &str) -> String {
 
 fn ok_json(data: impl Serialize) -> String {
     serde_json::json!({ "status": "ok", "data": data }).to_string()
+}
+
+/// Like [`ok_json`], but also attaches the shared `RichText` transcript as a
+/// sibling `rendered` field when the command has a rendered view, so the
+/// frontend styles the same layout the CLI does.  `data` stays the pure payload.
+fn ok_rendered(data: &ResponseData, kind: Option<RenderKind>) -> String {
+    match kind {
+        Some(k) => serde_json::json!({
+            "status": "ok",
+            "data": data,
+            "rendered": render_response(k, data),
+        }).to_string(),
+        None => ok_json(data),
+    }
 }

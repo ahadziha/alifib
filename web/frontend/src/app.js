@@ -1071,11 +1071,12 @@ async function evaluateSource(silent = false) {
 // infobox, not the accordion, so this just refreshes the cache.
 async function fetchHoles() {
   openHoles = [];
-  if (!repl) return;
+  if (!repl) return null;
   const result = await parseReplResponse(repl.run_command('{"command":"holes"}'));
   if (result.status === 'ok' && result.data && Array.isArray(result.data.holes)) {
     openHoles = result.data.holes;
   }
+  return result;
 }
 
 function holesForMap(typeName, mapName) {
@@ -1313,7 +1314,7 @@ async function enterSession(responsePromise, rawCmd) {
     selectedEl = null;
   }
   currentItem = null;
-  appendReplEntry(rawCmd, renderState(result.data));
+  appendReplEntry(rawCmd, renderSegments(result.rendered));
   await showSessionDiagram(result.data);
 }
 
@@ -1346,8 +1347,7 @@ async function startFill(index) {
   currentItem = null;
   // Print the session state immediately, exactly as starting a normal session.
   const isZero = !!result.data.zero_cell;
-  const state = isZero ? renderZeroCell(result.data.zero_cell) : renderState(result.data);
-  appendReplEntry(`fill ${index}`, state);
+  appendReplEntry(`fill ${index}`, renderSegments(result.rendered));
   if (isZero) {
     await showZeroCellFill(result.data);
   } else {
@@ -1450,24 +1450,7 @@ async function runZeroCellText(raw, cmd, arg) {
   const result = await parseReplResponse(repl.run_command(JSON.stringify(req)));
   if (result.status === 'error') { appendReplEntry(raw, formatError(result)); return; }
   await showZeroCellFill(result.data);
-  appendReplEntry(raw, renderZeroCell(result.data.zero_cell));
-}
-
-// Text rendering of a 0-cell fill state, mirroring `renderState` — but a 0-cell
-// has no current/target diagram; the chosen cell is the *proof*.
-function renderZeroCell(zc) {
-  if (!zc) return dim('(no fill)');
-  const out = [dim('step:') + ' ' + hi(zc.chosen ? 1 : 0)];
-  if (zc.target_reached) out.push(ok('✓ target reached'));
-  const choices = zc.choices || [];
-  if (choices.length) {
-    out.push('');
-    out.push(sec('available rewrites:'));
-    choices.forEach(c => out.push(`  [${hi(c.index)}] ${hi(c.name)}`));
-  } else {
-    out.push(dim('no rewrites available'));
-  }
-  return out.join('\n');
+  appendReplEntry(raw, renderSegments(result.rendered));
 }
 
 // Finalise the active fill: the backend appends the clause and returns the
@@ -1547,8 +1530,8 @@ async function handleCommand(raw) {
 
   // Hole-filling commands drive the same flows as the GUI buttons.
   if (cmd === 'holes') {
-    await fetchHoles();
-    appendReplEntry(raw, renderHoles());
+    const result = await fetchHoles();
+    appendReplEntry(raw, result ? renderSegments(result.rendered) : '');
     return;
   }
   if (cmd === 'fill') {
@@ -1577,8 +1560,11 @@ async function handleCommand(raw) {
   if (result.status === 'error') {
     appendReplEntry(raw, formatError(result));
   } else {
-    const rendered = renderCommandResult(cmd, result.data);
-    appendReplEntry(raw, rendered);
+    // The backend renders the transcript (shared with the CLI) as `rendered`;
+    // `parallel` is the lone transcript command without one — show its mode line.
+    appendReplEntry(raw, result.rendered
+      ? renderSegments(result.rendered)
+      : dim('parallel mode: ' + (result.data && result.data.parallel ? 'on' : 'off')));
     // Only update the session diagram display for state-changing commands.
     const stateCommands = ['apply', 'a', 'auto', 'random', 'undo', 'u', 'redo', 'restart', 'show', 'status', 'store', 'parallel'];
     if (sessionActive && stateCommands.includes(cmd)) {
@@ -1738,177 +1724,28 @@ function buildCommand(cmd, arg, raw) {
 
 // ── Rendering ─────────────────────────────────────────────────────────────────
 
-function renderCommandResult(cmd, data) {
-  if (!data) return formatError('(no data)');
-
-  switch (cmd) {
-    case 'types':          return renderTypes(data);
-    case 'type':           return renderTypeDetail(data.type_detail);
-    case 'rules': case 'r':     return renderRules(data.rules);
-    case 'history': case 'h':   return renderHistory(data.history);
-    case 'proof': case 'p':     return renderProof(data);
-    case 'store':          return renderStore(data);
-    case 'homology':       return renderHomology(data);
-    case 'auto':           return renderAuto(data);
-    case 'parallel':       return dim('parallel mode: ' + (data.parallel ? 'on' : 'off'));
-    default:               return renderState(data);
-  }
-}
-
-function renderAuto(data) {
-  const info = data && data.auto;
-  const applied = info ? info.applied : 0;
-  const reason = info && info.stop_reason ? ` (${info.stop_reason})` : '';
-  const summary = dim(`applied ${applied} step${applied === 1 ? '' : 's'}${reason}`);
-  const state = renderState(data);
-  return state ? `${summary}\n${state}` : summary;
-}
-
-function renderState(data) {
-  if (!data) return '';
-  let out = [];
-
-  out.push(dim('step:') + ' ' + hi(data.step_count));
-
-  const cur = data.current;
-  if (cur) out.push(dim('current:') + ' ' + hi(cur.label || '—'));
-
-  if (data.target) {
-    const reached = data.target_reached;
-    out.push(dim('target:') + ' ' + hi(data.target.label) +
-      (reached ? ' ' + ok('✓ reached') : ''));
-  }
-
-  if (data.rewrites && data.rewrites.length > 0) {
-    out.push('');
-    out.push(sec('available rewrites:'));
-    data.rewrites.forEach(r => {
-      const isFamily = r.family && r.family.length > 0;
-      const label = isFamily
-        ? `${hi(r.rule_name)}  (parallel ×${r.family.length})`
-        : `${hi(r.rule_name)}  ${src(r.input.label)} → ${tgt(r.output.label)}`;
-      out.push(`  [${hi(r.index)}] ${label}`);
-      if (r.match_display) {
-        const highlighted = esc(r.match_display).replace(/\[([^\]]*)\]/g,
-          '<span class="repl-src">$1</span>');
-        out.push(`      match: ${highlighted}`);
-      }
-    });
-  } else {
-    out.push(dim('no rewrites available'));
-  }
-
-  if (data.target_reached) out.push('');
-
-  return out.join('\n');
-}
-
-// `types` / `type` keep the CLI's own layout (generators by dimension with
-// boundaries, diagrams with `= expr`, maps flagged `… with holes`) — the one
-// place the REPL diverges from web-native rendering — rendered identically to
-// the CLI from the same shared data.
-function renderTypes(data) {
-  if (!data.types || !data.types.length) return dim('  (No types found)');
-  return data.types.map(t => {
-    const parts = [];
-    if (t.max_dim != null) parts.push(`dim ${t.max_dim}`);
-    if (t.generator_count > 0) parts.push(`${t.generator_count} generator${plural(t.generator_count)}`);
-    if (t.diagram_count > 0) parts.push(`${t.diagram_count} diagram${plural(t.diagram_count)}`);
-    if (t.map_count > 0) parts.push(`${t.map_count} map${plural(t.map_count)}`);
-    return parts.length
-      ? `  ${hi(t.name)} ${dim(`(${parts.join(', ')})`)}`
-      : `  ${hi(t.name)}`;
-  }).join('\n');
-}
-
-function renderTypeDetail(d) {
-  if (!d) return dim('(no type detail)');
-  const out = [`${dim('Type')} ${hi(d.name)}`];
-  let lastDim = null;
-  for (const g of (d.generators || [])) {
-    if (lastDim !== g.dim) { out.push(`  ${dim(`[${g.dim}]`)}`); lastDim = g.dim; }
-    out.push(`    ${boundaryLine(g)}`);
-  }
-  if (d.diagrams && d.diagrams.length) {
-    out.push(`  ${sec('Diagrams')}`);
-    for (const g of d.diagrams) {
-      out.push(`    ${boundaryLine(g)}`);
-      out.push(`      = ${dim(g.expr)}`);
-    }
-  }
-  if (d.maps && d.maps.length) {
-    out.push(`  ${sec('Maps')}`);
-    for (const m of d.maps) {
-      const holes = (m.holes && m.holes.length) ? dim(' with holes') : '';
-      out.push(`    ${hi(m.name)} :: ${dim(m.domain)}${holes}`);
-      for (const hole of (m.holes || [])) out.push(`      ${src(hole)}`);
-    }
-  }
-  return out.join('\n');
-}
-
-// `name : in → out` for a cell with a boundary, or just `name` for a 0-cell.
-function boundaryLine(g) {
-  return (g.input && g.output)
-    ? `${hi(g.name)} : ${src(g.input.label)} → ${tgt(g.output.label)}`
-    : hi(g.name);
-}
-
-function plural(n) { return n === 1 ? '' : 's'; }
-
-
-
-function renderRules(rules) {
-  if (!rules || !rules.length) return dim('(no rules)');
-  return rules.map(r =>
-    `  ${hi(r.name)}  ${dim(r.input.label)} → ${dim(r.output.label)}`
+// Style a shared RichText (lines of role-tagged segments, produced by the Rust
+// `render_response` and carried in the response's `rendered` field) into
+// transcript HTML.  This is the web half of the single shared renderer — the
+// CLI styles the same RichText to ANSI; here each role maps to a `repl-*` span,
+// the same classes the rest of the REPL uses.  Layout lives in Rust, not here.
+const ROLE_CLASS = {
+  label: 'repl-dim',
+  value: 'repl-hi',
+  src: 'repl-src',
+  tgt: 'repl-tgt',
+  section: 'repl-section-title',
+  ok: 'repl-ok',
+  redex: 'repl-match-hi',
+};
+function renderSegments(rendered) {
+  if (!rendered || !Array.isArray(rendered.lines)) return '';
+  return rendered.lines.map(line =>
+    line.map(seg => {
+      const cls = ROLE_CLASS[seg.role];
+      return cls ? `<span class="${cls}">${esc(seg.text)}</span>` : esc(seg.text);
+    }).join('')
   ).join('\n');
-}
-
-// The current module's open holes, numbered for `fill <n>` (mirrors the CLI).
-function renderHoles() {
-  if (!openHoles.length) return dim('(no open holes)');
-  const lines = openHoles.map(h =>
-    `  [${hi(h.index)}] @${esc(h.type_name)} ${esc(h.map_name)} :: ${esc(h.domain_name)}\n      ${hi(h.boundary)}`
-  );
-  return sec('open holes:') + '\n' + lines.join('\n');
-}
-
-function renderStore(data) {
-  if (!data || !data.stored) return formatError('store failed');
-  const s = data.stored;
-  let out = [ok(`Stored '${esc(s.def_name)}'`)];
-  out.push(`  let ${hi(s.def_name)} = ${dim(s.expr)}`);
-  return out.join('\n');
-}
-
-function renderHomology(data) {
-  if (!data || !data.homology) return dim('(no data)');
-  if (data.homology.length === 0) return dim('(no generators)');
-  const lines = data.homology.map(h =>
-    `  ${dim('H')}${dim('_' + h.dim)} = ${hi(h.display)}`
-  );
-  lines.push(`  ${dim('χ')} = ${hi(String(data.euler_characteristic))}`);
-  return lines.join('\n');
-}
-
-function renderHistory(hist) {
-  if (!hist || !hist.length) return dim('(no moves yet)');
-  return hist.map(h =>
-    `  ${dim(h.step + '.')} ${hi(h.rule_name)} ${dim(h.choice == null ? '[n/a]' : '[choice ' + h.choice.join(', ') + ']')}`
-  ).join('\n');
-}
-
-// The running proof — the re-parseable expression `store` would persist, headed
-// by its boundary (mirrors the CLI's `render_proof`).
-function renderProof(data) {
-  if (!data || !data.proof_expr) return dim('(no proof yet)');
-  const out = [];
-  out.push(data.proof
-    ? sec(`proof : ${data.proof.input_label} → ${data.proof.output_label}`)
-    : sec('proof:'));
-  data.proof_expr.split('\n').forEach(line => out.push('  ' + hi(line)));
-  return out.join('\n');
 }
 
 async function updateVisInfo(data) {
@@ -2670,7 +2507,7 @@ async function performUndo() {
     appendReplMsg('Undo error: ' + result.message, 'repl-result err');
     return;
   }
-  appendReplEntry('undo', renderState(result.data));
+  appendReplEntry('undo', renderSegments(result.rendered));
   selectedRewrite = null;
   previewActive = false;
   await showSessionDiagram(result.data);
@@ -2683,7 +2520,7 @@ async function performRedo() {
     appendReplMsg('Redo error: ' + result.message, 'repl-result err');
     return;
   }
-  appendReplEntry('redo', renderState(result.data));
+  appendReplEntry('redo', renderSegments(result.rendered));
   selectedRewrite = null;
   previewActive = false;
   await showSessionDiagram(result.data);
@@ -2697,7 +2534,7 @@ async function applyRewrite(choice) {
     appendReplMsg('Apply error: ' + result.message, 'repl-result err');
     return;
   }
-  appendReplEntry(`apply ${choice}`, renderState(result.data));
+  appendReplEntry(`apply ${choice}`, renderSegments(result.rendered));
   selectedRewrite = null;
   previewActive = false;
   // Update the session display.
@@ -2712,7 +2549,7 @@ async function applyBunch() {
     appendReplMsg('Parallel apply error: ' + result.message, 'repl-result err');
     return;
   }
-  appendReplEntry(`apply ${bunchedIndices.join(' ')}`, renderState(result.data));
+  appendReplEntry(`apply ${bunchedIndices.join(' ')}`, renderSegments(result.rendered));
   bunchedIndices = [];
   bunchPositions = new Set();
   selectedRewrite = null;
