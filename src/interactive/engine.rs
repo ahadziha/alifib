@@ -1245,7 +1245,11 @@ impl RewriteEngine {
             | Request::Homology { .. }
             | Request::Holes
             | Request::Fill { .. }
-            | Request::Done => return None,
+            | Request::Done
+            | Request::Load { .. }
+            | Request::Backward { .. }
+            | Request::Stop
+            | Request::Save { .. } => return None,
         };
         Some(result)
     }

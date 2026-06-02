@@ -52,6 +52,7 @@ pub mod engine;
 pub mod fill;
 pub mod protocol;
 pub mod render;
+pub mod session;
 #[cfg(feature = "cli")]
 pub mod repl;
 pub mod web;

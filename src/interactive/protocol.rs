@@ -139,6 +139,24 @@ pub enum Request {
     /// Finalise the active fill, extending the map's definition and returning the
     /// updated source.
     Done,
+    /// Load a source file (and its dependencies) without starting a rewrite
+    /// session — the "loaded, idle" state from which `holes`/`fill` work.
+    Load {
+        source_file: String,
+    },
+    /// Show or toggle backward rewrite mode (when idle); reports the mode.
+    Backward {
+        #[serde(default)]
+        on: Option<bool>,
+    },
+    /// End the active rewrite session or abandon the active fill.
+    Stop,
+    /// Persist the running source.  The CLI writes it to `path`; the web returns
+    /// it for the editor to save.
+    Save {
+        #[serde(default)]
+        path: Option<String>,
+    },
     /// Shut down the daemon.
     Shutdown,
 }
@@ -165,8 +183,12 @@ impl Response {
 pub struct ResponseData {
     pub step_count: usize,
     pub can_redo: bool,
-    pub current: DiagramInfo,
-    pub initial: DiagramInfo,
+    /// The current/initial diagrams of an active rewrite session.  Absent for
+    /// non-session responses (`holes`, idle, a 0-cell fill).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current: Option<DiagramInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub initial: Option<DiagramInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target: Option<DiagramInfo>,
     pub target_reached: bool,
@@ -204,6 +226,81 @@ pub struct ResponseData {
     /// the frontend can label it and offer `done`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fill: Option<FillInfo>,
+    /// A canonical one-line result message (`Applied r`, `Filled ?x with …`, …),
+    /// shared verbatim by every front-end.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    /// The module's open holes; only populated by `holes`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub holes: Vec<HoleInfo>,
+    /// The boundaryless 0-cell fill state; only populated during a 0-cell fill.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zero_cell: Option<ZeroCellInfo>,
+    /// The updated running source; populated by `done`/`save`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+}
+
+impl ResponseData {
+    /// A blank response for non-session results (`holes`, idle, a `done`/`save`
+    /// that leaves no active session); fields are filled in by the caller.
+    pub fn empty() -> Self {
+        ResponseData {
+            step_count: 0,
+            can_redo: false,
+            current: None,
+            initial: None,
+            target: None,
+            target_reached: false,
+            parallel: false,
+            backward: false,
+            rewrites: vec![],
+            proof: None,
+            proof_expr: None,
+            history: vec![],
+            rules: vec![],
+            types: vec![],
+            type_detail: None,
+            cell_detail: None,
+            auto: None,
+            stored: None,
+            fill: None,
+            message: None,
+            holes: vec![],
+            zero_cell: None,
+            source: None,
+        }
+    }
+}
+
+/// One open hole of a map in the current module, numbered for `fill`.
+#[derive(Debug, Clone, Serialize)]
+pub struct HoleInfo {
+    pub index: usize,
+    pub type_name: String,
+    pub map_name: String,
+    pub domain_name: String,
+    pub source_name: String,
+    pub dim: usize,
+    pub boundary: String,
+}
+
+/// The state of a boundaryless 0-cell fill: the candidate 0-cells (offered only
+/// while unchosen) and the current pick.
+#[derive(Debug, Clone, Serialize)]
+pub struct ZeroCellInfo {
+    pub choices: Vec<ZeroCellChoice>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chosen: Option<String>,
+    pub target_reached: bool,
+    pub can_undo: bool,
+    pub can_redo: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ZeroCellChoice {
+    pub index: usize,
+    pub name: String,
 }
 
 /// Identifies the hole a fill session is constructing.
@@ -521,8 +618,8 @@ pub fn build_response(engine: &RewriteEngine, include_history: bool) -> Response
     ResponseData {
         step_count: engine.step_count(),
         can_redo: engine.can_redo(),
-        current: diagram_info(current, scope),
-        initial: diagram_info(engine.initial_diagram(), scope),
+        current: Some(diagram_info(current, scope)),
+        initial: Some(diagram_info(engine.initial_diagram(), scope)),
         target: engine.target_diagram().map(|t| diagram_info(t, scope)),
         target_reached: engine.target_reached(),
         parallel: engine.parallel(),
@@ -538,6 +635,10 @@ pub fn build_response(engine: &RewriteEngine, include_history: bool) -> Response
         auto: None,
         stored: None,
         fill: None,
+        message: None,
+        holes: vec![],
+        zero_cell: None,
+        source: None,
     }
 }
 

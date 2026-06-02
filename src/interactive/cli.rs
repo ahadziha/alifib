@@ -9,7 +9,6 @@
 //! alifib mcp            [<examples-dir>]
 //! ```
 
-use super::engine::RewriteEngine;
 #[cfg(feature = "cli")]
 use super::repl::run_repl;
 
@@ -215,12 +214,23 @@ fn next_arg<'a>(it: &mut impl Iterator<Item = &'a String>, flag: &str) -> Result
 #[allow(clippy::result_unit_err)]
 pub fn run_serve_cmd(args: ServeArgs) -> Result<(), ()> {
     use super::daemon::run_daemon;
+    use super::protocol::Request;
+    use super::session::Session;
     let initial = match (args.file, args.type_name, args.source) {
         (Some(file), Some(type_name), Some(source)) => {
-            match RewriteEngine::init(&file, &type_name, &source, args.target.as_deref()) {
-                Ok(e) => Some(e),
+            let mut session = match Session::from_disk(&file) {
+                Ok(s) => s,
                 Err(e) => { eprintln!("error: {}", e); return Err(()); }
+            };
+            let req = Request::Start {
+                source_file: file, type_name, initial: source,
+                target: args.target, backward: false,
+            };
+            if let Err(e) = session.apply(req) {
+                eprintln!("error: {}", e);
+                return Err(());
             }
+            Some(session)
         }
         (None, None, None) => None,
         _ => {
