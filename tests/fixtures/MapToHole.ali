@@ -1,0 +1,17 @@
+@Type
+
+Arrow <<= { s, t, arr : s -> t },
+
+(* X has a named sub-map `Sub : Arrow -> X` picking out a, b, p. *)
+X <<= {
+  a, b, c,
+  p : a -> b,
+  q : b -> c,
+  let Sub :: Arrow = [ s => a, t => b, arr => p ]
+},
+
+A <<= { z },
+
+@A
+  (* `Sub => ?` holes every constituent cell of Sub's image: a, b, p. *)
+  let H :: X = [ Sub => ? ]

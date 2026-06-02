@@ -177,6 +177,29 @@ fn upsert_entry(
     }
 }
 
+/// Pointwise reading of `<map> => ?`: hole every constituent cell of the image
+/// of each generator in `f_map`'s domain.  A generator's image may be a single
+/// cell or a composite diagram; either way each cell it is built from becomes a
+/// hole (`ensure_hole` no-ops on cells already mapped or pending).
+fn hole_map_image(
+    build: &mut MapBuild,
+    context: &Context,
+    domain: &Complex,
+    f_map: &EvalMap,
+) -> Result<(), aux::Error> {
+    let map_domain = &*f_map.domain;
+    for (_, _, tag) in sorted_generators(map_domain) {
+        if !f_map.map.is_defined_at(&tag) {
+            continue;
+        }
+        let image = f_map.map.image(&tag)?;
+        for label in image.all_labels() {
+            ensure_hole(build, context, domain, label)?;
+        }
+    }
+    Ok(())
+}
+
 /// Commit `tag => actual_image` to the real map, then reconcile holes and commit
 /// any conditional whose dependencies are now closed (cascading).
 fn commit(
@@ -608,14 +631,15 @@ fn interpret_partial_map_clause(ctx: &PartialMapCtx<'_>, mut build: MapBuild, cl
     let (left_opt, left_result) = interpret_diagram_as_term(ctx.context, ctx.domain, &clause.lhs);
     let Some(left_term) = left_opt else { return (None, left_result); };
 
-    // Pure-hole case `arr => ?`: assign with no image.  The RHS is not evaluated.
+    // Pure-hole RHS `... => ?`: the image is unknown.  A cell source becomes one
+    // hole; a map source holes every constituent cell of its image (pointwise).
+    // The RHS is not evaluated as a diagram.
     if is_pure_hole_diagram(&clause.rhs.inner) {
-        let Term::Diag(source) = left_term else {
-            let mut r = left_result;
-            r.add_error(make_error(span, "The source of a hole must be a single cell, not a map"));
-            return (None, r);
+        let res = match &left_term {
+            Term::Diag(source) => assign_cell(&mut build, &left_result.context, ctx.domain, source, None),
+            Term::Map(f_map) => hole_map_image(&mut build, &left_result.context, ctx.domain, f_map),
         };
-        return match assign_cell(&mut build, &left_result.context, ctx.domain, &source, None) {
+        return match res {
             Ok(()) => (Some(build), left_result),
             Err(e) => {
                 let mut r = left_result;

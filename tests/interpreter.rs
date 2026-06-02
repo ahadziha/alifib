@@ -279,6 +279,16 @@ fn redundant_hole_then_value_commits() {
     assert_eq!(hole_count(&file, "A", "H"), 0, "the `?` should be upgraded to `arr => f` and committed");
 }
 
+/// `<map> => ?` holes every constituent cell of the map's image: `Sub` picks out
+/// `a, b, p`, so `Sub => ?` makes three holes.
+#[test]
+fn map_to_hole_holes_each_cell() {
+    let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("MapToHole.ali"))
+        .ok()
+        .expect("MapToHole.ali should interpret without errors");
+    assert_eq!(hole_count(&file, "A", "H"), 3, "Sub => ? should hole a, b and p");
+}
+
 /// A `total` map may use holes as placeholders: a generator covered by a hole
 /// counts as covered, so `total H :: One = [ x => ? ]` is accepted.
 #[test]
