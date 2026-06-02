@@ -9,5 +9,5 @@
 pub mod normalize;
 mod types;
 
-pub use normalize::{render_diagram, report_map_holes};
+pub use normalize::render_diagram;
 pub use types::{Cell, Dim, Map, Module, Store, Type};

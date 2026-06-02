@@ -12,7 +12,7 @@ use crate::core::{
     map_hole::MapHole,
     paste_tree::PasteTree,
 };
-use crate::interpreter::{GlobalStore, InterpretedFile};
+use crate::interpreter::GlobalStore;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::sync::Arc;
@@ -113,7 +113,18 @@ fn normalize_type(
     map_entries.sort_by_key(|(n, _)| *n);
     let maps = map_entries
         .iter()
-        .map(|(n, dom)| Map { name: n.to_string(), domain: render_domain(dom, module_complex) })
+        .map(|(n, dom)| {
+            let holes = tc
+                .map_holes(n)
+                .filter(|h| !h.is_empty())
+                .map(|h| {
+                    let domain = domain_complex(store, dom);
+                    let domain_ref = domain.as_deref().unwrap_or(tc);
+                    render_map_holes(h, tc, domain_ref)
+                })
+                .unwrap_or_default();
+            Map { name: n.to_string(), domain: render_domain(dom, module_complex), holes }
+        })
         .collect();
 
     Type { name: name.to_owned(), dims, diagrams, maps }
@@ -304,56 +315,33 @@ fn collect_chain_with_holes(
     }
 }
 
-/// Render one pending entry: a pure hole as `?name : <in> -> <out>` (or
-/// `?name : (0-cell)`), a conditional as `name => <image>`; both with a
-/// `(depends on …)` suffix listing the holes they reference.  Image leaves
+/// Render one unfilled hole as a single line: `?name` for a 0-cell, or
+/// `?name : <input> -> <output>` for a higher one.  Metavariables in the
+/// boundary make any dependency visible directly, so no image or "depends on"
+/// suffix is shown (pure holes and conditionals render uniformly).  Image leaves
 /// resolve against `scope`, metavariables against `names`.
-fn render_map_hole(hole: &MapHole, scope: &Complex, names: &HoleNames) -> String {
+fn render_hole_line(hole: &MapHole, scope: &Complex, names: &HoleNames) -> String {
     let name = names.get(&hole.meta).cloned().unwrap_or_else(|| format!("{}", hole.meta));
-    let mut s = match &hole.image {
-        // Conditional assignment `x => a`, awaiting its boundary faces.
-        Some(image) => {
-            let src = name.strip_prefix('?').unwrap_or(&name);
-            format!("{} => {}", src, render_diagram(image, scope))
-        }
-        // Pure hole: show the inferred boundary.
-        None => {
-            let body = match (&hole.boundary_in, &hole.boundary_out) {
-                (Some(input), Some(output)) => format!(
-                    "{} -> {}",
-                    render_paste_tree_with_holes(input, scope, names),
-                    render_paste_tree_with_holes(output, scope, names),
-                ),
-                _ => "(0-cell)".to_string(),
-            };
-            format!("{} : {}", name, body)
-        }
-    };
-    if !hole.deps.is_empty() {
-        let mut deps: Vec<String> = hole
-            .deps
-            .iter()
-            .map(|d| names.get(d).cloned().unwrap_or_else(|| format!("{}", d)))
-            .collect();
-        deps.sort();
-        s.push_str(&format!("   (depends on {})", deps.join(", ")));
+    match (&hole.boundary_in, &hole.boundary_out) {
+        (Some(input), Some(output)) => format!(
+            "{} : {} -> {}",
+            name,
+            render_paste_tree_with_holes(input, scope, names),
+            render_paste_tree_with_holes(output, scope, names),
+        ),
+        _ => name,
     }
-    s
 }
 
-/// List a map's unfilled holes, lowest dimension first so a hole's faces print
-/// before the holes that depend on them.  `scope` is the complex the map maps
-/// into (where image leaves resolve); `domain` is the complex it maps from
-/// (where holes are named after their source generators).
-pub fn list_map_holes(map_name: &str, holes: &[MapHole], scope: &Complex, domain: &Complex) -> String {
+/// Render a map's unfilled holes as one line each, lowest dimension first so a
+/// hole's faces print before the holes that reference them.  `scope` is the
+/// complex the map maps into (where image leaves resolve); `domain` is the
+/// complex it maps from (where holes are named after their source generators).
+fn render_map_holes(holes: &[MapHole], scope: &Complex, domain: &Complex) -> Vec<String> {
     let names = hole_names(holes, domain);
     let mut order: Vec<&MapHole> = holes.iter().collect();
     order.sort_by_key(|h| (h.dim, names.get(&h.meta).cloned().unwrap_or_default()));
-    let lines: Vec<String> = order
-        .iter()
-        .map(|h| format!("  {}", render_map_hole(h, scope, &names)))
-        .collect();
-    format!("unfilled holes in `{}`:\n{}", map_name, lines.join("\n"))
+    order.iter().map(|h| render_hole_line(h, scope, &names)).collect()
 }
 
 /// Resolve a map's domain to the complex it maps from.
@@ -361,33 +349,6 @@ fn domain_complex(store: &GlobalStore, domain: &MapDomain) -> Option<Arc<Complex
     match domain {
         MapDomain::Type(gid) => store.find_type(*gid).map(|e| Arc::clone(&e.complex)),
         MapDomain::Module(mid) => store.find_module_arc(mid),
-    }
-}
-
-/// Print, to stderr, the unfilled holes of every named map in every type of the
-/// loaded file.  Holes are informational: a map with holes is a legitimate
-/// partial definition.
-pub fn report_map_holes(file: &InterpretedFile) {
-    let store = &file.state;
-    for (_path, module_complex) in store.modules_iter() {
-        for (type_name, tag, _) in module_complex.generators_iter() {
-            let Tag::Global(gid) = tag else { continue; };
-            let Some(type_entry) = store.find_type(*gid) else { continue; };
-            let tc = type_entry.complex.as_ref();
-            let mut map_names: Vec<&str> = tc.maps_iter().map(|(n, _, _)| n.as_str()).collect();
-            map_names.sort_unstable();
-            for map_name in map_names {
-                let Some(holes) = tc.map_holes(map_name) else { continue; };
-                if holes.is_empty() {
-                    continue;
-                }
-                let (_, _, dom) = tc.maps_iter().find(|(n, _, _)| n.as_str() == map_name).unwrap();
-                let domain = domain_complex(store, dom);
-                let domain_ref = domain.as_deref().unwrap_or(tc);
-                let listing = list_map_holes(map_name, holes, tc, domain_ref);
-                eprintln!("In type `{}`, {}", type_name, listing);
-            }
-        }
     }
 }
 

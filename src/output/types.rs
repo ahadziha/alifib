@@ -78,13 +78,18 @@ pub struct Cell {
 
 /// A named map from a type to another type or module.
 ///
-/// The [`std::fmt::Display`] impl renders this as `name :: domain`.
+/// The [`std::fmt::Display`] impl renders this as `name :: domain`, followed by
+/// ` with holes` and one indented line per unfilled hole when `holes` is
+/// non-empty.
 #[derive(Debug, PartialEq)]
 pub struct Map {
     /// Map name. Empty string is displayed as `<empty>`.
     pub name: String,
     /// Name of the target type or module.
     pub domain: String,
+    /// Pre-rendered lines for the map's unfilled holes, in listing order.  A
+    /// 0-cell hole is just `?name`; a higher one is `?name : input -> output`.
+    pub holes: Vec<String>,
 }
 
 // ---- Display impls ----
@@ -155,6 +160,13 @@ impl fmt::Display for Cell {
 impl fmt::Display for Map {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let label = if self.name.is_empty() { "<empty>" } else { &self.name };
-        write!(f, "{} :: {}", label, self.domain)
+        write!(f, "{} :: {}", label, self.domain)?;
+        if !self.holes.is_empty() {
+            write!(f, " with holes")?;
+            for hole in &self.holes {
+                write!(f, "\n      {}", hole)?;
+            }
+        }
+        Ok(())
     }
 }

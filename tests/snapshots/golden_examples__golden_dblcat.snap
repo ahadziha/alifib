@@ -1,5 +1,6 @@
 ---
 source: tests/golden_examples.rs
+assertion_line: 30
 expression: "load_example(\"Dblcat.ali\")"
 ---
 Store {
@@ -100,6 +101,7 @@ Store {
                         Map {
                             name: "Eq",
                             domain: "Eq",
+                            holes: [],
                         },
                     ],
                 },
@@ -178,22 +180,27 @@ Store {
                         Map {
                             name: "Id_square",
                             domain: "Square",
+                            holes: [],
                         },
                         Map {
                             name: "Loose_id",
                             domain: "Loose",
+                            holes: [],
                         },
                         Map {
                             name: "Ob",
                             domain: "Ob",
+                            holes: [],
                         },
                         Map {
                             name: "Tight_id",
                             domain: "Tight",
+                            holes: [],
                         },
                         Map {
                             name: "Tight_id_id",
                             domain: "Eq",
+                            holes: [],
                         },
                     ],
                 },
@@ -302,18 +309,22 @@ Store {
                         Map {
                             name: "Cod",
                             domain: "Ob",
+                            holes: [],
                         },
                         Map {
                             name: "Dom",
                             domain: "Ob",
+                            holes: [],
                         },
                         Map {
                             name: "Id",
                             domain: "Square",
+                            holes: [],
                         },
                         Map {
                             name: "Tight",
                             domain: "Tight",
+                            holes: [],
                         },
                     ],
                 },
@@ -422,18 +433,22 @@ Store {
                         Map {
                             name: "Cod",
                             domain: "Ob",
+                            holes: [],
                         },
                         Map {
                             name: "Dom",
                             domain: "Ob",
+                            holes: [],
                         },
                         Map {
                             name: "Id",
                             domain: "Square",
+                            holes: [],
                         },
                         Map {
                             name: "Loose",
                             domain: "Loose",
+                            holes: [],
                         },
                     ],
                 },
@@ -632,38 +647,47 @@ Store {
                         Map {
                             name: "BL",
                             domain: "Ob",
+                            holes: [],
                         },
                         Map {
                             name: "BR",
                             domain: "Ob",
+                            holes: [],
                         },
                         Map {
                             name: "Bottom",
                             domain: "Loose",
+                            holes: [],
                         },
                         Map {
                             name: "Left",
                             domain: "Tight",
+                            holes: [],
                         },
                         Map {
                             name: "Right",
                             domain: "Tight",
+                            holes: [],
                         },
                         Map {
                             name: "Square",
                             domain: "Square",
+                            holes: [],
                         },
                         Map {
                             name: "TL",
                             domain: "Ob",
+                            holes: [],
                         },
                         Map {
                             name: "TR",
                             domain: "Ob",
+                            holes: [],
                         },
                         Map {
                             name: "Top",
                             domain: "Loose",
+                            holes: [],
                         },
                     ],
                 },
@@ -801,18 +825,22 @@ Store {
                         Map {
                             name: "Compose",
                             domain: "Tight",
+                            holes: [],
                         },
                         Map {
                             name: "Fst",
                             domain: "Tight",
+                            holes: [],
                         },
                         Map {
                             name: "Snd",
                             domain: "Tight",
+                            holes: [],
                         },
                         Map {
                             name: "Tight_pair",
                             domain: "Tight_pair",
+                            holes: [],
                         },
                     ],
                 },
@@ -950,18 +978,22 @@ Store {
                         Map {
                             name: "Compose",
                             domain: "Loose",
+                            holes: [],
                         },
                         Map {
                             name: "Fst",
                             domain: "Loose",
+                            holes: [],
                         },
                         Map {
                             name: "Loose_pair",
                             domain: "Loose_pair",
+                            holes: [],
                         },
                         Map {
                             name: "Snd",
                             domain: "Loose",
+                            holes: [],
                         },
                     ],
                 },
@@ -1249,18 +1281,22 @@ Store {
                         Map {
                             name: "Compose",
                             domain: "Square",
+                            holes: [],
                         },
                         Map {
                             name: "Fst",
                             domain: "Square",
+                            holes: [],
                         },
                         Map {
                             name: "H_Pair",
                             domain: "H_Pair",
+                            holes: [],
                         },
                         Map {
                             name: "Snd",
                             domain: "Square",
+                            holes: [],
                         },
                     ],
                 },

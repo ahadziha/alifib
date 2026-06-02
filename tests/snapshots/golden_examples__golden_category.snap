@@ -1,5 +1,6 @@
 ---
 source: tests/golden_examples.rs
+assertion_line: 37
 expression: "load_example(\"Category.ali\")"
 ---
 Store {
@@ -100,6 +101,7 @@ Store {
                         Map {
                             name: "Eq",
                             domain: "Eq",
+                            holes: [],
                         },
                     ],
                 },
@@ -158,14 +160,17 @@ Store {
                         Map {
                             name: "Id",
                             domain: "Mor",
+                            holes: [],
                         },
                         Map {
                             name: "Id_id",
                             domain: "Eq",
+                            holes: [],
                         },
                         Map {
                             name: "Ob",
                             domain: "Ob",
+                            holes: [],
                         },
                     ],
                 },
@@ -264,22 +269,27 @@ Store {
                         Map {
                             name: "Cod",
                             domain: "Ob",
+                            holes: [],
                         },
                         Map {
                             name: "Dom",
                             domain: "Ob",
+                            holes: [],
                         },
                         Map {
                             name: "Left_id",
                             domain: "Eq",
+                            holes: [],
                         },
                         Map {
                             name: "Mor",
                             domain: "Mor",
+                            holes: [],
                         },
                         Map {
                             name: "Right_id",
                             domain: "Eq",
+                            holes: [],
                         },
                     ],
                 },
@@ -423,34 +433,42 @@ Store {
                         Map {
                             name: "Cod",
                             domain: "Ob",
+                            holes: [],
                         },
                         Map {
                             name: "Comp",
                             domain: "Mor",
+                            holes: [],
                         },
                         Map {
                             name: "Dom",
                             domain: "Ob",
+                            holes: [],
                         },
                         Map {
                             name: "Fst",
                             domain: "Mor",
+                            holes: [],
                         },
                         Map {
                             name: "Left_id",
                             domain: "Eq",
+                            holes: [],
                         },
                         Map {
                             name: "Pair",
                             domain: "Pair",
+                            holes: [],
                         },
                         Map {
                             name: "Right_id",
                             domain: "Eq",
+                            holes: [],
                         },
                         Map {
                             name: "Snd",
                             domain: "Mor",
+                            holes: [],
                         },
                     ],
                 },

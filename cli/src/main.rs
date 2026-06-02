@@ -7,7 +7,6 @@ use alifib::aux::loader::Loader;
 use alifib::interactive::cli::{McpArgs, ReplArgs, ServeArgs, WebArgs, parse_mcp_args, parse_repl_args, parse_serve_args, parse_web_args, run_repl_cmd, run_serve_cmd};
 use alifib::interpreter::InterpretedFile;
 use alifib::language;
-use alifib::output;
 
 const USAGE: &str = "\
 Usage: alifib <input-file> [-o|--output <output-file>] [--ast] [--print] [--bench N]
@@ -123,7 +122,6 @@ fn run_print(loader: &Loader, input: &str, output: Option<&str>) -> Result<(), (
 fn run_interpreter(loader: &Loader, input: &str, output_path: Option<&str>) -> Result<(), ()> {
     let file = InterpretedFile::load(loader, input).into_result()?;
     write_output(output_path, &file.to_string())?;
-    output::report_map_holes(&file);
     Ok(())
 }
 

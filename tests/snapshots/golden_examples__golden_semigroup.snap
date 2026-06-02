@@ -1,5 +1,6 @@
 ---
 source: tests/golden_examples.rs
+assertion_line: 51
 expression: "load_example(\"Semigroup.ali\")"
 ---
 Store {
@@ -115,6 +116,7 @@ Store {
                         Map {
                             name: "Equation",
                             domain: "Equation",
+                            holes: [],
                         },
                     ],
                 },
@@ -188,14 +190,17 @@ Store {
                         Map {
                             name: "Id",
                             domain: "Function",
+                            holes: [],
                         },
                         Map {
                             name: "Id_id",
                             domain: "Equation",
+                            holes: [],
                         },
                         Map {
                             name: "Set",
                             domain: "Set",
+                            holes: [],
                         },
                     ],
                 },
@@ -319,22 +324,27 @@ Store {
                         Map {
                             name: "Cod",
                             domain: "Set",
+                            holes: [],
                         },
                         Map {
                             name: "Dom",
                             domain: "Set",
+                            holes: [],
                         },
                         Map {
                             name: "Fun_id",
                             domain: "Equation",
+                            holes: [],
                         },
                         Map {
                             name: "Function",
                             domain: "Function",
+                            holes: [],
                         },
                         Map {
                             name: "Id_fun",
                             domain: "Equation",
+                            holes: [],
                         },
                     ],
                 },
@@ -449,6 +459,7 @@ Store {
                         Map {
                             name: "Equation",
                             domain: "Theory.Equation",
+                            holes: [],
                         },
                     ],
                 },
@@ -572,22 +583,27 @@ Store {
                         Map {
                             name: "Cod",
                             domain: "Theory.Set",
+                            holes: [],
                         },
                         Map {
                             name: "Dom",
                             domain: "Theory.Set",
+                            holes: [],
                         },
                         Map {
                             name: "Fun_id",
                             domain: "Theory.Equation",
+                            holes: [],
                         },
                         Map {
                             name: "Function",
                             domain: "Theory.Function",
+                            holes: [],
                         },
                         Map {
                             name: "Id_fun",
                             domain: "Theory.Equation",
+                            holes: [],
                         },
                     ],
                 },
@@ -661,14 +677,17 @@ Store {
                         Map {
                             name: "Id",
                             domain: "Theory.Function",
+                            holes: [],
                         },
                         Map {
                             name: "Id_id",
                             domain: "Theory.Equation",
+                            holes: [],
                         },
                         Map {
                             name: "Set",
                             domain: "Theory.Set",
+                            holes: [],
                         },
                     ],
                 },
@@ -792,26 +811,32 @@ Store {
                         Map {
                             name: "Assoc",
                             domain: "Theory.Equation",
+                            holes: [],
                         },
                         Map {
                             name: "Left_id_merge",
                             domain: "Theory.Equation",
+                            holes: [],
                         },
                         Map {
                             name: "Merge_id",
                             domain: "Theory.Equation",
+                            holes: [],
                         },
                         Map {
                             name: "Right_id_merge",
                             domain: "Theory.Equation",
+                            holes: [],
                         },
                         Map {
                             name: "Semigroup",
                             domain: "Semigroup",
+                            holes: [],
                         },
                         Map {
                             name: "Set",
                             domain: "Theory.Set",
+                            holes: [],
                         },
                     ],
                 },
@@ -935,26 +960,32 @@ Store {
                         Map {
                             name: "Assoc",
                             domain: "Theory.Equation",
+                            holes: [],
                         },
                         Map {
                             name: "Cosemigroup",
                             domain: "Cosemigroup",
+                            holes: [],
                         },
                         Map {
                             name: "Id_split",
                             domain: "Theory.Equation",
+                            holes: [],
                         },
                         Map {
                             name: "Set",
                             domain: "Theory.Set",
+                            holes: [],
                         },
                         Map {
                             name: "Split_left_id",
                             domain: "Theory.Equation",
+                            holes: [],
                         },
                         Map {
                             name: "Split_right_id",
                             domain: "Theory.Equation",
+                            holes: [],
                         },
                     ],
                 },
@@ -1103,18 +1134,22 @@ Store {
                         Map {
                             name: "L",
                             domain: "Semigroup",
+                            holes: [],
                         },
                         Map {
                             name: "Left_module",
                             domain: "Left_module",
+                            holes: [],
                         },
                         Map {
                             name: "Merge_left_act",
                             domain: "Theory.Equation",
+                            holes: [],
                         },
                         Map {
                             name: "Set",
                             domain: "Theory.Set",
+                            holes: [],
                         },
                     ],
                 },
@@ -1263,18 +1298,22 @@ Store {
                         Map {
                             name: "Merge_right_act",
                             domain: "Theory.Equation",
+                            holes: [],
                         },
                         Map {
                             name: "R",
                             domain: "Semigroup",
+                            holes: [],
                         },
                         Map {
                             name: "Right_module",
                             domain: "Right_module",
+                            holes: [],
                         },
                         Map {
                             name: "Set",
                             domain: "Theory.Set",
+                            holes: [],
                         },
                     ],
                 },
@@ -1508,30 +1547,37 @@ Store {
                         Map {
                             name: "Bimodule",
                             domain: "Bimodule",
+                            holes: [],
                         },
                         Map {
                             name: "L",
                             domain: "Semigroup",
+                            holes: [],
                         },
                         Map {
                             name: "LM",
                             domain: "Left_module",
+                            holes: [],
                         },
                         Map {
                             name: "Left_act_right_act",
                             domain: "Theory.Equation",
+                            holes: [],
                         },
                         Map {
                             name: "R",
                             domain: "Semigroup",
+                            holes: [],
                         },
                         Map {
                             name: "RM",
                             domain: "Right_module",
+                            holes: [],
                         },
                         Map {
                             name: "Set",
                             domain: "Theory.Set",
+                            holes: [],
                         },
                     ],
                 },
@@ -1680,18 +1726,22 @@ Store {
                         Map {
                             name: "L",
                             domain: "Cosemigroup",
+                            holes: [],
                         },
                         Map {
                             name: "Left_coact_split",
                             domain: "Theory.Equation",
+                            holes: [],
                         },
                         Map {
                             name: "Left_comodule",
                             domain: "Left_comodule",
+                            holes: [],
                         },
                         Map {
                             name: "Set",
                             domain: "Theory.Set",
+                            holes: [],
                         },
                     ],
                 },
@@ -1840,18 +1890,22 @@ Store {
                         Map {
                             name: "R",
                             domain: "Cosemigroup",
+                            holes: [],
                         },
                         Map {
                             name: "Right_coact_split",
                             domain: "Theory.Equation",
+                            holes: [],
                         },
                         Map {
                             name: "Right_comodule",
                             domain: "Right_comodule",
+                            holes: [],
                         },
                         Map {
                             name: "Set",
                             domain: "Theory.Set",
+                            holes: [],
                         },
                     ],
                 },
@@ -2085,30 +2139,37 @@ Store {
                         Map {
                             name: "Bicomodule",
                             domain: "Bicomodule",
+                            holes: [],
                         },
                         Map {
                             name: "L",
                             domain: "Cosemigroup",
+                            holes: [],
                         },
                         Map {
                             name: "LC",
                             domain: "Left_comodule",
+                            holes: [],
                         },
                         Map {
                             name: "R",
                             domain: "Cosemigroup",
+                            holes: [],
                         },
                         Map {
                             name: "RC",
                             domain: "Right_comodule",
+                            holes: [],
                         },
                         Map {
                             name: "Right_coact_left_coact",
                             domain: "Theory.Equation",
+                            holes: [],
                         },
                         Map {
                             name: "Set",
                             domain: "Theory.Set",
+                            holes: [],
                         },
                     ],
                 },
