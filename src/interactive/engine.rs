@@ -1136,123 +1136,6 @@ impl RewriteEngine {
 
         Ok((Arc::clone(&self.store), Arc::clone(&self.type_complex)))
     }
-
-    /// Dispatch an engine-level [`Request`] to the matching method and return
-    /// the response data.
-    ///
-    /// Returns `None` for variants that don't belong to this layer — session
-    /// transitions (`Start`, `Resume`, `Shutdown`) and store-level queries
-    /// (`Homology`).  Callers handle those themselves.
-    ///
-    /// Errors from the engine (bad choice index, nothing to undo, name
-    /// already in use, …) are returned as `Some(Err(msg))`.
-    pub fn handle(
-        &mut self,
-        req: &super::protocol::Request,
-    ) -> Option<Result<super::protocol::ResponseData, String>> {
-        use super::protocol::*;
-        // `self.step(...)` holds `&mut self`; `build_response(self, …)` also
-        // borrows.  We split into statements so the mutable borrow ends
-        // before the response builder starts.
-        let result: Result<ResponseData, String> = match req {
-            Request::Step { choice } => match self.step(*choice) {
-                Ok(_) => Ok(build_response(self, false)),
-                Err(e) => Err(e),
-            },
-            Request::StepMulti { choices } => {
-                if !self.parallel {
-                    Err("multi-apply requires parallel mode".to_string())
-                } else {
-                    match self.step_multi(choices) {
-                        Ok(_) => Ok(build_response(self, false)),
-                        Err(e) => Err(e),
-                    }
-                }
-            }
-            Request::Auto { max_steps } => match self.auto(*max_steps) {
-                Ok((applied, stop_reason)) => {
-                    let mut data = build_response(self, false);
-                    data.auto = Some(AutoInfo {
-                        applied,
-                        stop_reason: stop_reason.unwrap_or("").to_owned(),
-                    });
-                    Ok(data)
-                }
-                Err(msg) => Err(msg),
-            },
-            Request::Random { max_steps } => match self.random(*max_steps) {
-                Ok((applied, stop_reason)) => {
-                    let mut data = build_response(self, false);
-                    data.auto = Some(AutoInfo {
-                        applied,
-                        stop_reason: stop_reason.unwrap_or("").to_owned(),
-                    });
-                    Ok(data)
-                }
-                Err(msg) => Err(msg),
-            },
-            Request::Undo => self.undo().map(|_| build_response(self, false)),
-            Request::UndoTo { step } => {
-                self.undo_to(*step).map(|_| build_response(self, false))
-            }
-            Request::Redo => self.redo().map(|_| build_response(self, false)),
-            Request::RedoTo { step } => {
-                self.redo_to(*step).map(|_| build_response(self, false))
-            }
-            Request::Show => Ok(build_response(self, false)),
-            Request::History => Ok(build_response(self, true)),
-            Request::ListRules => Ok(build_list_rules_response(self)),
-            Request::Types => Ok(build_types_response(self)),
-            Request::TypeInfo { name } => build_type_info_response(self, name),
-            Request::Cell { name } => build_cell_response(self, name),
-            Request::Store { name } => {
-                // Render the proof expression *before* registering — registration
-                // rewrites `type_complex`, and the rendered form should reflect
-                // the shape at the time of store.  With no steps yet, store the
-                // initial diagram itself.
-                let expr = self.proof_expr().unwrap_or_else(|| {
-                    crate::output::render_diagram(self.initial_diagram(), self.type_complex())
-                });
-                let stored_info = Some(StoredInfo {
-                    type_name: self.type_name().to_owned(),
-                    def_name: name.clone(),
-                    expr,
-                });
-                match self.register_proof(name) {
-                    Ok(_) => {
-                        let mut data = build_response(self, false);
-                        data.stored = stored_info;
-                        Ok(data)
-                    }
-                    Err(msg) => Err(msg),
-                }
-            }
-            Request::Proof => {
-                let mut data = build_response(self, false);
-                data.proof_expr = self.proof_expr();
-                Ok(data)
-            }
-            Request::Parallel { on } => {
-                self.set_parallel(*on);
-                Ok(build_response(self, false))
-            }
-            Request::SetTarget { name } => {
-                self.set_target(name).map(|_| build_response(self, false))
-            }
-            Request::Start { .. }
-            | Request::Resume { .. }
-            | Request::Shutdown
-            | Request::Homology { .. }
-            | Request::Holes
-            | Request::Fill { .. }
-            | Request::Done
-            | Request::Load { .. }
-            | Request::Backward { .. }
-            | Request::Stop
-            | Request::Save { .. } => return None,
-        };
-        Some(result)
-    }
 }
 
 #[cfg(test)]
@@ -1326,22 +1209,16 @@ mod resume_tests {
         assert!(err.to_lowercase().contains("parallel") || err.contains("dimension"), "got: {err}");
     }
 
-    /// The save → resume loop: a session's `proof_expr` (the daemon's `proof`
-    /// response, what the editor saves) resumes to an isomorphic proof with the
-    /// same step count.  The `Proof` request surfaces the same expression.
+    /// The save → resume loop: a session's `proof_expr` (what the daemon's
+    /// `proof` response surfaces and the editor saves) resumes to an isomorphic
+    /// proof with the same step count.
     #[test]
     fn proof_expr_round_trips() {
-        use crate::interactive::protocol::Request;
         let (store, tc, path) = load();
-        let mut first = RewriteEngine::resume(
+        let first = RewriteEngine::resume(
             Arc::clone(&store), Arc::clone(&tc), "inter", None, path.clone(), TYPE.to_owned(), false,
         ).unwrap();
         let expr = first.proof_expr().expect("a proof with steps has an expression");
-        assert_eq!(
-            first.handle(&Request::Proof).unwrap().unwrap().proof_expr.as_deref(),
-            Some(expr.as_str()),
-            "the `proof` request returns proof_expr",
-        );
         let proof1 = first.assemble_proof().unwrap();
 
         let again = RewriteEngine::resume(

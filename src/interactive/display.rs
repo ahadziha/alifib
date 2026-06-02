@@ -37,6 +37,12 @@ impl Display {
         Self { color: std::io::stdout().is_terminal() }
     }
 
+    /// Create a display that never emits colour — for tests and non-terminal
+    /// rendering where deterministic plain text is wanted.
+    pub fn plain() -> Self {
+        Self { color: false }
+    }
+
     /// Print a meta-level line.
     ///
     /// The body is left in the default colour so callers add emphasis with

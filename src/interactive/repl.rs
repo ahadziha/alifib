@@ -1,15 +1,16 @@
 //! In-process interactive REPL for rewrite sessions.
 //!
-//! The REPL has two states:
+//! The REPL is a thin adapter over the shared [`Session`]: it parses a line into
+//! a [`Request`], calls [`Session::apply`], and renders the resulting
+//! [`ResponseData`] in the web front-end's textual style (see [`super::render`]).
+//! All command semantics, state transitions, and canonical messages therefore
+//! live in `Session`, shared verbatim with the stdio daemon and the web REPL —
+//! a new command lands on all three at once.
 //!
-//! - **No session** — file is loaded.  Non-session commands work: `types`,
-//!   `type`, `homology`, `status`, `print`.  Use `start <type> <source>
-//!   [<target>]` to begin a rewrite session.
-//! - **Session active** — engine running; `apply`, `undo`, `redo`,
-//!   `restart`, `stop`, `show`, `history`, `proof`, `save`, etc.
-//!
-//! All human-readable output flows through a single [`Display`] value.
-//! Readline (with vi or emacs mode) is provided by `rustyline`.
+//! The only genuinely CLI-local concerns are the read-only queries served
+//! straight from the loaded store (`types`/`type`/`homology`), the front-end
+//! commands (`print`/`help`/`status`/`quit`), and the final byte-rendering via
+//! [`Display`].  Readline (vi or emacs mode) is provided by `rustyline`.
 //!
 //! # Commands
 //!
@@ -19,32 +20,35 @@
 //! type <name>      Inspect a type: generators, diagrams, maps
 //! homology <name>  Compute cellular homology of a type
 //! start <t> <s> [<g>]  Start a rewrite session (target optional)
+//! resume <t> <p> [<g>] Resume a session from a diagram
+//! holes            List open holes of maps in this module
+//! fill <n>         Start a hole-filling session for hole <n>
+//! backward [on|off] Show or toggle backward rewrite mode
 //! status / show    Session state, or module path when idle
-//! print            Print the whole source file
+//! print            Print the running source
+//! save <path>      Write the running source to disk
 //! stop             End the active session
 //! help / ?         Show command list
 //! quit / exit / q  Exit
 //! ```
 //!
-//! Require active session:
+//! Require an active session:
 //! ```text
-//! apply <n>        Apply rewrite at index <n> (alias: a)
-//! auto <n>         Apply up to <n> rewrites automatically, always picking index 0
-//! random <n>       Apply randomly selected rewrites automatically
-//! undo             Undo the last step (alias: u)
-//! undo <n>         Undo back to step <n>
-//! undo all         Reset to source diagram (= restart)
-//! redo             Redo the last undone step
-//! redo <n>         Redo forward to step <n>
+//! apply <n> [<n2>..]  Apply rewrite(s) at given indices (alias: a)
+//! auto <n>         Apply up to <n> rewrites automatically
+//! random <n>       Apply randomly selected rewrites
+//! parallel [on|off] Show or toggle parallel rewrite mode
+//! undo [<n>]       Undo the last step, or back to step <n> (alias: u)
+//! redo [<n>]       Redo the last undone step, or forward to step <n>
+//! undo all / restart  Reset to the source diagram
 //! rules            List rewrite rules at current dimension (alias: r)
 //! history          Show the move history (alias: h)
 //! proof            Show the running proof diagram (alias: p)
 //! store <name>     Store the current proof as a named diagram
-//! save <path>      Write source file with stored definitions appended
+//! done             Finalise the active fill, extending the map
 //! ```
 
 use std::borrow::Cow;
-use std::sync::Arc;
 
 use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
@@ -52,14 +56,15 @@ use rustyline::highlight::Highlighter;
 use rustyline::history::FileHistory;
 use rustyline::{EditMode, Editor};
 
-use crate::core::complex::Complex;
-use crate::core::diagram::{CellData, Sign};
-use crate::interpreter::GlobalStore;
-use crate::output::render_diagram;
+use crate::analysis::homology::compute_homology;
 use super::display::Display;
-use super::engine::{RewriteEngine, load_file_context, resolve_type};
-use super::fill::{filled_report, finalize, list_open_holes, start_fill, FillContext, FillSession, ZeroCellFill};
-use super::render::{print_history, print_state};
+use super::engine::resolve_type;
+use super::protocol::{build_type_detail_from_store, build_types_from_store, Request, ResponseData};
+use super::render::{
+    render_auto, render_history, render_holes, render_homology, render_proof, render_rules,
+    render_state, render_store, render_type_detail, render_types, render_zero_cell,
+};
+use super::session::Session;
 
 // ── Readline editor with a coloured prompt ──────────────────────────────────────
 
@@ -91,50 +96,6 @@ impl rustyline::Helper for ReplHelper {}
 
 type ReplEditor = Editor<ReplHelper, FileHistory>;
 
-// ── Internal helpers ──────────────────────────────────────────────────────────
-
-/// Register the running proof as a named diagram and append its definition to
-/// the running source.  Shared by free sessions and rewrite fills — `store`
-/// edits the in-memory source, which `save` later commits to disk.
-fn store_proof(
-    e: &mut RewriteEngine,
-    name: &str,
-    store: &mut Arc<GlobalStore>,
-    source: &mut String,
-    display: &Display,
-) {
-    let expr = if e.steps().is_empty() {
-        // With no steps, store the initial diagram itself (re-rendered, never
-        // its name) — matching the web REPL, and safe for a fill's synthetic
-        // boundary name.
-        render_diagram(e.initial_diagram(), e.type_complex())
-    } else {
-        let n = e.initial_diagram().top_dim();
-        let scope = e.type_complex();
-        let ordered: Vec<_> = if e.backward() {
-            e.steps().iter().rev().collect()
-        } else {
-            e.steps().iter().collect()
-        };
-        let mut steps = ordered.iter();
-        let first = render_diagram(steps.next().unwrap(), scope);
-        let rest: String = steps
-            .map(|s| format!("\n#{} {}", n, render_diagram(s, scope)))
-            .collect();
-        format!("{}{}", first, rest)
-    };
-    let type_name = e.type_name().to_owned();
-    match e.register_proof(name) {
-        Ok((new_store, _)) => {
-            *store = new_store;
-            *source = format!("{}\n\n@{}\nlet {} = {}\n", source.trim_end(), type_name, name, expr);
-            display.meta(&format!("Stored '{}'", name));
-            dispatch_print_cell(e.type_complex(), name, display);
-        }
-        Err(err) => display.error(&err),
-    }
-}
-
 /// Run the interactive REPL starting from a loaded file.
 ///
 /// `type_name`, `initial_diagram`, and `target_diagram` may be given as CLI
@@ -151,28 +112,25 @@ pub fn run_repl(
 ) -> Result<(), ()> {
     let display = Display::new();
 
-    let (mut store, canonical_path, _file_output) = match load_file_context(source_file) {
-        Ok(r) => r,
+    let mut session = match Session::from_disk(source_file) {
+        Ok(s) => s,
         Err(e) => { display.error(&e); return Err(()); }
     };
 
     display.meta(&format!("Loaded {}", source_file));
 
     let mut rl = make_editor(emacs_mode, &display);
-    let mut engine: Option<RewriteEngine> = None;
-    let mut fill: Option<(FillContext, FillSession)> = None;
-    let mut backward = false;
-
-    // The working copy of the source, edited in memory on `done` and written on
-    // `save`.  Re-evaluation after a fill reads this, not the disk.
-    let mut source = std::fs::read_to_string(source_file).unwrap_or_default();
 
     // Auto-start from CLI flags when type and source are given.
     if let (Some(tn), Some(src)) = (type_name, initial_diagram) {
-        try_start_session(
-            &store, &canonical_path, tn, src, target_diagram,
-            backward, &display, &mut engine,
-        );
+        let req = Request::Start {
+            source_file: session.root_path().to_owned(),
+            type_name: tn.to_owned(),
+            initial: src.to_owned(),
+            target: target_diagram.map(str::to_owned),
+            backward: session.backward(),
+        };
+        dispatch_request(&mut session, req, Render::State, &display);
     }
 
     'repl: loop {
@@ -185,159 +143,12 @@ pub fn run_repl(
                 rl.add_history_entry(&line).ok();
 
                 for part in line.split(';') {
-                let part = part.trim();
-                if part.is_empty() { continue; }
-                match parse_command(part) {
-                    // ── Always-available commands ─────────────────────
-                    Cmd::Types => dispatch_types(&store, &canonical_path, &display),
-                    Cmd::Status => {
-                        match (fill.as_ref(), engine.as_ref()) {
-                            (Some((ctx, session)), _) => show_fill_state(ctx, session, &display),
-                            (None, Some(e)) => show_state(e, &display),
-                            (None, None) => display.meta(&format!("Module: {}", source_file)),
-                        }
+                    let part = part.trim();
+                    if part.is_empty() { continue; }
+                    if handle_command(parse_command(part), &mut session, source_file, &display) {
+                        break 'repl;
                     }
-                    Cmd::PrintFile => {
-                        let trimmed = source.trim_end();
-                        if !trimmed.is_empty() { display.file(trimmed); }
-                    }
-                    Cmd::Type(name) => {
-                        let live_tc: Option<&Complex> =
-                            if engine.as_ref().map(|e| e.type_name()) == Some(name.as_str()) {
-                                engine.as_ref().map(|e| e.type_complex())
-                            } else {
-                                None
-                            };
-                        dispatch_print_type(&store, &canonical_path, &name, live_tc, &display);
-                    }
-                    Cmd::Homology(name) => {
-                        dispatch_homology(&store, &canonical_path, &name, &display);
-                    }
-                    Cmd::Stop => {
-                        if fill.take().is_some() {
-                            display.meta("Fill abandoned");
-                        } else {
-                            engine = None;
-                            display.meta("Session stopped");
-                        }
-                    }
-                    Cmd::Backward(arg) => {
-                        if engine.is_some() {
-                            let on = engine.as_ref().unwrap().backward();
-                            display.meta(&format!("Backward mode {}", if on { "on" } else { "off" }));
-                        } else {
-                            match arg {
-                                Some(on) => {
-                                    backward = on;
-                                    display.meta(&format!("Backward mode {}", if on { "on" } else { "off" }));
-                                }
-                                None => {
-                                    display.meta(&format!("Backward mode {}", if backward { "on" } else { "off" }));
-                                }
-                            }
-                        }
-                    }
-                    Cmd::Help => print_help(&display),
-                    Cmd::Quit => break 'repl,
-
-                    Cmd::Start(type_arg, source_arg, target_arg) => {
-                        if engine.is_some() || fill.is_some() {
-                            display.error("Session already active — use 'stop' first");
-                        } else {
-                            try_start_session(
-                                &store, &canonical_path,
-                                &type_arg, &source_arg, target_arg.as_deref(),
-                                backward, &display, &mut engine,
-                            );
-                        }
-                    }
-                    Cmd::Resume(type_arg, proof_arg, target_arg) => {
-                        if engine.is_some() || fill.is_some() {
-                            display.error("Session already active — use 'stop' first");
-                        } else {
-                            try_resume_session(
-                                &store, &canonical_path,
-                                &type_arg, &proof_arg, target_arg.as_deref(),
-                                backward, &display, &mut engine,
-                            );
-                        }
-                    }
-
-                    Cmd::Save(path) => {
-                        // `save` commits the running source to disk; `store` and
-                        // `done` edit that running source during a session.
-                        let body = format!("{}\n", source.trim_end());
-                        match std::fs::write(&path, &body) {
-                            Ok(()) => display.meta(&format!("Saved to '{}'", path)),
-                            Err(e) => display.error(&format!("Cannot write '{}': {}", path, e)),
-                        }
-                    }
-
-                    // ── Hole-filling ─────────────────────────────────
-                    Cmd::Holes => dispatch_holes(&store, &canonical_path, &display),
-                    Cmd::Fill(n) => {
-                        if engine.is_some() || fill.is_some() {
-                            display.error("Session already active — use 'stop' first");
-                        } else {
-                            match start_fill(&store, &canonical_path, &canonical_path, n, backward) {
-                                Ok((ctx, session)) => {
-                                    announce_fill(&ctx, &session, &display);
-                                    fill = Some((ctx, session));
-                                }
-                                Err(e) => display.error(&e),
-                            }
-                        }
-                    }
-                    Cmd::Done => match fill.as_ref() {
-                        None => display.error("No active fill — use 'fill <n>'"),
-                        Some((ctx, session)) => match session.filler() {
-                            Err(e) => display.error(&e),
-                            Ok(filler) => {
-                                // Compose the report before finalising swaps the store out.
-                                let message = filled_report(&store, ctx, &filler);
-                                match finalize(&store, ctx, &filler, &canonical_path, &source) {
-                                    Ok((new_store, new_source)) => {
-                                        store = new_store;
-                                        source = new_source;
-                                        fill = None;
-                                        display.meta(&message);
-                                    }
-                                    Err(e) => display.error(&e),
-                                }
-                            }
-                        },
-                    },
-
-                    // ── Always dispatch errors regardless of engine state ──
-                    Cmd::Unknown(s) => display.error(&format!("Unrecognised command '{}' — type 'help' for a list", s)),
-                    Cmd::UsageError(usage) => display.error(&format!("Usage: {}", usage)),
-
-                    // ── Session commands routed to the active fill ───
-                    Cmd::Store(name) if fill.is_some() => {
-                        match &mut fill.as_mut().unwrap().1 {
-                            FillSession::Rewrite(e) => store_proof(e, &name, &mut store, &mut source, &display),
-                            FillSession::ZeroCell(_) => display.error("Nothing to store in a 0-cell fill"),
-                        }
-                    }
-                    cmd if fill.is_some() => {
-                        let (_, session) = fill.as_mut().unwrap();
-                        dispatch_fill_cmd(session, cmd, &display);
-                    }
-
-                    // ── Session commands (require engine) ────────────
-                    cmd => match engine.as_mut() {
-                        None => {
-                            display.error("No active session — use 'start <type> <source> [<target>]'");
-                        }
-                        Some(e) => {
-                            match cmd {
-                                Cmd::Store(name) => store_proof(e, &name, &mut store, &mut source, &display),
-                                cmd => dispatch_engine_cmd(e, cmd, &display),
-                            }
-                        }
-                    },
                 }
-                } // end for part in line.split(';')
             }
         }
     }
@@ -346,7 +157,158 @@ pub fn run_repl(
     Ok(())
 }
 
-// ── Internal helpers ──────────────────────────────────────────────────────────
+// ── Command handling ────────────────────────────────────────────────────────────
+
+/// Which renderer turns the resulting [`ResponseData`] into a transcript line.
+///
+/// Mirrors the web front-end's `renderCommandResult` switch: most commands show
+/// the rewrite state; a few have a bespoke list/summary; message-only commands
+/// (`stop`/`done`/`save`/`backward`) echo the canonical `data.message`.
+enum Render {
+    State,
+    Auto,
+    Rules,
+    History,
+    Proof,
+    Store,
+    Holes,
+    Message,
+}
+
+/// Perform one parsed command.  Returns `true` when the REPL should quit.
+fn handle_command(cmd: Cmd, session: &mut Session, source_file: &str, display: &Display) -> bool {
+    match cmd {
+        Cmd::Quit => return true,
+        Cmd::Help => print_help(display),
+
+        // ── Front-end-only commands ───────────────────────────────────────
+        Cmd::PrintFile => {
+            let src = session.source().trim_end();
+            if !src.is_empty() { display.file(src); }
+        }
+        Cmd::Status => {
+            if session.session_active() {
+                let data = session.state();
+                show(display, render_session_state(display, &data));
+            } else {
+                display.meta(&format!("Module: {}", source_file));
+            }
+        }
+
+        // ── Read-only queries, served straight from the loaded store ──────
+        Cmd::Types => {
+            let types = build_types_from_store(session.store(), session.root_path());
+            show(display, render_types(display, &types));
+        }
+        Cmd::Type(name) => {
+            match build_type_detail_from_store(session.store(), session.root_path(), &name) {
+                Ok(detail) => show(display, render_type_detail(display, &detail)),
+                Err(e) => display.error(&e),
+            }
+        }
+        Cmd::Homology(name) => match resolve_type(session.store(), session.root_path(), &name) {
+            Ok(tc) => show(display, render_homology(display, &compute_homology(&tc))),
+            Err(e) => display.error(&e),
+        },
+
+        // ── Diagnostics ───────────────────────────────────────────────────
+        Cmd::Unknown(s) => display.error(&format!("Unrecognised command '{}' — type 'help' for a list", s)),
+        Cmd::UsageError(usage) => display.error(&format!("Usage: {}", usage)),
+
+        // ── Parallel reports its mode line, setting it first when given an arg ──
+        Cmd::Parallel(set) => {
+            if let Some(on) = set {
+                match session.apply(Request::Parallel { on }) {
+                    Ok(data) => display.meta(&format!("parallel mode: {}", if data.parallel { "on" } else { "off" })),
+                    Err(e) => display.error(&e),
+                }
+            } else if session.session_active() {
+                let d = session.state();
+                display.meta(&format!("parallel mode: {}", if d.parallel { "on" } else { "off" }));
+            } else {
+                display.error("No active session");
+            }
+        }
+
+        // ── Everything else routes through the shared Session ─────────────
+        other => {
+            let (req, render) = to_request(other, session);
+            dispatch_request(session, req, render, display);
+        }
+    }
+    false
+}
+
+/// Map a session-bearing [`Cmd`] to its [`Request`] and the renderer for the
+/// reply.  `session.backward()` seeds `start`/`resume`/`fill` with the idle
+/// backward-mode flag.
+fn to_request(cmd: Cmd, session: &Session) -> (Request, Render) {
+    let backward = session.backward();
+    match cmd {
+        Cmd::Start(t, s, g) => (Request::Start {
+            source_file: session.root_path().to_owned(),
+            type_name: t, initial: s, target: g, backward,
+        }, Render::State),
+        Cmd::Resume(t, p, g) => (Request::Resume {
+            source_file: session.root_path().to_owned(),
+            type_name: t, proof: p, target: g, backward,
+        }, Render::State),
+        Cmd::Holes => (Request::Holes, Render::Holes),
+        Cmd::Fill(n) => (Request::Fill { index: n, backward }, Render::State),
+        Cmd::Done => (Request::Done, Render::Message),
+        Cmd::Apply(v) if v.len() == 1 => (Request::Step { choice: v[0] }, Render::State),
+        Cmd::Apply(v) => (Request::StepMulti { choices: v }, Render::State),
+        Cmd::Auto(n) => (Request::Auto { max_steps: n }, Render::Auto),
+        Cmd::Random(n) => (Request::Random { max_steps: n }, Render::Auto),
+        Cmd::Undo(None) => (Request::Undo, Render::State),
+        Cmd::Undo(Some(s)) => (Request::UndoTo { step: s }, Render::State),
+        Cmd::UndoAll | Cmd::Restart => (Request::UndoTo { step: 0 }, Render::State),
+        Cmd::Redo(None) => (Request::Redo, Render::State),
+        Cmd::Redo(Some(s)) => (Request::RedoTo { step: s }, Render::State),
+        Cmd::Stop => (Request::Stop, Render::Message),
+        Cmd::Rules => (Request::ListRules, Render::Rules),
+        Cmd::History => (Request::History, Render::History),
+        Cmd::Proof => (Request::Proof, Render::Proof),
+        Cmd::Store(name) => (Request::Store { name }, Render::Store),
+        Cmd::Save(path) => (Request::Save { path: Some(path) }, Render::Message),
+        Cmd::Backward(on) => (Request::Backward { on }, Render::Message),
+        // The variants above are routed before `to_request`; all front-end and
+        // query commands are handled in `handle_command`.
+        _ => unreachable!("non-session command reached to_request"),
+    }
+}
+
+/// Apply a request to the session and render (or report) the reply.
+fn dispatch_request(session: &mut Session, req: Request, render: Render, display: &Display) {
+    match session.apply(req) {
+        Err(e) => display.error(&e),
+        Ok(data) => match render {
+            Render::Message => if let Some(m) = &data.message { display.meta(m); },
+            Render::State => show(display, render_session_state(display, &data)),
+            Render::Auto => show(display, render_auto(display, &data)),
+            Render::Rules => show(display, render_rules(display, &data.rules)),
+            Render::History => show(display, render_history(display, &data)),
+            Render::Proof => show(display, render_proof(display, &data)),
+            Render::Store => show(display, render_store(display, &data)),
+            Render::Holes => show(display, render_holes(display, &data.holes)),
+        },
+    }
+}
+
+/// Render a rewrite state, picking the 0-cell fill view when one is active.
+fn render_session_state(display: &Display, data: &ResponseData) -> String {
+    match &data.zero_cell {
+        Some(zc) => render_zero_cell(display, zc),
+        None => render_state(display, data),
+    }
+}
+
+/// Print a rendered (possibly multi-line, already-coloured) transcript block.
+fn show(display: &Display, block: String) {
+    display.inspect_rich(&block);
+}
+
+// ── Editor ──────────────────────────────────────────────────────────────────────
 
 /// Build the readline editor with a coloured prompt.
 ///
@@ -358,559 +320,6 @@ fn make_editor(emacs_mode: bool, display: &Display) -> ReplEditor {
     rl.set_edit_mode(if emacs_mode { EditMode::Emacs } else { EditMode::Vi });
     rl.set_helper(Some(ReplHelper { prompt: display.acc("❯ ") }));
     rl
-}
-
-/// Resolve type, source, and optional target, then create the engine.
-///
-/// `canonical_path` is the store's module key (from [`load_file_context`]); the
-/// engine uses it for in-store lookups such as `store`/`register_proof`.
-#[allow(clippy::too_many_arguments)]
-fn try_start_session(
-    store: &Arc<GlobalStore>,
-    canonical_path: &str,
-    type_name: &str,
-    source_name: &str,
-    target_name: Option<&str>,
-    backward: bool,
-    display: &Display,
-    engine: &mut Option<RewriteEngine>,
-) {
-    let tc = match resolve_type(store, canonical_path, type_name) {
-        Ok(tc) => tc,
-        Err(e) => { display.error(&e); return; }
-    };
-    match RewriteEngine::from_store(
-        Arc::clone(store), tc, source_name, target_name,
-        canonical_path.to_owned(), type_name.to_owned(), backward,
-    ) {
-        Ok(e) => {
-            *engine = Some(e);
-            display.meta("Started rewrite session");
-            show_state(engine.as_ref().unwrap(), display);
-        }
-        Err(e) => display.error(&e),
-    }
-}
-
-/// Resolve the type, then create a session by resuming from a proof diagram.
-///
-/// `canonical_path` is the store's module key (from [`load_file_context`]); the
-/// engine uses it for in-store lookups such as `store`/`register_proof`.
-#[allow(clippy::too_many_arguments)]
-fn try_resume_session(
-    store: &Arc<GlobalStore>,
-    canonical_path: &str,
-    type_name: &str,
-    proof_name: &str,
-    target_name: Option<&str>,
-    backward: bool,
-    display: &Display,
-    engine: &mut Option<RewriteEngine>,
-) {
-    let tc = match resolve_type(store, canonical_path, type_name) {
-        Ok(tc) => tc,
-        Err(e) => { display.error(&e); return; }
-    };
-    match RewriteEngine::resume(
-        Arc::clone(store), tc, proof_name, target_name,
-        canonical_path.to_owned(), type_name.to_owned(), backward,
-    ) {
-        Ok(e) => {
-            *engine = Some(e);
-            display.meta("Resumed rewrite session");
-            show_state(engine.as_ref().unwrap(), display);
-        }
-        Err(e) => display.error(&e),
-    }
-}
-
-/// Compute and display cellular homology of a type.
-fn dispatch_homology(store: &GlobalStore, canonical_path: &str, name: &str, display: &Display) {
-    use super::engine::resolve_type;
-    match resolve_type(store, canonical_path, name) {
-        Err(e) => display.error(&e),
-        Ok(tc) => {
-            let h = crate::analysis::homology::compute_homology(&tc);
-            if h.groups.is_empty() {
-                display.meta("  (No generators)");
-            } else {
-                for (dim, group) in &h.groups {
-                    display.meta(&format!("  H_{} = {}", dim, group));
-                    if let Some(witnesses) = h.torsion_witnesses.get(dim) {
-                        for w in witnesses {
-                            display.meta(&format!("    {}", w));
-                        }
-                    }
-                }
-                display.meta(&format!("  χ = {}", h.euler_characteristic));
-            }
-        }
-    }
-}
-
-/// List all types declared in the file.
-fn dispatch_types(store: &GlobalStore, canonical_path: &str, display: &Display) {
-    let normalized = store.normalize();
-    let Some(module) = normalized.modules.iter().find(|m| m.path == canonical_path) else {
-        display.error("Module not found");
-        return;
-    };
-    if module.types.is_empty() {
-        display.meta("  (No types found)");
-        return;
-    }
-    for ty in module.types.iter().filter(|t| !t.name.is_empty()) {
-        let total_generators: usize = ty.dims.iter().map(|d| d.cells.len()).sum();
-        let max_dim = ty.dims.iter().map(|d| d.dim).max();
-        let mut parts = Vec::new();
-        if let Some(d) = max_dim {
-            parts.push(format!("dim {}", d));
-        }
-        if total_generators > 0 {
-            parts.push(format!("{} generator{}", total_generators, if total_generators == 1 { "" } else { "s" }));
-        }
-        if !ty.diagrams.is_empty() {
-            let n = ty.diagrams.len();
-            parts.push(format!("{} diagram{}", n, if n == 1 { "" } else { "s" }));
-        }
-        if !ty.maps.is_empty() {
-            let n = ty.maps.len();
-            parts.push(format!("{} map{}", n, if n == 1 { "" } else { "s" }));
-        }
-        if parts.is_empty() {
-            display.inspect_rich(&format!("  {}", display.code(&ty.name)));
-        } else {
-            display.inspect_rich(&format!("  {} ({})", display.code(&ty.name), parts.join(", ")));
-        }
-    }
-}
-
-/// Call `print_state` with fields drawn from `engine`.
-///
-/// When the proof is complete (`target_reached`), runs `typecheck_proof` and reports
-/// any failure as an error before displaying the completion message.
-fn show_state(engine: &RewriteEngine, display: &Display) {
-    let initial_label = render_diagram(engine.initial_diagram(), engine.type_complex());
-    let goal_label = engine.target_diagram()
-        .map(|t| render_diagram(t, engine.type_complex()));
-
-    let proof_label = if engine.target_reached() {
-        // Skip the typecheck on a step-0 (identity) proof: it is the initial
-        // diagram, not a genuine (n+1)-cell, and `done` validates by re-evaluation.
-        if engine.step_count() > 0 {
-            if let Err(e) = engine.typecheck_proof() {
-                display.error(&format!("Proof typecheck failed: {}", e));
-            }
-        }
-        match engine.proof_label() {
-            Ok(pl) => Some(pl),
-            Err(e) => { display.error(&format!("Assembling proof failed: {}", e)); None }
-        }
-    } else {
-        None
-    };
-
-    let proof = match (&goal_label, &proof_label) {
-        (Some(gl), Some(pl)) => {
-            if engine.backward() {
-                Some((gl.as_str(), initial_label.as_str(), pl.as_str()))
-            } else {
-                Some((initial_label.as_str(), gl.as_str(), pl.as_str()))
-            }
-        }
-        _ => None,
-    };
-
-    print_state(
-        display,
-        engine.current_diagram(),
-        engine.target_diagram(),
-        engine.rewrites(),
-        engine.type_complex(),
-        proof,
-    );
-}
-
-/// Display generators in `complex`, optionally filtered to those at `filter_dim`.
-///
-/// Without a filter (setup phase, no source diagram yet), all generators are
-/// shown with their dimensions.  With a filter (rewriting phase), only the
-/// relevant rewrite rules are shown.
-fn dispatch_rules(complex: &Complex, store: &GlobalStore, filter_dim: Option<usize>, display: &Display) {
-    if let Some(d) = filter_dim {
-        display.meta(&format!("Rewrite rules (dim {}):", d));
-    } else {
-        display.meta("Generators:");
-    }
-    let mut any = false;
-    for (name, tag, dim) in complex.generators_iter() {
-        if let Some(d) = filter_dim
-            && dim != d { continue; }
-        any = true;
-        match store.cell_data_for_tag(complex, tag) {
-            Some(CellData::Boundary { boundary_in, boundary_out }) => {
-                let bd = format!("{} -> {}",
-                    display.code(&render_diagram(&boundary_in, complex)),
-                    display.code(&render_diagram(&boundary_out, complex)));
-                if filter_dim.is_some() {
-                    display.inspect_rich(&format!("  {} : {}", display.code(name), bd));
-                } else {
-                    display.inspect_rich(&format!("  {} (dim {}): {}", display.code(name), dim, bd));
-                }
-            }
-            Some(CellData::Zero) => display.inspect_rich(&format!("  {} (dim 0): 0-cell", display.code(name))),
-            _ => display.inspect_rich(&format!("  {} (no boundaries)", display.code(name))),
-        }
-    }
-    if !any {
-        if let Some(d) = filter_dim {
-            display.meta(&format!("  (No rewrite rules at dim {})", d));
-        } else {
-            display.meta("  (No generators)");
-        }
-    }
-}
-
-/// Returns `"generator"` or `"local definition"` for a named cell.
-fn cell_kind(complex: &Complex, name: &str) -> &'static str {
-    if complex.find_generator(name).is_some() { "generator" } else { "local definition" }
-}
-
-/// Print a named type from the module by looking it up in the normalized store.
-///
-/// Generators and maps use the standard normalized layout. Diagrams (let-bindings
-/// and locally stored proofs) are read from `live_complex` so that definitions
-/// added via `store` during this session are visible.
-fn dispatch_print_type(
-    store: &GlobalStore,
-    canonical_path: &str,
-    name: &str,
-    live_complex: Option<&Complex>,
-    display: &Display,
-) {
-    use crate::aux::Tag;
-    use std::fmt::Write as _;
-
-    let normalized = store.normalize();
-    let module = normalized.modules.iter().find(|m| m.path == canonical_path);
-    let Some(module) = module else {
-        display.error(&format!("Module '{}' not found", canonical_path));
-        return;
-    };
-    let Some(ty) = module.types.iter().find(|t| t.name == name) else {
-        display.error(&format!("Type '{}' not found in file", name));
-        return;
-    };
-
-    // Resolve the type complex: prefer the live one (includes session additions),
-    // fall back to the global store's snapshot.
-    let store_complex = (|| -> Option<&Complex> {
-        let mc = store.find_module(canonical_path)?;
-        let (tag, _) = mc.find_generator(name)?;
-        let gid = match tag { Tag::Global(gid) => *gid, _ => return None };
-        store.find_type(gid).map(|e| e.complex.as_ref())
-    })();
-    let tc: &Complex = match live_complex.or(store_complex) {
-        Some(c) => c,
-        None => { display.file(ty.to_string().trim_end()); return; }
-    };
-
-    // Build output manually so we can append `= expr` for each diagram.
-    let mut out = String::new();
-    let label = if ty.name.is_empty() { "<empty>" } else { &ty.name };
-    writeln!(out, "Type {}", label).ok();
-    if ty.dims.is_empty() {
-        writeln!(out, "  (no cells)").ok();
-    } else {
-        for dg in &ty.dims {
-            writeln!(out, "  [{}]", dg.dim).ok();
-            for cell in &dg.cells {
-                writeln!(out, "    {}", cell).ok();
-            }
-        }
-    }
-    // Iterate the live complex's diagrams so session-stored proofs appear too.
-    let mut diag_list: Vec<(&str, &crate::core::diagram::Diagram)> =
-        tc.diagrams_iter().map(|(n, d)| (n.as_str(), d)).collect();
-    diag_list.sort_by_key(|(n, _)| *n);
-    if !diag_list.is_empty() {
-        writeln!(out, "  Diagrams").ok();
-        for (diag_name, diag) in &diag_list {
-            let k = diag.top_dim().checked_sub(1);
-            let header = k.and_then(|k| {
-                let src = crate::core::diagram::Diagram::boundary(Sign::Input, k, diag).ok()?;
-                let tgt = crate::core::diagram::Diagram::boundary(Sign::Output, k, diag).ok()?;
-                Some(format!("{} : {} -> {}", diag_name, render_diagram(&src, tc), render_diagram(&tgt, tc)))
-            }).unwrap_or_else(|| diag_name.to_string());
-            let expr = crate::output::render_diagram(diag, tc);
-            writeln!(out, "    {}", header).ok();
-            writeln!(out, "      = {}", expr).ok();
-        }
-    }
-    if !ty.maps.is_empty() {
-        writeln!(out, "  Maps").ok();
-        for map in &ty.maps {
-            writeln!(out, "    {}", map).ok();
-        }
-    }
-
-    display.file(out.trim_end());
-}
-
-/// Print a named cell from the type complex.
-///
-/// - **Generator** (`name : src -> tgt`): labelled `generator`, shows boundary.
-/// - **Let binding** (`let name = expr`): labelled `let`, shows boundary and `= definition`.
-/// - **Neither**: reports an error.
-fn dispatch_print_cell(complex: &Complex, name: &str, display: &Display) {
-    // Generators are in the generators table and have cell data.
-    if let Some((_, dim)) = complex.find_generator(name) {
-        display.inspect_rich(&format!("{} (dim {}, {})", display.code(name), dim, cell_kind(complex, name)));
-        if dim > 0
-            && let Some(diag) = complex.find_diagram(name) {
-            print_diagram_with_boundary(diag, complex, display);
-        }
-        return;
-    }
-
-    // Let bindings are in the diagrams table but not the generators table.
-    if let Some(diag) = complex.find_diagram(name) {
-        let dim = diag.top_dim();
-        display.inspect_rich(&format!("{} (dim {}, {})", display.code(name), dim, cell_kind(complex, name)));
-        if dim > 0 {
-            print_diagram_with_boundary(diag, complex, display);
-        }
-        display.inspect_rich(&format!("  = {}", display.code(&crate::output::render_diagram(diag, complex))));
-        return;
-    }
-
-    display.error(&format!("'{}' not found in type", name));
-}
-
-fn print_diagram_with_boundary(diag: &crate::core::diagram::Diagram, complex: &Complex, display: &Display) {
-    let d = diag.top_dim();
-    let k = d - 1;
-    match (
-        crate::core::diagram::Diagram::boundary(Sign::Input, k, diag),
-        crate::core::diagram::Diagram::boundary(Sign::Output, k, diag),
-    ) {
-        (Ok(src), Ok(tgt)) => display.inspect_rich(&format!(
-            "  : {} -> {}",
-            display.code(&render_diagram(&src, complex)),
-            display.code(&render_diagram(&tgt, complex)),
-        )),
-        _ => display.inspect_rich("  (Boundary extraction failed)"),
-    }
-}
-
-/// Dispatch all commands that require an active engine.
-// ── Hole-filling ────────────────────────────────────────────────────────────
-
-/// List the open holes of maps in the current module, numbered for `fill`.
-fn dispatch_holes(store: &GlobalStore, canonical_path: &str, display: &Display) {
-    let holes = list_open_holes(store, canonical_path);
-    if holes.is_empty() {
-        display.meta("No open holes");
-        return;
-    }
-    display.meta("Open holes:");
-    for h in &holes {
-        display.inspect_rich(&format!("  {} @{} {} :: {}",
-            display.acc(&format!("({})", h.index)), h.type_name, h.map_name, h.domain_name));
-        display.inspect_rich(&format!("      {}", display.code(&h.boundary)));
-    }
-}
-
-/// Announce a freshly started fill: the boundaries to bridge (rewrite) or the
-/// candidate 0-cells to choose from (boundaryless).
-fn announce_fill(ctx: &FillContext, session: &FillSession, display: &Display) {
-    display.meta(&format!("Filling {}", ctx.boundary));
-    show_fill_state(ctx, session, display);
-}
-
-/// Report the state of an active fill (delegating to the engine for rewrites).
-fn show_fill_state(_ctx: &FillContext, session: &FillSession, display: &Display) {
-    match session {
-        FillSession::Rewrite(e) => show_state(e, display),
-        FillSession::ZeroCell(zc) => show_zero_cell_state(zc, display),
-    }
-}
-
-/// Render a 0-cell fill like a session: the candidates while unchosen, or the
-/// chosen cell with a target-reached banner once picked (`undo` to re-choose).
-fn show_zero_cell_state(zc: &ZeroCellFill, display: &Display) {
-    match zc.chosen_name() {
-        Some(name) => {
-            display.inspect_rich(&format!("current   {}", display.code(name)));
-            display.blank();
-            display.inspect_rich(&display.ok("✓ Target reached"));
-        }
-        None => {
-            display.inspect_rich("Choose a 0-cell:");
-            for (i, (_, name)) in zc.choices.iter().enumerate() {
-                display.inspect_rich(&format!("  {} {}", display.acc(&format!("({i})")), display.code(name)));
-            }
-        }
-    }
-}
-
-/// Route an in-session command to the active fill.
-fn dispatch_fill_cmd(session: &mut FillSession, cmd: Cmd, display: &Display) {
-    match session {
-        FillSession::Rewrite(e) => dispatch_engine_cmd(e, cmd, display),
-        FillSession::ZeroCell(zc) => match cmd {
-            Cmd::Apply(ref v) => match zc.choose(v[0]) {
-                Ok(()) => {
-                    display.meta(&format!("Chose {}", zc.chosen_name().unwrap_or("?")));
-                    show_zero_cell_state(zc, display);
-                }
-                Err(e) => display.error(&e),
-            },
-            Cmd::Undo(_) | Cmd::UndoAll | Cmd::Restart => match zc.undo() {
-                Ok(()) => show_zero_cell_state(zc, display),
-                Err(e) => display.error(&e),
-            },
-            Cmd::Redo(_) => match zc.redo() {
-                Ok(()) => show_zero_cell_state(zc, display),
-                Err(e) => display.error(&e),
-            },
-            Cmd::Rules => show_zero_cell_state(zc, display),
-            Cmd::Help => print_help(display),
-            _ => display.error("In a 0-cell fill use 'apply <n>', 'undo', 'redo', or 'done'"),
-        },
-    }
-}
-
-fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) {
-    match cmd {
-        Cmd::Apply(ref choices) => {
-            let result = if choices.len() == 1 {
-                engine.step(choices[0])
-            } else {
-                if !engine.parallel() {
-                    Err("multi-apply requires parallel mode".to_string())
-                } else {
-                    engine.step_multi(choices)
-                }
-            };
-            match result {
-                Ok(rule) => {
-                    display.meta(&format!("Applied {}", rule));
-                    show_state(engine, display);
-                }
-                Err(e) => display.error(&e),
-            }
-        }
-        Cmd::Auto(n) => {
-            match engine.auto(n) {
-                Ok((applied, stop_reason)) => {
-                    let tail = stop_reason.map(|r| format!(" ({})", r)).unwrap_or_default();
-                    display.meta(&format!(
-                        "Applied {} step{}{}",
-                        applied, if applied == 1 { "" } else { "s" }, tail,
-                    ));
-                    show_state(engine, display);
-                }
-                Err(e) => display.error(&e),
-            }
-        }
-        Cmd::Random(n) => {
-            match engine.random(n) {
-                Ok((applied, stop_reason)) => {
-                    let tail = stop_reason.map(|r| format!(" ({})", r)).unwrap_or_default();
-                    display.meta(&format!(
-                        "Applied {} step{}{}",
-                        applied, if applied == 1 { "" } else { "s" }, tail,
-                    ));
-                    show_state(engine, display);
-                }
-                Err(e) => display.error(&e),
-            }
-        }
-        Cmd::Undo(None) => {
-            match engine.undo() {
-                Ok(()) => show_state(engine, display),
-                Err(e) => display.error(&e),
-            }
-        }
-        Cmd::Undo(Some(target)) => {
-            match engine.undo_to(target) {
-                Ok(()) => show_state(engine, display),
-                Err(e) => display.error(&e),
-            }
-        }
-        Cmd::UndoAll | Cmd::Restart => {
-            match engine.undo_all() {
-                Ok(()) => {
-                    display.meta("Reset to source");
-                    show_state(engine, display);
-                }
-                Err(e) => display.error(&e),
-            }
-        }
-        Cmd::Redo(None) => {
-            match engine.redo() {
-                Ok(()) => show_state(engine, display),
-                Err(e) => display.error(&e),
-            }
-        }
-        Cmd::Redo(Some(target)) => {
-            match engine.redo_to(target) {
-                Ok(()) => show_state(engine, display),
-                Err(e) => display.error(&e),
-            }
-        }
-        Cmd::Rules => {
-            let n = engine.current_diagram().top_dim();
-            dispatch_rules(engine.type_complex(), engine.store(), Some(n + 1), display);
-        }
-        Cmd::History => {
-            let entries: Vec<(Option<Vec<usize>>, &str)> = engine.history()
-                .map(|e| (e.choice.clone(), e.rule_name.as_str()))
-                .collect();
-            print_history(display, engine.initial_diagram(), &entries, engine.type_complex());
-        }
-        Cmd::Proof => {
-            let steps = engine.steps();
-            if steps.is_empty() {
-                display.meta("(No proof built yet)");
-            } else {
-                let n = engine.initial_diagram().top_dim();
-                let scope = engine.type_complex();
-                let ordered: Vec<_> = if engine.backward() {
-                    steps.iter().rev().collect()
-                } else {
-                    steps.iter().collect()
-                };
-                let proof_expr = ordered.iter()
-                    .map(|s| render_diagram(s, scope))
-                    .collect::<Vec<_>>()
-                    .join(&format!(" #{} ", n));
-                let (src, tgt) = if engine.backward() {
-                    (render_diagram(engine.current_diagram(), scope),
-                     render_diagram(engine.initial_diagram(), scope))
-                } else {
-                    (render_diagram(engine.initial_diagram(), scope),
-                     render_diagram(engine.current_diagram(), scope))
-                };
-                display.inspect(&format!("{} : {} -> {}", proof_expr, src, tgt));
-            }
-        }
-        Cmd::Parallel(Some(on)) => {
-            engine.set_parallel(on);
-            display.meta(&format!("Parallel mode {}", if on { "on" } else { "off" }));
-        }
-        Cmd::Parallel(None) => {
-            display.meta(&format!("Parallel mode {}", if engine.parallel() { "on" } else { "off" }));
-        }
-        Cmd::Help => print_help(display),
-        Cmd::Quit => {}   // handled by caller
-        // These are all handled before dispatch_engine_cmd is reached
-        Cmd::Stop | Cmd::Types | Cmd::PrintFile | Cmd::Type(_) | Cmd::Homology(_)
-        | Cmd::Status | Cmd::Start(..) | Cmd::Resume(..) | Cmd::Backward(_)
-        | Cmd::Store(_) | Cmd::Save(_) | Cmd::Holes | Cmd::Fill(_) | Cmd::Done
-        | Cmd::Unknown(_) | Cmd::UsageError(_) => unreachable!(),
-    }
 }
 
 fn print_help(display: &Display) {

@@ -43,7 +43,8 @@
 //! | [`protocol`] | JSON request/response types used by the daemon |
 //! | [`web`] | shared browser-facing session API used by the web frontends |
 //! | [`display`] | [`Display`](display::Display): all terminal output with optional ANSI colour |
-//! | [`render`] | `print_state`, `print_history`, `render_match_highlight` |
+//! | [`render`] | web-style `render_*` builders turning a `ResponseData` into a transcript block |
+//! | [`session`] | [`Session`](session::Session): the shared command state machine all front-ends drive |
 
 pub mod cli;
 pub mod daemon;

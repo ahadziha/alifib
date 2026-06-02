@@ -1244,7 +1244,7 @@ btnStop.addEventListener('click', () => {
   if (!sessionActive || !repl) return;
   void repl.stop_session();
   resetSession();
-  appendReplEntry('stop', '<span class="meta">Session stopped.</span>');
+  appendReplEntry('stop', '<span class="meta">Session stopped</span>');
 });
 
 async function startSession() {
@@ -1429,7 +1429,7 @@ async function runZeroCellText(raw, cmd, arg) {
   if (cmd === 'stop') {
     void repl.stop_session();
     resetSession();
-    appendReplEntry(raw, formatOk('Session stopped.'));
+    appendReplEntry(raw, formatOk('Session stopped'));
     return;
   }
   let req;
@@ -1481,7 +1481,7 @@ async function finishFill() {
     appendReplEntry('done', formatError(result));
     return;
   }
-  const message = result.data.message || 'Filled.';
+  const message = result.data.message || 'Filled';
   const newSource = result.data.source || before;
   appendReplEntry('done', formatOk(message));
   fillSession = null;
@@ -1661,6 +1661,8 @@ function buildCommand(cmd, arg, raw) {
     case 'r':        return '{"command":"list_rules"}';
     case 'history':
     case 'h':        return '{"command":"history"}';
+    case 'proof':
+    case 'p':        return '{"command":"proof"}';
     case 'types':    return '{"command":"types"}';
     case 'type':
       if (!arg) { appendReplEntry(raw, formatError('usage: type <name>')); return null; }
@@ -1679,12 +1681,12 @@ function buildCommand(cmd, arg, raw) {
       return null;
     case 'backward':
       if (sessionActive) {
-        appendReplEntry(raw, `<span class="meta">Backward mode ${chkBackward.checked ? 'on' : 'off'}.</span>`);
+        appendReplEntry(raw, `<span class="meta">Backward mode ${chkBackward.checked ? 'on' : 'off'}</span>`);
       } else {
         if (arg === 'on')       chkBackward.checked = true;
         else if (arg === 'off') chkBackward.checked = false;
         else if (arg) { appendReplEntry(raw, formatError('usage: backward [on|off]')); return null; }
-        appendReplEntry(raw, `<span class="meta">Backward mode ${chkBackward.checked ? 'on' : 'off'}.</span>`);
+        appendReplEntry(raw, `<span class="meta">Backward mode ${chkBackward.checked ? 'on' : 'off'}</span>`);
       }
       return null;
     case 'stop': {
@@ -1694,7 +1696,7 @@ function buildCommand(cmd, arg, raw) {
       }
       void repl.stop_session();
       resetSession();
-      appendReplEntry(raw, '<span class="meta">Session stopped.</span>');
+      appendReplEntry(raw, '<span class="meta">Session stopped</span>');
       return null;
     }
     case 'clear':
@@ -1744,6 +1746,7 @@ function renderCommandResult(cmd, data) {
     case 'type':           return renderTypeDetail(data.type_detail);
     case 'rules': case 'r':     return renderRules(data.rules);
     case 'history': case 'h':   return renderHistory(data.history);
+    case 'proof': case 'p':     return renderProof(data);
     case 'store':          return renderStore(data);
     case 'homology':       return renderHomology(data);
     case 'auto':           return renderAuto(data);
@@ -1854,7 +1857,7 @@ function renderHoles() {
 function renderStore(data) {
   if (!data || !data.stored) return formatError('store failed');
   const s = data.stored;
-  let out = [ok(`Stored '${esc(s.def_name)}'.`)];
+  let out = [ok(`Stored '${esc(s.def_name)}'`)];
   out.push(`  let ${hi(s.def_name)} = ${dim(s.expr)}`);
   return out.join('\n');
 }
@@ -1874,6 +1877,18 @@ function renderHistory(hist) {
   return hist.map(h =>
     `  ${dim(h.step + '.')} ${hi(h.rule_name)} ${dim(h.choice == null ? '[n/a]' : '[choice ' + h.choice.join(', ') + ']')}`
   ).join('\n');
+}
+
+// The running proof — the re-parseable expression `store` would persist, headed
+// by its boundary (mirrors the CLI's `render_proof`).
+function renderProof(data) {
+  if (!data || !data.proof_expr) return dim('(no proof yet)');
+  const out = [];
+  out.push(data.proof
+    ? sec(`proof : ${data.proof.input_label} → ${data.proof.output_label}`)
+    : sec('proof:'));
+  data.proof_expr.split('\n').forEach(line => out.push('  ' + hi(line)));
+  return out.join('\n');
 }
 
 async function updateVisInfo(data) {
@@ -2015,6 +2030,7 @@ Session commands (require active session):
   show / status       show current state
   rules (r)           list all rewrite rules
   history (h)         show move history
+  proof (p)           show the running proof diagram
   store <name>        store the current proof as a named diagram
   done                finalise the active fill, extending the map
 

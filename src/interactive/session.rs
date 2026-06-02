@@ -26,8 +26,8 @@ use super::fill::{
     FillContext, FillSession,
 };
 use super::protocol::{
-    build_list_rules_response, build_response, FillInfo, HoleInfo, Request,
-    ResponseData, ZeroCellChoice, ZeroCellInfo,
+    build_list_rules_response, build_response, AutoInfo, FillInfo, HoleInfo, Request,
+    ResponseData, StoredInfo, ZeroCellChoice, ZeroCellInfo,
 };
 
 /// How the session loads and re-evaluates source.
@@ -156,7 +156,7 @@ impl Session {
             Store { name } => self.store_proof(&name),
 
             Load { .. } | Types | TypeInfo { .. } | Cell { .. } | Homology { .. } | Shutdown =>
-                Err("not a session command".to_owned()),
+                Err("Not a session command".to_owned()),
         }
     }
 
@@ -166,7 +166,7 @@ impl Session {
         -> Result<ResponseData, String>
     {
         if self.session_active() {
-            return Err("session already active — stop it first".to_owned());
+            return Err("Session already active — stop it first".to_owned());
         }
         let tc = resolve_type(&self.store, &self.root_path, type_name)?;
         let engine = RewriteEngine::from_store(
@@ -183,7 +183,7 @@ impl Session {
         -> Result<ResponseData, String>
     {
         if self.session_active() {
-            return Err("session already active — stop it first".to_owned());
+            return Err("Session already active — stop it first".to_owned());
         }
         let tc = resolve_type(&self.store, &self.root_path, type_name)?;
         let engine = RewriteEngine::resume(
@@ -245,7 +245,7 @@ impl Session {
 
     fn begin_fill(&mut self, index: usize, backward: bool) -> Result<ResponseData, String> {
         if self.session_active() {
-            return Err("session already active — stop it first".to_owned());
+            return Err("Session already active — stop it first".to_owned());
         }
         let (ctx, session) = start_fill(&self.store, &self.root_path, &self.root_path, index, backward)?;
         let boundary = ctx.boundary.clone();
@@ -256,7 +256,7 @@ impl Session {
     }
 
     fn finalize_fill(&mut self) -> Result<ResponseData, String> {
-        let (ctx, session) = self.fill.as_ref().ok_or("no active fill — use 'fill <n>'")?;
+        let (ctx, session) = self.fill.as_ref().ok_or("No active fill — use 'fill <n>'")?;
         let filler = session.filler()?;
         let message = filled_report(&self.store, ctx, &filler);
         let new_source = edit_for_fill(&self.store, ctx, &filler, &self.source)?;
@@ -303,13 +303,13 @@ impl Session {
             return Ok(data);
         }
         let parallel = self.engine_ref().map(|e| e.parallel()).unwrap_or(false);
-        let e = self.engine_mut().ok_or("no active session — use 'start' or 'fill'")?;
+        let e = self.engine_mut().ok_or("No active session — use 'start' or 'fill'")?;
         let rule = if choices.len() == 1 {
             e.step(choices[0])
         } else if parallel {
             e.step_multi(choices)
         } else {
-            return Err("multi-apply requires parallel mode".to_owned());
+            return Err("Multi-apply requires parallel mode".to_owned());
         }?.to_owned();
         let mut data = self.snapshot();
         data.message = Some(format!("Applied {}", rule));
@@ -317,11 +317,12 @@ impl Session {
     }
 
     fn engine_auto(&mut self, n: usize, random: bool) -> Result<ResponseData, String> {
-        let e = self.engine_mut().ok_or("no active session — use 'start' or 'fill'")?;
+        let e = self.engine_mut().ok_or("No active session — use 'start' or 'fill'")?;
         let (applied, stop) = if random { e.random(n) } else { e.auto(n) }?;
         let tail = stop.map(|r| format!(" ({})", r)).unwrap_or_default();
         let msg = format!("Applied {} step{}{}", applied, if applied == 1 { "" } else { "s" }, tail);
         let mut data = self.snapshot();
+        data.auto = Some(AutoInfo { applied, stop_reason: stop.unwrap_or("").to_owned() });
         data.message = Some(msg);
         Ok(data)
     }
@@ -331,7 +332,7 @@ impl Session {
             if redo { zc.redo()?; } else { zc.undo()?; }
             return self.snapshot_active();
         }
-        let e = self.engine_mut().ok_or("no active session — use 'start' or 'fill'")?;
+        let e = self.engine_mut().ok_or("No active session — use 'start' or 'fill'")?;
         let reset = !redo && step == Some(0);
         match (redo, step) {
             (false, None) => e.undo()?,
@@ -352,14 +353,18 @@ impl Session {
     }
 
     fn engine_set_target(&mut self, name: &str) -> Result<ResponseData, String> {
-        let e = self.engine_mut().ok_or("no active session")?;
+        let e = self.engine_mut().ok_or("No active session")?;
         e.set_target(name)?;
         self.snapshot_active()
     }
 
+    /// The running proof as the re-parseable expression `store` would persist
+    /// (with its `proof` boundary in `data.proof`).  A zero-step session is the
+    /// identity proof on the initial diagram — still a proof — so `proof_expr`
+    /// is the rendered initial diagram, never `None`, for an engine session.
     fn proof_response(&self) -> Result<ResponseData, String> {
-        let mut data = self.snapshot();
-        data.proof_expr = self.engine_ref().and_then(|e| e.proof_expr());
+        let mut data = self.snapshot_active()?;
+        data.proof_expr = self.engine_ref().map(stored_expr);
         Ok(data)
     }
 
@@ -373,32 +378,22 @@ impl Session {
     fn rules_response(&self) -> Result<ResponseData, String> {
         match self.engine_ref() {
             Some(e) => Ok(build_list_rules_response(e)),
-            None => Err("no active session".to_owned()),
+            None => Err("No active session".to_owned()),
         }
     }
 
     fn store_proof(&mut self, name: &str) -> Result<ResponseData, String> {
         if matches!(&self.fill, Some((_, FillSession::ZeroCell(_)))) {
-            return Err("nothing to store in a 0-cell fill".to_owned());
+            return Err("Nothing to store in a 0-cell fill".to_owned());
         }
-        let e = self.engine_mut().ok_or("no active session")?;
-        // With no steps, store the initial diagram itself (re-rendered).
-        let expr = if e.steps().is_empty() {
-            render_diagram(e.initial_diagram(), e.type_complex())
-        } else {
-            let n = e.initial_diagram().top_dim();
-            let scope = e.type_complex();
-            let ordered: Vec<_> = if e.backward() { e.steps().iter().rev().collect() } else { e.steps().iter().collect() };
-            let mut steps = ordered.iter();
-            let first = render_diagram(steps.next().unwrap(), scope);
-            let rest: String = steps.map(|s| format!("\n#{} {}", n, render_diagram(s, scope))).collect();
-            format!("{}{}", first, rest)
-        };
+        let e = self.engine_mut().ok_or("No active session")?;
+        let expr = stored_expr(e);
         let type_name = e.type_name().to_owned();
         let (new_store, _) = e.register_proof(name)?;
         self.store = new_store;
         self.source = format!("{}\n\n@{}\nlet {} = {}\n", self.source.trim_end(), type_name, name, expr);
         let mut data = self.snapshot();
+        data.stored = Some(StoredInfo { type_name, def_name: name.to_owned(), expr });
         data.message = Some(format!("Stored '{}'", name));
         data.source = Some(self.source.clone());
         Ok(data)
@@ -430,7 +425,7 @@ impl Session {
     }
 
     fn snapshot_active(&self) -> Result<ResponseData, String> {
-        if self.session_active() { Ok(self.snapshot()) } else { Err("no active session".to_owned()) }
+        if self.session_active() { Ok(self.snapshot()) } else { Err("No active session".to_owned()) }
     }
 
     fn engine_ref(&self) -> Option<&RewriteEngine> {
@@ -482,6 +477,14 @@ impl Session {
             }
         }
     }
+}
+
+/// The expression `store` persists for the running proof, and `proof` displays:
+/// the composite of the rewrite steps, or — for a **zero-step** (identity)
+/// proof — the initial diagram itself.  A zero-step proof is still a proof, so
+/// this is always defined for an active engine session.
+fn stored_expr(e: &RewriteEngine) -> String {
+    e.proof_expr().unwrap_or_else(|| render_diagram(e.initial_diagram(), e.type_complex()))
 }
 
 fn fill_info(ctx: &FillContext) -> FillInfo {
