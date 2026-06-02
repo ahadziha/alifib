@@ -114,8 +114,8 @@ fn assign_cell(
     }
 
     // Otherwise record a pending entry: a conditional (`image` Some) or pure hole.
-    let (boundary_in, boundary_out) = transport_cell_boundaries(build, domain, &cell_data)?;
-    upsert_entry(build, tag, dim, image.cloned(), boundary_in, boundary_out);
+    let boundary = transport_cell_boundaries(build, domain, &cell_data)?;
+    upsert_entry(build, tag, dim, image.cloned(), boundary);
     Ok(())
 }
 
@@ -147,24 +147,21 @@ fn upsert_entry(
     tag: Tag,
     dim: usize,
     image: Option<Diagram>,
-    boundary_in: Option<PasteTree>,
-    boundary_out: Option<PasteTree>,
+    boundary: Option<(PasteTree, PasteTree)>,
 ) {
     if let Some(i) = build.entry_index(&tag) {
         let h = &mut build.holes[i];
         if image.is_some() {
             h.image = image;
         }
-        h.boundary_in = boundary_in;
-        h.boundary_out = boundary_out;
+        h.boundary = boundary;
     } else {
         build.holes.push(MapHole {
             meta: HoleId::fresh(),
             source: tag,
             dim,
             image,
-            boundary_in,
-            boundary_out,
+            boundary,
         });
     }
 }
@@ -237,11 +234,8 @@ fn commit_one(
         }
     };
     for h in &mut build.holes {
-        if let Some(t) = &h.boundary_in {
-            h.boundary_in = Some(t.substitute(&subst));
-        }
-        if let Some(t) = &h.boundary_out {
-            h.boundary_out = Some(t.substitute(&subst));
+        if let Some((input, output)) = &h.boundary {
+            h.boundary = Some((input.substitute(&subst), output.substitute(&subst)));
         }
     }
     Ok(())
@@ -264,18 +258,18 @@ fn cascade(build: &mut MapBuild, context: &Context, domain: &Complex) -> Result<
 }
 
 /// Transport a cell's boundaries through the build, as paste trees over
-/// committed images and metavariables.  Returns `(input, output)`.
+/// committed images and metavariables.  `None` for a 0-cell.
 fn transport_cell_boundaries(
     build: &MapBuild,
     domain: &Complex,
     cell_data: &CellData,
-) -> Result<(Option<PasteTree>, Option<PasteTree>), aux::Error> {
+) -> Result<Option<(PasteTree, PasteTree)>, aux::Error> {
     let CellData::Boundary { boundary_in, boundary_out } = cell_data else {
-        return Ok((None, None));
+        return Ok(None);
     };
     let in_tree = transport_boundary(build, domain, boundary_in)?;
     let out_tree = transport_boundary(build, domain, boundary_out)?;
-    Ok((Some(in_tree), Some(out_tree)))
+    Ok(Some((in_tree, out_tree)))
 }
 
 /// Transport one boundary diagram through the build: rewrite every leaf to the

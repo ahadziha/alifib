@@ -322,14 +322,14 @@ fn collect_chain_with_holes(
 /// resolve against `scope`, metavariables against `names`.
 fn render_hole_line(hole: &MapHole, scope: &Complex, names: &HoleNames) -> String {
     let name = names.get(&hole.meta).cloned().unwrap_or_else(|| format!("{}", hole.meta));
-    match (&hole.boundary_in, &hole.boundary_out) {
-        (Some(input), Some(output)) => format!(
+    match &hole.boundary {
+        Some((input, output)) => format!(
             "{} : {} -> {}",
             name,
             render_paste_tree_with_holes(input, scope, names),
             render_paste_tree_with_holes(output, scope, names),
         ),
-        _ => name,
+        None => name,
     }
 }
 

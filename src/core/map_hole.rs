@@ -37,12 +37,11 @@ pub struct MapHole {
     /// The known image, for a conditional assignment `x => a`; `None` for a pure
     /// hole `arr => ?`.  When a conditional's `deps` all close, it is committed.
     pub(crate) image: Option<Diagram>,
-    /// Input boundary of the image, as a paste tree whose leaves are either
-    /// concrete image tags (from the real map) or [`Tag::Hole`] metavariables.
-    /// `None` for a 0-cell, which has no boundary.
-    pub(crate) boundary_in: Option<PasteTree>,
-    /// Output boundary of the image, dual to `boundary_in`.  `None` for a 0-cell.
-    pub(crate) boundary_out: Option<PasteTree>,
+    /// The image's `(input, output)` boundaries, as paste trees whose leaves are
+    /// either concrete image tags (from the real map) or [`Tag::Hole`]
+    /// metavariables.  `None` for a 0-cell, which has no boundary — input and
+    /// output are always both present or both absent.
+    pub(crate) boundary: Option<(PasteTree, PasteTree)>,
 }
 
 impl MapHole {
@@ -50,10 +49,11 @@ impl MapHole {
     /// boundary trees.  Derived from the boundaries (their single source of
     /// truth) — a conditional whose `deps` are empty is ready to commit.
     pub(crate) fn deps(&self) -> BTreeSet<HoleId> {
-        let mut deps = self.boundary_in.as_ref().map(collect_hole_deps).unwrap_or_default();
-        if let Some(out) = &self.boundary_out {
-            deps.extend(collect_hole_deps(out));
-        }
+        let Some((input, output)) = &self.boundary else {
+            return BTreeSet::new();
+        };
+        let mut deps = collect_hole_deps(input);
+        deps.extend(collect_hole_deps(output));
         deps
     }
 }
