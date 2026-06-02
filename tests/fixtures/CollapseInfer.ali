@@ -1,0 +1,16 @@
+@Type
+
+Dom <<= {
+  a0, a1,
+  f : a0 -> a1,
+  g : a0 -> a1,
+  x : f -> g
+},
+
+A <<= { p },
+
+@A
+  (* f and g collapse to the 0-cell p, so x's input boundary F(x.in) = p has
+     dimension 0 < dim(x) - 1 = 1.  Then `x => ?` must infer `x => p` (the only
+     possible image), leaving no hole. *)
+  let H :: Dom = [ f => p, g => p, x => ? ]

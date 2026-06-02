@@ -78,6 +78,17 @@ fn assign_cell(
     let cell_data = get_cell_data(context, domain, &tag)
         .ok_or_else(|| aux::Error::new("Cannot find cell data for generator"))?;
 
+    // Collapse inference: if the image is unknown but a boundary of `x` is already
+    // mapped to a diagram of dimension below `n - 1` (a collapse), then the only
+    // possible image of the n-cell `x` is that diagram — so infer it instead of
+    // making a hole.  Any incompatibility with the other boundary is caught by the
+    // commit's boundary check.
+    if image.is_none() {
+        if let Some(d) = collapsed_boundary_image(&build.map, &cell_data, dim) {
+            return assign_cell(build, context, domain, x_diag, Some(&d));
+        }
+    }
+
     // Case 1 (sound): a whole boundary that is a single cell has its image forced.
     if let Some(a) = image {
         for sign in [DiagramSign::Input, DiagramSign::Output] {
@@ -780,6 +791,24 @@ fn boundary_of_sign(
         (CellData::Boundary { boundary_out, .. }, DiagramSign::Output) => Some(boundary_out.clone()),
         _ => None,
     }
+}
+
+/// If a boundary of an n-cell (`dim` = n) is already mapped to a diagram of
+/// dimension strictly below `n - 1` (a collapse), return that diagram — the only
+/// possible image of the cell, since a diagram whose `(n-1)`-boundary is that
+/// (lower-dimensional) diagram must equal it.  Returns `None` if neither boundary
+/// is fully mapped or neither collapses.
+fn collapsed_boundary_image(map: &PartialMap, cell_data: &CellData, dim: usize) -> Option<Diagram> {
+    for sign in [DiagramSign::Input, DiagramSign::Output] {
+        let Some(boundary) = boundary_of_sign(cell_data, sign) else { continue; };
+        if let Ok(image) = PartialMap::apply(map, boundary.as_ref()) {
+            // dim(image) < n - 1, written without underflow.
+            if image.top_dim() + 1 < dim {
+                return Some(image);
+            }
+        }
+    }
+    None
 }
 
 

@@ -279,6 +279,17 @@ fn redundant_hole_then_value_commits() {
     assert_eq!(hole_count(&file, "A", "H"), 0, "the `?` should be upgraded to `arr => f` and committed");
 }
 
+/// Collapse inference: if a boundary of a holed cell is mapped to a strictly
+/// lower-dimensional diagram, the cell's image is forced to that diagram.  Here
+/// `f, g => p` (a 0-cell), so `x => ?` infers `x => p` rather than making a hole.
+#[test]
+fn collapsed_boundary_infers_image() {
+    let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("CollapseInfer.ali"))
+        .ok()
+        .expect("CollapseInfer.ali should interpret without errors");
+    assert_eq!(hole_count(&file, "A", "H"), 0, "x => ? should infer x => p, not a hole");
+}
+
 /// Case-1 inference is parametric in the *source* cell's dimension: mapping a
 /// 2-cell `x` to a 1-cell `e` must send `x.in` to `boundary Input 1 e` (= `e`,
 /// clamped) and not to `e.in`.  A wrong (image-dimension) computation would map
