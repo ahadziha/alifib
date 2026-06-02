@@ -278,40 +278,43 @@ pub fn types(types: &[TypeSummaryInfo]) -> RichText {
     t
 }
 
-/// The full detail of a type: generators by dimension, diagrams with `= expr`,
-/// and maps (flagged `… with holes` when open).
+/// The full detail of a type: `generators:` by dimension, `diagrams:` with
+/// `= expr`, and `maps:` (flagged `… with holes`, each hole's boundary shown).
 pub fn type_detail(d: &TypeDetailInfo) -> RichText {
     let mut t = RichText::new();
-    t.line().label("Type").plain(" ").value(&d.name);
 
-    let mut last_dim: Option<usize> = None;
-    for g in &d.generators {
-        if last_dim != Some(g.dim) {
-            t.line().plain("  ").label(format!("[{}]", g.dim));
-            last_dim = Some(g.dim);
+    if !d.generators.is_empty() {
+        t.line().section("generators:");
+        let mut last_dim: Option<usize> = None;
+        for g in &d.generators {
+            if last_dim != Some(g.dim) {
+                t.line().plain("  ").label(format!("[{}]", g.dim));
+                last_dim = Some(g.dim);
+            }
+            t.line().plain("    ");
+            boundary_into(&mut t, &g.name, &g.input, &g.output);
         }
-        t.line().plain("    ");
-        boundary_into(&mut t, &g.name, &g.input, &g.output);
     }
 
     if !d.diagrams.is_empty() {
-        t.line().plain("  ").section("Diagrams");
+        t.line().section("diagrams:");
         for g in &d.diagrams {
-            t.line().plain("    ");
+            t.line().plain("  ");
             boundary_into(&mut t, &g.name, &g.input, &g.output);
-            t.line().plain("      = ").label(&g.expr);
+            t.line().plain("    = ").label(&g.expr);
         }
     }
 
     if !d.maps.is_empty() {
-        t.line().plain("  ").section("Maps");
+        t.line().section("maps:");
         for m in &d.maps {
-            t.line().plain("    ").value(&m.name).plain(" :: ").label(&m.domain);
+            t.line().plain("  ").value(&m.name).plain(" :: ").label(&m.domain);
             if !m.holes.is_empty() {
                 t.label(" with holes");
             }
             for hole in &m.holes {
-                t.line().plain("      ").src(hole);
+                t.line().plain("    ");
+                hole_into(&mut t, hole);
             }
         }
     }
@@ -326,6 +329,19 @@ fn boundary_into(t: &mut RichText, name: &str, input: &Option<DiagramInfo>, outp
             t.value(name).plain(" : ").src(&i.label).plain(" → ").tgt(&o.label);
         }
         _ => { t.value(name); }
+    }
+}
+
+/// A map hole's pre-rendered boundary (`?name : in → out`, or `?name` for a
+/// 0-cell), coloured like a diagram: name white, input amber, output cyan.  The
+/// ` : ` and ` → ` connectives are the only separators in the string.
+fn hole_into(t: &mut RichText, hole: &str) {
+    match hole.split_once(" : ") {
+        Some((name, bound)) => match bound.split_once(" → ") {
+            Some((inp, out)) => { t.value(name).plain(" : ").src(inp).plain(" → ").tgt(out); }
+            None => { t.value(name).plain(" : ").src(bound); }
+        },
+        None => { t.value(hole); }
     }
 }
 

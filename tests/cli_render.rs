@@ -105,11 +105,11 @@ fn cli_transcript_matches_web_style() {
     data.type_detail = Some(build_type_detail_from_store(s.store(), &root, "Idem").expect("type detail"));
     assert_eq!(
         styled(RenderKind::TypeDetail, &data),
-        "Type Idem\n  [0]\n    ob\n  [1]\n    id : ob → ob\n  [2]\n    idem : (id #0 id) → id\n  \
-         Diagrams\n    id : ob → ob\n      = id\n    idem : (id #0 id) → id\n      = idem\n    \
-         lhs : ob → ob\n      = (id #0 id #0 id)\n    ob\n      = ob\n    \
-         p : (id #0 id #0 id) → (id #0 id)\n      = (idem #0 id)\n    rhs : ob → ob\n      = id\n  \
-         Maps\n    Idem :: Idem"
+        "generators:\n  [0]\n    ob\n  [1]\n    id : ob → ob\n  [2]\n    idem : (id #0 id) → id\n\
+         diagrams:\n  id : ob → ob\n    = id\n  idem : (id #0 id) → id\n    = idem\n  \
+         lhs : ob → ob\n    = (id #0 id #0 id)\n  ob\n    = ob\n  \
+         p : (id #0 id #0 id) → (id #0 id)\n    = (idem #0 id)\n  rhs : ob → ob\n    = id\n\
+         maps:\n  Idem :: Idem"
     );
 
     // stop  (message-only command: canonical, capital-first, no period)
