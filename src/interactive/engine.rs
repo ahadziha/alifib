@@ -849,12 +849,12 @@ impl RewriteEngine {
     /// This is the one place where the "diagram up to now" is actually built —
     /// call it only when the assembled proof is needed (storing, typechecking,
     /// or rendering the final proof label).
-    pub fn assemble_proof(&self) -> Result<Option<Diagram>, String> {
+    pub fn assemble_proof(&self) -> Result<Diagram, String> {
         let n = self.initial_diagram.top_dim();
         let active = &self.steps[..self.active_len];
         let mut iter = active.iter();
         let Some(first) = iter.next() else {
-            return Ok(Some(self.initial_diagram.clone()));
+            return Ok(self.initial_diagram.clone());
         };
         let mut acc = first.clone();
         for step in iter {
@@ -862,7 +862,7 @@ impl RewriteEngine {
             acc = Diagram::paste(n, left, right)
                 .map_err(|e| format!("compose step failed: {}", e))?;
         }
-        Ok(Some(acc))
+        Ok(acc)
     }
 
     /// The rewrites applicable to the current diagram, precomputed after
@@ -941,20 +941,10 @@ impl RewriteEngine {
 
     /// Enable the proof cache, building the initial snapshot at the current step.
     pub fn enable_proof_cache(&mut self) -> Result<(), String> {
-        match self.assemble_proof()? {
-            Some(proof) => {
-                self.proof_cache = Some(ProofCache {
-                    snapshot: proof,
-                    at_step: self.active_len,
-                });
-            }
-            None => {
-                self.proof_cache = Some(ProofCache {
-                    snapshot: self.initial_diagram.clone(),
-                    at_step: 0,
-                });
-            }
-        }
+        self.proof_cache = Some(ProofCache {
+            snapshot: self.assemble_proof()?,
+            at_step: self.active_len,
+        });
         Ok(())
     }
 
@@ -1018,7 +1008,6 @@ impl RewriteEngine {
             acc
         } else {
             self.assemble_proof()?
-                .unwrap_or_else(|| self.initial_diagram.clone())
         };
 
         self.proof_cache = Some(ProofCache {
@@ -1043,11 +1032,9 @@ impl RewriteEngine {
     /// Builds the full proof by pasting all recorded steps and rendering the
     /// result, so the `#ₙ` chain collapses to one line — unlike
     /// [`proof_expr`](Self::proof_expr), which keeps one step per line for
-    /// storing and resuming.  Both denote the same diagram.  Returns `Ok(None)`
-    /// if no steps have been taken yet.
-    pub fn proof_label(&self) -> Result<Option<String>, String> {
-        Ok(self.assemble_proof()?
-            .map(|d| crate::output::render_diagram(&d, &self.type_complex)))
+    /// storing and resuming.  Both denote the same diagram.
+    pub fn proof_label(&self) -> Result<String, String> {
+        Ok(crate::output::render_diagram(&self.assemble_proof()?, &self.type_complex))
     }
 
     /// Typecheck the current proof diagram.
@@ -1059,10 +1046,8 @@ impl RewriteEngine {
     ///    confirms the result is isomorphic to the constructed proof.
     ///
     /// Returns `Ok(())` if both pass, `Err(message)` on any failure.
-    /// Returns `Err` immediately if no proof steps have been taken.
     pub fn typecheck_proof(&self) -> Result<(), String> {
-        let assembled = self.assemble_proof()?
-            .ok_or_else(|| "no proof steps taken yet".to_owned())?;
+        let assembled = self.assemble_proof()?;
         let diagram = &assembled;
 
         let n = self.initial_diagram.top_dim();
@@ -1118,14 +1103,9 @@ impl RewriteEngine {
     /// Returns `(updated_store, updated_type_complex)` so the caller can resync
     /// its own `Arc` references.
     pub fn register_proof(&mut self, name: &str) -> Result<(Arc<GlobalStore>, Arc<Complex>), String> {
-        let diagram = if let Some(ref cache) = self.proof_cache {
-            if cache.at_step == self.active_len {
-                cache.snapshot.clone()
-            } else {
-                self.assemble_proof()?.unwrap_or_else(|| self.initial_diagram.clone())
-            }
-        } else {
-            self.assemble_proof()?.unwrap_or_else(|| self.initial_diagram.clone())
+        let diagram = match &self.proof_cache {
+            Some(cache) if cache.at_step == self.active_len => cache.snapshot.clone(),
+            _ => self.assemble_proof()?,
         };
 
         if self.type_complex.name_in_use(name) || self.type_complex.find_generator(name).is_some() {
@@ -1317,7 +1297,7 @@ mod resume_tests {
         let labels: Vec<&str> = engine.history().map(|e| e.rule_name.as_str()).collect();
         assert_eq!(labels, vec!["alpha, alpha", "alpha"]);
 
-        let assembled = engine.assemble_proof().expect("assemble").expect("non-empty");
+        let assembled = engine.assemble_proof().expect("assemble");
         assert!(Diagram::isomorphic(&assembled, &proof), "assembled proof ≠ original");
     }
 
@@ -1358,13 +1338,13 @@ mod resume_tests {
             Some(expr.as_str()),
             "the `proof` request returns proof_expr",
         );
-        let proof1 = first.assemble_proof().unwrap().unwrap();
+        let proof1 = first.assemble_proof().unwrap();
 
         let again = RewriteEngine::resume(
             store, tc, &expr, None, path, TYPE.to_owned(), false,
         ).expect("resume from the saved proof expression");
         assert_eq!(again.step_count(), first.step_count());
-        let proof2 = again.assemble_proof().unwrap().unwrap();
+        let proof2 = again.assemble_proof().unwrap();
         assert!(Diagram::isomorphic(&proof1, &proof2), "round-tripped proof differs");
     }
 
@@ -1373,7 +1353,7 @@ mod resume_tests {
     fn backward_reassembles() {
         let (engine, proof) = resume("lhs2", Some("a"), true);
         assert_eq!(engine.step_count(), 3);
-        let assembled = engine.assemble_proof().expect("assemble").expect("non-empty");
+        let assembled = engine.assemble_proof().expect("assemble");
         assert!(Diagram::isomorphic(&assembled, &proof));
         assert!(engine.target_reached());
     }

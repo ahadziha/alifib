@@ -129,7 +129,7 @@ impl FillSession {
                 if !engine.target_reached() {
                     return Err("target not reached yet".to_owned());
                 }
-                engine.assemble_proof()?.ok_or_else(|| "no proof assembled".to_owned())
+                engine.assemble_proof()
             }
             FillSession::ZeroCell(zc) => zc.filler(),
         }
@@ -314,7 +314,14 @@ fn blocking_holes(store: &GlobalStore, list: &[HoleRef], href: &HoleRef) -> Vec<
 /// The shared "Filled ?x with <filler> : in -> out" report — the boundary is
 /// read off the *filler* (empty for a 0-cell, and correct even when the filler
 /// is a lower-dimensional/degenerate diagram).  Used by both REPLs.
-pub fn filled_message(ctx: &FillContext, filler: &Diagram, scope: &Complex) -> String {
+pub fn filled_report(store: &GlobalStore, ctx: &FillContext, filler: &Diagram) -> String {
+    match store.find_type(ctx.type_gid) {
+        Some(t) => filled_message(ctx, filler, &t.complex),
+        None => format!("Filled ?{}", ctx.source_name),
+    }
+}
+
+fn filled_message(ctx: &FillContext, filler: &Diagram, scope: &Complex) -> String {
     let expr = crate::output::render_diagram(filler, scope);
     let boundary = filler.top_dim().checked_sub(1).and_then(|k| {
         let inp = Diagram::boundary(Sign::Input, k, filler).ok()?;

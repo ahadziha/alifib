@@ -22,7 +22,7 @@ use crate::interpreter::{GlobalStore, InterpretedFile, LoadResult};
 use crate::language::error::Diagnostic;
 
 use super::engine::{RewriteEngine, resolve_type};
-use super::fill::{edit_for_fill, filled_message, list_open_holes, start_fill, FillContext, FillSession, ZeroCellFill};
+use super::fill::{edit_for_fill, filled_report, list_open_holes, start_fill, FillContext, FillSession, ZeroCellFill};
 use super::protocol::{
     FillInfo, Request, Response, build_homology_response, build_map_entries, build_map_image_strdiag,
     build_response, build_strdiag_response, build_types_from_store, build_type_detail_from_store,
@@ -560,8 +560,7 @@ impl WebRepl {
             State::Active { engine, fill: Some(_), .. } => {
                 if !engine.target_reached() { return err_json("target not reached yet"); }
                 match engine.assemble_proof() {
-                    Ok(Some(d)) => d,
-                    Ok(None) => return err_json("no proof assembled"),
+                    Ok(d) => d,
                     Err(e) => return err_json(&e),
                 }
             }
@@ -578,9 +577,7 @@ impl WebRepl {
             _ => return err_json("no active fill"),
         };
         // Compose the report (same wording as the CLI) before the store changes.
-        let message = store.find_type(ctx.type_gid)
-            .map(|t| filled_message(ctx, &filler, &t.complex))
-            .unwrap_or_else(|| format!("Filled ?{}", ctx.source_name));
+        let message = filled_report(store, ctx, &filler);
         let root_path_owned = root_path.clone();
         let new_source = match edit_for_fill(store, ctx, &filler, source) {
             Ok(s) => s,

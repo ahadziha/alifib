@@ -58,7 +58,7 @@ use crate::interpreter::GlobalStore;
 use crate::output::render_diagram;
 use super::display::Display;
 use super::engine::{RewriteEngine, load_file_context, resolve_type};
-use super::fill::{filled_message, finalize, list_open_holes, start_fill, FillContext, FillSession, ZeroCellFill};
+use super::fill::{filled_report, finalize, list_open_holes, start_fill, FillContext, FillSession, ZeroCellFill};
 use super::render::{print_history, print_state};
 
 // ── Readline editor with a coloured prompt ──────────────────────────────────────
@@ -294,9 +294,7 @@ pub fn run_repl(
                             Err(e) => display.error(&e),
                             Ok(filler) => {
                                 // Compose the report before finalising swaps the store out.
-                                let message = store.find_type(ctx.type_gid)
-                                    .map(|t| filled_message(ctx, &filler, &t.complex))
-                                    .unwrap_or_else(|| format!("Filled ?{}", ctx.source_name));
+                                let message = filled_report(&store, ctx, &filler);
                                 match finalize(&store, ctx, &filler, &canonical_path, &source) {
                                     Ok((new_store, new_source)) => {
                                         store = new_store;
@@ -505,7 +503,7 @@ fn show_state(engine: &RewriteEngine, display: &Display) {
             }
         }
         match engine.proof_label() {
-            Ok(pl) => pl,
+            Ok(pl) => Some(pl),
             Err(e) => { display.error(&format!("Assembling proof failed: {}", e)); None }
         }
     } else {

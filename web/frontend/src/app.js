@@ -25,7 +25,7 @@ let proofView = false;
 let proofLayout = null;
 let proofBoundaryMap = null;
 let openHoles = [];        // open holes of the module, from the `holes` command
-let fillSession = null;    // { index, boundary, sourceName } when a fill is active
+let fillSession = null;    // { index, dim } when a fill is active
 
 // ── Theme ────────────────────────────────────────────────────────────────────
 
