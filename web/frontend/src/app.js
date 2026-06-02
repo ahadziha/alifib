@@ -1767,13 +1767,11 @@ function esc(s) {
     .replace(/>/g, '&gt;');
 }
 
-// These return HTML strings; render functions compose them and set innerHTML.
+// Span helpers for UI outside the REPL transcript (the accordion, the `parallel`
+// mode line).  Transcript rendering goes through `renderSegments` instead, which
+// maps RichText roles to the same `repl-*` classes.
 function hi(s)  { return `<span class="repl-hi">${esc(s)}</span>`; }
 function dim(s) { return `<span class="repl-dim">${esc(s)}</span>`; }
-function sec(s) { return `<span class="repl-section-title">${esc(s)}</span>`; }
-function ok(s)  { return `<span class="repl-ok">${esc(s)}</span>`; }
-function src(s) { return `<span class="repl-src">${esc(s)}</span>`; }
-function tgt(s) { return `<span class="repl-tgt">${esc(s)}</span>`; }
 
 // Plain-text messages (errors, status) — no HTML, use textContent.
 function formatOk(msg)    { return { cls: 'repl-result ok',  text: msg }; }

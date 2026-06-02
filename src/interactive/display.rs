@@ -62,26 +62,6 @@ impl Display {
         }
     }
 
-    /// Print an alifib expression / inspection line in the code colour.
-    pub fn inspect(&self, text: &str) {
-        for line in text.split('\n') {
-            if self.color {
-                println!("{C_SRC}{line}{RESET}");
-            } else {
-                println!("{line}");
-            }
-        }
-    }
-
-    /// Print a cell (diagram) line in the code colour, no prefix.
-    pub fn cell(&self, text: &str) {
-        if self.color {
-            println!("{C_SRC}{text}{RESET}");
-        } else {
-            println!("{text}");
-        }
-    }
-
     /// Print an error: `error: text` in red.
     pub fn error(&self, text: &str) {
         if self.color {
@@ -102,48 +82,30 @@ impl Display {
         }
     }
 
-    /// Print an inspection line where content already contains embedded color codes.
-    ///
-    /// Like [`inspect`](Self::inspect) but does not re-wrap `text` in a colour;
-    /// the caller is responsible for any inline colouring (via the painting
-    /// helpers below).  Output is unprefixed.
+    /// Print already-styled content verbatim (it may contain embedded colour
+    /// codes from [`style`](Self::style)); splits on newlines, no prefix.
     pub fn inspect_rich(&self, text: &str) {
         for line in text.split('\n') {
             println!("{line}");
         }
     }
 
-    // ── Inline painting helpers ─────────────────────────────────────────────
-    // Return a coloured fragment (or `s` unchanged when colour is off) so
-    // callers can compose styled lines and print them via `inspect_rich`.
-    // The roles mirror the web REPL's span classes one-to-one.
+    // ── Inline painting ──────────────────────────────────────────────────────
 
+    /// Wrap `s` in `code`…reset (or return it unchanged when colour is off).
     fn paint(&self, code: &str, s: &str) -> String {
         if self.color { format!("{code}{s}{RESET}") } else { s.to_string() }
     }
 
-    /// An alifib expression in the code colour (amber).
+    /// An alifib expression in the code colour (amber) — used by the `help` text.
     pub fn code(&self, s: &str) -> String { self.paint(C_SRC, s) }
-    /// A highlighted value — a diagram, name, or count (bright text).
-    pub fn hi(&self, s: &str)  -> String { self.paint(C_HI, s) }
-    /// A label, connective, or secondary text (dim grey).
-    pub fn dim(&self, s: &str) -> String { self.paint(C_DIM, s) }
-    /// Success (green).
-    pub fn ok(&self, s: &str)  -> String { self.paint(C_OK, s) }
-    /// The input side of a rewrite (amber).
-    pub fn src(&self, s: &str) -> String { self.paint(C_SRC, s) }
-    /// The output side of a rewrite (blue).
-    pub fn tgt(&self, s: &str) -> String { self.paint(C_TGT, s) }
-    /// A section title (bold blue).
-    pub fn sec(&self, s: &str) -> String {
-        if self.color { format!("{BOLD}{C_TGT}{s}{RESET}") } else { s.to_string() }
-    }
     /// The input prompt marker (violet).
     pub fn acc(&self, s: &str) -> String { self.paint(C_PROMPT, s) }
 
     /// Style a [`RichText`] to a terminal string: each segment painted by its
     /// role, lines joined by newlines.  This is the CLI half of the shared
-    /// renderer — the web styles the same `RichText` with CSS spans.
+    /// renderer — the web styles the same `RichText` with CSS spans — so the
+    /// role→colour table lives here and nowhere else.
     pub fn style(&self, rt: &RichText) -> String {
         rt.lines.iter()
             .map(|line| line.iter().map(|seg| self.style_segment(seg)).collect::<String>())
@@ -154,14 +116,14 @@ impl Display {
     fn style_segment(&self, seg: &Segment) -> String {
         match seg.role {
             Role::Plain => seg.text.clone(),
-            Role::Label => self.dim(&seg.text),
-            Role::Value => self.hi(&seg.text),
-            Role::Src => self.src(&seg.text),
-            Role::Tgt => self.tgt(&seg.text),
-            Role::Section => self.sec(&seg.text),
-            Role::Ok => self.ok(&seg.text),
-            // The matched redex: bold amber when coloured, else `[bracketed]` so
-            // it stays legible in plain text.
+            Role::Label => self.paint(C_DIM, &seg.text),
+            Role::Value => self.paint(C_HI, &seg.text),
+            Role::Src => self.paint(C_SRC, &seg.text),
+            Role::Tgt => self.paint(C_TGT, &seg.text),
+            Role::Ok => self.paint(C_OK, &seg.text),
+            // Section titles are bold; the matched redex is bold amber when
+            // coloured, else `[bracketed]` so it stays legible in plain text.
+            Role::Section => if self.color { format!("{BOLD}{C_TGT}{}{RESET}", seg.text) } else { seg.text.clone() },
             Role::Redex => if self.color { self.paint(C_REDEX, &seg.text) } else { format!("[{}]", seg.text) },
         }
     }

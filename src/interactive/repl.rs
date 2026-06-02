@@ -1,15 +1,17 @@
 //! In-process interactive REPL for rewrite sessions.
 //!
 //! The REPL is a thin adapter over the shared [`Session`]: it parses a line into
-//! a [`Request`], calls [`Session::apply`], and renders the resulting
-//! [`ResponseData`] in the web front-end's textual style (see [`super::render`]).
-//! All command semantics, state transitions, and canonical messages therefore
-//! live in `Session`, shared verbatim with the stdio daemon and the web REPL —
-//! a new command lands on all three at once.
+//! a [`Request`], calls [`Session::apply`], turns the resulting [`ResponseData`]
+//! into a [`RichText`](super::richtext::RichText) via
+//! [`render_response`](super::richtext::render_response), and styles it to the
+//! terminal with [`Display::style`].  Command semantics, state transitions, and
+//! canonical messages live in `Session`; the *layout* lives in `richtext` — both
+//! shared verbatim with the stdio daemon and the web REPL, so a new command, and
+//! any change to how it reads, lands on all three at once.
 //!
 //! The only genuinely CLI-local concerns are the read-only queries served
 //! straight from the loaded store (`types`/`type`/`homology`), the front-end
-//! commands (`print`/`help`/`status`/`quit`), and the final byte-rendering via
+//! commands (`print`/`help`/`status`/`quit`), and the final styling via
 //! [`Display`].  Readline (vi or emacs mode) is provided by `rustyline`.
 //!
 //! # Commands

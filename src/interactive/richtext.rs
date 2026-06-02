@@ -59,13 +59,13 @@ pub struct RichText {
 }
 
 impl RichText {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self::default()
     }
 
     /// Begin a new (empty) line; subsequent pushes append to it.  An empty line
     /// is a blank transcript row.
-    pub fn line(&mut self) -> &mut Self {
+    fn line(&mut self) -> &mut Self {
         self.lines.push(Vec::new());
         self
     }
@@ -88,13 +88,13 @@ impl RichText {
         self
     }
 
-    pub fn plain(&mut self, t: impl AsRef<str>) -> &mut Self { self.push(Role::Plain, t) }
-    pub fn label(&mut self, t: impl AsRef<str>) -> &mut Self { self.push(Role::Label, t) }
-    pub fn value(&mut self, t: impl AsRef<str>) -> &mut Self { self.push(Role::Value, t) }
-    pub fn src(&mut self, t: impl AsRef<str>) -> &mut Self { self.push(Role::Src, t) }
-    pub fn tgt(&mut self, t: impl AsRef<str>) -> &mut Self { self.push(Role::Tgt, t) }
-    pub fn section(&mut self, t: impl AsRef<str>) -> &mut Self { self.push(Role::Section, t) }
-    pub fn ok(&mut self, t: impl AsRef<str>) -> &mut Self { self.push(Role::Ok, t) }
+    fn plain(&mut self, t: impl AsRef<str>) -> &mut Self { self.push(Role::Plain, t) }
+    fn label(&mut self, t: impl AsRef<str>) -> &mut Self { self.push(Role::Label, t) }
+    fn value(&mut self, t: impl AsRef<str>) -> &mut Self { self.push(Role::Value, t) }
+    fn src(&mut self, t: impl AsRef<str>) -> &mut Self { self.push(Role::Src, t) }
+    fn tgt(&mut self, t: impl AsRef<str>) -> &mut Self { self.push(Role::Tgt, t) }
+    fn section(&mut self, t: impl AsRef<str>) -> &mut Self { self.push(Role::Section, t) }
+    fn ok(&mut self, t: impl AsRef<str>) -> &mut Self { self.push(Role::Ok, t) }
 }
 
 // ── Dispatch ─────────────────────────────────────────────────────────────────
@@ -159,7 +159,7 @@ pub fn render_response(kind: RenderKind, data: &ResponseData) -> RichText {
 
 /// An active rewrite state: step count, current/target diagrams, and the
 /// available rewrites (each `in → out` with its bracketed match), or none.
-pub fn state(data: &ResponseData) -> RichText {
+fn state(data: &ResponseData) -> RichText {
     let mut t = RichText::new();
     t.line().label("step:").plain(" ").value(data.step_count.to_string());
 
@@ -198,7 +198,7 @@ pub fn state(data: &ResponseData) -> RichText {
 
 /// A boundaryless 0-cell fill: synthetic step count, a target-reached banner once
 /// a cell is chosen, and the candidate 0-cells while unchosen.
-pub fn zero_cell(zc: &ZeroCellInfo) -> RichText {
+fn zero_cell(zc: &ZeroCellInfo) -> RichText {
     let mut t = RichText::new();
     t.line().label("step:").plain(" ").value(if zc.chosen.is_some() { "1" } else { "0" });
     if zc.target_reached {
@@ -217,7 +217,7 @@ pub fn zero_cell(zc: &ZeroCellInfo) -> RichText {
 }
 
 /// An `auto`/`random` run: the summary line then the resulting state.
-pub fn auto(data: &ResponseData) -> RichText {
+fn auto(data: &ResponseData) -> RichText {
     let (applied, reason) = match &data.auto {
         Some(a) => (a.applied, if a.stop_reason.is_empty() { String::new() } else { format!(" ({})", a.stop_reason) }),
         None => (0, String::new()),
@@ -229,7 +229,7 @@ pub fn auto(data: &ResponseData) -> RichText {
 }
 
 /// The result of `store`: the confirmation and the appended `let` clause.
-pub fn store(data: &ResponseData) -> RichText {
+fn store(data: &ResponseData) -> RichText {
     let mut t = RichText::new();
     match &data.stored {
         Some(s) => {
@@ -242,7 +242,7 @@ pub fn store(data: &ResponseData) -> RichText {
 }
 
 /// The module's open holes, numbered for `fill <n>`.
-pub fn holes(holes: &[HoleInfo]) -> RichText {
+fn holes(holes: &[HoleInfo]) -> RichText {
     let mut t = RichText::new();
     if holes.is_empty() {
         t.line().label("(no open holes)");
@@ -259,7 +259,7 @@ pub fn holes(holes: &[HoleInfo]) -> RichText {
 }
 
 /// The type summaries for `types`: one line each, `name (dim …, N generators, …)`.
-pub fn types(types: &[TypeSummaryInfo]) -> RichText {
+fn types(types: &[TypeSummaryInfo]) -> RichText {
     let mut t = RichText::new();
     if types.is_empty() {
         t.line().label("  (No types found)");
@@ -281,7 +281,7 @@ pub fn types(types: &[TypeSummaryInfo]) -> RichText {
 
 /// The full detail of a type: `generators:` by dimension, `diagrams:` with
 /// `= expr`, and `maps:` (flagged `… with holes`, each hole's boundary shown).
-pub fn type_detail(d: &TypeDetailInfo) -> RichText {
+fn type_detail(d: &TypeDetailInfo) -> RichText {
     let mut t = RichText::new();
 
     if !d.generators.is_empty() {
@@ -347,7 +347,7 @@ fn hole_into(t: &mut RichText, hole: &str) {
 }
 
 /// The rewrite rules at the current dimension for `rules`.
-pub fn rules(rules: &[RuleInfo]) -> RichText {
+fn rules(rules: &[RuleInfo]) -> RichText {
     let mut t = RichText::new();
     if rules.is_empty() {
         t.line().label("(no rules)");
@@ -362,7 +362,7 @@ pub fn rules(rules: &[RuleInfo]) -> RichText {
 /// The running proof for `proof`: the re-parseable expression `store` would
 /// persist, headed by its boundary.  A zero-step session is the identity proof on
 /// the initial diagram, so this is non-empty for any engine session.
-pub fn proof(data: &ResponseData) -> RichText {
+fn proof(data: &ResponseData) -> RichText {
     let mut t = RichText::new();
     let Some(expr) = &data.proof_expr else {
         t.line().label("(no proof yet)");
@@ -379,7 +379,7 @@ pub fn proof(data: &ResponseData) -> RichText {
 }
 
 /// The move history for `history`.
-pub fn history(data: &ResponseData) -> RichText {
+fn history(data: &ResponseData) -> RichText {
     let mut t = RichText::new();
     if data.history.is_empty() {
         t.line().label("(no moves yet)");
@@ -396,7 +396,7 @@ pub fn history(data: &ResponseData) -> RichText {
 }
 
 /// The cellular homology of a type: `H_d = …` lines and `χ = …`.
-pub fn homology(h: &HomologyInfo) -> RichText {
+fn homology(h: &HomologyInfo) -> RichText {
     let mut t = RichText::new();
     if h.groups.is_empty() {
         t.line().label("(no generators)");
