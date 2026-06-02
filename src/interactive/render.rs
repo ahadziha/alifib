@@ -17,7 +17,9 @@ use crate::core::complex::Complex;
 use crate::core::diagram::{Diagram, Sign};
 use crate::core::paste_tree::PasteTree;
 use super::display::Display;
-use super::protocol::{HoleInfo, ResponseData, RuleInfo, ZeroCellInfo};
+use super::protocol::{
+    HoleInfo, ResponseData, RuleInfo, TypeDetailInfo, TypeSummaryInfo, ZeroCellInfo,
+};
 
 // ── Pure string builders ──────────────────────────────────────────────────────
 
@@ -186,6 +188,87 @@ pub fn render_holes(display: &Display, holes: &[HoleInfo]) -> String {
     }
     out.join("\n")
 }
+
+/// Render the type summaries for `types`: one line each, `name (dim …, N
+/// generators, …)`.  This keeps the CLI's own layout — shared verbatim with the
+/// web — rather than a terse summary; the boundary arrow stays `->` (as the
+/// former CLI used), the one place we diverge from the rewrite view's `→`.
+pub fn render_types(display: &Display, types: &[TypeSummaryInfo]) -> String {
+    if types.is_empty() {
+        return display.dim("  (No types found)");
+    }
+    types.iter().map(|t| {
+        let mut parts = Vec::new();
+        if let Some(d) = t.max_dim { parts.push(format!("dim {}", d)); }
+        if t.generator_count > 0 {
+            parts.push(format!("{} generator{}", t.generator_count, plural(t.generator_count)));
+        }
+        if t.diagram_count > 0 {
+            parts.push(format!("{} diagram{}", t.diagram_count, plural(t.diagram_count)));
+        }
+        if t.map_count > 0 {
+            parts.push(format!("{} map{}", t.map_count, plural(t.map_count)));
+        }
+        if parts.is_empty() {
+            format!("  {}", display.hi(&t.name))
+        } else {
+            format!("  {} {}", display.hi(&t.name), display.dim(&format!("({})", parts.join(", "))))
+        }
+    }).collect::<Vec<_>>().join("\n")
+}
+
+/// Render the full detail of a type for `type <name>`: generators grouped by
+/// dimension, named diagrams with their `= expr`, and maps (flagged `… with
+/// holes` when open).  Shared verbatim with the web; boundaries use `->`.
+pub fn render_type_detail(display: &Display, d: &TypeDetailInfo) -> String {
+    let mut out = vec![format!("{} {}", display.dim("Type"), display.hi(&d.name))];
+
+    let mut last_dim: Option<usize> = None;
+    for g in &d.generators {
+        if last_dim != Some(g.dim) {
+            out.push(format!("  {}", display.dim(&format!("[{}]", g.dim))));
+            last_dim = Some(g.dim);
+        }
+        out.push(format!("    {}", boundary_line(display, &g.name, &g.input, &g.output)));
+    }
+
+    if !d.diagrams.is_empty() {
+        out.push(format!("  {}", display.sec("Diagrams")));
+        for g in &d.diagrams {
+            out.push(format!("    {}", boundary_line(display, &g.name, &g.input, &g.output)));
+            out.push(format!("      = {}", display.dim(&g.expr)));
+        }
+    }
+
+    if !d.maps.is_empty() {
+        out.push(format!("  {}", display.sec("Maps")));
+        for m in &d.maps {
+            let holes = if m.holes.is_empty() { String::new() } else { display.dim(" with holes") };
+            out.push(format!("    {} :: {}{}", display.hi(&m.name), display.dim(&m.domain), holes));
+            for hole in &m.holes {
+                out.push(format!("      {}", display.src(hole)));
+            }
+        }
+    }
+
+    out.join("\n")
+}
+
+/// `name : in -> out` for a cell with a boundary, or just `name` for a 0-cell.
+fn boundary_line(
+    display: &Display,
+    name: &str,
+    input: &Option<super::protocol::DiagramInfo>,
+    output: &Option<super::protocol::DiagramInfo>,
+) -> String {
+    match (input, output) {
+        (Some(i), Some(o)) =>
+            format!("{} : {} -> {}", display.hi(name), display.src(&i.label), display.tgt(&o.label)),
+        _ => display.hi(name),
+    }
+}
+
+fn plural(n: usize) -> &'static str { if n == 1 { "" } else { "s" } }
 
 /// Render the rewrite rules at the current dimension for `rules`.
 pub fn render_rules(display: &Display, rules: &[RuleInfo]) -> String {

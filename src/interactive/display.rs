@@ -6,21 +6,22 @@
 use std::io::IsTerminal;
 
 // ── Colour palette ────────────────────────────────────────────────────────────
-// 24-bit truecolor matching the web REPL's dark theme, so the two front-ends
-// share one palette.  Colour is reserved for semantic roles, mirroring the web's
-// span classes: bright text for values, dim grey for labels and connectives,
-// amber for the input/redex side of a rewrite, blue for the output side and
-// section titles, green for success, red for errors, violet for the prompt.
-// Everything else stays in the default foreground.
+// Standard 16-colour ANSI, chosen as the closest analogues of the web REPL's
+// dark-theme roles, so the two front-ends read alike on any terminal.  Colour is
+// reserved for semantic roles, mirroring the web's span classes: bright white
+// for values, grey for labels and connectives, yellow for the input/redex side
+// of a rewrite, cyan for the output side and section titles, green for success,
+// red for errors, magenta for the prompt.  Everything else stays in the default
+// foreground.
 
-const C_HI:     &str = "\x1b[38;2;244;244;245m";  // --text-em:  values (diagrams, names, counts)
-const C_DIM:    &str = "\x1b[38;2;113;113;122m";  // --text-dim: labels, secondary, connectives
-const C_OK:     &str = "\x1b[38;2;74;222;128m";   // --ok:       success
-const C_ERR:    &str = "\x1b[38;2;248;113;113m";  // --err:      errors
-const C_SRC:    &str = "\x1b[38;2;251;191;36m";   // --warn:     input side / alifib code
-const C_TGT:    &str = "\x1b[38;2;95;168;211m";   // --accent2:  output side / section titles
-const C_PROMPT: &str = "\x1b[38;2;124;106;242m";  // --accent:   the input prompt marker
-const C_REDEX:  &str = "\x1b[1;38;2;251;191;36m"; // bold amber: the matched redex within a rewrite
+const C_HI:     &str = "\x1b[97m";    // bright white: values (diagrams, names, counts)
+const C_DIM:    &str = "\x1b[90m";    // bright black: labels, secondary, connectives
+const C_OK:     &str = "\x1b[32m";    // green:        success
+const C_ERR:    &str = "\x1b[31m";    // red:          errors
+const C_SRC:    &str = "\x1b[33m";    // yellow:       input side / alifib code
+const C_TGT:    &str = "\x1b[36m";    // cyan:         output side / section titles
+const C_PROMPT: &str = "\x1b[35m";    // magenta:      the input prompt marker
+const C_REDEX:  &str = "\x1b[1;33m";  // bold yellow:  the matched redex within a rewrite
 
 const BOLD: &str = "\x1b[1m";
 const RESET: &str = "\x1b[0m";

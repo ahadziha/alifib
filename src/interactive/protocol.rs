@@ -338,6 +338,7 @@ pub struct TypeSummaryInfo {
     pub max_dim: Option<usize>,
     pub generator_count: usize,
     pub diagram_count: usize,
+    pub map_count: usize,
 }
 
 /// A single generator with optional boundary, for `type_info` and `cell`.
@@ -377,6 +378,10 @@ pub struct MapEntry {
     pub name: String,
     pub domain: String,
     pub generators: Vec<MapDomainGenerator>,
+    /// Pre-rendered boundaries of the map's open holes (`?name : in -> out`),
+    /// so front-ends can show `… with holes`.  Empty for a total map.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub holes: Vec<String>,
 }
 
 /// Full detail of a type, for the `type_info` response.
@@ -552,18 +557,30 @@ pub fn build_map_entries(
     let mut entries: Vec<MapEntry> = tc.maps_iter()
         .filter(|(n, _, _)| !n.is_empty())
         .map(|(map_name, pmap, domain)| {
-            let gens = resolve_domain_complex(store, domain)
-                .map(|dc| map_domain_generators(pmap, dc))
-                .unwrap_or_default();
+            let dc = resolve_domain_complex(store, domain);
+            let gens = dc.map(|dc| map_domain_generators(pmap, dc)).unwrap_or_default();
             MapEntry {
                 name: map_name.clone(),
                 domain: domain_label(module_complex, domain),
                 generators: gens,
+                holes: map_hole_boundaries(tc, map_name, dc.unwrap_or(tc)),
             }
         })
         .collect();
     entries.sort_by(|a, b| a.name.cmp(&b.name));
     entries
+}
+
+/// The pre-rendered boundaries of a map's open holes (`?name : in -> out`), in
+/// the same `(dim, name)` order the `holes` command uses.  Empty for a total map.
+fn map_hole_boundaries(tc: &Complex, map_name: &str, domain_ref: &Complex) -> Vec<String> {
+    let Some(holes) = tc.map_holes(map_name) else { return Vec::new() };
+    let mut open: Vec<&crate::core::map_hole::MapHole> =
+        holes.iter().filter(|h| h.image.is_none()).collect();
+    open.sort_by_key(|h| (h.dim, domain_ref.find_generator_by_tag(&h.source).cloned().unwrap_or_default()));
+    open.iter()
+        .map(|h| crate::output::normalize::render_hole_boundary(h, holes, tc, domain_ref))
+        .collect()
 }
 
 /// Build the standard [`ResponseData`] snapshot from an engine.
@@ -905,6 +922,7 @@ pub fn build_types_from_store(
                         max_dim,
                         generator_count,
                         diagram_count: t.diagrams.len(),
+                        map_count: t.maps.len(),
                     }
                 })
                 .collect()

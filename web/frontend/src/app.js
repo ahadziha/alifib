@@ -1803,38 +1803,58 @@ function renderState(data) {
   return out.join('\n');
 }
 
+// `types` / `type` keep the CLI's own layout (generators by dimension with
+// boundaries, diagrams with `= expr`, maps flagged `… with holes`) — the one
+// place the REPL diverges from web-native rendering — rendered identically to
+// the CLI from the same shared data.  Boundaries use `->` (as the CLI does).
 function renderTypes(data) {
-  if (!data.types || !data.types.length) return dim('(no types)');
-  return data.types.map(t =>
-    hi(t.name) + dim(` — ${t.generator_count} gen, ${t.diagram_count} diag, dim ${t.max_dim ?? '?'}`)
-  ).join('\n');
+  if (!data.types || !data.types.length) return dim('  (No types found)');
+  return data.types.map(t => {
+    const parts = [];
+    if (t.max_dim != null) parts.push(`dim ${t.max_dim}`);
+    if (t.generator_count > 0) parts.push(`${t.generator_count} generator${plural(t.generator_count)}`);
+    if (t.diagram_count > 0) parts.push(`${t.diagram_count} diagram${plural(t.diagram_count)}`);
+    if (t.map_count > 0) parts.push(`${t.map_count} map${plural(t.map_count)}`);
+    return parts.length
+      ? `  ${hi(t.name)} ${dim(`(${parts.join(', ')})`)}`
+      : `  ${hi(t.name)}`;
+  }).join('\n');
 }
 
 function renderTypeDetail(d) {
   if (!d) return dim('(no type detail)');
-  let out = [sec(d.name)];
-  if (d.generators && d.generators.length) {
-    out.push(dim('generators:'));
-    d.generators.forEach(g => {
-      const bounds = g.input ? `  ${dim(g.input.label)} → ${dim(g.output.label)}` : '';
-      out.push(`  ${hi(g.name)} ${dim(`(dim ${g.dim})`)}${bounds}`);
-    });
+  const out = [`${dim('Type')} ${hi(d.name)}`];
+  let lastDim = null;
+  for (const g of (d.generators || [])) {
+    if (lastDim !== g.dim) { out.push(`  ${dim(`[${g.dim}]`)}`); lastDim = g.dim; }
+    out.push(`    ${boundaryLine(g)}`);
   }
   if (d.diagrams && d.diagrams.length) {
-    out.push(dim('diagrams:'));
-    d.diagrams.forEach(g => {
-      const bounds = g.input ? `${hi(g.name)} : ${dim(g.input.label)} → ${dim(g.output.label)}` : hi(g.name);
-      out.push(`  ${bounds}  = ${dim(g.expr)}`);
-    });
+    out.push(`  ${sec('Diagrams')}`);
+    for (const g of d.diagrams) {
+      out.push(`    ${boundaryLine(g)}`);
+      out.push(`      = ${dim(g.expr)}`);
+    }
   }
   if (d.maps && d.maps.length) {
-    out.push(dim('maps:'));
-    d.maps.forEach(m => {
-      out.push(`  ${hi(m.name)} :: ${dim(m.domain)}`);
-    });
+    out.push(`  ${sec('Maps')}`);
+    for (const m of d.maps) {
+      const holes = (m.holes && m.holes.length) ? dim(' with holes') : '';
+      out.push(`    ${hi(m.name)} :: ${dim(m.domain)}${holes}`);
+      for (const hole of (m.holes || [])) out.push(`      ${src(hole)}`);
+    }
   }
   return out.join('\n');
 }
+
+// `name : in -> out` for a cell with a boundary, or just `name` for a 0-cell.
+function boundaryLine(g) {
+  return (g.input && g.output)
+    ? `${hi(g.name)} : ${src(g.input.label)} -> ${tgt(g.output.label)}`
+    : hi(g.name);
+}
+
+function plural(n) { return n === 1 ? '' : 's'; }
 
 
 

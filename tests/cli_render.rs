@@ -12,9 +12,10 @@
 use std::path::PathBuf;
 
 use alifib::interactive::display::Display;
-use alifib::interactive::protocol::Request;
+use alifib::interactive::protocol::{build_type_detail_from_store, build_types_from_store, Request};
 use alifib::interactive::render::{
     render_history, render_holes, render_proof, render_rules, render_state, render_store,
+    render_type_detail, render_types,
 };
 use alifib::interactive::session::Session;
 use alifib::interactive::web::WebRepl;
@@ -93,10 +94,22 @@ fn cli_transcript_matches_web_style() {
     let data = s.apply(Request::History).expect("history");
     assert_eq!(render_history(&d, &data), "  1. idem [choice 0]");
 
-    // `types` / `type` keep the CLI's own layout (generators by dimension,
-    // diagrams with `= expr`, maps) — the deliberate exception to web-style
-    // rendering — and print straight through `Display`, so they are not pinned
-    // against the web here.
+    // types — CLI's own layout (the deliberate exception to web style), but now
+    // shared verbatim with the web and rendered from the same data.
+    let types = build_types_from_store(s.store(), &root);
+    assert_eq!(render_types(&d, &types), "  Idem (dim 2, 3 generators, 6 diagrams, 1 map)");
+
+    // type Idem — generators by dimension, diagrams with `= expr` (incl. the
+    // just-stored `p`), maps.  Boundaries use `->` here, unlike the rewrite view.
+    let detail = build_type_detail_from_store(s.store(), &root, "Idem").expect("type detail");
+    assert_eq!(
+        render_type_detail(&d, &detail),
+        "Type Idem\n  [0]\n    ob\n  [1]\n    id : ob -> ob\n  [2]\n    idem : (id #0 id) -> id\n  \
+         Diagrams\n    id : ob -> ob\n      = id\n    idem : (id #0 id) -> id\n      = idem\n    \
+         lhs : ob -> ob\n      = (id #0 id #0 id)\n    ob\n      = ob\n    \
+         p : (id #0 id #0 id) -> (id #0 id)\n      = (idem #0 id)\n    rhs : ob -> ob\n      = id\n  \
+         Maps\n    Idem :: Idem"
+    );
 
     // stop  (message-only command: canonical, capital-first, no period)
     let data = s.apply(Request::Stop).expect("stop");
@@ -128,6 +141,8 @@ fn cli_and_web_responses_are_identical() {
     let cli_proof0 = s.apply(Request::Proof).expect("cli proof at step 0");
     let cli_step = s.apply(Request::Step { choice: 0 }).expect("cli step");
     let cli_proof = s.apply(Request::Proof).expect("cli proof");
+    // `type` is served from the store (not Session::apply) on both front-ends.
+    let cli_type = build_type_detail_from_store(s.store(), &root, "Idem").expect("cli type");
 
     // Web path: load the same source, then the same two commands.
     let mut web = WebRepl::new();
@@ -141,6 +156,8 @@ fn cli_and_web_responses_are_identical() {
         serde_json::from_str(&web.run_command(r#"{"command":"step","choice":0}"#)).unwrap();
     let web_proof: serde_json::Value =
         serde_json::from_str(&web.run_command(r#"{"command":"proof"}"#)).unwrap();
+    let web_type: serde_json::Value =
+        serde_json::from_str(&web.run_command(r#"{"command":"type","name":"Idem"}"#)).unwrap();
 
     // The web wraps payloads as {"status":"ok","data":{...}}; compare `data`
     // against the CLI's serialized `ResponseData`.
@@ -152,4 +169,6 @@ fn cli_and_web_responses_are_identical() {
     assert_eq!(web_proof0["data"], cli_proof0_json, "step-0 proof responses differ");
     assert_eq!(web_step["data"], cli_step_json, "step responses differ");
     assert_eq!(web_proof["data"], cli_proof_json, "proof responses differ");
+    assert_eq!(web_type["data"]["type_detail"], serde_json::to_value(&cli_type).unwrap(),
+        "type detail differs");
 }
