@@ -1,0 +1,10 @@
+@Type
+
+D <<= { x, y, f : x -> y },
+
+A <<= { u, v, g : u -> v },
+
+@A
+  (* `x => ?` makes a hole; `f => g` infers `x => g.in` (case 1), which must
+     close ?x.  The map should end hole-less. *)
+  let H :: D = [ x => ?, f => g ]

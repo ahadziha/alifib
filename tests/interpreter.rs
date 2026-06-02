@@ -279,6 +279,17 @@ fn redundant_hole_then_value_commits() {
     assert_eq!(hole_count(&file, "A", "H"), 0, "the `?` should be upgraded to `arr => f` and committed");
 }
 
+/// An *inferred* (case-1) assignment fills holes like an explicit one:
+/// `[ x => ?, f => g ]` infers `x => g.in`, which must close `?x`, leaving the
+/// map hole-less.
+#[test]
+fn inferred_assignment_fills_hole() {
+    let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("InferFill.ali"))
+        .ok()
+        .expect("InferFill.ali should interpret without errors");
+    assert_eq!(hole_count(&file, "A", "H"), 0, "inferring x => g.in should close ?x");
+}
+
 /// Filling a face inconsistently with a conditional's stored image must fail:
 /// `x => X` forces the input boundary to be `F G`, so `g => G2` contradicts it.
 #[test]
