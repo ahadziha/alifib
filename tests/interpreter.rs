@@ -279,6 +279,19 @@ fn redundant_hole_then_value_commits() {
     assert_eq!(hole_count(&file, "A", "H"), 0, "the `?` should be upgraded to `arr => f` and committed");
 }
 
+/// Case-1 inference is parametric in the *source* cell's dimension: mapping a
+/// 2-cell `x` to a 1-cell `e` must send `x.in` to `boundary Input 1 e` (= `e`,
+/// clamped) and not to `e.in`.  A wrong (image-dimension) computation would map
+/// the 1-cell `f` to a 0-cell and fail the boundary check, so a clean total load
+/// confirms it.
+#[test]
+fn dimension_lowering_case1_is_sound() {
+    let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("DimLower.ali"))
+        .ok()
+        .expect("DimLower.ali should interpret without errors");
+    assert_eq!(hole_count(&file, "A", "H"), 0, "x => e should infer f, g, a0, a1 with no holes");
+}
+
 /// `<map> => ?` holes every constituent cell of the map's image: `Sub` picks out
 /// `a, b, p`, so `Sub => ?` makes three holes.
 #[test]

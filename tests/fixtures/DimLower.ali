@@ -1,0 +1,17 @@
+@Type
+
+Dom <<= {
+  a0, a1,
+  f : a0 -> a1,
+  g : a0 -> a1,
+  x : f -> g
+},
+
+A <<= { b0, b1, e : b0 -> b1 },
+
+@A
+  (* Dimension-lowering: the 2-cell x maps to the 1-cell e.  Case 1 must map
+     x.in = f to (boundary Input 1 e) = e (clamped, since e is 1-dimensional),
+     NOT to e.in; likewise g => e.  If it used e's dimension instead of x's, it
+     would map the 1-cell f to the 0-cell e.in and x => e would fail to typecheck. *)
+  let total H :: Dom = [ x => e ]
