@@ -91,11 +91,11 @@ impl Display {
         }
     }
 
-    /// Print file source in the code colour, no prefix.
+    /// Print file source in the dim colour (grey), no prefix.
     pub fn file(&self, text: &str) {
         for line in text.split('\n') {
             if self.color {
-                println!("{C_SRC}{line}{RESET}");
+                println!("{C_DIM}{line}{RESET}");
             } else {
                 println!("{line}");
             }
