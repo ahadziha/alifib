@@ -279,6 +279,15 @@ fn redundant_hole_then_value_commits() {
     assert_eq!(hole_count(&file, "A", "H"), 0, "the `?` should be upgraded to `arr => f` and committed");
 }
 
+/// `arr => ?` on an already-defined generator does nothing — no error, no hole.
+#[test]
+fn hole_on_defined_generator_is_noop() {
+    let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("HoleAfterValue.ali"))
+        .ok()
+        .expect("HoleAfterValue.ali should interpret without errors");
+    assert_eq!(hole_count(&file, "A", "H"), 0, "`arr => ?` after `arr => f` should add no hole");
+}
+
 /// An *inferred* (case-1) assignment fills holes like an explicit one:
 /// `[ x => ?, f => g ]` infers `x => g.in`, which must close `?x`, leaving the
 /// map hole-less.
