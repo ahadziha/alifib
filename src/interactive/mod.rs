@@ -49,6 +49,7 @@ pub mod cli;
 pub mod daemon;
 pub mod display;
 pub mod engine;
+pub mod fill;
 pub mod protocol;
 pub mod render;
 #[cfg(feature = "cli")]

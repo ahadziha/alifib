@@ -103,6 +103,22 @@ pub fn load_file_context(
     Ok((store, canonical_path, output))
 }
 
+/// Re-evaluate an edited root source (held in memory) against its canonical path,
+/// resolving dependencies from disk as usual.  Returns the fresh store on success,
+/// or the interpreter's error messages if the edit is inconsistent.
+pub fn reevaluate(canonical_path: &str, source: &str) -> Result<Arc<GlobalStore>, String> {
+    let loader = Loader::default_with_root_source(vec![], canonical_path.to_owned(), source.to_owned());
+    match crate::interpreter::InterpretedFile::load(&loader, canonical_path) {
+        crate::interpreter::LoadResult::Loaded(file) => Ok(Arc::clone(&file.state)),
+        crate::interpreter::LoadResult::InterpError { errors, .. } => {
+            Err(errors.iter().map(|e| format!("{}", e)).collect::<Vec<_>>().join("; "))
+        }
+        crate::interpreter::LoadResult::LoadError(_) => {
+            Err(format!("failed to re-read '{}'", canonical_path))
+        }
+    }
+}
+
 /// Resolve a type name to its [`Complex`] given an already-loaded store.
 ///
 /// Called by the REPL when the user types `@ <TypeName>`.
@@ -310,6 +326,30 @@ impl RewriteEngine {
         let target_diagram = target_diagram_name
             .map(|expr| eval_diagram_expr(&store, &type_complex, &source_file, expr))
             .transpose()?;
+        Self::from_diagrams(
+            store, type_complex, initial_diagram, target_diagram, source_file, type_name,
+            initial_diagram_name.to_owned(), target_diagram_name.map(str::to_owned), backward,
+        )
+    }
+
+    /// Create a fresh session from already-evaluated initial/target diagrams.
+    ///
+    /// Like [`from_store`](Self::from_store) but skips diagram-expression parsing —
+    /// used when the diagrams are known directly, as in hole-filling (where they
+    /// are the realised boundaries of the hole).  `*_name` are kept only as
+    /// display/metadata.
+    #[allow(clippy::too_many_arguments)]
+    pub fn from_diagrams(
+        store: Arc<GlobalStore>,
+        type_complex: Arc<Complex>,
+        initial_diagram: Diagram,
+        target_diagram: Option<Diagram>,
+        source_file: String,
+        type_name: String,
+        initial_diagram_name: String,
+        target_diagram_name: Option<String>,
+        backward: bool,
+    ) -> Result<Self, String> {
         if let Some(ref target) = target_diagram {
             check_parallel(&initial_diagram, target)?;
         }
@@ -332,8 +372,8 @@ impl RewriteEngine {
             proof_cache: None,
             source_file,
             type_name,
-            initial_diagram_name: initial_diagram_name.to_owned(),
-            target_diagram_name: target_diagram_name.map(str::to_owned),
+            initial_diagram_name,
+            target_diagram_name,
             store,
             type_complex,
             initial_diagram,
@@ -1219,7 +1259,10 @@ impl RewriteEngine {
             Request::Start { .. }
             | Request::Resume { .. }
             | Request::Shutdown
-            | Request::Homology { .. } => return None,
+            | Request::Homology { .. }
+            | Request::Holes
+            | Request::Fill { .. }
+            | Request::Done => return None,
         };
         Some(result)
     }

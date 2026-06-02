@@ -53,11 +53,12 @@ use rustyline::history::FileHistory;
 use rustyline::{EditMode, Editor};
 
 use crate::core::complex::Complex;
-use crate::core::diagram::{CellData, Diagram, Sign};
+use crate::core::diagram::{CellData, Sign};
 use crate::interpreter::GlobalStore;
 use crate::output::render_diagram;
 use super::display::Display;
 use super::engine::{RewriteEngine, load_file_context, resolve_type};
+use super::fill::{finalize, list_open_holes, start_fill, zero_cell_diagram, FillContext, FillSession};
 use super::render::{print_history, print_state};
 
 // ── Readline editor with a coloured prompt ──────────────────────────────────────
@@ -90,27 +91,48 @@ impl rustyline::Helper for ReplHelper {}
 
 type ReplEditor = Editor<ReplHelper, FileHistory>;
 
-// ── Public entry points ───────────────────────────────────────────────────────
+// ── Internal helpers ──────────────────────────────────────────────────────────
 
-/// Write the original file content with stored definitions appended as local blocks.
-///
-/// Each stored definition becomes `@ TypeName {\n  let name = label\n}\n`.
-fn write_updated_file(
-    source_file: &str,
-    _file_output: &str,
-    stored_defs: &[(String, String, String)],
-    path: &str,
-) -> Result<(), String> {
-    use std::fmt::Write as _;
-    let original = std::fs::read_to_string(source_file)
-        .map_err(|e| format!("cannot read '{}': {}", source_file, e))?;
-    let mut out = original.trim_end().to_owned();
-    for (type_name, def_name, label) in stored_defs {
-        write!(out, "\n\n@{}\nlet {} = {}", type_name, def_name, label)
-            .map_err(|e| e.to_string())?;
+/// Register the running proof as a named diagram and append its definition to
+/// the running source.  Shared by free sessions and rewrite fills — `store`
+/// edits the in-memory source, which `save` later commits to disk.
+fn store_proof(
+    e: &mut RewriteEngine,
+    name: &str,
+    store: &mut Arc<GlobalStore>,
+    source: &mut String,
+    display: &Display,
+) {
+    let expr = if e.steps().is_empty() {
+        // With no steps, store the initial diagram itself (re-rendered, never
+        // its name) — matching the web REPL, and safe for a fill's synthetic
+        // boundary name.
+        render_diagram(e.initial_diagram(), e.type_complex())
+    } else {
+        let n = e.initial_diagram().top_dim();
+        let scope = e.type_complex();
+        let ordered: Vec<_> = if e.backward() {
+            e.steps().iter().rev().collect()
+        } else {
+            e.steps().iter().collect()
+        };
+        let mut steps = ordered.iter();
+        let first = render_diagram(steps.next().unwrap(), scope);
+        let rest: String = steps
+            .map(|s| format!("\n#{} {}", n, render_diagram(s, scope)))
+            .collect();
+        format!("{}{}", first, rest)
+    };
+    let type_name = e.type_name().to_owned();
+    match e.register_proof(name) {
+        Ok((new_store, _)) => {
+            *store = new_store;
+            *source = format!("{}\n\n@{}\nlet {} = {}\n", source.trim_end(), type_name, name, expr);
+            display.meta(&format!("Stored '{}'", name));
+            dispatch_print_cell(e.type_complex(), name, display);
+        }
+        Err(err) => display.error(&err),
     }
-    out.push('\n');
-    std::fs::write(path, &out).map_err(|e| format!("cannot write '{}': {}", path, e))
 }
 
 /// Run the interactive REPL starting from a loaded file.
@@ -129,7 +151,7 @@ pub fn run_repl(
 ) -> Result<(), ()> {
     let display = Display::new();
 
-    let (mut store, canonical_path, file_output) = match load_file_context(source_file) {
+    let (mut store, canonical_path, _file_output) = match load_file_context(source_file) {
         Ok(r) => r,
         Err(e) => { display.error(&e); return Err(()); }
     };
@@ -138,8 +160,12 @@ pub fn run_repl(
 
     let mut rl = make_editor(emacs_mode, &display);
     let mut engine: Option<RewriteEngine> = None;
-    let mut stored_defs: Vec<(String, String, String)> = Vec::new();
+    let mut fill: Option<(FillContext, FillSession)> = None;
     let mut backward = false;
+
+    // The working copy of the source, edited in memory on `done` and written on
+    // `save`.  Re-evaluation after a fill reads this, not the disk.
+    let mut source = std::fs::read_to_string(source_file).unwrap_or_default();
 
     // Auto-start from CLI flags when type and source are given.
     if let (Some(tn), Some(src)) = (type_name, initial_diagram) {
@@ -152,7 +178,7 @@ pub fn run_repl(
     'repl: loop {
         match rl.readline("❯ ") {
             Err(ReadlineError::Eof) | Err(ReadlineError::Interrupted) => break,
-            Err(e) => { display.error(&format!("read error: {e}")); break; }
+            Err(e) => { display.error(&format!("Read error: {e}")); break; }
             Ok(line) => {
                 let line = line.trim().to_owned();
                 if line.is_empty() { continue; }
@@ -165,13 +191,14 @@ pub fn run_repl(
                     // ── Always-available commands ─────────────────────
                     Cmd::Types => dispatch_types(&store, &canonical_path, &display),
                     Cmd::Status => {
-                        match engine.as_ref() {
-                            Some(e) => show_state(e, &display),
-                            None => display.meta(&format!("module: {}", source_file)),
+                        match (fill.as_ref(), engine.as_ref()) {
+                            (Some((ctx, session)), _) => show_fill_state(ctx, session, &display),
+                            (None, Some(e)) => show_state(e, &display),
+                            (None, None) => display.meta(&format!("Module: {}", source_file)),
                         }
                     }
                     Cmd::PrintFile => {
-                        let trimmed = file_output.trim_end();
+                        let trimmed = source.trim_end();
                         if !trimmed.is_empty() { display.file(trimmed); }
                     }
                     Cmd::Type(name) => {
@@ -187,21 +214,25 @@ pub fn run_repl(
                         dispatch_homology(&store, &canonical_path, &name, &display);
                     }
                     Cmd::Stop => {
-                        engine = None;
-                        display.meta("Session stopped.");
+                        if fill.take().is_some() {
+                            display.meta("Fill abandoned");
+                        } else {
+                            engine = None;
+                            display.meta("Session stopped");
+                        }
                     }
                     Cmd::Backward(arg) => {
                         if engine.is_some() {
                             let on = engine.as_ref().unwrap().backward();
-                            display.meta(&format!("Backward mode {}.", if on { "on" } else { "off" }));
+                            display.meta(&format!("Backward mode {}", if on { "on" } else { "off" }));
                         } else {
                             match arg {
                                 Some(on) => {
                                     backward = on;
-                                    display.meta(&format!("Backward mode {}.", if on { "on" } else { "off" }));
+                                    display.meta(&format!("Backward mode {}", if on { "on" } else { "off" }));
                                 }
                                 None => {
-                                    display.meta(&format!("Backward mode {}.", if backward { "on" } else { "off" }));
+                                    display.meta(&format!("Backward mode {}", if backward { "on" } else { "off" }));
                                 }
                             }
                         }
@@ -210,8 +241,8 @@ pub fn run_repl(
                     Cmd::Quit => break 'repl,
 
                     Cmd::Start(type_arg, source_arg, target_arg) => {
-                        if engine.is_some() {
-                            display.error("session already active — use 'stop' first");
+                        if engine.is_some() || fill.is_some() {
+                            display.error("Session already active — use 'stop' first");
                         } else {
                             try_start_session(
                                 &store, &canonical_path,
@@ -221,8 +252,8 @@ pub fn run_repl(
                         }
                     }
                     Cmd::Resume(type_arg, proof_arg, target_arg) => {
-                        if engine.is_some() {
-                            display.error("session already active — use 'stop' first");
+                        if engine.is_some() || fill.is_some() {
+                            display.error("Session already active — use 'stop' first");
                         } else {
                             try_resume_session(
                                 &store, &canonical_path,
@@ -232,53 +263,80 @@ pub fn run_repl(
                         }
                     }
 
+                    Cmd::Save(path) => {
+                        // `save` commits the running source to disk; `store` and
+                        // `done` edit that running source during a session.
+                        let body = format!("{}\n", source.trim_end());
+                        match std::fs::write(&path, &body) {
+                            Ok(()) => display.meta(&format!("Saved to '{}'", path)),
+                            Err(e) => display.error(&format!("Cannot write '{}': {}", path, e)),
+                        }
+                    }
+
+                    // ── Hole-filling ─────────────────────────────────
+                    Cmd::Holes => dispatch_holes(&store, &canonical_path, &display),
+                    Cmd::Fill(n) => {
+                        if engine.is_some() || fill.is_some() {
+                            display.error("Session already active — use 'stop' first");
+                        } else {
+                            match start_fill(&store, &canonical_path, &canonical_path, n, backward) {
+                                Ok((ctx, session)) => {
+                                    announce_fill(&ctx, &session, &display);
+                                    fill = Some((ctx, session));
+                                }
+                                Err(e) => display.error(&e),
+                            }
+                        }
+                    }
+                    Cmd::Done => match fill.as_ref() {
+                        None => display.error("No active fill — use 'fill <n>'"),
+                        Some((ctx, session)) => match session.filler() {
+                            Err(e) => display.error(&e),
+                            Ok(filler) => {
+                                // Render the filler and compose the report before
+                                // finalising swaps the store out: `?x with <d> : in -> out`.
+                                let filler_str = store.find_type(ctx.type_gid)
+                                    .map(|t| render_diagram(&filler, &t.complex))
+                                    .unwrap_or_else(|| "?".to_owned());
+                                let head = format!("?{}", ctx.source_name);
+                                let tail = ctx.boundary.strip_prefix(&head).unwrap_or("").to_owned();
+                                match finalize(&store, ctx, &filler, &canonical_path, &source) {
+                                    Ok((new_store, new_source)) => {
+                                        store = new_store;
+                                        source = new_source;
+                                        fill = None;
+                                        display.meta(&format!("Filled {} with {}{}", head, filler_str, tail));
+                                    }
+                                    Err(e) => display.error(&e),
+                                }
+                            }
+                        },
+                    },
+
                     // ── Always dispatch errors regardless of engine state ──
-                    Cmd::Unknown(s) => display.error(&format!("unrecognised command '{}' — type 'help' for a list", s)),
-                    Cmd::UsageError(usage) => display.error(&format!("usage: {}", usage)),
+                    Cmd::Unknown(s) => display.error(&format!("Unrecognised command '{}' — type 'help' for a list", s)),
+                    Cmd::UsageError(usage) => display.error(&format!("Usage: {}", usage)),
+
+                    // ── Session commands routed to the active fill ───
+                    Cmd::Store(name) if fill.is_some() => {
+                        match &mut fill.as_mut().unwrap().1 {
+                            FillSession::Rewrite(e) => store_proof(e, &name, &mut store, &mut source, &display),
+                            FillSession::ZeroCell { .. } => display.error("Nothing to store in a 0-cell fill"),
+                        }
+                    }
+                    cmd if fill.is_some() => {
+                        let (_, session) = fill.as_mut().unwrap();
+                        dispatch_fill_cmd(session, cmd, &display);
+                    }
 
                     // ── Session commands (require engine) ────────────
                     cmd => match engine.as_mut() {
                         None => {
-                            display.error("no active session — use 'start <type> <source> [<target>]'");
+                            display.error("No active session — use 'start <type> <source> [<target>]'");
                         }
                         Some(e) => {
                             match cmd {
-                                Cmd::Store(name) => {
-                                    let source_expr = if e.steps().is_empty() {
-                                        Some(e.initial_diagram_name().to_owned())
-                                    } else {
-                                        let n = e.initial_diagram().top_dim();
-                                        let scope = e.type_complex();
-                                        let ordered: Vec<_> = if e.backward() {
-                                            e.steps().iter().rev().collect()
-                                        } else {
-                                            e.steps().iter().collect()
-                                        };
-                                        let mut steps = ordered.iter();
-                                        let first = render_diagram(steps.next().unwrap(), scope);
-                                        let rest: String = steps
-                                            .map(|s| format!("\n#{} {}", n, render_diagram(s, scope)))
-                                            .collect();
-                                        Some(format!("{}{}", first, rest))
-                                    };
-                                    match e.register_proof(&name) {
-                                        Ok((new_store, _new_complex)) => {
-                                            store = new_store;
-                                            display.meta(&format!("Stored '{}'.", name));
-                                            dispatch_print_cell(e.type_complex(), &name, &display);
-                                            if let Some(expr) = source_expr {
-                                                stored_defs.push((e.type_name().to_owned(), name, expr));
-                                            }
-                                        }
-                                        Err(err) => display.error(&err),
-                                    }
-                                }
-                                Cmd::Save(path) => {
-                                    match write_updated_file(source_file, &file_output, &stored_defs, &path) {
-                                        Ok(()) => display.meta(&format!("Saved to '{}'.", path)),
-                                        Err(e) => display.error(&e),
-                                    }
-                                }
+                                Cmd::Store(name) => store_proof(e, &name, &mut store, &mut source, &display),
                                 cmd => dispatch_engine_cmd(e, cmd, &display),
                             }
                         }
@@ -332,14 +390,8 @@ fn try_start_session(
     ) {
         Ok(e) => {
             *engine = Some(e);
-            display.meta("Ready.");
-            let e = engine.as_ref().unwrap();
-            show_diagram_or_name(source_name, e.initial_diagram(), e.type_complex(), display);
-            if let Some(tgt) = target_name {
-                if let Some(tgt_diag) = e.target_diagram() {
-                    show_diagram_or_name(tgt, tgt_diag, e.type_complex(), display);
-                }
-            }
+            display.meta("Started rewrite session");
+            show_state(engine.as_ref().unwrap(), display);
         }
         Err(e) => display.error(&e),
     }
@@ -370,7 +422,7 @@ fn try_resume_session(
     ) {
         Ok(e) => {
             *engine = Some(e);
-            display.meta("Ready.");
+            display.meta("Resumed rewrite session");
             show_state(engine.as_ref().unwrap(), display);
         }
         Err(e) => display.error(&e),
@@ -385,10 +437,10 @@ fn dispatch_homology(store: &GlobalStore, canonical_path: &str, name: &str, disp
         Ok(tc) => {
             let h = crate::analysis::homology::compute_homology(&tc);
             if h.groups.is_empty() {
-                display.meta("  (no generators)");
+                display.meta("  (No generators)");
             } else {
                 for (dim, group) in &h.groups {
-                    display.inspect(&format!("  H_{} = {}", dim, group));
+                    display.meta(&format!("  H_{} = {}", dim, group));
                     if let Some(witnesses) = h.torsion_witnesses.get(dim) {
                         for w in witnesses {
                             display.meta(&format!("    {}", w));
@@ -405,11 +457,11 @@ fn dispatch_homology(store: &GlobalStore, canonical_path: &str, name: &str, disp
 fn dispatch_types(store: &GlobalStore, canonical_path: &str, display: &Display) {
     let normalized = store.normalize();
     let Some(module) = normalized.modules.iter().find(|m| m.path == canonical_path) else {
-        display.error("module not found");
+        display.error("Module not found");
         return;
     };
     if module.types.is_empty() {
-        display.meta("  (no types found)");
+        display.meta("  (No types found)");
         return;
     }
     for ty in module.types.iter().filter(|t| !t.name.is_empty()) {
@@ -431,9 +483,9 @@ fn dispatch_types(store: &GlobalStore, canonical_path: &str, display: &Display) 
             parts.push(format!("{} map{}", n, if n == 1 { "" } else { "s" }));
         }
         if parts.is_empty() {
-            display.inspect(&format!("  {}", ty.name));
+            display.inspect_rich(&format!("  {}", display.code(&ty.name)));
         } else {
-            display.inspect(&format!("  {} ({})", ty.name, parts.join(", ")));
+            display.inspect_rich(&format!("  {} ({})", display.code(&ty.name), parts.join(", ")));
         }
     }
 }
@@ -449,11 +501,11 @@ fn show_state(engine: &RewriteEngine, display: &Display) {
 
     let proof_label = if engine.target_reached() {
         if let Err(e) = engine.typecheck_proof() {
-            display.error(&format!("proof typecheck failed: {}", e));
+            display.error(&format!("Proof typecheck failed: {}", e));
         }
         match engine.proof_label() {
             Ok(pl) => pl,
-            Err(e) => { display.error(&format!("assembling proof failed: {}", e)); None }
+            Err(e) => { display.error(&format!("Assembling proof failed: {}", e)); None }
         }
     } else {
         None
@@ -487,9 +539,9 @@ fn show_state(engine: &RewriteEngine, display: &Display) {
 /// relevant rewrite rules are shown.
 fn dispatch_rules(complex: &Complex, store: &GlobalStore, filter_dim: Option<usize>, display: &Display) {
     if let Some(d) = filter_dim {
-        display.meta(&format!("rewrite rules (dim {}):", d));
+        display.meta(&format!("Rewrite rules (dim {}):", d));
     } else {
-        display.meta("generators:");
+        display.meta("Generators:");
     }
     let mut any = false;
     for (name, tag, dim) in complex.generators_iter() {
@@ -498,31 +550,24 @@ fn dispatch_rules(complex: &Complex, store: &GlobalStore, filter_dim: Option<usi
         any = true;
         match store.cell_data_for_tag(complex, tag) {
             Some(CellData::Boundary { boundary_in, boundary_out }) => {
+                let bd = format!("{} -> {}",
+                    display.code(&render_diagram(&boundary_in, complex)),
+                    display.code(&render_diagram(&boundary_out, complex)));
                 if filter_dim.is_some() {
-                    display.inspect(&format!(
-                        "  {} : {}  ->  {}",
-                        name,
-                        render_diagram(&boundary_in, complex),
-                        render_diagram(&boundary_out, complex),
-                    ));
+                    display.inspect_rich(&format!("  {} : {}", display.code(name), bd));
                 } else {
-                    display.inspect(&format!(
-                        "  {} (dim {}): {}  ->  {}",
-                        name, dim,
-                        render_diagram(&boundary_in, complex),
-                        render_diagram(&boundary_out, complex),
-                    ));
+                    display.inspect_rich(&format!("  {} (dim {}): {}", display.code(name), dim, bd));
                 }
             }
-            Some(CellData::Zero) => display.inspect(&format!("  {} (dim 0): 0-cell", name)),
-            _ => display.inspect(&format!("  {} (no boundaries)", name)),
+            Some(CellData::Zero) => display.inspect_rich(&format!("  {} (dim 0): 0-cell", display.code(name))),
+            _ => display.inspect_rich(&format!("  {} (no boundaries)", display.code(name))),
         }
     }
     if !any {
         if let Some(d) = filter_dim {
-            display.meta(&format!("  (no rewrite rules at dim {})", d));
+            display.meta(&format!("  (No rewrite rules at dim {})", d));
         } else {
-            display.meta("  (no generators)");
+            display.meta("  (No generators)");
         }
     }
 }
@@ -550,11 +595,11 @@ fn dispatch_print_type(
     let normalized = store.normalize();
     let module = normalized.modules.iter().find(|m| m.path == canonical_path);
     let Some(module) = module else {
-        display.error(&format!("module '{}' not found", canonical_path));
+        display.error(&format!("Module '{}' not found", canonical_path));
         return;
     };
     let Some(ty) = module.types.iter().find(|t| t.name == name) else {
-        display.error(&format!("type '{}' not found in file", name));
+        display.error(&format!("Type '{}' not found in file", name));
         return;
     };
 
@@ -593,13 +638,14 @@ fn dispatch_print_type(
         writeln!(out, "  Diagrams").ok();
         for (diag_name, diag) in &diag_list {
             let k = diag.top_dim().checked_sub(1);
-            let boundary = k.and_then(|k| {
+            let header = k.and_then(|k| {
                 let src = crate::core::diagram::Diagram::boundary(Sign::Input, k, diag).ok()?;
                 let tgt = crate::core::diagram::Diagram::boundary(Sign::Output, k, diag).ok()?;
-                Some(format!("{} : {}  ->  {}", diag_name, render_diagram(&src, tc), render_diagram(&tgt, tc)))
+                Some(format!("{} : {} -> {}", diag_name, render_diagram(&src, tc), render_diagram(&tgt, tc)))
             }).unwrap_or_else(|| diag_name.to_string());
             let expr = crate::output::render_diagram(diag, tc);
-            writeln!(out, "    {}  = {}", boundary, expr).ok();
+            writeln!(out, "    {}", header).ok();
+            writeln!(out, "      = {}", expr).ok();
         }
     }
     if !ty.maps.is_empty() {
@@ -620,7 +666,7 @@ fn dispatch_print_type(
 fn dispatch_print_cell(complex: &Complex, name: &str, display: &Display) {
     // Generators are in the generators table and have cell data.
     if let Some((_, dim)) = complex.find_generator(name) {
-        display.inspect(&format!("{} (dim {}, {})", name, dim, cell_kind(complex, name)));
+        display.inspect_rich(&format!("{} (dim {}, {})", display.code(name), dim, cell_kind(complex, name)));
         if dim > 0
             && let Some(diag) = complex.find_diagram(name) {
             print_diagram_with_boundary(diag, complex, display);
@@ -631,32 +677,15 @@ fn dispatch_print_cell(complex: &Complex, name: &str, display: &Display) {
     // Let bindings are in the diagrams table but not the generators table.
     if let Some(diag) = complex.find_diagram(name) {
         let dim = diag.top_dim();
-        display.inspect(&format!("{} (dim {}, {})", name, dim, cell_kind(complex, name)));
+        display.inspect_rich(&format!("{} (dim {}, {})", display.code(name), dim, cell_kind(complex, name)));
         if dim > 0 {
             print_diagram_with_boundary(diag, complex, display);
         }
-        display.inspect(&format!("  = {}", crate::output::render_diagram(diag, complex)));
+        display.inspect_rich(&format!("  = {}", display.code(&crate::output::render_diagram(diag, complex))));
         return;
     }
 
     display.error(&format!("'{}' not found in type", name));
-}
-
-/// Display a source or target diagram after the engine starts.
-///
-/// If `label` is a known name in `complex`, delegates to [`dispatch_print_cell`]
-/// for the rich name/dim/boundary output. Otherwise renders the diagram and
-/// shows its boundary directly — handles expression inputs like `"f g"`.
-fn show_diagram_or_name(label: &str, diag: &Diagram, complex: &Complex, display: &Display) {
-    if complex.find_generator(label).is_some() || complex.find_diagram(label).is_some() {
-        dispatch_print_cell(complex, label, display);
-    } else {
-        let rendered = render_diagram(diag, complex);
-        display.inspect(&format!("{}  =  {}", label, rendered));
-        if diag.top_dim() > 0 {
-            print_diagram_with_boundary(diag, complex, display);
-        }
-    }
 }
 
 fn print_diagram_with_boundary(diag: &crate::core::diagram::Diagram, complex: &Complex, display: &Display) {
@@ -666,16 +695,94 @@ fn print_diagram_with_boundary(diag: &crate::core::diagram::Diagram, complex: &C
         crate::core::diagram::Diagram::boundary(Sign::Input, k, diag),
         crate::core::diagram::Diagram::boundary(Sign::Output, k, diag),
     ) {
-        (Ok(src), Ok(tgt)) => display.inspect(&format!(
-            "  : {}  ->  {}",
-            render_diagram(&src, complex),
-            render_diagram(&tgt, complex),
+        (Ok(src), Ok(tgt)) => display.inspect_rich(&format!(
+            "  : {} -> {}",
+            display.code(&render_diagram(&src, complex)),
+            display.code(&render_diagram(&tgt, complex)),
         )),
-        _ => display.inspect("  (boundary extraction failed)"),
+        _ => display.inspect_rich("  (Boundary extraction failed)"),
     }
 }
 
 /// Dispatch all commands that require an active engine.
+// ── Hole-filling ────────────────────────────────────────────────────────────
+
+/// List the open holes of maps in the current module, numbered for `fill`.
+fn dispatch_holes(store: &GlobalStore, canonical_path: &str, display: &Display) {
+    let holes = list_open_holes(store, canonical_path);
+    if holes.is_empty() {
+        display.meta("No open holes");
+        return;
+    }
+    display.meta("Open holes:");
+    for h in &holes {
+        display.inspect_rich(&format!("  {} @{} {} :: {}",
+            display.acc(&format!("({})", h.index)), h.type_name, h.map_name, h.domain_name));
+        display.inspect_rich(&format!("      {}", display.code(&h.boundary)));
+    }
+}
+
+/// Announce a freshly started fill: the boundaries to bridge (rewrite) or the
+/// candidate 0-cells to choose from (boundaryless).
+fn announce_fill(ctx: &FillContext, session: &FillSession, display: &Display) {
+    display.meta(&format!("Filling {}", ctx.boundary));
+    match session {
+        FillSession::Rewrite(e) => show_state(e, display),
+        FillSession::ZeroCell { choices, .. } => show_zero_cell_choices(choices, display),
+    }
+}
+
+/// Report the state of an active fill (delegating to the engine for rewrites).
+fn show_fill_state(ctx: &FillContext, session: &FillSession, display: &Display) {
+    match session {
+        FillSession::Rewrite(e) => show_state(e, display),
+        FillSession::ZeroCell { choices, chosen } => {
+            display.meta(&format!("Filling 0-cell '{}'", ctx.source_name));
+            match chosen {
+                Some(_) => display.meta("  (Chosen — use 'done' to finalise)"),
+                None => show_zero_cell_choices(choices, display),
+            }
+        }
+    }
+}
+
+/// List the candidate 0-cells of a boundaryless fill, numbered for `apply`.
+fn show_zero_cell_choices(choices: &[(crate::aux::Tag, String)], display: &Display) {
+    display.inspect_rich("Choose a 0-cell:");
+    for (i, (_, name)) in choices.iter().enumerate() {
+        display.inspect_rich(&format!("  {} {}", display.acc(&format!("({i})")), display.code(name)));
+    }
+}
+
+/// Route an in-session command to the active fill.
+fn dispatch_fill_cmd(session: &mut FillSession, cmd: Cmd, display: &Display) {
+    match session {
+        FillSession::Rewrite(e) => dispatch_engine_cmd(e, cmd, display),
+        FillSession::ZeroCell { choices, chosen } => match cmd {
+            Cmd::Rules => show_zero_cell_choices(choices, display),
+            Cmd::Apply(ref v) => {
+                let k = v[0];
+                match choices.get(k) {
+                    Some((tag, name)) => match zero_cell_diagram(tag) {
+                        Ok(d) => {
+                            *chosen = Some(d);
+                            display.meta(&format!("Chose '{}' — use 'done' to finalise", name));
+                        }
+                        Err(e) => display.error(&e),
+                    },
+                    None => display.error(&format!("No 0-cell numbered {}", k)),
+                }
+            }
+            Cmd::Proof => match chosen {
+                Some(_) => display.meta("(0-cell chosen)"),
+                None => display.meta("(No 0-cell chosen yet)"),
+            },
+            Cmd::Help => print_help(display),
+            _ => display.error("Only 'apply <n>', 'rules', 'done' apply in a 0-cell fill"),
+        },
+    }
+}
+
 fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) {
     match cmd {
         Cmd::Apply(ref choices) => {
@@ -690,7 +797,7 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
             };
             match result {
                 Ok(rule) => {
-                    display.meta(&format!("Applied {}.", rule));
+                    display.meta(&format!("Applied {}", rule));
                     show_state(engine, display);
                 }
                 Err(e) => display.error(&e),
@@ -701,7 +808,7 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
                 Ok((applied, stop_reason)) => {
                     let tail = stop_reason.map(|r| format!(" ({})", r)).unwrap_or_default();
                     display.meta(&format!(
-                        "Applied {} step{}{}.",
+                        "Applied {} step{}{}",
                         applied, if applied == 1 { "" } else { "s" }, tail,
                     ));
                     show_state(engine, display);
@@ -714,7 +821,7 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
                 Ok((applied, stop_reason)) => {
                     let tail = stop_reason.map(|r| format!(" ({})", r)).unwrap_or_default();
                     display.meta(&format!(
-                        "Applied {} step{}{}.",
+                        "Applied {} step{}{}",
                         applied, if applied == 1 { "" } else { "s" }, tail,
                     ));
                     show_state(engine, display);
@@ -737,7 +844,7 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
         Cmd::UndoAll | Cmd::Restart => {
             match engine.undo_all() {
                 Ok(()) => {
-                    display.meta("Reset to source.");
+                    display.meta("Reset to source");
                     show_state(engine, display);
                 }
                 Err(e) => display.error(&e),
@@ -768,7 +875,7 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
         Cmd::Proof => {
             let steps = engine.steps();
             if steps.is_empty() {
-                display.meta("(no proof built yet)");
+                display.meta("(No proof built yet)");
             } else {
                 let n = engine.initial_diagram().top_dim();
                 let scope = engine.type_complex();
@@ -793,42 +900,47 @@ fn dispatch_engine_cmd(engine: &mut RewriteEngine, cmd: Cmd, display: &Display) 
         }
         Cmd::Parallel(Some(on)) => {
             engine.set_parallel(on);
-            display.meta(&format!("Parallel mode {}.", if on { "on" } else { "off" }));
+            display.meta(&format!("Parallel mode {}", if on { "on" } else { "off" }));
         }
         Cmd::Parallel(None) => {
-            display.meta(&format!("Parallel mode {}.", if engine.parallel() { "on" } else { "off" }));
+            display.meta(&format!("Parallel mode {}", if engine.parallel() { "on" } else { "off" }));
         }
         Cmd::Help => print_help(display),
         Cmd::Quit => {}   // handled by caller
         // These are all handled before dispatch_engine_cmd is reached
         Cmd::Stop | Cmd::Types | Cmd::PrintFile | Cmd::Type(_) | Cmd::Homology(_)
         | Cmd::Status | Cmd::Start(..) | Cmd::Resume(..) | Cmd::Backward(_)
-        | Cmd::Store(_) | Cmd::Save(_) | Cmd::Unknown(_) | Cmd::UsageError(_) => unreachable!(),
+        | Cmd::Store(_) | Cmd::Save(_) | Cmd::Holes | Cmd::Fill(_) | Cmd::Done
+        | Cmd::Unknown(_) | Cmd::UsageError(_) => unreachable!(),
     }
 }
 
 fn print_help(display: &Display) {
-    // Command token in accent, left-justified in a 20-column field (measured on
-    // the plain token, since painting changes byte length), then the description.
+    // Command token in the code colour, left-justified in a 20-column field
+    // (measured on the plain token, since painting changes byte length), then
+    // the description.
     let cmd = |tok: &str, desc: &str| {
         let pad = " ".repeat(20usize.saturating_sub(tok.len()));
-        display.inspect_rich(&format!("  {}{}{}", display.acc(tok), pad, desc));
+        display.inspect_rich(&format!("  {}{}{}", display.code(tok), pad, desc));
     };
 
-    display.inspect_rich(&display.sec("Always available:"));
+    display.inspect_rich("Always available:");
     cmd("types",            "List all types in the file");
     cmd("type <name>",      "Inspect a type: generators, diagrams, maps");
     cmd("homology <name>",  "Compute cellular homology of a type");
     cmd("start <t> <s>",    "Start a rewrite session (target optional)");
     cmd("resume <t> <p>",   "Resume a session from a diagram (target optional)");
+    cmd("holes",            "List open holes of maps in this module");
+    cmd("fill <n>",         "Start a hole-filling session for hole <n>");
     cmd("backward [on|off]", "Show or toggle backward rewrite mode (default: off)");
     cmd("status / show",    "Session state, or module info when idle");
-    cmd("print",            "Print the whole source file");
+    cmd("print",            "Print the running source");
+    cmd("save <path>",      "Write the running source to disk");
     cmd("stop",             "End the active session");
     cmd("help / ?",         "Show this help");
     cmd("quit / exit / q",  "Exit");
     display.blank();
-    display.inspect_rich(&display.sec("Session commands (require active session):"));
+    display.inspect_rich("Session commands (require active session):");
     cmd("apply <n> [<n2>..]", "Apply rewrite(s) at given indices (alias: a)");
     cmd("auto <n>",         "Apply up to <n> rewrites automatically");
     cmd("random <n>",       "Apply randomly selected rewrites");
@@ -839,8 +951,8 @@ fn print_help(display: &Display) {
     cmd("rules",            "List rewrite rules at current dimension (alias: r)");
     cmd("history",          "Show the move history (alias: h)");
     cmd("proof",            "Show the running proof diagram (alias: p)");
-    cmd("store <name>",     "Store the current proof as a named diagram");
-    cmd("save <path>",      "Write source file with stored definitions appended");
+    cmd("store <name>",     "Store the current proof as a named diagram in the source");
+    cmd("done",             "Finalise the active fill, extending the map");
 }
 
 // ── Command parsing ───────────────────────────────────────────────────────────
@@ -859,6 +971,12 @@ enum Cmd {
     Start(String, String, Option<String>),
     /// `resume <type> <proof> [<target>]` — resume a session from a diagram.
     Resume(String, String, Option<String>),
+    /// `holes` — list the open holes of maps in the current module.
+    Holes,
+    /// `fill <n>` — start a hole-filling session for the n-th open hole.
+    Fill(usize),
+    /// `done` — finalize the active fill, extending the map's definition.
+    Done,
     /// `apply <n> [<n2> ...]` — apply one or more candidate rewrites.
     Apply(Vec<usize>),
     /// `auto <n>` — apply up to `n` rewrites automatically, always picking the
@@ -1006,6 +1124,14 @@ fn parse_command(line: &str) -> Cmd {
                 }
             }
         }
+        "holes" => Cmd::Holes,
+        "fill" => {
+            match rest.parse::<usize>() {
+                Ok(n) => Cmd::Fill(n),
+                _ => Cmd::UsageError("fill <n>".to_owned()),
+            }
+        }
+        "done" => Cmd::Done,
         "restart" => Cmd::Restart,
         "stop"    => Cmd::Stop,
         "rules" | "r" => Cmd::Rules,

@@ -1,0 +1,9 @@
+@Type
+
+D <<= { a, b, x : a -> b },
+
+T <<= { p, q, r : p -> q },
+
+@T
+  (* x's image is a 1-cell from p to q (a hole); the rule r : p -> q fills it. *)
+  let H :: D = [ a => p, b => q, x => ? ]

@@ -77,31 +77,19 @@ fn collect_chain_highlighting(
 
 // ── Display functions ─────────────────────────────────────────────────────────
 
-/// Pad a styled label to `width` columns based on its *plain* text.
-///
-/// Painting changes the byte length, so we measure the uncoloured label and
-/// append the trailing spaces afterwards — keeping columns aligned whether or
-/// not colour is enabled.
-fn label(painted: String, plain: &str, width: usize) -> String {
-    format!("{painted}{}", " ".repeat(width.saturating_sub(plain.len())))
-}
-
 /// Display the current rewrite state.
 ///
-/// Format:
+/// Format (labels/headers plain; expressions in the code colour):
 /// ```text
-/// >> source    <current diagram>
-/// >> target    <target diagram>
-/// (blank)
-/// >> rewrites:
-/// (blank)
-/// >>   (0) [id id] id
-/// >>       by idem : id id -> id
-/// >> ...
+/// current   <current diagram>
+/// target    <target diagram>
+///
+/// Rewrites:
+///   (0) [id id] id
+///       by idem : id id -> id
+///   ...
 /// ```
-/// `source`/`target` are styled labels; `rewrites:` is a section title; the
-/// `(idx)` badges are accent-coloured.  If the target is reached, prints a green
-/// `Rewrite complete.` and the proof cell.
+/// If the target is reached, prints a green `✓ Target reached` and the proof.
 pub fn print_state(
     display: &Display,
     current: &Diagram,
@@ -110,44 +98,35 @@ pub fn print_state(
     scope: &Complex,
     proof: Option<(&str, &str, &str)>,
 ) {
-    display.inspect_rich(&format!("{}  {}",
-        label(display.paint_source("source"), "source", 8),
-        render_diagram(current, scope)));
+    display.inspect_rich(&format!("current   {}", display.code(&render_diagram(current, scope))));
     if let Some(t) = target {
-        display.inspect_rich(&format!("{}  {}",
-            label(display.paint_target("target"), "target", 8),
-            render_diagram(t, scope)));
+        display.inspect_rich(&format!("target    {}", display.code(&render_diagram(t, scope))));
     }
     display.blank();
 
     if let Some((src_label, tgt_label, proof_label)) = proof {
-        display.inspect_rich(&display.ok("Rewrite complete."));
+        display.inspect_rich(&display.ok("✓ Target reached"));
         display.blank();
-        display.inspect_rich(&display.sec("proof:"));
-        display.inspect_rich(&format!("  {} {} {} {} {}",
-            display.hi(proof_label),
-            display.dim(":"),
-            display.paint_source(src_label),
-            display.dim("->"),
-            display.paint_target(tgt_label)));
+        display.inspect_rich("Proof:");
+        display.inspect_rich(&format!("  {} : {} -> {}",
+            display.code(proof_label), display.code(src_label), display.code(tgt_label)));
         return;
     }
 
     if rewrites.is_empty() {
-        display.inspect_rich(&display.dim("no rewrites available"));
+        display.inspect_rich("No rewrites available");
         return;
     }
 
-    display.inspect_rich(&display.sec("rewrites:"));
+    display.inspect_rich("Rewrites:");
     let n_plus_1 = if let Some(pr) = rewrites.first() { pr.step.top_dim() } else { return };
     let n = n_plus_1.saturating_sub(1);
 
     for (idx, pr) in rewrites.iter().enumerate() {
         let highlight = render_step(&pr.step, scope);
         let colored_highlight = display.colorize_match_display(&highlight);
-        display.blank();
-        display.inspect_rich(&format!("  {} {}",
-            display.acc(&format!("({idx})")), colored_highlight));
+        if idx > 0 { display.blank(); }
+        display.inspect_rich(&format!("  {} {colored_highlight}", display.acc(&format!("({idx})"))));
 
         let rule_names: Vec<&str> = pr.members.iter()
             .map(|m| m.rule_name.as_str())
@@ -163,40 +142,31 @@ pub fn print_state(
                     Some((render_diagram(&src, scope), render_diagram(&tgt, scope)))
                 })
                 .unwrap_or_else(|| ("?".to_string(), "?".to_string()));
-            display.inspect_rich(&format!("      {} {} {} {} {}",
-                display.dim("by"),
-                display.hi(rule_names[0]),
-                display.dim(":"),
-                display.paint_source(&rule_src),
-                format!("{} {}", display.dim("->"), display.paint_target(&rule_tgt))));
+            display.inspect_rich(&format!("      by {} : {} -> {}",
+                display.code(rule_names[0]),
+                display.code(&rule_src),
+                display.code(&rule_tgt)));
         } else {
-            display.inspect_rich(&format!("      {} {}",
-                display.dim("parallel:"),
-                display.hi(&rule_names.join(", "))));
+            display.inspect_rich(&format!("      parallel: {}",
+                display.code(&rule_names.join(", "))));
         }
     }
 }
 
-/// Display the move history.
-///
-/// Mirrors the web composition: dim step label, bold rule name, dim choice tag.
+/// Display the move history (step labels plain; rule names in the code colour).
 pub fn print_history(
     display: &Display,
     source: &Diagram,
     history_entries: &[(Option<Vec<usize>>, &str)],
     scope: &Complex,
 ) {
-    display.inspect_rich(&format!("{} {}",
-        display.dim("step 0 (source):"), render_diagram(source, scope)));
+    display.inspect_rich(&format!("step 0 (source): {}", display.code(&render_diagram(source, scope))));
     for (i, (choice, rule)) in history_entries.iter().enumerate() {
         let tag = match choice {
             Some(v) if v.len() == 1 => format!("choice {}", v[0]),
             Some(v) => format!("choice {}", v.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(", ")),
             None => "n/a".into(),
         };
-        display.inspect_rich(&format!("{} {} {}",
-            display.dim(&format!("step {}", i + 1)),
-            display.hi(rule),
-            display.dim(&format!("({tag})"))));
+        display.inspect_rich(&format!("step {} {} ({tag})", i + 1, display.code(rule)));
     }
 }

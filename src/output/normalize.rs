@@ -345,11 +345,25 @@ fn render_map_holes(holes: &[MapHole], scope: &Complex, domain: &Complex) -> Vec
 }
 
 /// Resolve a map's domain to the complex it maps from.
-fn domain_complex(store: &GlobalStore, domain: &MapDomain) -> Option<Arc<Complex>> {
+pub(crate) fn domain_complex(store: &GlobalStore, domain: &MapDomain) -> Option<Arc<Complex>> {
     match domain {
         MapDomain::Type(gid) => store.find_type(*gid).map(|e| Arc::clone(&e.complex)),
         MapDomain::Module(mid) => store.find_module_arc(mid),
     }
+}
+
+/// Render one hole's boundary line (`?name : in -> out`, or `?name` for a 0-cell),
+/// naming this hole and the metavariables in its boundary after the source
+/// generators of `all_holes` (the map's full pending set).  `scope` is the map's
+/// target complex (image leaves), `domain` its source complex (hole names).
+pub(crate) fn render_hole_boundary(
+    hole: &MapHole,
+    all_holes: &[MapHole],
+    scope: &Complex,
+    domain: &Complex,
+) -> String {
+    let names = hole_names(all_holes, domain);
+    render_hole_line(hole, scope, &names)
 }
 
 // ---- Display for GlobalStore ----

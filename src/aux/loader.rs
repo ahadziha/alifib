@@ -98,6 +98,23 @@ impl Loader {
         }
     }
 
+    /// Like [`default`](Self::default) but serves the file at canonical path
+    /// `root` from the in-memory `source` instead of reading it from disk;
+    /// dependencies are still read from the filesystem.  `root` must be the
+    /// canonical path (it is still required to exist on disk, for canonicalization).
+    /// Used to re-evaluate an edited root source without writing it to disk.
+    pub fn default_with_root_source(extra_search_paths: Vec<String>, root: String, source: String) -> Self {
+        let base = Self::default(extra_search_paths);
+        let fallback = base.read_file.clone();
+        Self {
+            search_paths: base.search_paths,
+            is_virtual: false,
+            read_file: Arc::new(move |path: &str| {
+                if path == root { Ok(source.clone()) } else { fallback(path) }
+            }),
+        }
+    }
+
     /// Create a [`Loader`] that serves files from an in-memory map, bypassing
     /// the real filesystem.  The key is the path passed to [`load`](Self::load);
     /// the value is the source text.  Search paths are empty, so `#use` directives

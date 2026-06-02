@@ -22,8 +22,9 @@ use crate::interpreter::{GlobalStore, InterpretedFile, LoadResult};
 use crate::language::error::Diagnostic;
 
 use super::engine::{RewriteEngine, resolve_type};
+use super::fill::{edit_for_fill, list_open_holes, start_fill, zero_cell_diagram, FillContext, FillSession};
 use super::protocol::{
-    Request, Response, build_homology_response, build_map_entries, build_map_image_strdiag,
+    FillInfo, Request, Response, build_homology_response, build_map_entries, build_map_image_strdiag,
     build_response, build_strdiag_response, build_types_from_store, build_type_detail_from_store,
     resolve_domain_complex, step_output_strdiag_json, strdiag_json_from_diagram,
     strdiag_to_json, tag_to_json,
@@ -42,6 +43,10 @@ pub const WEB_SOURCE_PATH: &str = "source.ali";
 /// 5. `run_command(json)` — session commands (step/undo/show/…) plus the above
 pub struct WebRepl {
     state: State,
+    /// The extra virtual modules supplied at the last `load_source`, retained so
+    /// that a `done` re-evaluation (after splicing a fill into the root source)
+    /// resolves the same `include`s.
+    modules: HashMap<String, String>,
 }
 
 /// Internal state machine.  Kept private so public callers still see a
@@ -55,22 +60,44 @@ pub struct WebRepl {
 /// convention only.
 enum State {
     Empty,
-    Loaded { store: Arc<GlobalStore>, root_path: String },
-    Active { store: Arc<GlobalStore>, root_path: String, engine: RewriteEngine },
+    Loaded { store: Arc<GlobalStore>, root_path: String, source: String },
+    /// A rewrite session.  `fill` is `Some` when it is a hole-filling (which is
+    /// finalised by `done`) rather than a free rewrite.
+    Active {
+        store: Arc<GlobalStore>,
+        root_path: String,
+        source: String,
+        engine: RewriteEngine,
+        fill: Option<FillContext>,
+    },
+    /// A boundaryless 0-cell fill: the only move is choosing one of the type's
+    /// 0-cells.  Not a [`RewriteEngine`], so it lives in its own state.
+    ZeroFill {
+        store: Arc<GlobalStore>,
+        root_path: String,
+        source: String,
+        ctx: FillContext,
+        choices: Vec<(Tag, String)>,
+        chosen: Option<Diagram>,
+    },
 }
 
 impl State {
     fn store(&self) -> Option<&Arc<GlobalStore>> {
         match self {
             State::Empty => None,
-            State::Loaded { store, .. } | State::Active { store, .. } => Some(store),
+            State::Loaded { store, .. }
+            | State::Active { store, .. }
+            | State::ZeroFill { store, .. } => Some(store),
         }
     }
 
     fn root_path(&self) -> &str {
         match self {
             State::Empty => WEB_SOURCE_PATH,
-            State::Loaded { root_path, .. } | State::Active { root_path, .. } => root_path,
+            State::Loaded { root_path, .. }
+            | State::Active { root_path, .. }
+            | State::ZeroFill { root_path, .. } => root_path,
         }
     }
 
@@ -91,7 +118,7 @@ impl Default for WebRepl {
 
 impl WebRepl {
     pub fn new() -> Self {
-        Self { state: State::Empty }
+        Self { state: State::Empty, modules: HashMap::new() }
     }
 
     pub fn reset(&mut self) {
@@ -99,8 +126,12 @@ impl WebRepl {
     }
 
     pub fn stop_session(&mut self) {
-        if let State::Active { store, root_path, .. } = std::mem::replace(&mut self.state, State::Empty) {
-            self.state = State::Loaded { store, root_path };
+        match std::mem::replace(&mut self.state, State::Empty) {
+            State::Active { store, root_path, source, .. }
+            | State::ZeroFill { store, root_path, source, .. } => {
+                self.state = State::Loaded { store, root_path, source };
+            }
+            other => self.state = other,
         }
     }
 
@@ -134,6 +165,10 @@ impl WebRepl {
             .map(|n| if n.ends_with(".ali") { n.to_string() } else { format!("{}.ali", n) })
             .unwrap_or_else(|| WEB_SOURCE_PATH.to_string());
 
+        // Retain the extra modules so a later `done` re-evaluation resolves the
+        // same includes.
+        self.modules = extra_modules.clone();
+
         let mut files = extra_modules;
         files.insert(root_path.clone(), source.to_string());
         let loader = Loader::with_virtual_files(files);
@@ -149,7 +184,7 @@ impl WebRepl {
                     "types": type_summaries_json(&file.state),
                 })
                 .to_string();
-                self.state = State::Loaded { store, root_path };
+                self.state = State::Loaded { store, root_path, source: source.to_string() };
                 json
             }
             LoadResult::LoadError(e) => load_error_json(&e),
@@ -172,11 +207,13 @@ impl WebRepl {
         type_name: &str,
         build: impl FnOnce(Arc<GlobalStore>, Arc<Complex>, String) -> Result<RewriteEngine, String>,
     ) -> String {
-        let (store, root_path) = match std::mem::replace(&mut self.state, State::Empty) {
+        let (store, root_path, source) = match std::mem::replace(&mut self.state, State::Empty) {
             State::Empty => return err_json("no source loaded; call load_source first"),
-            State::Loaded { store, root_path } | State::Active { store, root_path, .. } => (store, root_path),
+            State::Loaded { store, root_path, source }
+            | State::Active { store, root_path, source, .. }
+            | State::ZeroFill { store, root_path, source, .. } => (store, root_path, source),
         };
-        self.state = State::Loaded { store: Arc::clone(&store), root_path: root_path.clone() };
+        self.state = State::Loaded { store: Arc::clone(&store), root_path: root_path.clone(), source: source.clone() };
 
         let type_complex = match resolve_type(&store, &root_path, type_name) {
             Ok(tc) => tc,
@@ -186,7 +223,7 @@ impl WebRepl {
         match build(Arc::clone(&store), type_complex, root_path.clone()) {
             Ok(engine) => {
                 let data = build_response(&engine, false);
-                self.state = State::Active { store, root_path, engine };
+                self.state = State::Active { store, root_path, source, engine, fill: None };
                 ok_json(data)
             }
             Err(e) => err_json(&e),
@@ -257,6 +294,23 @@ impl WebRepl {
             _ => {}
         }
 
+        // Hole-filling commands.  `holes` is a store query; `fill`/`done` drive
+        // the fill state machine.
+        match &request {
+            Request::Holes => {
+                let Some(store) = self.state.store() else { return err_json("no source loaded"); };
+                return ok_json(holes_json(store, self.state.root_path()));
+            }
+            Request::Fill { index } => return self.start_fill_session(*index),
+            Request::Done => return self.finalize_fill(),
+            _ => {}
+        }
+
+        // The 0-cell fill is not an engine — handle its few commands here.
+        if matches!(self.state, State::ZeroFill { .. }) {
+            return self.handle_zero_fill(&request);
+        }
+
         // Store-level queries: work in both Loaded and Active states.
         // If the engine is active, fall through to the engine dispatch instead.
         if self.state.engine().is_none() {
@@ -282,17 +336,19 @@ impl WebRepl {
         }
 
         // Everything else is engine-level: delegate to the shared dispatcher.
-        let State::Active { store, engine, .. } = &mut self.state else {
+        let State::Active { store, engine, fill, .. } = &mut self.state else {
             return err_json("no session active — use 'start' to begin");
         };
+        let fill_marker = fill.as_ref().map(|ctx| fill_info(ctx, engine.initial_diagram().top_dim() + 1));
         match engine.handle(&request) {
-            Some(Ok(data)) => {
+            Some(Ok(mut data)) => {
                 // `store` updates the engine's store via `Arc::make_mut`; keep
                 // the adapter's cached handle in lockstep so subsequent
                 // `get_types` and friends see the new let-binding.
                 if matches!(request, Request::Store { .. }) {
                     *store = engine.store_arc();
                 }
+                data.fill = fill_marker;
                 ok_json(data)
             }
             Some(Err(msg)) => response_err(msg),
@@ -450,6 +506,125 @@ impl WebRepl {
             "step_count": step_count,
             "output_boundary_map": boundary_map,
         }))
+    }
+
+    /// Start a hole-filling session for the 0-based hole `index`.  Requires the
+    /// loaded (no-session) state; installs a rewrite engine (m ≥ 1) or a 0-cell
+    /// chooser (m = 0).
+    fn start_fill_session(&mut self, index: usize) -> String {
+        let (store, root_path, source) = match std::mem::replace(&mut self.state, State::Empty) {
+            State::Loaded { store, root_path, source } => (store, root_path, source),
+            other => { self.state = other; return err_json("session already active; stop it first"); }
+        };
+        match start_fill(&store, &root_path, &root_path, index, false) {
+            Ok((ctx, FillSession::Rewrite(engine))) => {
+                let mut data = build_response(&engine, false);
+                data.fill = Some(fill_info(&ctx, engine.initial_diagram().top_dim() + 1));
+                self.state = State::Active { store, root_path, source, engine, fill: Some(ctx) };
+                ok_json(data)
+            }
+            Ok((ctx, FillSession::ZeroCell { choices, chosen })) => {
+                let payload = zero_fill_response(&ctx, &choices, &chosen);
+                self.state = State::ZeroFill { store, root_path, source, ctx, choices, chosen };
+                payload
+            }
+            Err(e) => { self.state = State::Loaded { store, root_path, source }; err_json(&e) }
+        }
+    }
+
+    /// Handle a command while a 0-cell fill is active: `step` chooses a 0-cell,
+    /// `show` re-renders the choice list.
+    fn handle_zero_fill(&mut self, request: &Request) -> String {
+        match request {
+            Request::Show => match &self.state {
+                State::ZeroFill { ctx, choices, chosen, .. } => zero_fill_response(ctx, choices, chosen),
+                _ => err_json("no active fill"),
+            },
+            Request::Step { choice } => {
+                let State::ZeroFill { choices, chosen, .. } = &mut self.state else {
+                    return err_json("no active fill");
+                };
+                let Some((tag, _)) = choices.get(*choice) else {
+                    return err_json(&format!("no 0-cell numbered {}", choice));
+                };
+                match zero_cell_diagram(tag) {
+                    Ok(d) => *chosen = Some(d),
+                    Err(e) => return err_json(&e),
+                }
+                match &self.state {
+                    State::ZeroFill { ctx, choices, chosen, .. } => zero_fill_response(ctx, choices, chosen),
+                    _ => unreachable!(),
+                }
+            }
+            _ => err_json("only 'step', 'show', 'done' apply in a 0-cell fill"),
+        }
+    }
+
+    /// Finalise the active fill: build the filler, extend the map's definition,
+    /// re-evaluate.  On success the session ends and the updated source is
+    /// returned; on an inconsistent fill the session is left intact to retry.
+    fn finalize_fill(&mut self) -> String {
+        // Build the filler diagram first, borrowing the state read-only so a
+        // failure leaves the session untouched.
+        let filler = match &self.state {
+            State::Active { engine, fill: Some(_), .. } => {
+                if !engine.target_reached() { return err_json("target not reached yet"); }
+                match engine.assemble_proof() {
+                    Ok(Some(d)) => d,
+                    Ok(None) => return err_json("no proof assembled"),
+                    Err(e) => return err_json(&e),
+                }
+            }
+            State::ZeroFill { chosen: Some(d), .. } => d.clone(),
+            State::ZeroFill { chosen: None, .. } => return err_json("choose a 0-cell first (step <n>)"),
+            _ => return err_json("no active fill"),
+        };
+
+        let (store, root_path, source, ctx) = match &self.state {
+            State::Active { store, root_path, source, fill: Some(ctx), .. }
+            | State::ZeroFill { store, root_path, source, ctx, .. } => (store, root_path, source, ctx),
+            _ => return err_json("no active fill"),
+        };
+        let filled = ctx.source_name.clone();
+        let root_path_owned = root_path.clone();
+        let new_source = match edit_for_fill(store, ctx, &filler, source) {
+            Ok(s) => s,
+            Err(e) => return err_json(&e),
+        };
+
+        // Re-evaluate with the same virtual modules.  An inconsistent fill makes
+        // the interpreter error; we report it and keep the session to retry.
+        match self.reevaluate(&root_path_owned, &new_source) {
+            Ok(new_store) => {
+                let types = type_summaries_json(&new_store);
+                let payload = ok_json(serde_json::json!({
+                    "filled": filled,
+                    "source": new_source.clone(),
+                    "types": types,
+                }));
+                self.state = State::Loaded { store: new_store, root_path: root_path_owned, source: new_source };
+                payload
+            }
+            Err(e) => err_json(&e),
+        }
+    }
+
+    /// Re-interpret the edited root source with the retained virtual modules.
+    fn reevaluate(&self, root_path: &str, new_source: &str) -> Result<Arc<GlobalStore>, String> {
+        let mut files = self.modules.clone();
+        files.insert(root_path.to_string(), new_source.to_string());
+        let loader = Loader::with_virtual_files(files);
+        match InterpretedFile::load(&loader, root_path) {
+            LoadResult::Loaded(file) => Ok(Arc::clone(&file.state)),
+            LoadResult::LoadError(e) => Err(load_error_message(&e)),
+            LoadResult::InterpError { errors, source, path } => {
+                let msgs: Vec<String> = errors
+                    .iter()
+                    .map(|e| e.to_diagnostic(&source, Some(path.clone())).message)
+                    .collect();
+                Err(msgs.join("; "))
+            }
+        }
     }
 
     fn need_engine<F: FnOnce(&RewriteEngine) -> String>(&self, f: F) -> String {
@@ -650,6 +825,54 @@ fn diagnostics_err_json(diagnostics: &[Diagnostic]) -> String {
         "diagnostics": diagnostics,
     })
     .to_string()
+}
+
+/// JSON for the `holes` response: the numbered open holes of the module.
+fn holes_json(store: &GlobalStore, root_path: &str) -> serde_json::Value {
+    let holes: Vec<serde_json::Value> = list_open_holes(store, root_path)
+        .iter()
+        .map(|h| serde_json::json!({
+            "index": h.index,
+            "type_name": h.type_name,
+            "map_name": h.map_name,
+            "domain_name": h.domain_name,
+            "source_name": h.source_name,
+            "dim": h.dim,
+            "boundary": h.boundary,
+        }))
+        .collect();
+    serde_json::json!({ "holes": holes })
+}
+
+fn fill_info(ctx: &FillContext, dim: usize) -> FillInfo {
+    FillInfo {
+        type_name: ctx.type_name.clone(),
+        map_name: ctx.map_name.clone(),
+        domain_name: ctx.domain_name.clone(),
+        source_name: ctx.source_name.clone(),
+        dim,
+    }
+}
+
+/// The response for a 0-cell fill: the candidate 0-cells (a clickable list, with
+/// no step diagram) and the current choice, if any.
+fn zero_fill_response(ctx: &FillContext, choices: &[(Tag, String)], chosen: &Option<Diagram>) -> String {
+    let candidates: Vec<serde_json::Value> = choices
+        .iter()
+        .enumerate()
+        .map(|(i, (_, name))| serde_json::json!({ "index": i, "name": name }))
+        .collect();
+    let chosen_name = chosen
+        .as_ref()
+        .and_then(|d| d.top_label())
+        .and_then(|tag| choices.iter().find(|(t, _)| t == tag).map(|(_, n)| n.clone()));
+    ok_json(serde_json::json!({
+        "fill": fill_info(ctx, 0),
+        "zero_cell": {
+            "choices": candidates,
+            "chosen": chosen_name,
+        },
+    }))
 }
 
 fn err_json(msg: &str) -> String {

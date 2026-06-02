@@ -127,6 +127,16 @@ pub enum Request {
     Homology {
         name: String,
     },
+    /// List the open holes of maps in the current module.
+    Holes,
+    /// Start a hole-filling session for the hole at `index` (0-based, as listed
+    /// by `holes`).
+    Fill {
+        index: usize,
+    },
+    /// Finalise the active fill, extending the map's definition and returning the
+    /// updated source.
+    Done,
     /// Shut down the daemon.
     Shutdown,
 }
@@ -188,6 +198,20 @@ pub struct ResponseData {
     /// display or append the rendered proof expression back to the source.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stored: Option<StoredInfo>,
+    /// Set when this session is a hole-filling rather than a free rewrite, so
+    /// the frontend can label it and offer `done`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill: Option<FillInfo>,
+}
+
+/// Identifies the hole a fill session is constructing.
+#[derive(Debug, Clone, Serialize)]
+pub struct FillInfo {
+    pub type_name: String,
+    pub map_name: String,
+    pub domain_name: String,
+    pub source_name: String,
+    pub dim: usize,
 }
 
 /// Populated for `auto` responses.
@@ -511,6 +535,7 @@ pub fn build_response(engine: &RewriteEngine, include_history: bool) -> Response
         cell_detail: None,
         auto: None,
         stored: None,
+        fill: None,
     }
 }
 
