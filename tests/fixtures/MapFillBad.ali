@@ -1,0 +1,23 @@
+@Type
+
+Dom <<= {
+  o0, o1, o2,
+  f : o0 -> o1,
+  g : o1 -> o2,
+  m : o0 -> o2,
+  x : f g -> m
+},
+
+A <<= {
+  p0, p1, p2,
+  F : p0 -> p1,
+  G : p1 -> p2,
+  G2 : p1 -> p2,
+  M : p0 -> p2,
+  X : F G -> M
+},
+
+@A
+  (* x => X forces x's input boundary to be F G; filling g with G2 instead of G
+     contradicts that, so committing x must fail. *)
+  let Bad :: Dom = [ x => X, f => F, g => G2 ]

@@ -239,6 +239,54 @@ fn layered_holes_load() {
     assert_eq!(holes.len(), 2, "H should have two holes (a1 and e)");
 }
 
+/// Number of unfilled holes on a named map in a type of a loaded file.
+fn hole_count(file: &alifib::interpreter::InterpretedFile, type_name: &str, map_name: &str) -> usize {
+    let gid = file.state.find_type_gid(type_name).expect("type should exist");
+    let tc = &file.state.find_type(gid).expect("type entry").complex;
+    tc.map_holes(map_name).expect("map should exist").len()
+}
+
+/// Order-independence: mapping the 2-cell `x` before its composite-boundary
+/// faces creates holes that are later filled and auto-committed, while mapping
+/// `x` last never creates a hole — both end hole-less.
+#[test]
+fn fill_is_order_independent() {
+    let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("MapFill.ali"))
+        .ok()
+        .expect("MapFill.ali should interpret without errors");
+    assert_eq!(hole_count(&file, "A", "HxFirst"), 0, "x-first map should end hole-less");
+    assert_eq!(hole_count(&file, "A", "HxLast"), 0, "x-last map should be hole-less");
+}
+
+/// A partially filled map keeps its residual holes; prefix-extending it with the
+/// missing clause fills them and completes the map.
+#[test]
+fn prefix_extension_fills_holes() {
+    let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("MapFill.ali"))
+        .ok()
+        .expect("MapFill.ali should interpret without errors");
+    assert!(hole_count(&file, "A", "Partial") > 0, "Partial should still have holes");
+    assert_eq!(hole_count(&file, "A", "Filled"), 0, "Filled = Partial [ g => G ] should be hole-less");
+}
+
+/// `arr => ?` followed by `arr => f` is the same as `arr => f`: the hole is
+/// upgraded to a conditional and committed, leaving no holes.
+#[test]
+fn redundant_hole_then_value_commits() {
+    let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("MapIdempotent.ali"))
+        .ok()
+        .expect("MapIdempotent.ali should interpret without errors");
+    assert_eq!(hole_count(&file, "A", "H"), 0, "the `?` should be upgraded to `arr => f` and committed");
+}
+
+/// Filling a face inconsistently with a conditional's stored image must fail:
+/// `x => X` forces the input boundary to be `F G`, so `g => G2` contradicts it.
+#[test]
+fn inconsistent_fill_is_error() {
+    let result = InterpretedFile::load(&Loader::default(vec![]), &fixture("MapFillBad.ali"));
+    assert!(!result.is_ok(), "an inconsistent fill should fail to load");
+}
+
 #[test]
 fn for_index_expansion() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("ForIndex.ali"))

@@ -304,20 +304,31 @@ fn collect_chain_with_holes(
     }
 }
 
-/// Render one unfilled hole as `?name : <in> -> <out>` (or `?name : (0-cell)`),
-/// resolving image leaves against `scope` and metavariables against `names`,
-/// with a `(depends on …)` suffix listing the holes it references.
+/// Render one pending entry: a pure hole as `?name : <in> -> <out>` (or
+/// `?name : (0-cell)`), a conditional as `name => <image>`; both with a
+/// `(depends on …)` suffix listing the holes they reference.  Image leaves
+/// resolve against `scope`, metavariables against `names`.
 fn render_map_hole(hole: &MapHole, scope: &Complex, names: &HoleNames) -> String {
     let name = names.get(&hole.meta).cloned().unwrap_or_else(|| format!("{}", hole.meta));
-    let body = match (&hole.boundary_in, &hole.boundary_out) {
-        (Some(input), Some(output)) => format!(
-            "{} -> {}",
-            render_paste_tree_with_holes(input, scope, names),
-            render_paste_tree_with_holes(output, scope, names),
-        ),
-        _ => "(0-cell)".to_string(),
+    let mut s = match &hole.image {
+        // Conditional assignment `x => a`, awaiting its boundary faces.
+        Some(image) => {
+            let src = name.strip_prefix('?').unwrap_or(&name);
+            format!("{} => {}", src, render_diagram(image, scope))
+        }
+        // Pure hole: show the inferred boundary.
+        None => {
+            let body = match (&hole.boundary_in, &hole.boundary_out) {
+                (Some(input), Some(output)) => format!(
+                    "{} -> {}",
+                    render_paste_tree_with_holes(input, scope, names),
+                    render_paste_tree_with_holes(output, scope, names),
+                ),
+                _ => "(0-cell)".to_string(),
+            };
+            format!("{} : {}", name, body)
+        }
     };
-    let mut s = format!("{} : {}", name, body);
     if !hole.deps.is_empty() {
         let mut deps: Vec<String> = hole
             .deps

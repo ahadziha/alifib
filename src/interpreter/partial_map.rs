@@ -16,98 +16,280 @@ use crate::language::ast::{self, DefPartialMap, ForBlock, PMapEntry, PartialMapB
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
-// ---- Map holes ----
+// ---- Maps with holes ----
 
-/// The map under construction in an extension block: the real (hole-free)
-/// partial map, the source cells of `arr => ?` clauses still to be turned into
-/// holes (paired with their span), and the holes built so far.
+/// A map under construction: the committed (hole-free) [`PartialMap`] plus the
+/// pending assignments — pure holes (`x => ?`) and conditional assignments
+/// (`x => a` whose boundary faces are not all mapped yet).
 struct MapBuild {
     map: PartialMap,
-    pending_holes: Vec<(Diagram, Span)>,
     holes: Vec<MapHole>,
 }
 
-/// Build a [`MapHole`] for an `arr => ?` clause from the source cell `source_diag`.
-///
-/// The hole stands for the unknown image of `arr`.  Its boundaries are the
-/// source cell's boundaries transported through the map *syntactically*: each
-/// leaf of `∂arr`'s paste tree is replaced by the concrete image's paste tree
-/// (if that face is mapped) or by a metavariable leaf (if that face is itself a
-/// prior hole).  The result is never realised into a diagram, so a non-round
-/// boundary is fine.  Errors if a face is neither mapped nor a hole.
-fn make_map_hole(
-    context: &Context,
-    domain: &Complex,
-    map: &PartialMap,
-    prior_holes: &[MapHole],
-    source_diag: &Diagram,
-) -> Result<MapHole, aux::Error> {
-    if !source_diag.is_cell() {
-        return Err(aux::Error::new("the source of a hole must be a single cell"));
+impl MapBuild {
+    /// Position of the pending entry for `tag`, if any.
+    fn entry_index(&self, tag: &Tag) -> Option<usize> {
+        self.holes.iter().position(|h| &h.source == tag)
     }
-    let source = source_diag
-        .top_label()
-        .ok_or_else(|| aux::Error::new("hole source cell has no top label"))?
-        .clone();
-    let dim = source_diag.top_dim();
-
-    let cell_data = get_cell_data(context, domain, &source)
-        .ok_or_else(|| aux::Error::new("cannot find cell data for hole source"))?;
-
-    let CellData::Boundary { boundary_in, boundary_out } = &cell_data else {
-        // A 0-cell has no boundary; its image is just an unknown 0-cell.
-        return Ok(MapHole {
-            meta: HoleId::fresh(),
-            source,
-            dim: 0,
-            boundary_in: None,
-            boundary_out: None,
-            deps: BTreeSet::new(),
-        });
-    };
-
-    let in_tree = transport_boundary(domain, map, prior_holes, boundary_in)?;
-    let out_tree = transport_boundary(domain, map, prior_holes, boundary_out)?;
-    let mut deps = collect_hole_deps(&in_tree);
-    deps.extend(collect_hole_deps(&out_tree));
-    Ok(MapHole {
-        meta: HoleId::fresh(),
-        source,
-        dim,
-        boundary_in: Some(in_tree),
-        boundary_out: Some(out_tree),
-        deps,
-    })
 }
 
-/// Transport a source-cell boundary through the map, as a paste tree.  Every
-/// leaf is rewritten to the concrete image's paste tree or, for a face that is
-/// itself a hole, to a metavariable leaf.
-fn transport_boundary(
+/// The dimension of a cell from its boundary data.
+fn cell_dim(cell_data: &CellData) -> usize {
+    match cell_data {
+        CellData::Zero => 0,
+        CellData::Boundary { boundary_in, .. } => boundary_in.top_dim() + 1,
+    }
+}
+
+/// Assign `x_diag => image` (image `None` for the bare hole `x => ?`).
+///
+/// Sound boundary inference (case 1) still fires when the image is known and a
+/// whole boundary is a single cell.  Any boundary face left undefined becomes a
+/// hole.  When the image is known and every face is committed, the assignment is
+/// committed to the real map; otherwise a pending entry — pure hole (`image`
+/// `None`) or conditional (`image` `Some`) — is recorded for `x`.
+fn assign_cell(
+    build: &mut MapBuild,
+    context: &Context,
     domain: &Complex,
-    map: &PartialMap,
-    prior_holes: &[MapHole],
+    x_diag: &Diagram,
+    image: Option<&Diagram>,
+) -> Result<(), aux::Error> {
+    if !x_diag.is_cell() {
+        return Err(aux::Error::new("Left-hand side of map instruction must be a cell"));
+    }
+    let tag = x_diag
+        .top_label()
+        .ok_or_else(|| aux::Error::new("Domain cell has no top label"))?
+        .clone();
+    let dim = x_diag.top_dim();
+
+    // Already committed: a re-assignment must be consistent.
+    if build.map.is_defined_at(&tag) {
+        if let Some(a) = image {
+            let current = build.map.image(&tag)?;
+            if !Diagram::isomorphic(current, a) {
+                return Err(aux::Error::new("The same generator is mapped to multiple diagrams"));
+            }
+        }
+        return Ok(());
+    }
+
+    let cell_data = get_cell_data(context, domain, &tag)
+        .ok_or_else(|| aux::Error::new("Cannot find cell data for generator"))?;
+
+    // Case 1 (sound): a whole boundary that is a single cell has its image forced.
+    if let Some(a) = image {
+        for sign in [DiagramSign::Input, DiagramSign::Output] {
+            let Some(source_boundary) = boundary_of_sign(&cell_data, sign) else { continue; };
+            if !source_boundary.is_cell() {
+                continue;
+            }
+            let Some(face_tag) = source_boundary.top_label() else { continue; };
+            if build.map.is_defined_at(face_tag) {
+                continue;
+            }
+            let target_boundary = Diagram::boundary(sign, dim - 1, a)?;
+            assign_cell(build, context, domain, &source_boundary, Some(&target_boundary))?;
+        }
+    }
+
+    let undefined = boundary_dependencies(&cell_data, &build.map);
+
+    // Fully determined with a known image: commit directly (+ reconcile/cascade).
+    if undefined.is_empty() {
+        if let Some(a) = image {
+            return commit(build, context, domain, tag, dim, cell_data, a.clone());
+        }
+    }
+
+    // Incomplete information (or a bare hole): hole every undefined face, then
+    // record/upgrade the pending entry for `x`.
+    for (face_tag, _) in &undefined {
+        ensure_hole(build, context, domain, face_tag)?;
+    }
+    let (boundary_in, boundary_out, deps) = transport_cell_boundaries(build, domain, &cell_data)?;
+    upsert_entry(build, tag, dim, image.cloned(), boundary_in, boundary_out, deps);
+    Ok(())
+}
+
+/// Ensure a pending pure-hole entry exists for an undefined boundary face,
+/// recursing into the face's own undefined faces.  No-op if the face is already
+/// committed or already pending.
+fn ensure_hole(
+    build: &mut MapBuild,
+    context: &Context,
+    domain: &Complex,
+    face_tag: &Tag,
+) -> Result<(), aux::Error> {
+    if build.map.is_defined_at(face_tag) || build.entry_index(face_tag).is_some() {
+        return Ok(());
+    }
+    let cell_data = get_cell_data(context, domain, face_tag).ok_or_else(|| {
+        aux::Error::new(format!("Cannot find cell data for boundary cell {}", face_tag))
+    })?;
+    for (sub, _) in boundary_dependencies(&cell_data, &build.map) {
+        ensure_hole(build, context, domain, &sub)?;
+    }
+    let dim = cell_dim(&cell_data);
+    let (boundary_in, boundary_out, deps) = transport_cell_boundaries(build, domain, &cell_data)?;
+    build.holes.push(MapHole {
+        meta: HoleId::fresh(),
+        source: face_tag.clone(),
+        dim,
+        image: None,
+        boundary_in,
+        boundary_out,
+        deps,
+    });
+    Ok(())
+}
+
+/// Insert or upgrade the pending entry for `tag`.  An existing entry keeps its
+/// metavariable (so dependents stay valid) and gains the image if one is given.
+fn upsert_entry(
+    build: &mut MapBuild,
+    tag: Tag,
+    dim: usize,
+    image: Option<Diagram>,
+    boundary_in: Option<PasteTree>,
+    boundary_out: Option<PasteTree>,
+    deps: BTreeSet<HoleId>,
+) {
+    if let Some(i) = build.entry_index(&tag) {
+        let h = &mut build.holes[i];
+        if image.is_some() {
+            h.image = image;
+        }
+        h.boundary_in = boundary_in;
+        h.boundary_out = boundary_out;
+        h.deps = deps;
+    } else {
+        build.holes.push(MapHole {
+            meta: HoleId::fresh(),
+            source: tag,
+            dim,
+            image,
+            boundary_in,
+            boundary_out,
+            deps,
+        });
+    }
+}
+
+/// Commit `tag => actual_image` to the real map, then reconcile holes and commit
+/// any conditional whose dependencies are now closed (cascading).
+fn commit(
+    build: &mut MapBuild,
+    context: &Context,
+    domain: &Complex,
+    tag: Tag,
+    dim: usize,
+    cell_data: CellData,
+    actual_image: Diagram,
+) -> Result<(), aux::Error> {
+    commit_one(build, tag, dim, cell_data, actual_image)?;
+    cascade(build, context, domain)
+}
+
+/// Add one entry to the real map; close the matching pending entry and splice
+/// its image into the boundary trees of the remaining ones.
+fn commit_one(
+    build: &mut MapBuild,
+    tag: Tag,
+    dim: usize,
+    cell_data: CellData,
+    actual_image: Diagram,
+) -> Result<(), aux::Error> {
+    let map = std::mem::replace(&mut build.map, PartialMap::empty());
+    build.map = PartialMap::extend(map, tag.clone(), dim, cell_data, actual_image.clone())?;
+
+    let Some(i) = build.entry_index(&tag) else { return Ok(()); };
+    let meta = build.holes.remove(i).meta;
+    let n = actual_image.top_dim();
+    let img_tree = actual_image
+        .tree(DiagramSign::Input, n)
+        .ok_or_else(|| aux::Error::new("map image has no paste tree"))?
+        .clone();
+    let subst = |leaf: &Tag| -> Option<PasteTree> {
+        match leaf {
+            Tag::Hole(id) if *id == meta => Some(img_tree.clone()),
+            _ => None,
+        }
+    };
+    for h in &mut build.holes {
+        if let Some(t) = &h.boundary_in {
+            let new = t.substitute(&subst);
+            h.boundary_in = Some(new);
+        }
+        if let Some(t) = &h.boundary_out {
+            let new = t.substitute(&subst);
+            h.boundary_out = Some(new);
+        }
+        let mut deps = h.boundary_in.as_ref().map(collect_hole_deps).unwrap_or_default();
+        if let Some(t) = &h.boundary_out {
+            deps.extend(collect_hole_deps(t));
+        }
+        h.deps = deps;
+    }
+    Ok(())
+}
+
+/// Commit every conditional whose dependencies are all closed, repeatedly, until
+/// none remain.  Each commit removes one pending entry, so this terminates.
+fn cascade(build: &mut MapBuild, context: &Context, domain: &Complex) -> Result<(), aux::Error> {
+    loop {
+        let ready = build
+            .holes
+            .iter()
+            .find(|h| h.image.is_some() && h.deps.is_empty())
+            .map(|h| (h.source.clone(), h.dim, h.image.clone().unwrap()));
+        let Some((source, dim, image)) = ready else { return Ok(()); };
+        let cell_data = get_cell_data(context, domain, &source)
+            .ok_or_else(|| aux::Error::new("Cannot find cell data for conditional assignment"))?;
+        commit_one(build, source, dim, cell_data, image)?;
+    }
+}
+
+/// Transport a cell's boundaries through the build, as paste trees over
+/// committed images and metavariables.  Returns `(input, output, deps)`.
+fn transport_cell_boundaries(
+    build: &MapBuild,
+    domain: &Complex,
+    cell_data: &CellData,
+) -> Result<(Option<PasteTree>, Option<PasteTree>, BTreeSet<HoleId>), aux::Error> {
+    let CellData::Boundary { boundary_in, boundary_out } = cell_data else {
+        return Ok((None, None, BTreeSet::new()));
+    };
+    let in_tree = transport_boundary(build, domain, boundary_in)?;
+    let out_tree = transport_boundary(build, domain, boundary_out)?;
+    let mut deps = collect_hole_deps(&in_tree);
+    deps.extend(collect_hole_deps(&out_tree));
+    Ok((Some(in_tree), Some(out_tree), deps))
+}
+
+/// Transport one boundary diagram through the build: rewrite every leaf to the
+/// committed image's paste tree, or to a metavariable leaf for a pending face.
+fn transport_boundary(
+    build: &MapBuild,
+    domain: &Complex,
     boundary: &Diagram,
 ) -> Result<PasteTree, aux::Error> {
     let n = boundary.top_dim();
     let tree = boundary
         .tree(DiagramSign::Input, n)
         .ok_or_else(|| aux::Error::new("boundary diagram has no paste tree"))?;
-
-    // Build the full rewrite table first, erroring on any leaf that is neither
-    // mapped nor a hole (so we never rely on `substitute` to surface a gap).
     let mut rewrites: HashMap<Tag, PasteTree> = HashMap::new();
-    collect_leaf_rewrites(tree, domain, map, prior_holes, &mut rewrites)?;
+    collect_leaf_rewrites(tree, domain, build, &mut rewrites)?;
     Ok(tree.substitute(&|t| rewrites.get(t).cloned()))
 }
 
-/// Walk the leaves of `tree`, recording for each domain tag the paste tree it
-/// should be replaced by.  Errors on a leaf that is neither in the map nor a hole.
+/// Record, for each leaf of `tree`, the paste tree it should become: the
+/// committed image's tree, or a `Tag::Hole` metavariable for a pending face.
 fn collect_leaf_rewrites(
     tree: &PasteTree,
     domain: &Complex,
-    map: &PartialMap,
-    prior_holes: &[MapHole],
+    build: &MapBuild,
     rewrites: &mut HashMap<Tag, PasteTree>,
 ) -> Result<(), aux::Error> {
     match tree {
@@ -115,31 +297,32 @@ fn collect_leaf_rewrites(
             if rewrites.contains_key(tag) {
                 return Ok(());
             }
-            if map.is_defined_at(tag) {
-                let image = map.image(tag)?;
+            if build.map.is_defined_at(tag) {
+                let image = build.map.image(tag)?;
                 let img_tree = image
                     .tree(DiagramSign::Input, image.top_dim())
                     .ok_or_else(|| aux::Error::new("map image has no paste tree"))?
                     .clone();
                 rewrites.insert(tag.clone(), img_tree);
                 Ok(())
-            } else if let Some(h) = prior_holes.iter().find(|h| &h.source == tag) {
-                rewrites.insert(tag.clone(), PasteTree::Leaf(Tag::Hole(h.meta)));
+            } else if let Some(i) = build.entry_index(tag) {
+                rewrites.insert(tag.clone(), PasteTree::Leaf(Tag::Hole(build.holes[i].meta)));
                 Ok(())
             } else {
+                // Invariant: assign_cell/ensure_hole map-or-hole every face first.
                 let name = domain
                     .find_generator_by_tag(tag)
                     .cloned()
                     .unwrap_or_else(|| format!("{}", tag));
                 Err(aux::Error::new(format!(
-                    "this hole's boundary references `{}`, which is neither mapped nor a hole",
+                    "internal: boundary references `{}`, which is neither mapped nor a hole",
                     name
                 )))
             }
         }
         PasteTree::Node { left, right, .. } => {
-            collect_leaf_rewrites(left, domain, map, prior_holes, rewrites)?;
-            collect_leaf_rewrites(right, domain, map, prior_holes, rewrites)
+            collect_leaf_rewrites(left, domain, build, rewrites)?;
+            collect_leaf_rewrites(right, domain, build, rewrites)
         }
     }
 }
@@ -226,11 +409,14 @@ fn eval_partial_map_basic(ctx: &PartialMapCtx<'_>, basic: &PartialMapBasic, span
             let Some((map, domain)) = ctx.scope.find_map(name) else {
                 return fail(ctx.context, span, format!("Partial map not found: `{}`", name));
             };
+            // Carry the map's stored holes so that `F [ … ]` extends a
+            // map-with-holes (filling) rather than only its hole-free part.
+            let holes = ctx.scope.map_holes(name).map(<[_]>::to_vec).unwrap_or_default();
             let (domain_opt, result) = resolve_map_domain_complex(ctx.context, domain, span);
             let Some(domain) = domain_opt else {
                 return (None, result);
             };
-            (Some(EvalMap { map: map.clone(), domain, holes: vec![] }), InterpResult::ok(ctx.context.clone()))
+            (Some(EvalMap { map: map.clone(), domain, holes }), InterpResult::ok(ctx.context.clone()))
         }
         PartialMapBasic::AnonMap { def, target } => {
             interpret_anon_map_component(ctx.context, ctx.scope, target, def)
@@ -402,56 +588,38 @@ fn interpret_partial_map_ext(ctx: &PartialMapCtx<'_>, ext: &PartialMapExt) -> St
     };
 
     let domain = Arc::clone(&initial.domain);
-    let init_build = MapBuild {
-        map: initial.map,
-        pending_holes: vec![],
-        holes: initial.holes,
-    };
+    let init_build = MapBuild { map: initial.map, holes: initial.holes };
     let clauses_ctx = PartialMapCtx { context: &prefix_result.context, domain: &domain, ..*ctx };
     let (build_opt, clause_result) = eval_pmap_clauses(&clauses_ctx, init_build, &ext.clauses);
-    let Some(mut build) = build_opt else {
+    let Some(build) = build_opt else {
         return (None, prefix_result.merge(clause_result));
     };
-    let mut result = prefix_result.merge(clause_result);
-
-    // Finalize holes only on a clean run: build each `MapHole` in ascending source
-    // dimension so its faces are already in the map or in `holes` (as metavariables).
-    if !result.has_errors() && !build.pending_holes.is_empty() {
-        let mut pending = std::mem::take(&mut build.pending_holes);
-        pending.sort_by_key(|(d, _)| d.top_dim());
-        for (source_diag, span) in pending {
-            match make_map_hole(&result.context, &domain, &build.map, &build.holes, &source_diag) {
-                Ok(hole) => build.holes.push(hole),
-                Err(e) => {
-                    result.add_error(make_error_from_core(span, e));
-                    return (None, result);
-                }
-            }
-        }
-    }
-
+    let result = prefix_result.merge(clause_result);
     (Some(EvalMap { map: build.map, domain, holes: build.holes }), result)
 }
 
 /// Interpret a single clause `lhs => rhs` in a partial map extension block.
 ///
-/// A bare-`?` right-hand side (`arr => ?`) is the basic hole case: the source
-/// cell is recorded as a pending hole and the RHS is *not* evaluated as a diagram.
-/// Otherwise both sides are evaluated and `interpret_assign` extends the map.
+/// A bare-`?` right-hand side (`arr => ?`) is the pure-hole assignment; otherwise
+/// both sides are evaluated and `interpret_assign` extends the map.  Either may
+/// create holes (for boundary faces on which information is incomplete) and may
+/// close earlier holes (filling), via `assign_cell`.
 fn interpret_partial_map_clause(ctx: &PartialMapCtx<'_>, mut build: MapBuild, clause: &PartialMapClause, span: Span) -> Step<MapBuild> {
     let (left_opt, left_result) = interpret_diagram_as_term(ctx.context, ctx.domain, &clause.lhs);
     let Some(left_term) = left_opt else { return (None, left_result); };
 
-    // Basic hole case: `arr => ?`.  Record the source cell; defer hole construction.
+    // Pure-hole case `arr => ?`: assign with no image.  The RHS is not evaluated.
     if is_pure_hole_diagram(&clause.rhs.inner) {
-        return match left_term {
-            Term::Diag(d) => {
-                build.pending_holes.push((d, span));
-                (Some(build), left_result)
-            }
-            Term::Map(_) => {
+        let Term::Diag(source) = left_term else {
+            let mut r = left_result;
+            r.add_error(make_error(span, "The source of a hole must be a single cell, not a map"));
+            return (None, r);
+        };
+        return match assign_cell(&mut build, &left_result.context, ctx.domain, &source, None) {
+            Ok(()) => (Some(build), left_result),
+            Err(e) => {
                 let mut r = left_result;
-                r.add_error(make_error(span, "The source of a hole must be a single cell, not a map"));
+                r.add_error(make_error_from_core(span, e));
                 (None, r)
             }
         };
@@ -462,11 +630,8 @@ fn interpret_partial_map_clause(ctx: &PartialMapCtx<'_>, mut build: MapBuild, cl
     let mut combined = left_result.merge(right_result);
     let Some(right_term) = right_opt else { return (None, combined); };
 
-    match interpret_assign(&combined.context, build.map, ctx.domain, ctx.scope, &left_term, &right_term) {
-        Ok(new_map) => {
-            build.map = new_map;
-            (Some(build), combined)
-        }
+    match interpret_assign(&mut build, &combined.context, ctx.domain, &left_term, &right_term) {
+        Ok(()) => (Some(build), combined),
         Err(e) => {
             combined.add_error(make_error_from_core(span, e));
             (None, combined)
@@ -474,17 +639,16 @@ fn interpret_partial_map_clause(ctx: &PartialMapCtx<'_>, mut build: MapBuild, cl
     }
 }
 
-/// Match two evaluated map terms pointwise, extending the map for each generator in the shared domain.
+/// Match two evaluated map terms pointwise, assigning each shared-domain
+/// generator's left image to its right image (creating holes on incomplete info).
 fn extend_matching_map_images(
+    build: &mut MapBuild,
     context: &Context,
-    map: PartialMap,
     domain: &Complex,
-    target: &Complex,
     left_map: &EvalMap,
     right_map: &EvalMap,
-) -> Result<PartialMap, aux::Error> {
+) -> Result<(), aux::Error> {
     let map_domain = &*left_map.domain;
-    let mut extended = map;
 
     for (_, generator_name, tag) in sorted_generators(map_domain) {
         match (left_map.map.is_defined_at(&tag), right_map.map.is_defined_at(&tag)) {
@@ -497,9 +661,9 @@ fn extend_matching_map_images(
                 let left_image = left_map.map.image(&tag)?;
                 if left_image.is_cell() {
                     let right_image = right_map.map.image(&tag)?;
-                    extended = extend_map_for_cell(context, extended, domain, target, left_image, right_image)?;
+                    assign_cell(build, context, domain, left_image, Some(right_image))?;
                 } else {
-                    let all_defined = left_image.all_labels().all(|tag| extended.is_defined_at(tag));
+                    let all_defined = left_image.all_labels().all(|t| build.map.is_defined_at(t));
                     if !all_defined {
                         return Err(aux::Error::new("Failed to extend map (not enough information)"));
                     }
@@ -508,20 +672,18 @@ fn extend_matching_map_images(
         }
     }
 
-    Ok(extended)
+    Ok(())
 }
 
 /// Map every image of an evaluated map to a constant 0-dimensional diagram.
 fn extend_map_to_constant(
+    build: &mut MapBuild,
     context: &Context,
-    map: PartialMap,
     domain: &Complex,
-    target: &Complex,
     left_map: &EvalMap,
     point: &Diagram,
-) -> Result<PartialMap, aux::Error> {
+) -> Result<(), aux::Error> {
     let map_domain = &*left_map.domain;
-    let mut extended = map;
 
     for (_, _, tag) in sorted_generators(map_domain) {
         if !left_map.map.is_defined_at(&tag) {
@@ -529,39 +691,38 @@ fn extend_map_to_constant(
         }
         let left_image = left_map.map.image(&tag)?;
         if left_image.is_cell() {
-            extended = extend_map_for_cell(context, extended, domain, target, left_image, point)?;
+            assign_cell(build, context, domain, left_image, Some(point))?;
         } else {
-            let all_defined = left_image.all_labels().all(|tag| extended.is_defined_at(tag));
+            let all_defined = left_image.all_labels().all(|t| build.map.is_defined_at(t));
             if !all_defined {
                 return Err(aux::Error::new("Failed to extend map (not enough information)"));
             }
         }
     }
 
-    Ok(extended)
+    Ok(())
 }
 
 /// Process a `lhs => rhs` assignment, dispatching on whether the terms are diagrams or maps.
 fn interpret_assign(
+    build: &mut MapBuild,
     context: &Context,
-    map: PartialMap,
     domain: &Complex,
-    target: &Complex,
     left: &Term,
     right: &Term,
-) -> Result<PartialMap, aux::Error> {
+) -> Result<(), aux::Error> {
     match (left, right) {
         (Term::Diag(d_left), Term::Diag(d_right)) => {
-            extend_map_for_cell(context, map, domain, target, d_left, d_right)
+            assign_cell(build, context, domain, d_left, Some(d_right))
         }
         (Term::Map(mc_left), Term::Map(mc_right)) => {
             if !Arc::ptr_eq(&mc_left.domain, &mc_right.domain) {
                 return Err(aux::Error::new("Not a well-formed assignment"));
             }
-            extend_matching_map_images(context, map, domain, target, mc_left, mc_right)
+            extend_matching_map_images(build, context, domain, mc_left, mc_right)
         }
         (Term::Map(mc_left), Term::Diag(d_right)) if d_right.dim() == 0 => {
-            extend_map_to_constant(context, map, domain, target, mc_left, d_right)
+            extend_map_to_constant(build, context, domain, mc_left, d_right)
         }
         _ => Err(aux::Error::new("Not a well-formed assignment")),
     }
@@ -597,84 +758,6 @@ fn boundary_of_sign(
     }
 }
 
-/// Determine the image classifier for a boundary cell by shape isomorphism.
-///
-/// Maps `focus` through the isomorphism between `source_boundary` and `target_boundary`,
-/// then looks up the resulting tag's classifier in `target`.
-fn image_classifier_via_boundary(
-    focus: &Tag,
-    source_boundary: &Diagram,
-    target_boundary: &Diagram,
-    target: &Complex,
-) -> Result<Diagram, aux::Error> {
-    let mapped_tag = Diagram::map_tag_via_shape_iso(source_boundary, target_boundary, focus)
-        .map_err(|e| aux::Error::new(format!("Failed to extend map ({})", e)))?;
-    let generator_name = target
-        .find_generator_by_tag(&mapped_tag)
-        .ok_or_else(|| aux::Error::new("Image tag not found in target complex"))?
-        .clone();
-    target.classifier(&generator_name)
-        .ok_or_else(|| aux::Error::new("Classifier not found for image generator"))
-        .cloned()
-}
-
-/// Smart extension of a map: adds a mapping from a source cell to a target diagram,
-/// recursively extending for boundary cells as needed.
-pub fn extend_map_for_cell(
-    context: &Context,
-    map: PartialMap,
-    domain: &Complex,
-    target: &Complex,
-    domain_diag: &Diagram,
-    target_diag: &Diagram,
-) -> Result<PartialMap, aux::Error> {
-    if !domain_diag.is_cell() {
-        return Err(aux::Error::new(
-            "Left-hand side of map instruction must be a cell",
-        ));
-    }
-    let d = domain_diag.top_dim();
-    let tag = domain_diag
-        .top_label()
-        .ok_or_else(|| aux::Error::new("Domain cell has no top label"))?
-        .clone();
-
-    if map.is_defined_at(&tag) {
-        let current = map.image(&tag)?;
-        if Diagram::isomorphic(current, target_diag) {
-            return Ok(map);
-        } else {
-            return Err(aux::Error::new(
-                "The same generator is mapped to multiple diagrams",
-            ));
-        }
-    }
-
-    let cell_data = get_cell_data(context, domain, &tag)
-        .ok_or_else(|| aux::Error::new("Cannot find cell data for generator"))?;
-
-    // Extend the map for any boundary dependencies not yet in the domain.
-    let mut current_map = map;
-    for (focus_tag, sign) in boundary_dependencies(&cell_data, &current_map) {
-        if current_map.is_defined_at(&focus_tag) {
-            continue;
-        }
-        let focus_cell_data = get_cell_data(context, domain, &focus_tag).ok_or_else(|| {
-            aux::Error::new(format!("Cannot find cell data for boundary cell {}", focus_tag))
-        })?;
-        let target_boundary = Diagram::boundary(sign, d - 1, target_diag)?;
-        let Some(source_boundary) = boundary_of_sign(&cell_data, sign) else { continue; };
-        current_map = if source_boundary.is_cell() {
-            extend_map_for_cell(context, current_map, domain, target, &source_boundary, &target_boundary)?
-        } else {
-            let focus_image = image_classifier_via_boundary(&focus_tag, &source_boundary, &target_boundary, target)?;
-            let focus_diagram = Diagram::cell(focus_tag.clone(), &focus_cell_data)?;
-            extend_map_for_cell(context, current_map, domain, target, &focus_diagram, &focus_image)?
-        };
-    }
-
-    PartialMap::extend(current_map, tag, d, cell_data, target_diag.clone())
-}
 
 // ---- Partial map naming ----
 

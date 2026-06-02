@@ -1,0 +1,10 @@
+@Type
+
+Arrow <<= { s, t, arr : s -> t },
+
+A <<= { x, y, f : x -> y },
+
+@A
+  (* `arr => ?` then `arr => f` is the same as `arr => f` alone: the hole is
+     upgraded to a conditional and immediately committed. *)
+  let H :: Arrow = [ s => x, t => y, arr => ?, arr => f ]

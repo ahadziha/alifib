@@ -289,35 +289,6 @@ impl Diagram {
         }
     }
 
-    /// Given two diagrams whose top-level shapes are isomorphic, find the image
-    /// of `focus` (a label in `source`) in `target` under that shape isomorphism.
-    pub fn map_tag_via_shape_iso(source: &Diagram, target: &Diagram, focus: &Tag) -> Result<Tag, Error> {
-        let iso = ogposet::find_isomorphism(&source.shape, &target.shape)
-            .map_err(|_| Error::new("boundary shapes don't match"))?;
-        let dim = source.top_dim();
-        let (Some(source_row), Some(map_row), Some(target_row)) = (
-            source.labels.get(dim),
-            iso.map.get(dim),
-            target.labels.get(dim),
-        ) else {
-            return Err(Error::new("no labels at top dimension"));
-        };
-
-        let mut image: Option<Tag> = None;
-        for (i, tag) in source_row.iter().enumerate() {
-            if tag != focus { continue; }
-            let Some(&j) = map_row.get(i) else { continue; };
-            let Some(mapped) = target_row.get(j) else { continue; };
-            match &image {
-                None => image = Some(mapped.clone()),
-                Some(existing) if existing != mapped =>
-                    return Err(Error::new("generator maps to multiple targets")),
-                _ => {}
-            }
-        }
-
-        image.ok_or_else(|| Error::new("tag not found in source diagram"))
-    }
 }
 
 // ---- Internal constructors and helpers ----

@@ -1,0 +1,32 @@
+@Type
+
+(* A 2-cell `x` whose input boundary is the composite `f g` (not a single
+   cell), so mapping `x` before `f`/`g` cannot infer them and must make holes. *)
+Dom <<= {
+  o0, o1, o2,
+  f : o0 -> o1,
+  g : o1 -> o2,
+  m : o0 -> o2,
+  x : f g -> m
+},
+
+A <<= {
+  p0, p1, p2,
+  F : p0 -> p1,
+  G : p1 -> p2,
+  M : p0 -> p2,
+  X : F G -> M
+},
+
+@A
+  (* x first: f, g become holes, then get filled, then x auto-commits. *)
+  let HxFirst :: Dom = [ x => X, f => F, g => G, m => M ],
+
+  (* x last: every face already mapped, so no hole is ever created. *)
+  let HxLast :: Dom = [ f => F, g => G, m => M, x => X ],
+
+  (* Partially filled: g is still missing, so x stays conditional. *)
+  let Partial :: Dom = [ x => X, f => F ],
+
+  (* Prefix extension fills the remaining hole, completing the map. *)
+  let Filled :: Dom = Partial [ g => G ]
