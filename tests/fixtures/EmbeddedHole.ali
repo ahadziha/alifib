@@ -1,0 +1,8 @@
+@Type
+
+Arrow <<= { s, t, arr : s -> t },
+
+B <<= { x, y, z, f : x -> y, g : y -> z },
+
+@B
+  let H :: Arrow = [ s => x, t => z, arr => ? g ]

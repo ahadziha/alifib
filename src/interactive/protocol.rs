@@ -722,7 +722,7 @@ pub fn build_list_rules_response(engine: &RewriteEngine) -> ResponseData {
 pub fn tag_to_json(tag: &Tag) -> serde_json::Value {
     match tag {
         Tag::Global(gid) => serde_json::Value::from(gid.as_usize()),
-        Tag::Local(_) => serde_json::Value::Null,
+        Tag::Local(_) | Tag::Hole(_) => serde_json::Value::Null,
     }
 }
 

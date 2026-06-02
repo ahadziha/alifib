@@ -121,7 +121,7 @@ pub fn resolve_type(
 
     let type_gid = match type_tag {
         Tag::Global(gid) => *gid,
-        Tag::Local(_) => return Err(format!("'{}' is a local cell, not a type", type_name)),
+        Tag::Local(_) | Tag::Hole(_) => return Err(format!("'{}' is a local cell, not a type", type_name)),
     };
 
     store

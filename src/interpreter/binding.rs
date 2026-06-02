@@ -2,6 +2,7 @@ use crate::aux::{GlobalId, LocalId, Tag};
 use crate::core::{
     complex::{Complex, MapDomain},
     diagram::{CellData, Diagram},
+    map_hole::MapHole,
 };
 use crate::language::ast::{NameWithBoundary, Span};
 
@@ -14,8 +15,10 @@ use super::types::{
 /// A named diagram binding produced by a `let` statement: `(name, diagram)`.
 pub type DiagramBinding = (LocalId, Diagram);
 
-/// A named map binding produced by a `map` definition: `(name, partial_map, domain)`.
-pub type MapBinding = (LocalId, crate::core::partial_map::PartialMap, MapDomain);
+/// A named map binding produced by a `map` definition:
+/// `(name, partial_map, domain, holes)`.  `holes` are the unfilled `arr => ?`
+/// assignments; the `partial_map` is the hole-free part.
+pub type MapBinding = (LocalId, crate::core::partial_map::PartialMap, MapDomain, Vec<MapHole>);
 
 
 /// Interpret a sequence of items, threading context through each step.
@@ -119,9 +122,9 @@ pub fn insert_complex_map_binding(
     name_span: Span,
     binding: Option<MapBinding>,
 ) -> (Complex, InterpResult) {
-    let Some((name, map, domain)) = binding else { return (scope, result); };
+    let Some((name, map, domain, holes)) = binding else { return (scope, result); };
     insert_complex_binding(scope, result, name.clone(), name_span, NameKind::PartialMap, move |sc| {
-        sc.add_map(name, domain, map)
+        sc.add_map(name, domain, map, holes)
     })
 }
 
@@ -141,9 +144,9 @@ pub fn insert_module_map_binding(
     result: InterpResult,
     binding: Option<MapBinding>,
 ) -> InterpResult {
-    let Some((name, map, domain)) = binding else { return result; };
+    let Some((name, map, domain, holes)) = binding else { return result; };
     let mut result = result;
-    result.context.modify_current_module(|m| m.add_map(name, domain, map));
+    result.context.modify_current_module(|m| m.add_map(name, domain, map, holes));
     result
 }
 
@@ -214,15 +217,15 @@ pub fn insert_type_map_binding(
     value_span: Span,
     binding: Option<MapBinding>,
 ) -> (Option<Complex>, InterpResult) {
-    let Some((name, map, domain)) = binding else { return (None, result); };
+    let Some((name, map, domain, holes)) = binding else { return (None, result); };
     let has_local = map.has_local_labels();
-    let (name_sc, map_sc, dom_sc) = (name.clone(), map.clone(), domain.clone());
+    let (name_sc, map_sc, dom_sc, holes_sc) = (name.clone(), map.clone(), domain.clone(), holes.clone());
     insert_type_binding(
         owner_type_id, scope, result, name.clone(), name_span, value_span,
         NameKind::PartialMap, has_local,
         "Named maps must only be valued in global cells",
-        move |sc| sc.add_map(name_sc, dom_sc, map_sc),
-        move |tc| tc.add_map(name, domain, map),
+        move |sc| sc.add_map(name_sc, dom_sc, map_sc, holes_sc),
+        move |tc| tc.add_map(name, domain, map, holes),
     )
 }
 

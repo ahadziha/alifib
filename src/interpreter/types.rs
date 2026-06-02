@@ -1,10 +1,10 @@
 use super::global_store::GlobalStore;
-use super::inference::{BdSlot, Constraint, HoleId};
 use crate::aux::{GlobalId, LocalId, Tag};
 use crate::aux::loader::ModuleResolutions;
 use crate::core::{
     complex::Complex,
     diagram::{CellData, Diagram, Sign as DiagramSign},
+    map_hole::MapHole,
     partial_map::PartialMap,
 };
 use crate::language::{ast::Span, error::Error};
@@ -77,72 +77,13 @@ impl Context {
 }
 
 
-// ---- Hole info ----
-
-/// Rendering hint for a partially-known boundary slot.
-///
-/// Stored on [`HoleInfo`] (and copied to [`super::inference::SolvedHole`]) when
-/// a partial map covers only part of a hole's boundary.  The solver never reads
-/// these hints; they are used exclusively by the renderer to show `_` for
-/// unmapped labels.
-#[derive(Debug, Clone)]
-pub struct PartialHint {
-    pub slot: BdSlot,
-    /// The un-mapped boundary diagram (from the source cell).
-    pub boundary: Diagram,
-    /// The partial map at the time the hint was generated.
-    pub map: PartialMap,
-    pub scope: Arc<Complex>,
-}
-
-/// Structured boundary data for a hole, stored without rendering.
-/// Tracks a `?` hole encountered during interpretation.
-///
-/// Boundary information is derived after the fact by the constraint solver in
-/// [`super::inference::solve`]; see [`super::load::InterpretedFile::solved_holes`].
-#[derive(Debug, Clone)]
-pub struct HoleInfo {
-    /// Unique identifier used to link this hole to constraints in the solver.
-    pub id: HoleId,
-    /// Source location of the hole.
-    pub span: Span,
-    /// Source cell tag set when the hole appears as the RHS of a partial-map
-    /// clause, so that `enrich_holes` can look up boundary data for it.
-    pub source_tag: Option<Tag>,
-    /// True when the hole is the *entire* RHS of a partial-map clause
-    /// (e.g. `arr => ?`), not embedded in a composite (e.g. `arr => ? g`).
-    ///
-    /// When true, `enrich_holes` will attempt a full `PartialMap::apply` on the
-    /// source cell's boundary diagrams and emit `BoundaryEq` if the map covers
-    /// them completely.  When the map is incomplete, a `PartialHint` is stored
-    /// for the renderer instead of emitting a solver constraint.
-    pub direct_in_partial_map: bool,
-    /// Rendering hints for boundary slots that are only partially covered by the
-    /// partial map.  These bypass the solver and are used directly by the
-    /// renderer to show `_` for unmapped labels.
-    pub partial_hints: Vec<PartialHint>,
-}
-
-impl HoleInfo {
-    /// Create a hole record at the given source location, with no boundary information yet.
-    pub fn new(span: Span) -> Self {
-        Self {
-            id: HoleId::fresh(),
-            span,
-            source_tag: None,
-            direct_in_partial_map: false,
-            partial_hints: vec![],
-        }
-    }
-}
-
 // ---- Interpretation result ----
 
 /// The accumulated result of one or more interpretation steps.
 ///
-/// Sequential steps are merged with `combine`, which advances the context
-/// while collecting errors and holes from all steps.
-#[must_use = "interpreter results carry errors and holes that must be propagated"]
+/// Sequential steps are merged with `merge`, which advances the context while
+/// collecting errors from all steps.
+#[must_use = "interpreter results carry errors that must be propagated"]
 #[derive(Debug, Clone)]
 pub struct InterpResult {
     /// The updated context after this step.
@@ -150,26 +91,19 @@ pub struct InterpResult {
     /// Errors encountered during this step.  Interpretation continues past
     /// errors to collect as many diagnostics as possible.
     pub errors: Vec<Error>,
-    /// Holes (`?`) found during this step, possibly enriched with boundary info.
-    pub holes: Vec<HoleInfo>,
-    /// Constraints emitted by inference sites for later solving.
-    pub constraints: Vec<Constraint>,
 }
 
 /// A failable interpretation step: an optional produced value paired with an `InterpResult`.
 ///
 /// A `None` value indicates that the step failed (errors will be in the result).
-/// A `Some(v)` value means the step succeeded; the result still carries any holes.
 pub type Step<T> = (Option<T>, InterpResult);
 
 impl InterpResult {
-    /// Create a successful result with no errors or holes.
+    /// Create a successful result with no errors.
     pub fn ok(context: Context) -> Self {
         Self {
             context,
             errors: vec![],
-            holes: vec![],
-            constraints: vec![],
         }
     }
 
@@ -178,22 +112,9 @@ impl InterpResult {
         self.errors.push(err);
     }
 
-    /// Append a hole record to this result.
-    pub fn add_hole(&mut self, hole: HoleInfo) {
-        self.holes.push(hole);
-    }
-
-    /// Append a constraint to this result.
-    pub fn add_constraint(&mut self, c: Constraint) {
-        self.constraints.push(c);
-    }
-
-    /// Merge two sequential results: concatenate errors, holes, and constraints;
-    /// advance to `next`'s context.
+    /// Merge two sequential results: concatenate errors; advance to `next`'s context.
     pub fn merge(mut self, next: InterpResult) -> InterpResult {
         self.errors.extend(next.errors);
-        self.holes.extend(next.holes);
-        self.constraints.extend(next.constraints);
         self.context = next.context;
         self
     }
@@ -201,11 +122,6 @@ impl InterpResult {
     /// Returns `true` if any errors have been recorded.
     pub fn has_errors(&self) -> bool {
         !self.errors.is_empty()
-    }
-
-    /// Returns `true` if any holes have been recorded.
-    pub fn has_holes(&self) -> bool {
-        !self.holes.is_empty()
     }
 }
 
@@ -240,10 +156,14 @@ pub struct TypeScope {
 /// A partial map together with its domain complex, produced by evaluating a map expression.
 #[derive(Debug, Clone)]
 pub struct EvalMap {
-    /// The evaluated partial map.
+    /// The evaluated partial map (the hole-free part).
     pub map: PartialMap,
     /// The complex that is the domain of definition for `map`.
     pub domain: Arc<Complex>,
+    /// Unfilled holes (`arr => ?` assignments) collected while evaluating a map
+    /// definition.  Empty for any map built outside a definition block (name
+    /// lookups, compositions, identities, inclusions).
+    pub holes: Vec<MapHole>,
 }
 
 /// A fully evaluated expression: either a diagram or a partial map.
@@ -255,7 +175,7 @@ pub enum Term {
     Diag(Diagram),
 }
 
-/// A component produced by name lookup, `.in`/`.out`, or a hole position.
+/// A component produced by name lookup or `.in`/`.out`.
 ///
 /// Used as an intermediate representation before a component is placed in
 /// a diagram context that resolves it to a concrete `Term`.
@@ -263,8 +183,6 @@ pub enum Term {
 pub enum Component {
     /// A concrete term (diagram or map).
     Value(Term),
-    /// An unresolved position (`?`) in the diagram.
-    Hole,
     /// A boundary direction requested via `.in` or `.out`.
     Bd(DiagramSign),
 }
@@ -335,8 +253,6 @@ pub fn error_result(context: &Context, span: Span, message: impl Into<String>) -
     InterpResult {
         context: context.clone(),
         errors: vec![make_error(span, message)],
-        holes: vec![],
-        constraints: vec![],
     }
 }
 

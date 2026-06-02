@@ -193,18 +193,3 @@ mod tests {
         assert_eq!(d.snippet, "let x = foo bar\n        ^^^");
     }
 }
-
-pub(crate) fn report_hole(span: Span, message: &str, source: &str, filename: &str) {
-    let char_start = byte_to_char(source, span.start);
-    let char_end   = byte_to_char(source, span.end);
-    Report::build(ReportKind::Advice, (filename, char_start..char_end))
-        .with_message("Hole")
-        .with_label(
-            Label::new((filename, char_start..char_end))
-                .with_message(message)
-                .with_color(Color::Blue),
-        )
-        .finish()
-        .eprint((filename, Source::from(source)))
-        .unwrap_or_else(|e| eprintln!("could not write diagnostic: {}", e));
-}

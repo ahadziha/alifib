@@ -211,7 +211,7 @@ fn interpret_type_generator(context: &Context, generator: &ast::Generator) -> In
         return result;
     }
     let identity = identity_map(&result.context, &definition_complex);
-    definition_complex.add_map(name.clone(), MapDomain::Type(new_id), identity);
+    definition_complex.add_map(name.clone(), MapDomain::Type(new_id), identity, vec![]);
 
     {
         let s = result.context.state_mut();

@@ -36,6 +36,30 @@ impl std::fmt::Display for GlobalId {
     }
 }
 
+static HOLE_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+/// A process-unique identifier for a metavariable: the unknown image of a
+/// domain generator under a partial map (`arr => ?`).
+///
+/// Carried as the payload of [`Tag::Hole`], so a metavariable is an ordinary
+/// paste-tree leaf and the existing paste-tree machinery (substitute, realise,
+/// render) needs no special-casing.  Always construct via [`HoleId::fresh`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct HoleId(usize);
+
+impl HoleId {
+    /// Allocate a fresh identifier unique within this process.
+    pub fn fresh() -> Self {
+        Self(HOLE_COUNTER.fetch_add(1, Ordering::Relaxed))
+    }
+}
+
+impl std::fmt::Display for HoleId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "?{}", self.0)
+    }
+}
+
 /// A user-visible string name, scoped within a single type or module complex.
 pub type LocalId = String;
 
@@ -56,6 +80,11 @@ pub enum Tag {
     Local(LocalId),
     /// A globally unique ID, referring to a cell in the global store.
     Global(GlobalId),
+    /// A metavariable: the unknown image of a domain generator under a partial
+    /// map with holes.  Appears ONLY inside the boundary paste trees of a
+    /// [`crate::core::map_hole::MapHole`]; never as a key in a real map, a complex
+    /// generator, or a built diagram's labels.
+    Hole(HoleId),
 }
 
 impl Tag {
@@ -73,11 +102,16 @@ impl PartialOrd for Tag {
 
 impl Ord for Tag {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        use std::cmp::Ordering;
         match (self, other) {
             (Self::Local(a), Self::Local(b)) => a.cmp(b),
             (Self::Global(a), Self::Global(b)) => a.cmp(b),
-            (Self::Local(_), Self::Global(_)) => std::cmp::Ordering::Less,
-            (Self::Global(_), Self::Local(_)) => std::cmp::Ordering::Greater,
+            (Self::Hole(a), Self::Hole(b)) => a.cmp(b),
+            // Total order across variants: Local < Global < Hole.
+            (Self::Local(_), _) => Ordering::Less,
+            (_, Self::Local(_)) => Ordering::Greater,
+            (Self::Global(_), _) => Ordering::Less,
+            (_, Self::Global(_)) => Ordering::Greater,
         }
     }
 }
@@ -87,6 +121,7 @@ impl std::fmt::Display for Tag {
         match self {
             Self::Local(name) => write!(f, "{}", name),
             Self::Global(id) => write!(f, "{}", id),
+            Self::Hole(id) => write!(f, "{}", id),
         }
     }
 }

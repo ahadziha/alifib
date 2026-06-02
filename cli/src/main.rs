@@ -123,18 +123,12 @@ fn run_print(loader: &Loader, input: &str, output: Option<&str>) -> Result<(), (
 fn run_interpreter(loader: &Loader, input: &str, output_path: Option<&str>) -> Result<(), ()> {
     let file = InterpretedFile::load(loader, input).into_result()?;
     write_output(output_path, &file.to_string())?;
-    if file.has_holes() {
-        output::report_solved_holes(&file);
-    }
+    output::report_map_holes(&file);
     Ok(())
 }
 
 fn run_bench(loader: &Loader, input: &str, n: usize) -> Result<(), ()> {
-    let file = InterpretedFile::load(loader, input).into_result()?;
-    if file.has_holes() {
-        eprintln!("error: benchmark file contains holes");
-        return Err(());
-    }
+    let _file = InterpretedFile::load(loader, input).into_result()?;
     let start = Instant::now();
     for _ in 0..n {
         let _ = InterpretedFile::load(loader, input);

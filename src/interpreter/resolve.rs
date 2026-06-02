@@ -41,7 +41,7 @@ pub fn resolve_root_owner_type_id(
 
     match root_tag {
         Tag::Global(id) => (Some(*id), result),
-        Tag::Local(_) => {
+        Tag::Local(_) | Tag::Hole(_) => {
             result.add_error(make_error(span, "Root has local tag (unexpected)"));
             (None, result)
         }
@@ -233,7 +233,7 @@ fn type_id_of_named_diagram(
             (None, result)
         }
         Some(Tag::Global(id)) => (Some(*id), result),
-        Some(Tag::Local(_)) => {
+        Some(Tag::Local(_)) | Some(Tag::Hole(_)) => {
             result.add_error(make_error(name_span, "Cell has local tag (unexpected)"));
             (None, result)
         }

@@ -1,146 +1,146 @@
 use super::diagram::{interpret_diagram_as_term, is_pure_hole_diagram};
-use super::inference::{BdSlot, Constraint, ConstraintOrigin};
 use super::resolve::{interpret_address, resolve_map_domain_complex, resolve_module_domain, resolve_type_complex};
 use super::types::{
-    Context, EvalMap, InterpResult, PartialHint, Step, Term,
+    Context, EvalMap, InterpResult, Step, Term,
     fail, get_cell_data, make_error, make_error_from_core, sorted_generators,
 };
-use crate::aux::{self, LocalId, Tag};
+use crate::aux::{self, HoleId, LocalId, Tag};
 use crate::core::{
     complex::{Complex, MapDomain},
     diagram::{CellData, Diagram, Sign as DiagramSign},
+    map_hole::{collect_hole_deps, MapHole},
     partial_map::PartialMap,
+    paste_tree::PasteTree,
 };
 use crate::language::ast::{self, DefPartialMap, ForBlock, PMapEntry, PartialMapBasic, PartialMapClause, PartialMapDef, PartialMapExt, Span, Spanned};
+use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
-// ---- Hole boundary enrichment ----
+// ---- Map holes ----
 
-/// Emit boundary constraints for all holes that have a source tag, using the
-/// current partial map state.
+/// The map under construction in an extension block: the real (hole-free)
+/// partial map, the source cells of `arr => ?` clauses still to be turned into
+/// holes (paired with their span), and the holes built so far.
+struct MapBuild {
+    map: PartialMap,
+    pending_holes: Vec<(Diagram, Span)>,
+    holes: Vec<MapHole>,
+}
+
+/// Build a [`MapHole`] for an `arr => ?` clause from the source cell `source_diag`.
 ///
-/// Only processes **direct** holes (where the hole is the entire RHS of a
-/// partial-map clause, e.g. `arr => ?`).  For those holes the source cell's
-/// image IS the hole, so the map applied to the source cell's boundary gives
-/// the hole's boundary.
-///
-/// For **embedded** holes (`arr => ? g`) this function emits nothing: the hole
-/// is only part of a composite, so the map applied to the source cell's
-/// boundary gives the composite's boundary, not the hole's.  The paste context
-/// already emits the correct `BoundaryEq` / `DimEq` constraints for embedded
-/// holes from the concrete neighbours in the composition.
-///
-/// When the map fully covers a boundary, a `BoundaryEq` solver constraint is
-/// emitted.  When the map only partially covers a boundary, a `PartialHint` is
-/// stored on the hole for the renderer (showing `_` for unmapped labels) and
-/// no solver constraint is emitted.
-fn enrich_holes(
-    result: &mut InterpResult,
-    scope: &Complex,
+/// The hole stands for the unknown image of `arr`.  Its boundaries are the
+/// source cell's boundaries transported through the map *syntactically*: each
+/// leaf of `∂arr`'s paste tree is replaced by the concrete image's paste tree
+/// (if that face is mapped) or by a metavariable leaf (if that face is itself a
+/// prior hole).  The result is never realised into a diagram, so a non-round
+/// boundary is fine.  Errors if a face is neither mapped nor a hole.
+fn make_map_hole(
+    context: &Context,
     domain: &Complex,
     map: &PartialMap,
-) {
-    let context = &result.context;
-    // Created lazily: avoid cloning scope when no hole has a source_tag.
-    let mut scope_arc: Option<Arc<Complex>> = None;
+    prior_holes: &[MapHole],
+    source_diag: &Diagram,
+) -> Result<MapHole, aux::Error> {
+    if !source_diag.is_cell() {
+        return Err(aux::Error::new("the source of a hole must be a single cell"));
+    }
+    let source = source_diag
+        .top_label()
+        .ok_or_else(|| aux::Error::new("hole source cell has no top label"))?
+        .clone();
+    let dim = source_diag.top_dim();
 
-    // Collect constraints to emit and hints to attach (can't push directly while
-    // iterating result.holes, since both are fields of `result`).
-    let mut new_constraints: Vec<Constraint> = vec![];
-    // (hole_index, hint) pairs to attach after the loop.
-    let mut new_hints: Vec<(usize, PartialHint)> = vec![];
+    let cell_data = get_cell_data(context, domain, &source)
+        .ok_or_else(|| aux::Error::new("cannot find cell data for hole source"))?;
 
-    for (idx, hole) in result.holes.iter().enumerate() {
-        // Only enrich holes that appeared as the direct image of a source cell.
-        // Embedded holes are constrained by the paste context, not here.
-        if !hole.direct_in_partial_map { continue; }
-        let Some(source_tag) = &hole.source_tag else { continue; };
-        let Some(cell_data) = get_cell_data(context, domain, source_tag) else { continue; };
-
-        let origin = ConstraintOrigin::PartialMap { source_tag: source_tag.clone() };
-
-        // 0-cells have no boundary; a direct hole mapped from a 0-cell is itself a 0-cell.
-        if matches!(cell_data, CellData::Zero) {
-            new_constraints.push(Constraint::DimEq { hole: hole.id, dim: 0, origin });
-            continue;
-        }
-        let CellData::Boundary { boundary_in, boundary_out } = &cell_data else { continue; };
-
-        let scope_arc = scope_arc.get_or_insert_with(|| Arc::new(scope.clone())).clone();
-        // boundary_in and boundary_out are parallel, so they share the same top_dim.
-        let k = boundary_in.top_dim();
-
-        // The hole's dimension equals the source cell's dimension.
-        new_constraints.push(Constraint::DimEq {
-            hole: hole.id,
-            dim: k + 1,
-            origin: origin.clone(),
+    let CellData::Boundary { boundary_in, boundary_out } = &cell_data else {
+        // A 0-cell has no boundary; its image is just an unknown 0-cell.
+        return Ok(MapHole {
+            meta: HoleId::fresh(),
+            source,
+            dim: 0,
+            boundary_in: None,
+            boundary_out: None,
+            deps: BTreeSet::new(),
         });
+    };
 
-        for (sign, boundary) in [
-            (DiagramSign::Input, boundary_in),
-            (DiagramSign::Output, boundary_out),
-        ] {
-            let slot = BdSlot { sign, dim: k };
-            match PartialMap::apply(map, boundary) {
-                Ok(mapped) => {
-                    // Map fully covers this boundary: emit a strong BoundaryEq.
-                    new_constraints.push(Constraint::BoundaryEq {
-                        hole: hole.id, slot, diagram: mapped,
-                        scope: scope_arc.clone(), origin: origin.clone(),
-                    });
-                }
-                Err(_) => {
-                    // Map only partially covers this boundary: store a rendering
-                    // hint so the renderer can show `_` for unmapped labels.
-                    // No solver constraint is emitted — the partial map tells us
-                    // about the composite's boundary (not the hole's) for this slot,
-                    // but the hint is useful for display as a fallback.
-                    new_hints.push((idx, PartialHint {
-                        slot,
-                        boundary: (**boundary).clone(),
-                        map: map.clone(),
-                        scope: scope_arc.clone(),
-                    }));
-                }
+    let in_tree = transport_boundary(domain, map, prior_holes, boundary_in)?;
+    let out_tree = transport_boundary(domain, map, prior_holes, boundary_out)?;
+    let mut deps = collect_hole_deps(&in_tree);
+    deps.extend(collect_hole_deps(&out_tree));
+    Ok(MapHole {
+        meta: HoleId::fresh(),
+        source,
+        dim,
+        boundary_in: Some(in_tree),
+        boundary_out: Some(out_tree),
+        deps,
+    })
+}
+
+/// Transport a source-cell boundary through the map, as a paste tree.  Every
+/// leaf is rewritten to the concrete image's paste tree or, for a face that is
+/// itself a hole, to a metavariable leaf.
+fn transport_boundary(
+    domain: &Complex,
+    map: &PartialMap,
+    prior_holes: &[MapHole],
+    boundary: &Diagram,
+) -> Result<PasteTree, aux::Error> {
+    let n = boundary.top_dim();
+    let tree = boundary
+        .tree(DiagramSign::Input, n)
+        .ok_or_else(|| aux::Error::new("boundary diagram has no paste tree"))?;
+
+    // Build the full rewrite table first, erroring on any leaf that is neither
+    // mapped nor a hole (so we never rely on `substitute` to surface a gap).
+    let mut rewrites: HashMap<Tag, PasteTree> = HashMap::new();
+    collect_leaf_rewrites(tree, domain, map, prior_holes, &mut rewrites)?;
+    Ok(tree.substitute(&|t| rewrites.get(t).cloned()))
+}
+
+/// Walk the leaves of `tree`, recording for each domain tag the paste tree it
+/// should be replaced by.  Errors on a leaf that is neither in the map nor a hole.
+fn collect_leaf_rewrites(
+    tree: &PasteTree,
+    domain: &Complex,
+    map: &PartialMap,
+    prior_holes: &[MapHole],
+    rewrites: &mut HashMap<Tag, PasteTree>,
+) -> Result<(), aux::Error> {
+    match tree {
+        PasteTree::Leaf(tag) => {
+            if rewrites.contains_key(tag) {
+                return Ok(());
+            }
+            if map.is_defined_at(tag) {
+                let image = map.image(tag)?;
+                let img_tree = image
+                    .tree(DiagramSign::Input, image.top_dim())
+                    .ok_or_else(|| aux::Error::new("map image has no paste tree"))?
+                    .clone();
+                rewrites.insert(tag.clone(), img_tree);
+                Ok(())
+            } else if let Some(h) = prior_holes.iter().find(|h| &h.source == tag) {
+                rewrites.insert(tag.clone(), PasteTree::Leaf(Tag::Hole(h.meta)));
+                Ok(())
+            } else {
+                let name = domain
+                    .find_generator_by_tag(tag)
+                    .cloned()
+                    .unwrap_or_else(|| format!("{}", tag));
+                Err(aux::Error::new(format!(
+                    "this hole's boundary references `{}`, which is neither mapped nor a hole",
+                    name
+                )))
             }
         }
-    }
-
-    for (idx, hole) in result.holes.iter().enumerate() {
-        // For **embedded** holes (`source_cell => ? g`), no solver constraints are
-        // emitted (the paste context constrains the hole's actual boundaries).
-        // However, the partial map still provides useful rendering context: for the
-        // "outer" side of the composition (the side not adjacent to a concrete
-        // neighbour), the composite's boundary IS the hole's boundary.  We store
-        // PartialHints for both sides so the renderer can show a best-effort
-        // display; the paste context's BoundaryEq will take priority over any hint
-        // for the "inner" side.
-        if hole.direct_in_partial_map { continue; } // already handled above
-        let Some(source_tag) = &hole.source_tag else { continue; };
-        let Some(cell_data) = get_cell_data(context, domain, source_tag) else { continue; };
-        if matches!(cell_data, CellData::Zero) { continue; } // 0-cells have no boundary hints
-        let CellData::Boundary { boundary_in, boundary_out } = &cell_data else { continue; };
-
-        let scope_arc = scope_arc.get_or_insert_with(|| Arc::new(scope.clone())).clone();
-        let k = boundary_in.top_dim();
-
-        for (sign, boundary) in [
-            (DiagramSign::Input, boundary_in),
-            (DiagramSign::Output, boundary_out),
-        ] {
-            new_hints.push((idx, PartialHint {
-                slot: BdSlot { sign, dim: k },
-                boundary: (**boundary).clone(),
-                map: map.clone(),
-                scope: scope_arc.clone(),
-            }));
+        PasteTree::Node { left, right, .. } => {
+            collect_leaf_rewrites(left, domain, map, prior_holes, rewrites)?;
+            collect_leaf_rewrites(right, domain, map, prior_holes, rewrites)
         }
-    }
-
-    result.constraints.extend(new_constraints);
-    for (idx, hint) in new_hints {
-        result.holes[idx].partial_hints.push(hint);
     }
 }
 
@@ -214,7 +214,7 @@ fn eval_partial_map(ctx: &PartialMapCtx<'_>, partial_map: &ast::PartialMap, span
             let combined = base_result.merge(rest_result);
             let Some(rest_map) = rest_opt else { return (None, combined); };
             let composed = PartialMap::compose(&base_map.map, &rest_map.map);
-            (Some(EvalMap { map: composed, domain: rest_map.domain }), combined)
+            (Some(EvalMap { map: composed, domain: rest_map.domain, holes: vec![] }), combined)
         }
     }
 }
@@ -230,7 +230,7 @@ fn eval_partial_map_basic(ctx: &PartialMapCtx<'_>, basic: &PartialMapBasic, span
             let Some(domain) = domain_opt else {
                 return (None, result);
             };
-            (Some(EvalMap { map: map.clone(), domain }), InterpResult::ok(ctx.context.clone()))
+            (Some(EvalMap { map: map.clone(), domain, holes: vec![] }), InterpResult::ok(ctx.context.clone()))
         }
         PartialMapBasic::AnonMap { def, target } => {
             interpret_anon_map_component(ctx.context, ctx.scope, target, def)
@@ -264,7 +264,7 @@ fn initial_eval_map(ctx: &PartialMapCtx<'_>, prefix: &Option<Box<Spanned<ast::Pa
     let domain = Arc::new(ctx.domain.clone());
     match prefix {
         None => (
-            Some(EvalMap { map: PartialMap::empty(), domain }),
+            Some(EvalMap { map: PartialMap::empty(), domain, holes: vec![] }),
             InterpResult::ok(ctx.context.clone()),
         ),
         Some(prefix) => {
@@ -274,49 +274,49 @@ fn initial_eval_map(ctx: &PartialMapCtx<'_>, prefix: &Option<Box<Spanned<ast::Pa
                 &eval.map, &eval.domain, ctx.domain, prefix.span, result,
             );
             if result.has_errors() { return (None, result); }
-            (Some(EvalMap { map: eval.map, domain }), result)
+            (Some(EvalMap { map: eval.map, domain, holes: eval.holes }), result)
         }
     }
 }
 
-/// Evaluate a sequence of partial map entries, extending the map after each one.
+/// Evaluate a sequence of partial map entries, extending the build after each one.
 ///
-/// Returns early if any entry fails to produce an updated map.
+/// Returns early if any entry fails to produce an updated build.
 fn eval_pmap_clauses(
     ctx: &PartialMapCtx<'_>,
-    initial_map: PartialMap,
+    initial: MapBuild,
     entries: &[Spanned<PMapEntry>],
-) -> Step<PartialMap> {
-    let mut map = initial_map;
+) -> Step<MapBuild> {
+    let mut build = initial;
     let mut result = InterpResult::ok(ctx.context.clone());
 
     for entry in entries {
         let step_ctx = PartialMapCtx { context: &result.context, ..*ctx };
-        let (next_map, entry_result) = match &entry.inner {
+        let (next, entry_result) = match &entry.inner {
             PMapEntry::Clause(clause) => {
-                interpret_partial_map_clause(&step_ctx, map, clause, entry.span)
+                interpret_partial_map_clause(&step_ctx, build, clause, entry.span)
             }
-            PMapEntry::For(fb) => expand_pmap_for(&step_ctx, map, fb, entry.span),
+            PMapEntry::For(fb) => expand_pmap_for(&step_ctx, build, fb, entry.span),
         };
         result = result.merge(entry_result);
-        let Some(updated_map) = next_map else {
+        let Some(updated) = next else {
             return (None, result);
         };
-        map = updated_map;
+        build = updated;
         if result.has_errors() {
-            return (Some(map), result);
+            return (Some(build), result);
         }
     }
 
-    (Some(map), result)
+    (Some(build), result)
 }
 
 fn expand_pmap_for(
     ctx: &PartialMapCtx<'_>,
-    map: PartialMap,
+    build: MapBuild,
     fb: &ForBlock,
     outer_span: Span,
-) -> Step<PartialMap> {
+) -> Step<MapBuild> {
     let values = match super::eval::resolve_index_values(ctx.domain, fb, outer_span, ctx.context) {
         Ok(v) => v,
         Err(result) => return (None, result),
@@ -335,9 +335,9 @@ fn expand_pmap_for(
             return (None, result);
         }
     };
-    let (map_opt, mut result) = eval_pmap_clauses(ctx, map, &entries);
+    let (build_opt, mut result) = eval_pmap_clauses(ctx, build, &entries);
     super::eval::relocate_errors(&mut result, outer_span);
-    (map_opt, result)
+    (build_opt, result)
 }
 
 /// Check that every entry in `map` is defined on a generator of `source`, and
@@ -391,73 +391,82 @@ fn cell_data_compatible(lhs: &CellData, rhs: &CellData) -> bool {
 
 /// Interpret an extension-style partial map (`{ prefix? clause* }`).
 ///
-/// Evaluates the optional prefix, then each clause in order, enriching any holes
-/// with boundary context once all clauses are processed.
+/// Evaluates the optional prefix, then each clause in order.  Pending `arr => ?`
+/// clauses are turned into holes in a final pass that processes them in ascending
+/// source dimension, so a hole's (lower-dimensional) faces — concrete or holes
+/// themselves — exist before it.
 fn interpret_partial_map_ext(ctx: &PartialMapCtx<'_>, ext: &PartialMapExt) -> Step<EvalMap> {
     let (initial_opt, prefix_result) = initial_eval_map(ctx, &ext.prefix);
     let Some(initial) = initial_opt else {
         return (None, prefix_result);
     };
 
-    let clauses_ctx = PartialMapCtx { context: &prefix_result.context, domain: &initial.domain, ..*ctx };
-    let (map_opt, clause_result) = eval_pmap_clauses(&clauses_ctx, initial.map, &ext.clauses);
-    let Some(current_map) = map_opt else {
+    let domain = Arc::clone(&initial.domain);
+    let init_build = MapBuild {
+        map: initial.map,
+        pending_holes: vec![],
+        holes: initial.holes,
+    };
+    let clauses_ctx = PartialMapCtx { context: &prefix_result.context, domain: &domain, ..*ctx };
+    let (build_opt, clause_result) = eval_pmap_clauses(&clauses_ctx, init_build, &ext.clauses);
+    let Some(mut build) = build_opt else {
         return (None, prefix_result.merge(clause_result));
     };
-
     let mut result = prefix_result.merge(clause_result);
-    enrich_holes(&mut result, ctx.scope, &initial.domain, &current_map);
-    (Some(EvalMap { map: current_map, domain: initial.domain }), result)
-}
 
-/// Tag all holes added since `prev_hole_count` with the source cell tag, so that
-/// `enrich_holes` can later look up boundary data for each.
-///
-/// `is_direct` is true when the RHS of the clause is a bare `?` (not a
-/// composite involving a hole).  That flag is forwarded to `enrich_holes` so it
-/// can emit the stronger `BoundaryEq` constraint when the map is complete.
-///
-/// Only acts when the source term is a single cell diagram with a top label.
-fn mark_new_hole_source_tags(
-    result: &mut InterpResult,
-    prev_hole_count: usize,
-    source_term: &Term,
-    is_direct: bool,
-) {
-    let Term::Diag(source_diagram) = source_term else { return; };
-    if !source_diagram.is_cell() { return; }
-    let Some(tag) = source_diagram.top_label() else { return; };
-    for hole in &mut result.holes[prev_hole_count..] {
-        hole.source_tag = Some(tag.clone());
-        hole.direct_in_partial_map = is_direct;
+    // Finalize holes only on a clean run: build each `MapHole` in ascending source
+    // dimension so its faces are already in the map or in `holes` (as metavariables).
+    if !result.has_errors() && !build.pending_holes.is_empty() {
+        let mut pending = std::mem::take(&mut build.pending_holes);
+        pending.sort_by_key(|(d, _)| d.top_dim());
+        for (source_diag, span) in pending {
+            match make_map_hole(&result.context, &domain, &build.map, &build.holes, &source_diag) {
+                Ok(hole) => build.holes.push(hole),
+                Err(e) => {
+                    result.add_error(make_error_from_core(span, e));
+                    return (None, result);
+                }
+            }
+        }
     }
+
+    (Some(EvalMap { map: build.map, domain, holes: build.holes }), result)
 }
 
 /// Interpret a single clause `lhs => rhs` in a partial map extension block.
 ///
-/// Evaluates both sides, then calls `interpret_assign` to extend the map.
-/// If the right side fails with a hole, the source tag is recorded on that hole.
-fn interpret_partial_map_clause(ctx: &PartialMapCtx<'_>, map: PartialMap, clause: &PartialMapClause, span: Span) -> Step<PartialMap> {
+/// A bare-`?` right-hand side (`arr => ?`) is the basic hole case: the source
+/// cell is recorded as a pending hole and the RHS is *not* evaluated as a diagram.
+/// Otherwise both sides are evaluated and `interpret_assign` extends the map.
+fn interpret_partial_map_clause(ctx: &PartialMapCtx<'_>, mut build: MapBuild, clause: &PartialMapClause, span: Span) -> Step<MapBuild> {
     let (left_opt, left_result) = interpret_diagram_as_term(ctx.context, ctx.domain, &clause.lhs);
     let Some(left_term) = left_opt else { return (None, left_result); };
 
-    let prev_hole_count = left_result.holes.len();
+    // Basic hole case: `arr => ?`.  Record the source cell; defer hole construction.
+    if is_pure_hole_diagram(&clause.rhs.inner) {
+        return match left_term {
+            Term::Diag(d) => {
+                build.pending_holes.push((d, span));
+                (Some(build), left_result)
+            }
+            Term::Map(_) => {
+                let mut r = left_result;
+                r.add_error(make_error(span, "The source of a hole must be a single cell, not a map"));
+                (None, r)
+            }
+        };
+    }
+
     let (right_opt, right_result) =
         interpret_diagram_as_term(&left_result.context, ctx.scope, &clause.rhs);
     let mut combined = left_result.merge(right_result);
+    let Some(right_term) = right_opt else { return (None, combined); };
 
-    let Some(right_term) = right_opt else {
-        let new_holes = combined.holes.len() > prev_hole_count;
-        if !new_holes {
-            return (None, combined);
+    match interpret_assign(&combined.context, build.map, ctx.domain, ctx.scope, &left_term, &right_term) {
+        Ok(new_map) => {
+            build.map = new_map;
+            (Some(build), combined)
         }
-        let is_direct = is_pure_hole_diagram(&clause.rhs.inner);
-        mark_new_hole_source_tags(&mut combined, prev_hole_count, &left_term, is_direct);
-        return (Some(map), combined);
-    };
-
-    match interpret_assign(&combined.context, map, ctx.domain, ctx.scope, &left_term, &right_term) {
-        Ok(new_map) => (Some(new_map), combined),
         Err(e) => {
             combined.add_error(make_error_from_core(span, e));
             (None, combined)
@@ -704,7 +713,7 @@ fn finish_def_pmap(
     map_domain: MapDomain,
     dp: &DefPartialMap,
     prior_result: InterpResult,
-) -> (Option<(LocalId, PartialMap, MapDomain)>, InterpResult) {
+) -> (Option<(LocalId, PartialMap, MapDomain, Vec<MapHole>)>, InterpResult) {
     let (eval_map_opt, def_result) = interpret_pmap_def(
         &prior_result.context, scope, domain, &dp.value,
     );
@@ -720,7 +729,7 @@ fn finish_def_pmap(
     }
 
     let name = dp.name.inner.clone();
-    (Some((name, eval_map.map, map_domain)), combined)
+    (Some((name, eval_map.map, map_domain, eval_map.holes)), combined)
 }
 
 /// Interpret a named partial map definition, resolving the domain as a type
@@ -729,7 +738,7 @@ pub fn interpret_def_pmap(
     context: &Context,
     scope: &Complex,
     dp: &DefPartialMap,
-) -> (Option<(LocalId, PartialMap, MapDomain)>, InterpResult) {
+) -> (Option<(LocalId, PartialMap, MapDomain, Vec<MapHole>)>, InterpResult) {
     let (id_opt, addr_result) = interpret_address(context, &dp.address.inner, dp.address.span);
     let Some(id) = id_opt else {
         return (None, addr_result);
@@ -754,7 +763,7 @@ pub fn interpret_def_pmap_module(
     context: &Context,
     scope: &Complex,
     dp: &DefPartialMap,
-) -> (Option<(LocalId, PartialMap, MapDomain)>, InterpResult) {
+) -> (Option<(LocalId, PartialMap, MapDomain, Vec<MapHole>)>, InterpResult) {
     let (resolved_opt, resolve_result) =
         resolve_module_domain(context, &dp.address.inner, dp.address.span);
     let Some(resolved) = resolved_opt else {

@@ -1,7 +1,6 @@
-use super::inference::{BdSlot, Constraint, ConstraintOrigin, HoleId};
 use super::resolve::resolve_map_domain_complex;
 use super::types::{
-    Component, Context, EvalMap, HoleInfo, InterpResult, Step,
+    Component, Context, EvalMap, InterpResult, Step,
     Term, TermPair, fail, make_error, make_error_from_core, sorted_generators,
 };
 use crate::core::{
@@ -54,35 +53,6 @@ fn parse_paste_dim(context: &Context, dim: &Spanned<String>) -> Step<usize> {
 }
 
 
-/// Emit `DimEq` and principal `BoundaryEq` constraints for `hole_id` parallel to `companion`.
-///
-/// Pushes `DimEq(hole, n)` and, when `n > 0`, `BoundaryEq` at the two principal
-/// slots `(Source, n-1)` and `(Target, n-1)`.  Lower-dimensional slots are derived
-/// afterwards by `globular_propagate` in the solver.
-pub(super) fn push_parallel_constraints(
-    hole_id: HoleId,
-    companion: &Diagram,
-    scope: &Arc<Complex>,
-    origin: ConstraintOrigin,
-    constraints: &mut Vec<Constraint>,
-) {
-    let n = companion.top_dim();
-    constraints.push(Constraint::DimEq { hole: hole_id, dim: n, origin: origin.clone() });
-    if n > 0 {
-        for &sign in &[DiagramSign::Input, DiagramSign::Output] {
-            if let Ok(bd) = Diagram::boundary_normal(sign, n - 1, companion) {
-                constraints.push(Constraint::BoundaryEq {
-                    hole: hole_id,
-                    slot: BdSlot { sign, dim: n - 1 },
-                    diagram: bd,
-                    scope: scope.clone(),
-                    origin: origin.clone(),
-                });
-            }
-        }
-    }
-}
-
 /// Returns `true` if `diagram` is a single un-parenthesized or parenthesized `?`.
 pub(super) fn is_pure_hole_diagram(diagram: &ast::Diagram) -> bool {
     match diagram {
@@ -125,8 +95,6 @@ enum Decomp {
     },
     /// A non-empty map chain denoting the composite `maps[0] ∘ … ∘ maps[last]`.
     Map { maps: Vec<EvalMap> },
-    /// The expression contains a hole (`?`), which has been recorded.
-    Hole,
 }
 
 /// Collect a dotted expression into a [`Decomp`] without composing or applying.
@@ -157,10 +125,6 @@ fn decompose(
                 Some(Component::Value(Term::Map(m))) => {
                     (Some(Decomp::Map { maps: vec![m] }), result)
                 }
-                Some(Component::Hole) => {
-                    result.add_hole(HoleInfo::new(expr.span));
-                    (Some(Decomp::Hole), result)
-                }
                 Some(Component::Bd(_)) => {
                     result.add_error(make_error(expr.span, "Not a diagram or map"));
                     (None, result)
@@ -186,7 +150,6 @@ fn decompose(
             let (base_opt, base_result) = decompose(context, scope, base);
             let base_decomp = match base_opt {
                 None => return (None, base_result),
-                Some(Decomp::Hole) => return (Some(Decomp::Hole), base_result),
                 Some(d) => d,
             };
 
@@ -201,10 +164,6 @@ fn decompose(
                         Some(Component::Bd(sign)) => {
                             bds.push((sign, field.span));
                             (Some(Decomp::Diagram { maps, diagram, diagram_span, bds }), combined)
-                        }
-                        Some(Component::Hole) => {
-                            combined.add_hole(HoleInfo::new(field.span));
-                            (Some(Decomp::Hole), combined)
                         }
                         Some(Component::Value(_)) => {
                             combined.add_error(make_error(field.span, "Not a well-formed diagram expression"));
@@ -228,17 +187,12 @@ fn decompose(
                             Some(Decomp::Diagram { maps, diagram, diagram_span: field.span, bds: Vec::new() }),
                             combined,
                         ),
-                        Some(Component::Hole) => {
-                            combined.add_hole(HoleInfo::new(field.span));
-                            (Some(Decomp::Hole), combined)
-                        }
                         Some(Component::Bd(_)) => {
                             combined.add_error(make_error(field.span, "Not a diagram or map"));
                             (None, combined)
                         }
                     }
                 }
-                Decomp::Hole => unreachable!("hole bases return early"),
             }
         }
     }
@@ -253,7 +207,7 @@ fn decompose(
 /// cells.  A pure map chain is composed once, from the innermost map outward.
 fn execute(decomp: Option<Decomp>, mut result: InterpResult) -> (Option<Term>, InterpResult) {
     match decomp {
-        None | Some(Decomp::Hole) => (None, result),
+        None => (None, result),
         Some(Decomp::Diagram { maps, diagram, diagram_span, bds }) => {
             let mut current = diagram;
             if let Some(&(last_sign, last_span)) = bds.last() {
@@ -291,7 +245,7 @@ fn execute(decomp: Option<Decomp>, mut result: InterpResult) -> (Option<Term>, I
             for m in inner_to_outer {
                 composed = PartialMap::compose(&m.map, &composed);
             }
-            (Some(Term::Map(EvalMap { map: composed, domain })), result)
+            (Some(Term::Map(EvalMap { map: composed, domain, holes: vec![] })), result)
         }
     }
 }
@@ -326,10 +280,6 @@ pub fn interpret_dexpr(
             let (comp_opt, mut result) = interpret_dcomponent(context, scope, comp, d_expr.span);
             match comp_opt {
                 None => (None, result),
-                Some(Component::Hole) => {
-                    result.add_hole(HoleInfo::new(d_expr.span));
-                    (None, result)
-                }
                 Some(Component::Bd(_)) => {
                     result.add_error(make_error(d_expr.span, "Not a diagram or map"));
                     (None, result)
@@ -360,7 +310,7 @@ pub fn interpret_dcomponent(
             if let Some((map, domain)) = scope.find_map(name) {
                 let (domain_opt, result) = resolve_map_domain_complex(context, domain, span);
                 let Some(domain) = domain_opt else { return (None, result); };
-                return (Some(Component::Value(Term::Map(EvalMap { map: map.clone(), domain }))), InterpResult::ok(context.clone()));
+                return (Some(Component::Value(Term::Map(EvalMap { map: map.clone(), domain, holes: vec![] }))), InterpResult::ok(context.clone()));
             }
             fail(context, span, format!("Name `{}` not found", name))
         }
@@ -374,7 +324,11 @@ pub fn interpret_dcomponent(
             let (term_opt, result) = interpret_diagram_as_term(context, scope, inner_diag);
             (term_opt.map(Component::Value), result)
         }
-        DComponent::Hole => (Some(Component::Hole), InterpResult::ok(context.clone())),
+        DComponent::Hole => fail(
+            context,
+            span,
+            "`?` is only allowed as the entire right-hand side of a partial-map clause",
+        ),
         DComponent::Run { strategy, diagram } => match strategy.inner {
             ast::Strategy::Auto => interpret_run_auto(context, scope, diagram, span),
         },
@@ -446,52 +400,19 @@ fn interpret_run_auto(
 
 /// Evaluate both sides of an assertion statement and pair them for equality checking.
 ///
-/// Both sides are always evaluated even when one fails, so that holes are detected in
-/// a single pass.  When one side is a concrete diagram and the other has holes, those
-/// holes are enriched with the concrete diagram's source/target boundaries: the hole
-/// must be a diagram equal to the concrete side, so it must share its boundaries.
+/// Both sides are always evaluated even when one fails, to collect as many
+/// diagnostics as possible in a single pass.
 pub fn interpret_assert(
     context: &Context,
     scope: &Complex,
     assert_stmt: &crate::language::ast::AssertStmt,
 ) -> (Option<TermPair>, InterpResult) {
     let (left_opt, left_result) = interpret_diagram_as_term(context, scope, &assert_stmt.lhs);
-    let lhs_hole_count = left_result.holes.len();
 
-    // Always evaluate RHS even if LHS failed.
+    // Always evaluate RHS even if LHS failed, to collect as many diagnostics as possible.
     let (right_opt, right_result) =
         interpret_diagram_as_term(&left_result.context, scope, &assert_stmt.rhs);
     let mut combined = left_result.merge(right_result);
-
-    // Constraint system: when the entire other side is a single `?`, pin the hole's
-    // exact value and emit parallel boundary constraints.  For embedded holes (e.g.,
-    // `f ? g = h`) the paste context already emits BoundaryEq; claiming Value(hole, h)
-    // would be wrong.
-    if !combined.holes.is_empty() {
-        let scope_arc = Arc::new(scope.clone());
-        if let Some(Term::Diag(ref d)) = right_opt
-            && is_pure_hole_diagram(&assert_stmt.lhs.inner) {
-            for hole in &combined.holes[..lhs_hole_count] {
-                combined.constraints.push(Constraint::Value {
-                    hole: hole.id,
-                    diagram: d.clone(),
-                    scope: scope_arc.clone(),
-                    origin: ConstraintOrigin::Assertion,
-                });
-            }
-        }
-        if let Some(Term::Diag(ref d)) = left_opt
-            && is_pure_hole_diagram(&assert_stmt.rhs.inner) {
-            for hole in &combined.holes[lhs_hole_count..] {
-                combined.constraints.push(Constraint::Value {
-                    hole: hole.id,
-                    diagram: d.clone(),
-                    scope: scope_arc.clone(),
-                    origin: ConstraintOrigin::Assertion,
-                });
-            }
-        }
-    }
 
     match (left_opt, right_opt) {
         (Some(Term::Diag(d1)), Some(Term::Diag(d2))) => {
@@ -543,10 +464,6 @@ pub fn interpret_diagram_as_term(
 
 /// Interpret an explicit paste `lhs *k rhs`. The right-hand side is evaluated first
 /// (it determines the context for the left), then both are pasted at dimension k.
-///
-/// Both sides are evaluated even when one has a hole or error, so that holes are
-/// reported in a single pass and each side's holes can be enriched with the other
-/// side's k-dimensional boundary.
 fn interpret_paste(
     context: &Context,
     scope: &Complex,
@@ -558,12 +475,10 @@ fn interpret_paste(
     let (k_opt, k_result) = parse_paste_dim(context, dim);
     let Some(k) = k_opt else { return (None, k_result); };
 
-    // Evaluate RHS first; record how many holes it produced before evaluating LHS.
+    // Evaluate RHS first (it determines the context for the left).
     let (right_term, right_result) = interpret_sequence_as_term(context, scope, rhs, span);
     let (d_right_opt, right_result) = require_diagram_term(right_term, right_result, span);
-    let rhs_hole_count = right_result.holes.len();
 
-    // Always evaluate LHS, even if RHS has holes or errors.
     let (left_term, left_result) = interpret_diagram_as_term(&right_result.context, scope, lhs);
     let mut combined = right_result.merge(left_result);
     let d_left_opt = match left_term {
@@ -574,56 +489,6 @@ fn interpret_paste(
         }
         None => None,
     };
-
-    // Constraint system: BoundaryEq and DimEq from each concrete side.
-    // LHS holes (index rhs_hole_count..) get boundary_out from RHS.source_k.
-    // RHS holes (index ..rhs_hole_count) get boundary_in from LHS.target_k.
-    // Both sides also learn their dimension from the concrete partner.
-    if !combined.holes.is_empty() {
-        let scope_arc = Arc::new(scope.clone());
-        if let Some(ref d_right) = d_right_opt {
-            if let Ok(in_bd) = Diagram::boundary_normal(DiagramSign::Input, k, d_right) {
-                for hole in &combined.holes[rhs_hole_count..] {
-                    combined.constraints.push(Constraint::BoundaryEq {
-                        hole: hole.id,
-                        slot: BdSlot { sign: DiagramSign::Output, dim: k },
-                        diagram: in_bd.clone(),
-                        scope: scope_arc.clone(),
-                        origin: ConstraintOrigin::Paste { paste_dim: k },
-                    });
-                }
-            }
-            let n = d_right.top_dim();
-            for hole in &combined.holes[rhs_hole_count..] {
-                combined.constraints.push(Constraint::DimEq {
-                    hole: hole.id,
-                    dim: n,
-                    origin: ConstraintOrigin::Paste { paste_dim: k },
-                });
-            }
-        }
-        if let Some(ref d_left) = d_left_opt {
-            if let Ok(out_bd) = Diagram::boundary_normal(DiagramSign::Output, k, d_left) {
-                for hole in &combined.holes[..rhs_hole_count] {
-                    combined.constraints.push(Constraint::BoundaryEq {
-                        hole: hole.id,
-                        slot: BdSlot { sign: DiagramSign::Input, dim: k },
-                        diagram: out_bd.clone(),
-                        scope: scope_arc.clone(),
-                        origin: ConstraintOrigin::Paste { paste_dim: k },
-                    });
-                }
-            }
-            let n = d_left.top_dim();
-            for hole in &combined.holes[..rhs_hole_count] {
-                combined.constraints.push(Constraint::DimEq {
-                    hole: hole.id,
-                    dim: n,
-                    origin: ConstraintOrigin::Paste { paste_dim: k },
-                });
-            }
-        }
-    }
 
     match (d_left_opt, d_right_opt) {
         (Some(d_left), Some(d_right)) => match Diagram::paste(k, &d_left, &d_right) {
@@ -640,26 +505,8 @@ fn interpret_paste(
 /// Interpret a juxtaposition sequence of diagram expressions.
 ///
 /// A single expression evaluates to its term (diagram or map). Multiple
-/// expressions are pasted left-to-right; all must be diagrams.
-///
-/// Holes do not abort the loop. Instead, evaluation continues past each
-/// hole so that both its left and right boundary can be inferred from the
-/// concrete diagrams immediately adjacent to it. Two paste accumulators are
-/// maintained:
-///
-/// * `left_acc` — paste of concrete diagrams before the first hole.
-/// * `right_acc` — paste of concrete diagrams since the most recent hole;
-///   reset to `None` whenever a new hole block begins.
-///
-/// `last_hole_block_start` records the first index (into `result.holes`) of
-/// the current run of consecutive holes so that the next concrete diagram can
-/// enrich the right boundary of all of them.
-///
-/// Input-boundary constraints are *deferred* until the right neighbour is
-/// known so that both input and output constraints use a consistent paste
-/// dimension `k = min(left.dim, right.dim) - 1`, matching the behaviour of
-/// concrete paste.  Trailing holes (no right neighbour) have their source
-/// constraint emitted after the loop using only the left neighbour.
+/// expressions are pasted left-to-right at the principal dimension
+/// `k = min(left.dim, right.dim) - 1`; all must be diagrams.
 fn interpret_sequence_as_term(
     context: &Context,
     scope: &Complex,
@@ -675,164 +522,39 @@ fn interpret_sequence_as_term(
         return interpret_dexpr(context, scope, &exprs[0]);
     }
 
-    let mut left_acc: Option<Diagram> = None;
-    let mut right_acc: Option<Diagram> = None;
-    // First index in `result.holes` of the current hole block.
-    let mut last_hole_block_start: Option<usize> = None;
-    // The concrete diagram immediately to the left of the current hole block.
-    // Captured when the block opens; used (deferred) to emit the source constraint.
-    let mut hole_block_left: Option<Diagram> = None;
-    let mut has_holes = false;
+    let mut acc: Option<Diagram> = None;
     let mut result = InterpResult::ok(context.clone());
 
     for expr in exprs {
-        let prev_hole_count = result.holes.len();
         let (term_opt, expr_result) = interpret_dexpr(&result.context, scope, expr);
         result = result.merge(expr_result);
-        let new_holes = result.holes.len() > prev_hole_count;
-
-        match term_opt {
-            None if new_holes => {
-                // Start a new hole block (or extend the current one).
-                // Input-boundary emission is deferred until the right neighbour arrives.
-                if last_hole_block_start.is_none() {
-                    last_hole_block_start = Some(prev_hole_count);
-                    hole_block_left = right_acc.clone().or_else(|| left_acc.clone());
-                }
-                right_acc = None;
-                has_holes = true;
-            }
-            None => {
-                // An error occurred (not a hole): abort.
-                return (None, result);
-            }
+        let d_right = match term_opt {
+            Some(Term::Diag(d)) => d,
             Some(Term::Map(_)) => {
                 result.add_error(make_error(expr.span, "Not a diagram"));
                 return (None, result);
             }
-            Some(Term::Diag(d_right)) => {
-                // Enrich the current hole block now that we have a right neighbour.
-                if let Some(start) = last_hole_block_start {
-                    let scope_arc = Arc::new(scope.clone());
-                    let block_hole_ids: Vec<_> =
-                        result.holes[start..prev_hole_count].iter().map(|h| h.id).collect();
-
-                    // Infer hole dimension from the left neighbour (left-associative).
-                    let n_hole = match hole_block_left.as_ref() {
-                        Some(left_diag) => left_diag.top_dim(),
-                        None => d_right.top_dim(),
-                    };
-
-                    // Input boundary: paste with left at min(left, hole) - 1.
-                    if let (Some(left_diag), Some(&first_id)) =
-                        (&hole_block_left, block_hole_ids.first()) {
-                        if let Some(k_left) = left_diag.top_dim().min(n_hole).checked_sub(1) {
-                            if let Ok(out_bd) =
-                                Diagram::boundary_normal(DiagramSign::Output, k_left, left_diag) {
-                                result.constraints.push(Constraint::BoundaryEq {
-                                    hole: first_id,
-                                    slot: BdSlot { sign: DiagramSign::Input, dim: k_left },
-                                    diagram: out_bd,
-                                    scope: scope_arc.clone(),
-                                    origin: ConstraintOrigin::Paste { paste_dim: k_left },
-                                });
-                            }
-                        }
-                    }
-
-                    // Output boundary: paste with right at min(hole, right) - 1.
-                    if let Some(&last_id) = block_hole_ids.last() {
-                        if let Some(k_right) = n_hole.min(d_right.top_dim()).checked_sub(1) {
-                            if let Ok(in_bd) =
-                                Diagram::boundary_normal(DiagramSign::Input, k_right, &d_right) {
-                                result.constraints.push(Constraint::BoundaryEq {
-                                    hole: last_id,
-                                    slot: BdSlot { sign: DiagramSign::Output, dim: k_right },
-                                    diagram: in_bd,
-                                    scope: scope_arc.clone(),
-                                    origin: ConstraintOrigin::Paste { paste_dim: k_right },
-                                });
-                            }
-                        }
-                    }
-
-                    // Dimension constraint: infer from left neighbour (left-associative),
-                    // falling back to right if there is no left.
-                    let n_infer = match hole_block_left.as_ref() {
-                        Some(left_diag) => left_diag.top_dim(),
-                        None => d_right.top_dim(),
-                    };
-                    if let Some(paste_k) = n_infer.checked_sub(1) {
-                        for &id in &block_hole_ids {
-                            result.constraints.push(Constraint::DimEq {
-                                hole: id,
-                                dim: n_infer,
-                                origin: ConstraintOrigin::Paste { paste_dim: paste_k },
-                            });
-                        }
-                    }
-
-                    last_hole_block_start = None;
-                    hole_block_left = None;
-                }
-                // Paste into the appropriate accumulator.
-                let acc = if has_holes { &mut right_acc } else { &mut left_acc };
-                let next = match acc.take() {
-                    None => Ok(d_right),
-                    Some(prev) => match prev.top_dim().min(d_right.top_dim()).checked_sub(1) {
-                        None => Err(crate::aux::Error::new(
-                            "principal paste dimension is below 0")),
-                        Some(k) => Diagram::paste(k, &prev, &d_right),
-                    }
-                };
-                match next {
-                    Ok(d) => *acc = Some(d),
-                    Err(e) => {
-                        result.add_error(make_error(span, format!("Failed to paste diagrams: {}", e)));
-                        return (None, result);
-                    }
-                }
+            None => return (None, result),
+        };
+        let next = match acc.take() {
+            None => Ok(d_right),
+            Some(prev) => match prev.top_dim().min(d_right.top_dim()).checked_sub(1) {
+                None => Err(crate::aux::Error::new("principal paste dimension is below 0")),
+                Some(k) => Diagram::paste(k, &prev, &d_right),
+            },
+        };
+        match next {
+            Ok(d) => acc = Some(d),
+            Err(e) => {
+                result.add_error(make_error(span, format!("Failed to paste diagrams: {}", e)));
+                return (None, result);
             }
         }
     }
 
-    // Emit deferred source constraint for trailing holes (no right neighbour).
-    // Only the *first* trailing hole has its source determined by the left
-    // neighbour; inner holes in the block are unconstrained on that side.
-    if let Some(start) = last_hole_block_start
-        && let Some(ref left_diag) = hole_block_left {
-        let n = left_diag.top_dim();
-        let scope_arc = Arc::new(scope.clone());
-        let trailing_ids: Vec<HoleId> = result.holes[start..].iter().map(|h| h.id).collect();
-        if let Some(k) = n.checked_sub(1) {
-            if let (Ok(out_bd), Some(&first_id)) =
-                (Diagram::boundary_normal(DiagramSign::Output, k, left_diag), trailing_ids.first())
-            {
-                result.constraints.push(Constraint::BoundaryEq {
-                    hole: first_id,
-                    slot: BdSlot { sign: DiagramSign::Input, dim: k },
-                    diagram: out_bd,
-                    scope: scope_arc.clone(),
-                    origin: ConstraintOrigin::Paste { paste_dim: k },
-                });
-            }
-            for &id in &trailing_ids {
-                result.constraints.push(Constraint::DimEq {
-                    hole: id,
-                    dim: n,
-                    origin: ConstraintOrigin::Paste { paste_dim: k },
-                });
-            }
-        }
-    }
-
-    if has_holes {
-        (None, result)
-    } else {
-        match left_acc {
-            Some(d) => (Some(Term::Diag(d)), result),
-            None => fail(&result.context, span, "Empty diagram expression"),
-        }
+    match acc {
+        Some(d) => (Some(Term::Diag(d)), result),
+        None => fail(&result.context, span, "Empty diagram expression"),
     }
 }
 
@@ -840,37 +562,19 @@ fn interpret_sequence_as_term(
 
 /// Interpret an input/output boundary pair and wrap the result as `CellData::Boundary`.
 ///
-/// Both sides are always evaluated so that holes in either boundary are detected in a
-/// single pass.  Holes in the input boundary are enriched with the output diagram as
-/// their `boundary_out` (and vice versa), so the reported context reads naturally as
-/// `? -> target` or `source -> ?`.
+/// Both sides are always evaluated so that errors in either boundary are detected in
+/// a single pass.  A `?` in a generator boundary is rejected (holes are only legal as
+/// the image of a partial-map clause).
 pub fn interpret_boundaries(
     context: &Context,
     scope: &Complex,
     boundaries: &Spanned<ast::Boundary>,
 ) -> (Option<CellData>, InterpResult) {
     let (source_opt, source_result) = interpret_diagram(context, scope, &boundaries.inner.input);
-    let pre_target_holes = source_result.holes.len();
-    // Always evaluate the target even if the source has a hole or error.
+    // Always evaluate the target even if the source has an error.
     let (target_opt, target_result) =
         interpret_diagram(&source_result.context, scope, &boundaries.inner.output);
-    let mut combined = source_result.merge(target_result);
-
-    // Constraint system: a hole in source position must be parallel to the target,
-    // and vice versa.  Decomposed eagerly into DimEq + BoundaryEq at principal slots.
-    if !combined.holes.is_empty() {
-        let scope_arc = Arc::new(scope.clone());
-        if let Some(ref tgt) = target_opt {
-            for hole in &combined.holes[..pre_target_holes] {
-                push_parallel_constraints(hole.id, tgt, &scope_arc, ConstraintOrigin::Declaration, &mut combined.constraints);
-            }
-        }
-        if let Some(ref src) = source_opt {
-            for hole in &combined.holes[pre_target_holes..] {
-                push_parallel_constraints(hole.id, src, &scope_arc, ConstraintOrigin::Declaration, &mut combined.constraints);
-            }
-        }
-    }
+    let combined = source_result.merge(target_result);
 
     match (source_opt, target_opt) {
         (Some(boundary_in), Some(boundary_out)) => (

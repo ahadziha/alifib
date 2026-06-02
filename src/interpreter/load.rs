@@ -8,8 +8,7 @@ use crate::aux::loader::{LoadFileError, Loader};
 use crate::language::Error as LangError;
 use std::fmt;
 use std::sync::Arc;
-use super::{Context, GlobalStore, SolvedHole, interpret_program};
-use super::inference::{solve, HoleEntry};
+use super::{Context, GlobalStore, interpret_program};
 
 // ---- LoadResult ----
 
@@ -83,8 +82,6 @@ impl LoadResult {
 pub struct InterpretedFile {
     /// Accumulated interpreter state for the file and all its dependencies.
     pub state: Arc<GlobalStore>,
-    /// Holes after constraint solving: richer boundary information.
-    pub solved_holes: Vec<SolvedHole>,
     /// Original source text of the root file, kept for diagnostic rendering.
     pub source: String,
     /// Canonical path of the root file.
@@ -128,22 +125,6 @@ impl InterpretedFile {
                     path: dep_path.clone(),
                 };
             }
-            // Warn when a dependency module contains holes: boundary inference is
-            // only performed for the root file, so the user needs to know.
-            if dep_result.has_holes() {
-                let message = format!(
-                    "hole in included module {} (boundary inference is only performed for the root file)",
-                    dep_path
-                );
-                for hole in &dep_result.holes {
-                    crate::language::error::report_hole(
-                        hole.span,
-                        &message,
-                        &dep_module.source,
-                        dep_path,
-                    );
-                }
-            }
             prev_state = dep_result.context.state;
         }
 
@@ -165,31 +146,11 @@ impl InterpretedFile {
             };
         }
 
-        // Run the constraint solver over all holes and constraints collected
-        // during interpretation of the root module.
-        let entries: Vec<HoleEntry> = result.holes.iter()
-            .map(|h| HoleEntry { id: h.id, span: h.span })
-            .collect();
-        let mut solved_holes = solve(&entries, &result.constraints);
-
-        // Copy rendering hints from HoleInfo into SolvedHole.  The solver never
-        // reads these; they are used only by the renderer to show `_` for
-        // labels that are in scope but not yet determined.
-        for (hole_info, solved) in result.holes.iter().zip(solved_holes.iter_mut()) {
-            solved.partial_hints = hole_info.partial_hints.clone();
-        }
-
         LoadResult::Loaded(Self {
             state: Arc::clone(&result.context.state),
-            solved_holes,
             source: loaded.source,
             path: loaded.canonical_path,
         })
-    }
-
-    /// Returns `true` if interpretation left any unsolved holes (`?`).
-    pub fn has_holes(&self) -> bool {
-        !self.solved_holes.is_empty()
     }
 }
 

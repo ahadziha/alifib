@@ -1,0 +1,8 @@
+@Type
+
+Two <<= { a0, a1, e : a0 -> a1 },
+
+A <<= { x, y, f : x -> y },
+
+@A
+  let H :: Two = [ a0 => x, a1 => ?, e => ? ]

@@ -165,7 +165,7 @@ pub fn interpret_include_module_instr(
     let mut result = InterpResult::ok(context.clone());
     result.context.modify_current_module(|current| {
         insert_generators_by_tag(current, imported_generators);
-        current.add_map(alias, MapDomain::Module(canonical_path), inclusion);
+        current.add_map(alias, MapDomain::Module(canonical_path), inclusion, vec![]);
     });
 
     result
@@ -201,7 +201,7 @@ pub fn interpret_include_instr(
     let mut new_scope = scope.clone();
     insert_generators_by_tag(&mut new_scope, prefixed_generators(&subtype, &name, false));
     let inclusion = identity_map(&context_after, &subtype);
-    new_scope.add_map(name, MapDomain::Type(id), inclusion);
+    new_scope.add_map(name, MapDomain::Type(id), inclusion, vec![]);
 
     (Some(new_scope), include_result)
 }
@@ -255,7 +255,7 @@ pub fn interpret_attach_instr(
         Ok(result) => result,
         Err(msg) => return (None, error_result(&r.context, span, msg)),
     };
-    current_scope.add_map(name, domain, current_map);
+    current_scope.add_map(name, domain, current_map, vec![]);
     (Some(current_scope), r)
 }
 
@@ -332,10 +332,14 @@ fn resolve_attach(
             };
             let (eval_map_opt, pmap_result) =
                 interpret_pmap_def(&context_after, scope, &domain, pmap_node);
-            let combined = addr_result.merge(pmap_result);
+            let mut combined = addr_result.merge(pmap_result);
             let Some(eval_map) = eval_map_opt else {
                 return (None, combined);
             };
+            if !eval_map.holes.is_empty() {
+                combined.add_error(make_error(span, "Holes (`?`) are not supported in `attach` clauses"));
+                return (None, combined);
+            }
             (Some((name, eval_map.map, MapDomain::Type(id))), combined)
         }
     }

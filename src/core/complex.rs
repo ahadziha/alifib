@@ -5,6 +5,7 @@
 //! operations maintain internal consistency invariants checked in debug builds.
 
 use super::diagram::{CellData, Diagram};
+use super::map_hole::MapHole;
 use super::partial_map::PartialMap;
 use crate::aux::{GlobalId, LocalId, ModuleId, Tag};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -24,11 +25,14 @@ struct GeneratorEntry {
     insertion_order: usize,
 }
 
-/// A named partial map together with the complex it maps from.
+/// A named partial map together with the complex it maps from and any unfilled
+/// holes (`arr => ?` assignments not yet given an image).  The `map` is the
+/// hole-free part, used as the map everywhere outside its own definition.
 #[derive(Debug, Clone)]
 struct MapEntry {
     map: PartialMap,
     domain: MapDomain,
+    holes: Vec<MapHole>,
 }
 
 /// A cell scoped to a type body, carrying a local tag rather than a global ID.
@@ -163,16 +167,24 @@ impl Complex {
 
     // ---- Maps ----
 
-    /// Store a named partial map together with the complex it maps from.
-    pub fn add_map(&mut self, name: LocalId, domain: MapDomain, map: PartialMap) {
-        self.maps.insert(name.clone(), MapEntry { map, domain });
+    /// Store a named partial map together with the complex it maps from and any
+    /// unfilled holes.
+    pub fn add_map(&mut self, name: LocalId, domain: MapDomain, map: PartialMap, holes: Vec<MapHole>) {
+        self.maps.insert(name.clone(), MapEntry { map, domain, holes });
         self.used_names.insert(name);
         self.assert_invariants();
     }
 
-    /// Look up a map by name; returns the map and its domain if found.
+    /// Look up a map by name; returns the map and its domain if found.  The
+    /// hole-free part of the map (callers outside a map's own definition never
+    /// need its holes).
     pub fn find_map(&self, name: &str) -> Option<(&PartialMap, &MapDomain)> {
         self.maps.get(name).map(|e| (&e.map, &e.domain))
+    }
+
+    /// The unfilled holes of a named map, if any.
+    pub fn map_holes(&self, name: &str) -> Option<&[MapHole]> {
+        self.maps.get(name).map(|e| e.holes.as_slice())
     }
 
     /// Iterate over all stored maps as `(name, map, domain)` triples.

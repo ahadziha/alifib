@@ -34,10 +34,9 @@ fn example(name: &str) -> String {
 /// clean load means every assertion held.
 #[test]
 fn delta_simplicial_identities_hold() {
-    let file = InterpretedFile::load(&Loader::default(vec![]), &example("Delta.ali"))
+    InterpretedFile::load(&Loader::default(vec![]), &example("Delta.ali"))
         .ok()
         .expect("Delta.ali should interpret without errors (simplicial identities hold)");
-    assert!(!file.has_holes());
 }
 
 #[test]
@@ -46,7 +45,6 @@ fn magma_interpretation() {
         .ok()
         .expect("Magma.ali should interpret without errors");
 
-    assert!(!file.has_holes());
 
     let norm = file.state.normalize();
 
@@ -127,7 +125,6 @@ fn empty2_single_type_with_one_cell() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &legacy_example("Empty2.ali"))
         .ok()
         .expect("Empty2.ali should interpret without errors");
-    assert!(!file.has_holes());
     let norm = file.state.normalize();
     assert_eq!(norm.cells_count, 1);
     assert_eq!(norm.types_count, 2);
@@ -141,7 +138,6 @@ fn empty_maps_across_types() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &legacy_example("Empty.ali"))
         .ok()
         .expect("Empty.ali should interpret without errors");
-    assert!(!file.has_holes());
     let norm = file.state.normalize();
     assert_eq!(norm.cells_count, 2);
     assert_eq!(norm.types_count, 4);
@@ -160,7 +156,6 @@ fn total_composite_map() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &legacy_example("Total.ali"))
         .ok()
         .expect("Total.ali should interpret without errors");
-    assert!(!file.has_holes());
     let norm = file.state.normalize();
     assert_eq!(norm.cells_count, 10);
     assert_eq!(norm.types_count, 3);
@@ -176,7 +171,6 @@ fn tutorial_pair_maps() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &legacy_example("Tutorial.ali"))
         .ok()
         .expect("Tutorial.ali should interpret without errors");
-    assert!(!file.has_holes());
     let norm = file.state.normalize();
     assert_eq!(norm.cells_count, 21);
     assert_eq!(norm.types_count, 4);
@@ -194,7 +188,6 @@ fn theory_function_and_set_maps() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &legacy_example("Theory.ali"))
         .ok()
         .expect("Theory.ali should interpret without errors");
-    assert!(!file.has_holes());
     let norm = file.state.normalize();
     assert_eq!(norm.cells_count, 26);
     assert_eq!(norm.types_count, 4);
@@ -210,46 +203,40 @@ fn theory_function_and_set_maps() {
     assert!(set.maps.contains(&Map { name: "Id".into(), domain: "Function".into() }));
 }
 
+/// A bare `?` as the image of a partial-map clause (`arr => ?`) is the basic
+/// hole case: the file loads without errors and the map records one hole.
 #[test]
-fn hole_loads_with_holes() {
-    let file = InterpretedFile::load(&Loader::default(vec![]), &legacy_example("Hole.ali"))
+fn map_hole_basic_loads() {
+    let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("MapHole.ali"))
         .ok()
-        .expect("Hole.ali should interpret without errors");
-    assert!(file.has_holes());
-    let norm = file.state.normalize();
-    assert_eq!(norm.cells_count, 78);
-    assert_eq!(norm.types_count, 8);
+        .expect("MapHole.ali should interpret without errors");
+    let gid = file.state.find_type_gid("A").expect("type A should exist");
+    let tc = &file.state.find_type(gid).expect("type A entry").complex;
+    let holes = tc.map_holes("H").expect("map H should exist");
+    assert_eq!(holes.len(), 1, "H should have exactly one hole (arr)");
 }
 
+/// A hole embedded in a composite RHS (`arr => ? g`) is not the basic case and
+/// must be rejected.
 #[test]
-fn hole_boundaries_inferred() {
-    let file = InterpretedFile::load(&Loader::default(vec![]), &legacy_example("Hole.ali"))
+fn embedded_hole_is_error() {
+    let result = InterpretedFile::load(&Loader::default(vec![]), &fixture("EmbeddedHole.ali"));
+    assert!(!result.is_ok(), "an embedded `?` should fail to load");
+}
+
+/// Layered holes: `e : a0 -> a1` with `a1 => ?` and `e => ?` makes `e`'s hole
+/// depend on `a1`'s.  Building it requires processing holes in ascending
+/// dimension (the 0-cell `a1` before the 1-cell `e`) and referencing `a1`'s
+/// metavariable in `e`'s boundary; a clean load with two holes exercises that.
+#[test]
+fn layered_holes_load() {
+    let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("LayeredHole.ali"))
         .ok()
-        .expect("Hole.ali should interpret without errors");
-
-    // Exactly 9 holes are present in Hole.ali.
-    assert_eq!(file.solved_holes.len(), 9, "expected 9 holes");
-
-    for hole in &file.solved_holes {
-        // No hole should produce an inconsistency: the test examples are
-        // internally consistent and the solver should not flag spurious conflicts.
-        assert!(
-            hole.inconsistencies.is_empty(),
-            "hole at {:?} had unexpected inconsistencies: {:?}",
-            hole.span, hole.inconsistencies
-        );
-
-        // Every hole in Hole.ali has at least one inferred boundary slot, a
-        // partial hint, or a pinned value.
-        let has_info = !hole.boundaries.is_empty()
-            || !hole.partial_hints.is_empty()
-            || hole.value.is_some();
-        assert!(
-            has_info,
-            "hole at {:?} had no inferred boundary information",
-            hole.span
-        );
-    }
+        .expect("LayeredHole.ali should interpret without errors");
+    let gid = file.state.find_type_gid("A").expect("type A should exist");
+    let tc = &file.state.find_type(gid).expect("type A entry").complex;
+    let holes = tc.map_holes("H").expect("map H should exist");
+    assert_eq!(holes.len(), 2, "H should have two holes (a1 and e)");
 }
 
 #[test]
@@ -258,7 +245,6 @@ fn for_index_expansion() {
         .ok()
         .expect("ForIndex.ali should interpret without errors");
 
-    assert!(!file.has_holes());
 
     let norm = file.state.normalize();
 
@@ -292,7 +278,6 @@ fn submodule_in_same_named_directory() {
         .ok()
         .expect("SubMod.ali should resolve Aux from SubMod/ subdirectory");
 
-    assert!(!file.has_holes());
 
     let norm = file.state.normalize();
     let module = &norm.modules[0];
@@ -321,7 +306,6 @@ fn virtual_loader_subdirectory_resolution() {
         .ok()
         .expect("virtual loader should resolve Aux in subdirectories A/ and B/");
 
-    assert!(!file.has_holes());
     let norm = file.state.normalize();
     assert!(norm.modules.iter().any(|m| m.types.iter().any(|t| t.name == "AType")));
     assert!(norm.modules.iter().any(|m| m.types.iter().any(|t| t.name == "BType")));
