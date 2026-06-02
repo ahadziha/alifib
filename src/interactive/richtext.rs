@@ -252,7 +252,8 @@ pub fn holes(holes: &[HoleInfo]) -> RichText {
     for h in holes {
         t.line().plain("  [").value(h.index.to_string()).plain("] ")
             .label(format!("@{} {} :: {}", h.type_name, h.map_name, h.domain_name));
-        t.line().plain("      ").value(&h.boundary);
+        t.line().plain("      ");
+        hole_into(&mut t, &h.boundary);
     }
     t
 }
