@@ -47,7 +47,8 @@ fn web_fill_one_dim_hole() {
     assert!(new_source.contains("x =>"), "the clause is appended: {}", new_source);
 
     let after = cmd(&mut repl, r#"{"command":"holes"}"#);
-    assert!(after["data"]["holes"].as_array().unwrap().is_empty(), "no holes left");
+    // Empty `holes` is omitted from the JSON; treat absent as none-left.
+    assert!(after["data"]["holes"].as_array().map_or(true, |a| a.is_empty()), "no holes left");
 }
 
 /// The `backward` flag is honoured, swapping initial/target (as in the CLI).

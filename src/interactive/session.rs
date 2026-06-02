@@ -91,6 +91,12 @@ impl Session {
         }
     }
 
+    /// Construct a session around an already-loaded store (used by the web,
+    /// which does its own load to surface structured diagnostics).
+    pub fn from_loaded(store: Arc<GlobalStore>, root_path: String, source: String, loader: LoadStrategy) -> Self {
+        Self::new(store, root_path, source, loader)
+    }
+
     fn new(store: Arc<GlobalStore>, root_path: String, source: String, loader: LoadStrategy) -> Self {
         Session { store, root_path, source, engine: None, fill: None, backward: false, loader }
     }
@@ -103,6 +109,10 @@ impl Session {
     pub fn backward(&self) -> bool { self.backward }
     pub fn engine(&self) -> Option<&RewriteEngine> { self.engine.as_ref() }
     pub fn fill(&self) -> Option<&(FillContext, FillSession)> { self.fill.as_ref() }
+    /// The engine driving the current rewrite — a free session or a fill's — for
+    /// renderers (string diagrams, proof view).  `None` during a 0-cell fill.
+    pub fn active_engine(&self) -> Option<&RewriteEngine> { self.engine_ref() }
+    pub fn active_engine_mut(&mut self) -> Option<&mut RewriteEngine> { self.engine_mut() }
     pub fn session_active(&self) -> bool { self.engine.is_some() || self.fill.is_some() }
 
     /// A `ResponseData` snapshot of the current state (for an initial emit).
