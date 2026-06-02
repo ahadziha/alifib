@@ -39,7 +39,7 @@ pub struct HoleRef {
     pub source_name: String,
     pub meta: HoleId,
     pub dim: usize,
-    /// Pre-rendered boundary, `?name : in -> out` (or `?name` for a 0-cell).
+    /// Pre-rendered boundary, `?name : in → out` (or `?name` for a 0-cell).
     pub boundary: String,
 }
 
@@ -53,7 +53,7 @@ pub struct FillContext {
     pub source_name: String,
     /// Dimension of the hole (0 → a 0-cell choice; ≥1 → a rewrite session).
     pub dim: usize,
-    /// Pre-rendered hole boundary, `?name : in -> out` (or `?name` for a 0-cell).
+    /// Pre-rendered hole boundary, `?name : in → out` (or `?name` for a 0-cell).
     pub boundary: String,
 }
 
@@ -311,7 +311,7 @@ fn blocking_holes(store: &GlobalStore, list: &[HoleRef], href: &HoleRef) -> Vec<
     result.into_iter().collect()
 }
 
-/// The shared "Filled ?x with <filler> : in -> out" report — the boundary is
+/// The shared "Filled ?x with <filler> : in → out" report — the boundary is
 /// read off the *filler* (empty for a 0-cell, and correct even when the filler
 /// is a lower-dimensional/degenerate diagram).  Used by both REPLs.
 pub fn filled_report(store: &GlobalStore, ctx: &FillContext, filler: &Diagram) -> String {
@@ -326,7 +326,7 @@ fn filled_message(ctx: &FillContext, filler: &Diagram, scope: &Complex) -> Strin
     let boundary = filler.top_dim().checked_sub(1).and_then(|k| {
         let inp = Diagram::boundary(Sign::Input, k, filler).ok()?;
         let out = Diagram::boundary(Sign::Output, k, filler).ok()?;
-        Some(format!(" : {} -> {}",
+        Some(format!(" : {} → {}",
             crate::output::render_diagram(&inp, scope),
             crate::output::render_diagram(&out, scope)))
     }).unwrap_or_default();

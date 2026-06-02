@@ -100,14 +100,14 @@ fn cli_transcript_matches_web_style() {
     assert_eq!(render_types(&d, &types), "  Idem (dim 2, 3 generators, 6 diagrams, 1 map)");
 
     // type Idem — generators by dimension, diagrams with `= expr` (incl. the
-    // just-stored `p`), maps.  Boundaries use `->` here, unlike the rewrite view.
+    // just-stored `p`), maps.
     let detail = build_type_detail_from_store(s.store(), &root, "Idem").expect("type detail");
     assert_eq!(
         render_type_detail(&d, &detail),
-        "Type Idem\n  [0]\n    ob\n  [1]\n    id : ob -> ob\n  [2]\n    idem : (id #0 id) -> id\n  \
-         Diagrams\n    id : ob -> ob\n      = id\n    idem : (id #0 id) -> id\n      = idem\n    \
-         lhs : ob -> ob\n      = (id #0 id #0 id)\n    ob\n      = ob\n    \
-         p : (id #0 id #0 id) -> (id #0 id)\n      = (idem #0 id)\n    rhs : ob -> ob\n      = id\n  \
+        "Type Idem\n  [0]\n    ob\n  [1]\n    id : ob → ob\n  [2]\n    idem : (id #0 id) → id\n  \
+         Diagrams\n    id : ob → ob\n      = id\n    idem : (id #0 id) → id\n      = idem\n    \
+         lhs : ob → ob\n      = (id #0 id #0 id)\n    ob\n      = ob\n    \
+         p : (id #0 id #0 id) → (id #0 id)\n      = (idem #0 id)\n    rhs : ob → ob\n      = id\n  \
          Maps\n    Idem :: Idem"
     );
 

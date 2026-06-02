@@ -378,7 +378,7 @@ pub struct MapEntry {
     pub name: String,
     pub domain: String,
     pub generators: Vec<MapDomainGenerator>,
-    /// Pre-rendered boundaries of the map's open holes (`?name : in -> out`),
+    /// Pre-rendered boundaries of the map's open holes (`?name : in → out`),
     /// so front-ends can show `… with holes`.  Empty for a total map.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub holes: Vec<String>,
@@ -571,7 +571,7 @@ pub fn build_map_entries(
     entries
 }
 
-/// The pre-rendered boundaries of a map's open holes (`?name : in -> out`), in
+/// The pre-rendered boundaries of a map's open holes (`?name : in → out`), in
 /// the same `(dim, name)` order the `holes` command uses.  Empty for a total map.
 fn map_hole_boundaries(tc: &Complex, map_name: &str, domain_ref: &Complex) -> Vec<String> {
     let Some(holes) = tc.map_holes(map_name) else { return Vec::new() };

@@ -1806,7 +1806,7 @@ function renderState(data) {
 // `types` / `type` keep the CLI's own layout (generators by dimension with
 // boundaries, diagrams with `= expr`, maps flagged `… with holes`) — the one
 // place the REPL diverges from web-native rendering — rendered identically to
-// the CLI from the same shared data.  Boundaries use `->` (as the CLI does).
+// the CLI from the same shared data.
 function renderTypes(data) {
   if (!data.types || !data.types.length) return dim('  (No types found)');
   return data.types.map(t => {
@@ -1847,10 +1847,10 @@ function renderTypeDetail(d) {
   return out.join('\n');
 }
 
-// `name : in -> out` for a cell with a boundary, or just `name` for a 0-cell.
+// `name : in → out` for a cell with a boundary, or just `name` for a 0-cell.
 function boundaryLine(g) {
   return (g.input && g.output)
-    ? `${hi(g.name)} : ${src(g.input.label)} -> ${tgt(g.output.label)}`
+    ? `${hi(g.name)} : ${src(g.input.label)} → ${tgt(g.output.label)}`
     : hi(g.name);
 }
 

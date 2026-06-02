@@ -190,9 +190,8 @@ pub fn render_holes(display: &Display, holes: &[HoleInfo]) -> String {
 }
 
 /// Render the type summaries for `types`: one line each, `name (dim …, N
-/// generators, …)`.  This keeps the CLI's own layout — shared verbatim with the
-/// web — rather than a terse summary; the boundary arrow stays `->` (as the
-/// former CLI used), the one place we diverge from the rewrite view's `→`.
+/// generators, …)`.  This keeps the CLI's own layout, shared verbatim with the
+/// web, rather than a terse summary.
 pub fn render_types(display: &Display, types: &[TypeSummaryInfo]) -> String {
     if types.is_empty() {
         return display.dim("  (No types found)");
@@ -219,7 +218,7 @@ pub fn render_types(display: &Display, types: &[TypeSummaryInfo]) -> String {
 
 /// Render the full detail of a type for `type <name>`: generators grouped by
 /// dimension, named diagrams with their `= expr`, and maps (flagged `… with
-/// holes` when open).  Shared verbatim with the web; boundaries use `->`.
+/// holes` when open).  Shared verbatim with the web.
 pub fn render_type_detail(display: &Display, d: &TypeDetailInfo) -> String {
     let mut out = vec![format!("{} {}", display.dim("Type"), display.hi(&d.name))];
 
@@ -254,7 +253,7 @@ pub fn render_type_detail(display: &Display, d: &TypeDetailInfo) -> String {
     out.join("\n")
 }
 
-/// `name : in -> out` for a cell with a boundary, or just `name` for a 0-cell.
+/// `name : in → out` for a cell with a boundary, or just `name` for a 0-cell.
 fn boundary_line(
     display: &Display,
     name: &str,
@@ -263,7 +262,7 @@ fn boundary_line(
 ) -> String {
     match (input, output) {
         (Some(i), Some(o)) =>
-            format!("{} : {} -> {}", display.hi(name), display.src(&i.label), display.tgt(&o.label)),
+            format!("{} : {} → {}", display.hi(name), display.src(&i.label), display.tgt(&o.label)),
         _ => display.hi(name),
     }
 }
