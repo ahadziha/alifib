@@ -94,8 +94,8 @@ Realised by [[core-partial-map]]. The data structure and its laws live in
   cell's stored boundary and compares it (after `Diagram::normal`) against
   `Diagram::boundary_normal` of the proposed image;
 - the dimension constraint is the early `image.dim() > dim` rejection in
-  `extend` — this blocks *raising* only; lowering is allowed by design (collapse
-  inference relies on it), so there is correctly no lower-bound guard;
+  `extend` — this blocks *raising* only; lowering is allowed (collapse inference
+  relies on it), so there is no lower-bound guard;
 - action on composites is `PartialMap::apply`, walking the diagram's
   `PasteTree` via `partial_map::apply_tree` *(internal)*; the relabelling fast
   path fires when the `cellular` flag holds (`partial_map::remap_tag`);

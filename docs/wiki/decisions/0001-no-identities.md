@@ -9,9 +9,8 @@ last-touched: 2026-06-03
 ## Context
 
 alifib follows Hadzihasanovic's theory of [[regular-directed-complex|regular
-directed complexes]] / [[molecule|molecules]]. What that theory lacks is narrower
-and more precise than "no identities", and the imprecise version has caused real
-confusion — so this page states it carefully.
+directed complexes]] / [[molecule|molecules]]. What that theory lacks is more
+precise than the slogan "no identities" suggests, and worth stating carefully.
 
 ## What is true
 
@@ -38,8 +37,6 @@ It is the unit of $\#_n$ at the initial $n$-diagram, represented simply by that
 $n$-diagram (what `proof` / `stored_expr` render), not by a degenerate
 $(n{+}1)$-cell. `target_reached` is therefore just $current \cong target$, true at
 step $0$ too — an initial diagram already equal to the target is already proved.
-(An earlier version both denied this, gating `target_reached` on `active_len > 0`,
-and overstated the decision as "no identities anywhere"; both were wrong.)
 
 ## Consequence: represent lower-dimensional structure explicitly
 
@@ -60,12 +57,10 @@ rewrite with.
 
 ## Maps and dimension
 
-Relatedly: since there is no identity cell to send a collapsed cell *to*, a
+Since there is no identity cell to send a collapsed cell *to*, a
 [[partial-map|map]] that collapses a $k$-cell sends it to the genuine
-lower-dimensional image. Dimension-*lowering* maps are legitimate, and collapse
-inference produces them on purpose (see [[hole]], [[core-partial-map]]). An earlier
-draft wrongly forbade lowering and filed the missing guard as a correctness bug;
-that is retracted (see [[source-drift]]).
+lower-dimensional image. Dimension-*lowering* maps are thus legitimate, and
+collapse inference produces them on purpose (see [[hole]], [[core-partial-map]]).
 
 ## Code refs
 

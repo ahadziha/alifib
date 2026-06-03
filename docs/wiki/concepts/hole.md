@@ -70,8 +70,8 @@ inferences fire, none of them a global solver:
   directly rather than left a hole.
 - **Collapse inference.** When a cell's boundary maps to a diagram of dimension
   *below* $n-1$, the cell itself is inferred to be that collapsed diagram rather
-  than made a hole. This is the implementation deliberately lowering dimension —
-  a legitimate move (see [[0001-no-identities]]), not a degeneracy.
+  than made a hole — the implementation deliberately lowering dimension, which is
+  a legitimate move (see [[0001-no-identities]]).
 
 When a filled hole's image becomes known, its paste tree is **substituted** for
 its metavariable in every other hole's boundary trees, and any conditional whose
@@ -142,4 +142,4 @@ the map definition — pinning onto an explicit `=> ?` when present
 - [[diagram]] — what a hole is ultimately filled *with* (possibly non-round).
 - [[interactive-session]] — the `holes` / `fill` / `done` workflow.
 - [[0001-no-identities]] — why dimension-lowering (hence collapse inference) is
-  legitimate, not a degeneracy.
+  legitimate.

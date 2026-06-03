@@ -186,9 +186,7 @@ generator-free `add_diagram`, and returns fresh `Arc`s so the caller
 - **`target_reached` is just `current ≅ target`.** It holds at step 0 too: an
   initial diagram already isomorphic to the target *is* a (zero-step, identity)
   proof — the unit of $\#_n$ on the initial diagram, valid because composition is
-  unital (see [[0001-no-identities]]). An earlier version gated this on
-  `active_len > 0` to reject zero-step proofs; that guard was wrong and has been
-  removed.
+  unital (see [[0001-no-identities]]).
 - **`resume` needs `dim > 0`.** A proof diagram must be an $(n+1)$-cell with $n+1 >
   0$; a bare $0$-diagram has no $\#_n$ chain to decompose and is rejected.
 - **`typecheck_proof` is a self-audit, not a user error path.** It checks the

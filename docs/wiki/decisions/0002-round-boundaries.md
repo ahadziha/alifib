@@ -21,9 +21,7 @@ $n$-diagrams to be the boundary of a single $(n{+}1)$-cell.
 
 A cell `name : src -> tgt` exists only when `src` and `tgt` are each **round** and
 **parallel** (same dimension, agreeing on their common boundary). This is a
-genuine, theory-mandated structural constraint — and, unlike the fabricated
-dimension-lowering rule once attributed to [[0001-no-identities]], it really is
-enforced.
+theory-mandated structural constraint, enforced when the cell is constructed.
 
 ## Consequences
 

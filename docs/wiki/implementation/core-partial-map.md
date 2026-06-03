@@ -237,15 +237,13 @@ EvalMap { map: PartialMap, domain: Arc<Complex>, holes: Vec<MapHole> }
   starts from the *empty* map and fabricates every image fresh; `include`
   registers an `identity_map`. Conflating them confuses which generators are
   shared.
-- **`extend` guards dimension-*raising* only — by design.** `image.dim() > dim`
-  is rejected (a $k$-generator may not map above dimension $k$); there is no
-  no-*lowering* guard, and that is **correct**, not a gap. Dimension-lowering maps
-  are legitimate — a 1-cell whose endpoints both map to a 0-cell `p` collapses to
-  `p` itself — and collapse inference (`collapsed_boundary_image`) produces them
-  on purpose. An earlier draft wrongly called the absence of a lowering guard a
-  correctness bug; see the corrected [[0001-no-identities]]. The genuine
-  structural constraint on a cell is roundness of its boundaries,
-  [[0002-round-boundaries]].
+- **`extend` guards dimension-*raising* only.** `image.dim() > dim` is rejected (a
+  $k$-generator may not map above dimension $k$); there is no lower-bound guard,
+  because dimension-*lowering* is legitimate — a 1-cell whose endpoints both map to
+  a 0-cell `p` collapses to `p` itself, and collapse inference
+  (`collapsed_boundary_image`) produces such images on purpose (see
+  [[0001-no-identities]]). The structural constraint on a cell is roundness of its
+  boundaries, [[0002-round-boundaries]].
 
 ## Mathematics
 

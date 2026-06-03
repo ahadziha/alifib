@@ -81,17 +81,14 @@ A page-by-page re-verification of every wiki page (plus new coverage of `cli/`
 and `web/`) surfaced further source-side rot. Same rule as above: **recorded, not
 fixed.**
 
-### A. ~~`PartialMap::extend` does not enforce no-dimension-lowering~~ — RETRACTED, not a bug (2026-06-03)
+### A. ~~`PartialMap::extend` does not enforce no-dimension-lowering~~ — not a bug (2026-06-03)
 
-This item was a **phantom**, retracted after review with the author. It rested on
-a fabricated premise — that the no-identities discipline forbids a map from
-*lowering* dimension. It does not (the original [[0001-no-identities]] page
-invented that rule; see its corrected text). Dimension-lowering maps are
-legitimate, and **collapse inference** produces them on purpose; a degenerate
-1-cell→0-cell map loading cleanly is the engine working *correctly*. There is
-nothing to fix in `extend` — its only dimension guard, no-*raising*, is the right
-one. The genuine theory-mandated structural constraint on cells is roundness of
-boundaries, [[0002-round-boundaries]], which *is* enforced.
+Dimension-*lowering* maps are legitimate: a 1-cell whose endpoints collapse maps
+to the 0-cell itself, and collapse inference produces such images on purpose.
+`extend`'s only dimension guard, no-*raising*, is the correct one — there is
+nothing to add. The genuine structural constraint on cells is roundness of
+boundaries, [[0002-round-boundaries]]. (The premise behind this item — that
+no-identities forbids lowering — does not hold; see [[0001-no-identities]].)
 
 ### B. Stale doc-comments — the `03757c0` source/target→input/output rename left comments behind
 
