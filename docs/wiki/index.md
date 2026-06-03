@@ -63,7 +63,7 @@ the `cli/` and `web/` crates are the binaries and deployment wrappers around it.
 
 | Page | Decision | Status |
 |------|----------|--------|
-| [[0001-no-identities]] | No identity cells (follows RDC theory); this does *not* forbid maps lowering dimension | stable |
+| [[0001-no-identities]] | No identity *cells*, but composition is unital (zero-step proofs are valid); model lower-dim structure explicitly | stable |
 | [[0002-round-boundaries]] | A cell's input/output boundaries must be round (directed spheres) | stable |
 
 ## Open questions

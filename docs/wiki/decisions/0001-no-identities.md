@@ -4,48 +4,74 @@ status: stable
 last-touched: 2026-06-03
 ---
 
-# 0001 — alifib has no identity cells
+# 0001 — no identity cells (but composition is unital)
 
 ## Context
 
 alifib follows Hadzihasanovic's theory of [[regular-directed-complex|regular
-directed complexes]] / [[molecule|molecules]], which has **no identity cells**:
-there is no degenerate "identity at $p$" for a 0-cell $p$, no identity 2-cell on a
-1-cell, and so on. A [[diagram]] is built only from genuine generators. This is a
-real divergence from strict $\omega$-categories (which have identities), and
-alifib inherits it wholesale.
+directed complexes]] / [[molecule|molecules]]. What that theory lacks is narrower
+and more precise than "no identities", and the imprecise version has caused real
+confusion — so this page states it carefully.
 
-## Decision
+## What is true
 
-No identity cells anywhere. Identities are simply not part of the data of a
-diagram.
+There is **no representation of an $n$-cell as an $(n{+}1)$-dimensional cell**.
+A type has no degenerate "identity cell": no $(n{+}1)$-generator standing for the
+identity on an $n$-diagram, no identity 2-cell on a 1-cell, no identity 1-cell on
+a 0-cell. Cells are only genuine generators and the [[diagram|diagrams]] they
+build.
 
-## What this does — and does not — entail
+## Composition is still unital
 
-The one true consequence concerns *fillers*: you cannot use "the identity on $p$"
-as the image of a [[partial-map|map]] or the filler of a [[hole]], because no such
-cell exists. A refinement onto a coarse target must therefore spell out honest
-"internal step" cells rather than absorbing detail into identities.
+This is **not** the absence of units. *Pasting has units.* For a [[diagram]] $U$
+and any $k < \dim U$, pasting $U$ at dimension $k$ with its own $k$-dimensional
+input or output [[boundary]] returns a diagram isomorphic to $U$:
+$$
+\partial^-_k U \;\#_k\; U \;\cong\; U \;\cong\; U \;\#_k\; \partial^+_k U .
+$$
+So $\partial^-_k U$ is a left unit and $\partial^+_k U$ a right unit for $\#_k$;
+composition — and hence [[rewriting]] — is unital. The units are *boundaries*, not
+cells, which is exactly why they need no identity-cell to exist.
 
-It is **not** true that "a $k$-cell cannot map to a lower-dimensional image."
-That claim filled an earlier draft of this page; it does not follow from the
-absence of identities, and it is wrong. The absence of identities constrains what
-*diagrams contain*, not what *maps may do*. A 1-cell $s \to t$ whose endpoints
-both map to a 0-cell $p$ collapses to $p$ itself — a genuine 0-dimensional
-[[molecule]], not "the identity on $p$." Dimension-*lowering* maps are perfectly
-legitimate, and **collapse inference** (`assign_cell` / `collapsed_boundary_image`,
-see [[hole]] and [[core-partial-map]]) produces them deliberately.
+A direct consequence: **a zero-step rewriting proof is a valid (identity) proof.**
+It is the unit of $\#_n$ at the initial $n$-diagram, represented simply by that
+$n$-diagram (what `proof` / `stored_expr` render), not by a degenerate
+$(n{+}1)$-cell. `target_reached` is therefore just $current \cong target$, true at
+step $0$ too — an initial diagram already equal to the target is already proved.
+(An earlier version both denied this, gating `target_reached` on `active_len > 0`,
+and overstated the decision as "no identities anywhere"; both were wrong.)
+
+## Consequence: represent lower-dimensional structure explicitly
+
+Combined with [[0002-round-boundaries]] (a cell's boundaries must be round and of
+the appropriate dimension), the absence of identity cells means that to model an
+$(n{+}1)$-cell whose input or output is *morally* of dimension $< n$ you must
+introduce an **explicit representation** — there is no degenerate filler to lean
+on.
+
+The worked example is TRS constants (`examples/TRS.ali`). A constant is morally a
+nullary operation, with no input. It is modelled **not** as a 2-cell with an empty
+input boundary (which could not be round), but as a 2-cell `node : unit -> cod`
+whose input is an explicit **unit 1-cell** `unit = Unit.wire`. The `Unit` type
+correspondingly introduces explicit **unitor** 2-cells — `lunit : unit wire ->
+wire`, `runit : wire unit -> wire`, and their inverses — to move that unit around,
+precisely because the pasting units are not themselves cells one can name or
+rewrite with.
+
+## Maps and dimension
+
+Relatedly: since there is no identity cell to send a collapsed cell *to*, a
+[[partial-map|map]] that collapses a $k$-cell sends it to the genuine
+lower-dimensional image. Dimension-*lowering* maps are legitimate, and collapse
+inference produces them on purpose (see [[hole]], [[core-partial-map]]). An earlier
+draft wrongly forbade lowering and filed the missing guard as a correctness bug;
+that is retracted (see [[source-drift]]).
 
 ## Code refs
 
-The only dimension guard in `PartialMap::extend` *(src/core/partial_map.rs)* is
-**no-*raising***: `if image.dim() > dim` ⇒ error *"image dimension exceeds source
-dimension"* — a $k$-generator's image may not exceed dimension $k$. There is
-deliberately **no** no-*lowering* guard; lowering is allowed (see above), so this
-is correct, not a gap. Boundary compatibility is checked separately by
-`check_boundary_match` *(internal)*: the map applied to each $\partial^\pm$ of the
-source equals the corresponding `Diagram::boundary_normal` of the image.
-
-The genuine *structural* constraint the theory enforces on cells — that a cell's
-input and output boundaries are **round** — is a separate matter, recorded in
-[[0002-round-boundaries]]; it has nothing to do with identities.
+- `PartialMap::extend` *(src/core/partial_map.rs)* guards only dimension-*raising*
+  (`image.dim() > dim`); there is no lower-bound guard, by design.
+- The zero-step proof: `RewriteEngine::target_reached` is `current ≅ target` with
+  no step-count gate; `stored_expr` renders the initial diagram for a zero-step
+  session (`src/interactive/{engine,session}.rs`; see [[interactive-engine]]).
+- Round boundaries are the genuine structural constraint — [[0002-round-boundaries]].

@@ -271,3 +271,17 @@ constraint — a cell's input/output boundaries must be *round* (directed sphere
 enforced in `Diagram::parallelism` via `cell_with_input_embedding`. Also fixed
 `interactive-engine`: `target_reached` no longer gates on `active_len > 0` (that
 guard was removed in the source — a zero-step/identity proof is a valid proof).
+
+## [2026-06-03] decision | sharpen 0001 — no identity *cells*, but unital composition
+
+Refined `0001` after the author's correction: the imprecise "no identities"
+framing was still wrong. The narrow truth is that alifib has no *representation of
+an n-cell as an (n+1)-cell* (no degenerate identity cells) — but **composition is
+unital**: k-pasting a diagram with its k-dimensional input/output boundary returns
+an isomorphic diagram, so the boundaries are units of `#_k`. Hence a **zero-step
+proof is valid** (the unit of `#_n`, represented by the initial n-diagram), which
+is why `target_reached` correctly no longer gates on `active_len > 0`. The
+practical consequence (with [[0002-round-boundaries]]): lower-dimensional
+structure must be represented explicitly — e.g. TRS constants are 2-cells
+`node : unit -> cod` over an explicit unit 1-cell (`examples/TRS.ali`), with
+explicit unitor cells, not 2-cells with empty input.
