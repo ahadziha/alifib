@@ -93,8 +93,8 @@ alifib <input.ali> [-o <output.ali>] [--ast] [--print] [--bench N]
 - `--bench N` — run N times and print average wall time in milliseconds
 
 ```
-cargo run --release -- examples/Frobenius.ali
-cargo run --release -- examples/YangBaxter.ali
+cargo run --release -- examples/Monoidal.ali
+cargo run --release -- examples/TRS.ali
 ```
 
 ### REPL
@@ -108,7 +108,7 @@ alifib repl <file> [--type <t>] [--source <s>] [--target <t>] [--emacs]
 Example:
 
 ```
-alifib repl examples/Idem.ali --type Idem --source lhs --target rhs
+alifib repl examples/TRS.ali --type Unit --source 'split merge' --target id
 ```
 
 After loading, the REPL is in **no-session** mode: inspection commands like
@@ -119,7 +119,7 @@ diagram as a live session, or `fill <n>` to start filling an open `?` hole.
 Composite diagram expressions can be quoted:
 
 ```
-start Idem 'id id id' id
+start Unit 'split merge' id
 ```
 
 If `--type` and `--source` are given on the command line, the session starts
@@ -157,7 +157,7 @@ alifib serve [<file> --type <t> --source <s> [--target <t>]]
 One JSON object per line in each direction on stdin/stdout. Example:
 
 ```sh
-echo '{"command":"start","source_file":"examples/Idem.ali","type_name":"Idem","initial":"lhs"}' \
+echo '{"command":"start","source_file":"examples/TRS.ali","type_name":"Unit","initial":"split merge"}' \
   | alifib serve
 ```
 
@@ -175,8 +175,8 @@ Key requests:
 {"command":"done"}
 {"command":"store","name":"myproof"}
 {"command":"types"}
-{"command":"type","name":"Idem"}
-{"command":"cell","name":"idem"}
+{"command":"type","name":"Unit"}
+{"command":"cell","name":"merge"}
 {"command":"shutdown"}
 ```
 

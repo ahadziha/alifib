@@ -24,7 +24,7 @@ command line, the session starts automatically.
 Composite diagram expressions can be quoted with `'` or `"`:
 
 ```
-start Idem 'id id id' id
+start Unit 'split merge' id
 ```
 
 ### Always available
@@ -72,22 +72,43 @@ Undo preserves a redo buffer: undone steps can be redone until a new rewrite
 choice is made, which discards the buffer. There is no need to track the full
 tree of histories — only the most recent linear history is kept.
 
-After each `apply`, `undo`, or `redo`, the current diagram and available rewrites are
-printed automatically. Bracket notation shows where in the current diagram each
-rule matches:
+After `start`, and after each `apply`, `undo`, or `redo`, the session state is
+printed automatically: the step count, the current diagram, the target (if one
+was given), and the available rewrites. There is no separate "applied"
+confirmation line — the refreshed state *is* the feedback. Each rewrite shows its
+rule and the diagram it would produce, then a `match:` line in which the matched
+cells (the redex) are wrapped in brackets:
 
 ```
-> apply 0
-Applied idem.
+❯ start Unit 'split merge' id
+step: 0
+current: (split #1 merge)
+target: id
 
-[1] id id
+available rewrites:
+  [0] Split_Merge  (split #1 merge) → id
+      match: [Split_Merge]
 
-rewrites:
-  [0] idem : [id id]  ->  id
+❯ apply 0
+step: 1
+current: id
+target: id ✓ reached
+no rewrites available
 ```
 
-The brackets `[id id]` indicate which top-dimensional cells are covered by the
-match.
+`match: [Split_Merge]` brackets the whole diagram, so all of `(split #1 merge)`
+is the redex; when a rule matches only part of the current diagram the brackets
+surround just those cells (e.g. `match: ((A.ob #0 [M.CodId.inv]) #1 M.mor)`).
+Composition is written with the house `#k` notation, and `→` separates a rule's
+input from its output. `no rewrites available` prints when nothing applies;
+`target: … ✓ reached` marks the goal met, at which point `proof` shows the
+completed (n+1)-cell:
+
+```
+❯ proof
+proof : (split #1 merge) → id
+  Split_Merge
+```
 
 ### Storing proofs
 
@@ -211,7 +232,7 @@ Otherwise the daemon starts blank and waits for a `start` request.
 {"command":"save","path":"out.ali"}
 {"command":"backward","on":true}
 {"command":"types"}
-{"command":"type","name":"Idem"}
+{"command":"type","name":"Unit"}
 {"command":"shutdown"}
 ```
 
