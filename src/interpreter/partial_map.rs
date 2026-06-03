@@ -13,6 +13,7 @@ use crate::core::{
     paste_tree::PasteTree,
 };
 use crate::language::ast::{self, DefPartialMap, ForBlock, PMapEntry, PartialMapBasic, PartialMapClause, PartialMapDef, PartialMapExt, Span, Spanned};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 // ---- Maps with holes ----
@@ -23,6 +24,18 @@ use std::sync::Arc;
 struct MapBuild {
     map: PartialMap,
     holes: Vec<MapHole>,
+    /// Span of the clause currently being interpreted.  Stamped onto every
+    /// pending entry created while processing it, so that a later cascade
+    /// failure can be blamed on the assignment truly responsible rather than on
+    /// whichever innocent filler happened to close its last boundary face.
+    current_span: Span,
+    /// Source span of each pending entry, keyed by its metavariable.  Pending
+    /// entries carried in from a prefix map have no span here (they were written
+    /// elsewhere), and so fall back to the current clause's span.
+    hole_spans: HashMap<HoleId, Span>,
+    /// Set when committing a *pending* assignment fails during cascading: the
+    /// span of that pending assignment, used to re-aim the resulting error.
+    blame_span: Option<Span>,
 }
 
 impl MapBuild {
@@ -156,8 +169,10 @@ fn upsert_entry(
         }
         h.boundary = boundary;
     } else {
+        let meta = HoleId::fresh();
+        build.hole_spans.insert(meta, build.current_span);
         build.holes.push(MapHole {
-            meta: HoleId::fresh(),
+            meta,
             source: tag,
             dim,
             image,
@@ -222,6 +237,7 @@ fn commit_one(
 
     let Some(i) = build.entry_index(&tag) else { return Ok(()); };
     let meta = build.holes.remove(i).meta;
+    build.hole_spans.remove(&meta);
     let n = actual_image.top_dim();
     let img_tree = actual_image
         .tree(DiagramSign::Input, n)
@@ -249,11 +265,44 @@ fn cascade(build: &mut MapBuild, context: &Context, domain: &Complex) -> Result<
             .holes
             .iter()
             .find(|h| h.image.is_some() && h.deps().is_empty())
-            .map(|h| (h.source.clone(), h.dim, h.image.clone().unwrap()));
-        let Some((source, dim, image)) = ready else { return Ok(()); };
+            .map(|h| (h.source.clone(), h.dim, h.image.clone().unwrap(), h.meta));
+        let Some((source, dim, image, meta)) = ready else { return Ok(()); };
         let cell_data = get_cell_data(context, domain, &source)
             .ok_or_else(|| aux::Error::new("Cannot find cell data for conditional assignment"))?;
-        commit_one(build, source, dim, cell_data, image)?;
+        if let Err(e) = commit_one(build, source.clone(), dim, cell_data, image) {
+            return Err(blame_pending(build, domain, &source, meta, e));
+        }
+    }
+}
+
+/// Rephrase a cascade-commit failure as a fault of the *pending* assignment that
+/// failed to commit, and re-aim the error at where that assignment was written.
+///
+/// A pending assignment `x => a` imposes a constraint on the images of `x`'s
+/// boundary faces; the faces are filled by later clauses.  When those fillings
+/// violate the constraint, the boundary mismatch surfaces only now, on commit —
+/// but the clause that closed the last face is itself well-formed.  We therefore
+/// name `x` and point back at its clause rather than at the innocent filler.
+fn blame_pending(
+    build: &mut MapBuild,
+    domain: &Complex,
+    source: &Tag,
+    meta: HoleId,
+    e: aux::Error,
+) -> aux::Error {
+    if let Some(span) = build.hole_spans.get(&meta) {
+        build.blame_span = Some(*span);
+    }
+    let name = domain
+        .find_generator_by_tag(source)
+        .cloned()
+        .unwrap_or_else(|| format!("{}", source));
+    aux::Error {
+        message: format!(
+            "The pending assignment of `{}` is incompatible with the images filled in for its boundary: {}",
+            name, e.message
+        ),
+        notes: e.notes,
     }
 }
 
@@ -577,7 +626,13 @@ fn interpret_partial_map_ext(ctx: &PartialMapCtx<'_>, ext: &PartialMapExt) -> St
     };
 
     let domain = Arc::clone(&initial.domain);
-    let init_build = MapBuild { map: initial.map, holes: initial.holes };
+    let init_build = MapBuild {
+        map: initial.map,
+        holes: initial.holes,
+        current_span: Span::synthetic(),
+        hole_spans: HashMap::new(),
+        blame_span: None,
+    };
     let clauses_ctx = PartialMapCtx { context: &prefix_result.context, domain: &domain, ..*ctx };
     let (build_opt, clause_result) = eval_pmap_clauses(&clauses_ctx, init_build, &ext.clauses);
     let Some(build) = build_opt else {
@@ -594,6 +649,10 @@ fn interpret_partial_map_ext(ctx: &PartialMapCtx<'_>, ext: &PartialMapExt) -> St
 /// create holes (for boundary faces on which information is incomplete) and may
 /// close earlier holes (filling), via `assign_cell`.
 fn interpret_partial_map_clause(ctx: &PartialMapCtx<'_>, mut build: MapBuild, clause: &PartialMapClause, span: Span) -> Step<MapBuild> {
+    // Tag any pending entry created by this clause with its span, so a later
+    // cascade can blame the right assignment.
+    build.current_span = span;
+
     let (left_opt, left_result) = interpret_diagram_as_term(ctx.context, ctx.domain, &clause.lhs);
     let Some(left_term) = left_opt else { return (None, left_result); };
 
@@ -609,7 +668,8 @@ fn interpret_partial_map_clause(ctx: &PartialMapCtx<'_>, mut build: MapBuild, cl
             Ok(()) => (Some(build), left_result),
             Err(e) => {
                 let mut r = left_result;
-                r.add_error(make_error_from_core(span, e));
+                let blame = build.blame_span.take().unwrap_or(span);
+                r.add_error(make_error_from_core(blame, e));
                 (None, r)
             }
         };
@@ -623,7 +683,8 @@ fn interpret_partial_map_clause(ctx: &PartialMapCtx<'_>, mut build: MapBuild, cl
     match interpret_assign(&mut build, &combined.context, ctx.domain, &left_term, &right_term) {
         Ok(()) => (Some(build), combined),
         Err(e) => {
-            combined.add_error(make_error_from_core(span, e));
+            let blame = build.blame_span.take().unwrap_or(span);
+            combined.add_error(make_error_from_core(blame, e));
             (None, combined)
         }
     }

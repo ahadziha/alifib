@@ -224,6 +224,34 @@ fn embedded_hole_is_error() {
     assert!(!result.is_ok(), "an embedded `?` should fail to load");
 }
 
+/// Filling a pending assignment's boundary so as to violate the constraint it
+/// imposes must blame the *pending* assignment, not the innocent filler.  In
+/// `WrongFiller.ali`, `r => m` (with `r : f g -> h`) is pending; `f => a a` and
+/// `g => a` then force `f g ↦ a a a`, breaking `m`'s input boundary `a a`.  The
+/// error must name `r` and point back at the `r => m` clause — not at `g => a`,
+/// which is well-formed on its own.
+#[test]
+fn wrong_filler_blames_pending_assignment() {
+    let result = InterpretedFile::load(&Loader::default(vec![]), &fixture("WrongFiller.ali"));
+    match result {
+        alifib::interpreter::LoadResult::InterpError { errors, source, .. } => {
+            let err = errors.first().expect("at least one error");
+            assert!(
+                err.message().contains("pending assignment of `r`"),
+                "message should name the pending assignment `r`, got: {}",
+                err.message()
+            );
+            let span = err.span();
+            assert_eq!(
+                &source[span.start..span.end],
+                "r => m",
+                "the caret should underline the pending clause, not the filler"
+            );
+        }
+        _ => panic!("WrongFiller.ali should fail to interpret"),
+    }
+}
+
 /// Layered holes: `e : a0 -> a1` with `a1 => ?` and `e => ?` makes `e`'s hole
 /// depend on `a1`'s.  Building it requires processing holes in ascending
 /// dimension (the 0-cell `a1` before the 1-cell `e`) and referencing `a1`'s

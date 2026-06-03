@@ -1,0 +1,6 @@
+@Type
+Y <<= { x, y, z, f: x -> y, g: y -> z, h: x -> z, r: f g -> h },
+E <<= { pt, a: pt -> pt, m: a a -> a }
+
+@E
+let F :: Y = [ r => m, f => a a, g => a ]
