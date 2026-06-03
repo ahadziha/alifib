@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-01
+last-touched: 2026-06-03
 code: [cli/src/main.rs]
 ---
 
@@ -65,9 +65,9 @@ argv ──parse_args──▶ Args { input, output, mode: RunMode }
 
 The default mode (no subcommand, no `--ast`/`--print`/`--bench`) is
 `Interpret`: `run_interpreter` calls `InterpretedFile::load(loader, input)`
-([[interpreter]]), writes the elaborated file, and if it `has_holes()` calls
-`output::report_solved_holes` ([[output]]) to print what each [[hole]] was
-filled with.
+([[interpreter]]) and writes the elaborated file (`file.to_string()`). Any
+unfilled map [[hole|holes]] appear inline in that rendered output ([[output]]);
+there is no separate hole-reporting pass.
 
 ## Subcommands and modes
 
@@ -118,8 +118,8 @@ that *selects* which piece of alifib the user reaches. The bridge is a
   parsed [[language-parser|program]], the default mode elaborates it.
 - [[rewriting]] — the `repl` and `serve` subcommands open a live rewrite
   session; `web`/`mcp` expose the same engine over HTTP / MCP.
-- [[hole]] — after interpretation, `report_solved_holes` reports how each hole
-  was filled.
+- [[hole]] — the elaborated file lists any unfilled map holes inline; the
+  interactive `fill` workflow ([[interactive-session]]) closes them.
 
 See [[interpreter]] for the default elaboration path, [[interactive-repl]] for
 the REPL and for the in-library arg parsers this binary calls, and

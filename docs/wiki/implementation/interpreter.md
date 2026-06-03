@@ -2,7 +2,7 @@
 kind: impl
 status: stable
 last-touched: 2026-06-01
-code: [src/interpreter/mod.rs, src/interpreter/eval.rs, src/interpreter/global_store.rs, src/interpreter/types.rs, src/interpreter/inference.rs, src/interpreter/resolve.rs, src/interpreter/binding.rs, src/interpreter/include.rs, src/interpreter/load.rs]
+code: [src/interpreter/mod.rs, src/interpreter/eval.rs, src/interpreter/global_store.rs, src/interpreter/types.rs, src/interpreter/resolve.rs, src/interpreter/binding.rs, src/interpreter/include.rs, src/interpreter/load.rs]
 ---
 
 # interpreter — from parsed `Program` to a `GlobalStore`
@@ -10,22 +10,23 @@ code: [src/interpreter/mod.rs, src/interpreter/eval.rs, src/interpreter/global_s
 > The interpreter takes a parsed [[language-parser|`Program`]] and folds it into a
 > persistent store of cells, types, and modules. It is a pure error-collecting
 > tree-walk: nothing throws, every step returns an `InterpResult` carrying the
-> advanced context plus accumulated errors, holes, and constraints. Diagram and
-> map evaluation live in `diagram.rs` / `partial_map.rs` (the latter documented in
-> [[core-partial-map]]); this page covers the spine — `eval`, the store, the type
-> lookup chain, inference, resolution, binding, the file-loading pipeline, and the
-> dotted-expression evaluator in `diagram.rs`.
+> advanced context plus accumulated errors. Diagram and map evaluation live in
+> `diagram.rs` / `partial_map.rs` (the latter documented in [[core-partial-map]]);
+> this page covers the spine — `eval`, the store, the type lookup chain,
+> resolution, binding, the file-loading pipeline, and the dotted-expression
+> evaluator in `diagram.rs`.
 
 ## What it owns
 
 `src/interpreter/*` is the **semantic layer** between syntax and the core
 algebra. It elaborates declarations (`generator`, `let`, `map`, `include`,
 `attach`, `for`) into [[core-complex|Complexes]] of [[diagram|diagrams]], assigns
-every global entity an opaque id, threads a copy-on-write store through the whole
-program, and — for the root file only — runs a constraint solver that recovers
-boundary information for `?` holes. The entry points are `interpret_program`
-(one `Program` against a `Context`) and `InterpretedFile::load` (a file plus its
-whole dependency closure).
+every global entity an opaque id, and threads a copy-on-write store through the
+whole program. Unfilled `?` [[hole|holes]] in a map are not errors — they are
+carried on the map itself (`Complex::map_holes`) for the interactive layer to
+list and fill; the interpreter no longer runs a separate hole solver. The entry
+points are `interpret_program` (one `Program` against a `Context`) and
+`InterpretedFile::load` (a file plus its whole dependency closure).
 
 ## Key public types
 
@@ -33,16 +34,15 @@ whole dependency closure).
 |---|---|---|
 | `interpret_program` | `eval.rs` | fold a `Program` into an `InterpResult` |
 | `Context` | `types.rs` | the threaded read/write env: `current_module`, `Arc<GlobalStore>`, `resolutions`, `source` |
-| `InterpResult` | `types.rs` | `{ context, errors, holes, constraints }`; `#[must_use]`; merged with `merge` |
+| `InterpResult` | `types.rs` | `{ context, errors }`; `#[must_use]`; merged with `merge` |
 | `GlobalStore` | `global_store.rs` | persistent store of cells / types / modules |
 | `interpret_diagram` | `diagram.rs` (re-exported) | evaluate a diagram expression |
+| `EvalMap { map, domain, holes }` | `types.rs` | an evaluated [[partial-map|map]] and its unfilled [[hole|holes]] |
 | `InterpretedFile` / `LoadResult` | `load.rs` | the load pipeline's success/failure outcome |
-| `inference::{HoleId, HoleEntry, SolvedHole, solve}` | `inference.rs` | hole constraints and the fixpoint solver |
-| `PartialHint` | `types.rs` | renderer-only hint for a partially-covered hole |
 
 Note `mod.rs` keeps almost everything private: only `Context`, `InterpResult`,
-`interpret_program`, `GlobalStore`, `interpret_diagram`, the inference triple,
-`InterpretedFile`/`LoadResult`, and `PartialHint` escape the crate boundary. The
+`interpret_program`, `GlobalStore`, `interpret_diagram`, and
+`InterpretedFile`/`LoadResult` escape the crate boundary. The
 binding/resolve/include machinery is `pub(super)`/`pub`-within-module glue.
 
 ## `GlobalStore` — the persistent state
@@ -105,7 +105,6 @@ InterpretedFile::load(loader, path)              load.rs
   │  loader.load → parsed root + dep_modules (topologically sorted, leaves first)
   ▼
   for each dep:  interpret_program(dep_ctx, dep.program)     ← state threaded via Arc
-  │  (holes in a dependency only WARN — inference is root-only)
   ▼
   interpret_program(root_ctx, root.program)
   │   initialize_module_context        ← mint root 0-cell + empty type
@@ -116,11 +115,9 @@ InterpretedFile::load(loader, path)              load.rs
   │   ↳ generators      → prepare_generator → insert_global_cell + set_cell
   │   ↳ let / map       → interpret_(let_diag|def_pmap) → binding.rs insert_*_binding
   │   ↳ include/attach  → include.rs (import generators, register inclusion map)
-  │   ↳ ? holes         → add_hole + emit Constraints   (diagram.rs / partial_map.rs)
+  │   ↳ ? holes         → recorded on the map (EvalMap::holes; see [[core-partial-map]])
   ▼
-  solve(hole_entries, constraints)     inference.rs  ← fixpoint, ROOT ONLY
-  ▼
-  InterpretedFile { state, solved_holes, source, path }
+  InterpretedFile { state, source, path }
 ```
 
 ### Blocks, modes, and scopes
@@ -217,40 +214,25 @@ by `boundary_suffix_collapses_to_one_direct_call`,
 pure map-chain form). This two-pass scheme replaced an earlier eager dot-access
 walk that composed and applied maps codimension-by-codimension.
 
-## Hole inference (`inference.rs`)
+## Holes live on the map
 
-`?` holes are resolved in **two phases**, deliberately decoupled:
-
-1. **Collection** — during interpretation, every site that constrains a hole
-   pushes a typed `Constraint` into the `InterpResult` (no in-place solving).
-   Emission lives in `diagram.rs` (paste/juxtaposition → `ConstraintOrigin::Paste`,
-   boundary declarations → `Declaration`, assertions → `Assertion`) and
-   `partial_map.rs` (`enrich_holes` → `ConstraintOrigin::PartialMap`).
-2. **Solving** — after the whole root file is interpreted, `solve` runs a
-   work-queue fixpoint over the collected constraints.
-
-A `HoleId` is a process-unique atomic counter (mirrors `GlobalId`). A `BdSlot` is
-a `(sign, dim)` pair naming one boundary; the *principal* slots of an $n$-cell
-hole are $(\text{Input}, n{-}1)$ and $(\text{Output}, n{-}1)$. Constraints come
-in three atomic flavours — `BoundaryEq`, `DimEq`, `Value` — composites are
-decomposed at the emission site. `solve` derives follow-ups as it goes:
-
-- a `Value` derives a `DimEq` from `top_dim()` plus `BoundaryEq` at the two
-  principal slots (`solve_value_higher_dim`, `solve_value_infers_dim`);
-- a `BoundaryEq` at $(s, k)$ cascades to `BoundaryEq` at every $(s', j<k)$ via
-  `globular_sub_boundaries` (`solve_globular_cascade`).
-
-Each slot/`dim`/`value` is set **at most once** (`Empty → Known`); later
-agreeing constraints are dropped (first origin wins), disagreeing ones append to
-`inconsistencies` rather than abort (`solve_conflicting_dim_eq`,
-`solve_boundary_eq_conflict_records_inconsistency`). This monotone state machine
-is what guarantees termination.
+`?` holes are no longer resolved by a dedicated solver phase (the old
+`inference.rs` was retired). A hole is a *pending assignment* recorded directly
+on the map being built: `partial_map.rs` threads a `MapBuild` through the clauses,
+committing what it can and leaving a `MapHole` where information is incomplete,
+and the leftover holes ride out on `EvalMap::holes` into the type complex
+(`Complex::map_holes`). Resolution is the local inference (case-1, collapse,
+forced faces) and conditional `cascade` of [[core-partial-map]] at interpretation
+time, plus the interactive `fill` workflow ([[interactive-session]]) afterward.
+See [[hole]] for the full model. There is consequently no longer a `solve` call in
+`load.rs`, no `InterpResult.holes`/`constraints`, and no `solved_holes` on
+`InterpretedFile`.
 
 ## Non-obvious invariants & gotchas
 
-- **Inference is root-only.** `load.rs` runs `solve` solely on the root module's
-  holes/constraints. A hole in a *dependency* is reported as a warning
-  (`report_hole`), never solved — the user must close it.
+- **Holes are not errors, and not root-only.** An unfilled hole is a normal state
+  of a map in *any* module; it surfaces through `Complex::map_holes`, listed by
+  the interactive `holes` command, not as an interpreter diagnostic.
 - **`insert_global_cell` is half a registration.** It mutates the complex and
   returns `(gid, dim)`, but does **not** touch the store's `cells` table. Forget
   the follow-up `set_cell` and the generator exists in the complex yet is invisible
@@ -283,14 +265,13 @@ mathematical relationships run through it.
   given partial map (`extend_scope_with_attached_generators`). The `MapDomain::{Type,Module}`
   distinction in `resolve.rs` is exactly the type-vs-module split of the system.
   See the open question [[module-open-semantics]] for the `open`/`include` boundary.
-- **[[diagram]].** Every generator's classifier, every `let` binding, and every
-  hole's recovered boundary is a `Diagram`. Inference reasons purely in terms of
-  $\partial^\pm_k$ on diagrams (`Diagram::boundary_normal`), and the globular
-  cascade is the statement that fixing a $k$-boundary fixes all lower
-  $j$-boundaries. See [[core-diagram]].
-- **[[partial-map]].** `attach` and the inference of partial-map holes apply a
+- **[[diagram]].** Every generator's classifier and every `let` binding is a
+  `Diagram`; a [[hole|hole's]] boundaries are deferred diagrams, kept as paste
+  trees over metavariables until filled. Boundary reasoning is in terms of
+  $\partial^\pm_k$ (`Diagram::boundary`/`boundary_normal`). See [[core-diagram]].
+- **[[partial-map]].** `attach` and the recording of partial-map holes apply a
   [[partial-map|`PartialMap`]] to diagram boundaries (`PartialMap::apply`). The map
-  machinery itself — refinement, totality, application — is documented in
+  machinery itself — refinement, totality, holes, application — is documented in
   [[core-partial-map]]; this page only *invokes* it.
 
 Pretty-printing is a support relationship, not a realisation: `GlobalStore`

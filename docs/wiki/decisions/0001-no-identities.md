@@ -1,7 +1,7 @@
 ---
 kind: decision
 status: stable
-last-touched: 2026-06-01
+last-touched: 2026-06-03
 ---
 
 # 0001 — alifib has no identity cells
@@ -62,11 +62,21 @@ The map-level discipline lives in `PartialMap::extend`
 > source-side gap (`PartialMap::extend` has no lower-dimension guard) — one to
 > triage into `docs/wiki/source-drift.md`.
 
+> [!note] Collapse inference now *deliberately* lowers dimension.
+> Since the maps-with-holes rewrite (`3d20e03`), `assign_cell`'s **collapse
+> inference** infers a cell's image as a lower-dimensional diagram when its
+> boundary maps below dimension $n-1$ (`collapsed_boundary_image`). So
+> dimension-lowering is not merely an unguarded accident at the core `extend`
+> layer — the interpreter *intends* it in this case. Whether that is compatible
+> with the no-identities discipline (a collapsed cell is arguably an identity in
+> disguise) is the open edge of this decision; see [[hole]] and
+> [[source-drift]].
+
 The interpreter-level wiring (`let total`, `attach … along`, clause evaluation)
-lives in `src/interpreter/partial_map.rs` — `extend_map_for_cell` infers the
-boundary entries then submits the whole map to `PartialMap::extend`; see
-[[core-partial-map]] for the full module and [[core-matching]] for the related
-matching machinery.
+lives in `src/interpreter/partial_map.rs` — `assign_cell` infers the boundary
+entries (or records them as [[hole|holes]]) then submits each committed entry to
+`PartialMap::extend`; see [[core-partial-map]] for the full module and
+[[core-matching]] for the related matching machinery.
 
 A concrete downstream consequence: `Engine::target_reached`
 *(src/interactive/engine.rs)* only succeeds when `active_len > 0`, since with no

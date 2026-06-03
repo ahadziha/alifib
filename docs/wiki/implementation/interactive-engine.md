@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-01
+last-touched: 2026-06-03
 code: [src/interactive/engine.rs]
 ---
 
@@ -18,8 +18,12 @@ code: [src/interactive/engine.rs]
 `RewriteEngine` drives [[rewriting]] interactively: you start from an initial
 diagram, apply rules one at a time (or auto, random, parallel), undo/redo along
 the line, and finally assemble the recorded steps into one $(n+1)$-proof diagram.
-It is the in-memory state behind the [[interactive-repl]] and the
-[[interactive-daemon-web|daemon and web backends]].
+It is the in-memory state the shared [[interactive-session|`Session`]] wraps — the
+REPL, daemon, and web all drive it through `Session::apply`, never directly — and
+an interactive [[hole|hole]]-fill of dimension $\ge 1$ drives one too (see
+[[interactive-session]]). The engine has no command-handling method of its own;
+it exposes `step`/`undo`/`auto`/`assemble_proof`/… and the `Session` sequences
+them.
 
 ## What it owns
 
@@ -38,37 +42,41 @@ durable artefact is the proof term, rendered by `proof_expr` and re-ingested by
 | `RewriteEngine` | the whole session; immutable context + mutable cursor state |
 | `HistoryEntry` *(crate)* | `{ rule_name, choice: Option<Vec<usize>> }` — one applied step, **display only** (`choice` is the picked rewrite indices, `None` for an `auto`/`resume` step). There is no replay |
 | `ProofCache` | `{ snapshot: Diagram, at_step }` — incrementally-extended assembled proof, active only under proof view |
-| `load_file_context` / `resolve_type` / `load_type_context` | free fns that load a `.ali` file into a `GlobalStore` and resolve a type [[core-complex|complex]] |
+| `load_file_context` / `reevaluate` / `resolve_type` / `load_type_context` | free fns that load (or re-evaluate) a `.ali` file into a `GlobalStore` and resolve a type [[core-complex|complex]] |
 | `eval_diagram_expr` | resolve a diagram by *name* (fast path) or by *parsing+interpreting* an expression (slow path) |
 
 ## Data flow
 
 ### Construction
 
-Three constructors. `from_store` and `resume` take an *already-loaded* store;
-`init` loads the file itself (it is the only one that takes a path, not a store):
+Three live constructors, all taking an *already-loaded* store (the `Session`
+loads the file before building, via `load_file_context` / `reevaluate`):
 
 ```
-from_store   (start)        resume   (from a proof diagram)        init (serve --file → loads & builds)
-     │                          │                                        │
-load_type_context ── load_file_context (interpret .ali → GlobalStore)   load_context (load_type_context + eval src/tgt)
-     │                  └─ resolve_type (TypeName → Arc<Complex>)
-     │
-from_store:                 resume:
-  eval initial (+target?)     eval proof d (dim n+1);  pseudo_normalise its paste tree
-  check_parallel              flatten_at(n) ⇒ each subtree is a step (realise_tree);
-                              label by top_generators; reverse if backward
-     │                          │  initial = ∂(initial_sign) of d; current = ∂(step_sign) of last step
-     ▼                          ▼  target = the supplied goal, never inferred from d
+from_store   (start)        from_diagrams  (a hole-fill)        resume   (from a proof diagram)
+     │                          │                                    │
+resolve_type (TypeName → Arc<Complex>)   given initial/target        eval proof d (dim n+1);
+     │                          Diagrams directly                    pseudo_normalise its paste tree
+from_store:                                                          flatten_at(n) ⇒ each subtree a step
+  eval initial (+target?)   from_diagrams:                           (realise_tree); label by top_generators;
+  check_parallel              check_parallel(initial, target)        reverse if backward
+     │                          │                                    │  initial = ∂(initial_sign) of d
+     │                          │                                    │  current = ∂(step_sign) of last step
+     ▼                          ▼                                    ▼  target = the supplied goal, not from d
   build_rule_patterns(type_complex, n, backward)        ← per-rule RulePattern, ONCE
   collect_confirmed_matches(current)                    ← applicable rewrites
      ▼
   RewriteEngine { current_diagram, steps, history, active_len, rewrites, rule_patterns, … }
 ```
 
-- **`from_store`** is the *start* path (REPL, web, daemon `start`): begin from an
-  `initial_diagram` (a name or a diagram expression), with an optional `target`
-  and an explicit `backward` flag; `steps` and `history` start empty.
+- **`from_store`** is the *start* path (`Session::start_rewrite`): begin from an
+  `initial_diagram` (a name or a diagram expression) resolved by
+  `eval_diagram_expr`, with an optional `target` and an explicit `backward` flag;
+  `steps` and `history` start empty.
+- **`from_diagrams`** is the same, but takes the initial and target as *already-built*
+  `Diagram`s plus display names. Its caller is `fill.rs::start_fill`
+  ([[interactive-session]]): a hole's realised boundary diagrams become a rewrite
+  from `F(x.in)` to `F(x.out)`, named `?x.in`/`?x.out`.
 - **`resume`** begins from a finished **proof diagram** `d` of dimension $n+1$. It
   pseudo-normalises `d`'s paste tree ([[core-paste-tree]]), `flatten_at(n)`s the
   outermost $\#_n$ chain into the individual rewrite steps, `realise_tree`s each,
@@ -77,11 +85,10 @@ from_store:                 resume:
   boundary (forward) or output boundary (backward), the current diagram is the
   opposite boundary, and `assemble_proof` reproduces `d`. The `target` is the
   supplied goal — the *original* session's target — never read off `d`.
-- **`init`** is the file-loading constructor (`backward = false`): it takes a
-  *path* rather than a store, loading the `.ali` via `load_context` before
-  building. Its only caller is `run_serve_cmd` ([[interactive-repl]] `cli.rs`),
-  which pre-loads a daemon session from `alifib serve <file> --type … --source …`
-  CLI args. The REPL and web go through `from_store` on an already-loaded store.
+
+A fourth constructor, `init` (load from a path, then build), survives in the
+source but is **currently unused** — the daemon's old pre-load path now goes
+through `Session::from_disk` instead. Treat it as legacy until rewired or removed.
 
 ### One manual step
 
@@ -149,10 +156,11 @@ Two renderings of the proof, for two purposes:
 
 `register_proof(name)` commits the assembled proof as a named let-binding in the
 type complex: it `Arc::make_mut`s the store, `modify_type_complex`s in a fresh
-generator-free `add_diagram`, and returns fresh `Arc`s so callers (the web
-adapter) can resync. The store key is the session's `source_file`, which **is the
-loader's canonical path** — set by `try_start_session`/`try_resume_session`, not
-the raw CLI argument (the fix in `463898c`; see [[interactive-repl]]).
+generator-free `add_diagram`, and returns fresh `Arc`s so the caller
+(`Session::store_proof`) can resync `self.store`. The store key is the session's
+`source_file`, which **is the loader's canonical path** — `Session` passes its
+`root_path` into the constructor, never the raw CLI argument (the fix in
+`463898c`; see [[interactive-session]]).
 
 ## Non-obvious invariants & gotchas
 
@@ -185,6 +193,11 @@ the raw CLI argument (the fix in `463898c`; see [[interactive-repl]]).
   proof's initial-side boundary $\cong$ the initial diagram and that the proof
   round-trips through the sourcefier + interpreter. Both failures are phrased as
   engine/sourcefier bugs, because for a well-formed engine they cannot fire.
+- **The engine has no `handle` method.** Command dispatch is no longer the
+  engine's job — the old shared `handle` was retired when the
+  [[interactive-session|`Session`]] became the single command surface. The engine
+  exposes only the operations (`step`, `undo`, `auto`, `assemble_proof`, the
+  accessors); `Session::apply` is what turns a `Request` into one of them.
 
 ## Mathematics
 
@@ -201,5 +214,5 @@ paste tree — see [[core-paste-tree]]. The proof a session builds is the
 $(n+1)$-molecule whose input/output boundaries are the initial and final
 $n$-diagrams; its type-correctness is what `typecheck_proof` audits. See
 [[core-matching]] for the matching/pushout/reconstruct pipeline each step invokes,
-and [[interactive-repl]] / [[interactive-daemon-web]] for the command surfaces
-that call these methods.
+[[interactive-session]] for the `Session` that sequences these methods, and
+[[interactive-repl]] / [[interactive-daemon-web]] for the front ends that drive it.

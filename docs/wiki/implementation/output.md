@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-01
+last-touched: 2026-06-03
 code: [src/output/mod.rs, src/output/normalize.rs, src/output/types.rs]
 ---
 
@@ -24,10 +24,12 @@ contents.
 ## What it owns
 
 The render boundary of the whole interpreter. `mod.rs` re-exports the data
-types (`Cell`, `Dim`, `Map`, `Module`, `Store`, `Type`) and four public
-rendering helpers (`render_diagram`, `render_boundary_partial`,
-`render_solved_hole`, `report_solved_holes`); `Display for GlobalStore` (in
-`normalize.rs`) routes through
+types (`Cell`, `Dim`, `Map`, `Module`, `Store`, `Type`) and the one public
+rendering helper `render_diagram`; the map-[[hole]] listing helpers
+(`render_hole_line`, `render_hole_boundary`, `render_hole_constraints`,
+`domain_complex`) are crate-internal to `normalize.rs`, used by the type-detail
+render and the interactive hole listings ([[interactive-session]]).
+`Display for GlobalStore` (in `normalize.rs`) routes through
 `GlobalStore::normalize`. The module owns no semantics — it never decides what a
 diagram *means*, only how to spell one.
 
@@ -43,7 +45,7 @@ The hierarchy mirrors the interpreter's scoping: `Store` → `Module` → `Type`
 | `Type` | one named type (or the unnamed root, shown `<empty>`): generators grouped into `dims`, plus `diagrams` and `maps` sorted by name |
 | `Dim` | generators at one dimension, `cells` sorted by name |
 | `Cell` | a named generator *or* diagram with its boundary rendered as two strings `input`, `output` (both empty ⇒ a 0-cell) |
-| `Map` | a named map, rendered `name :: domain` |
+| `Map` | a named map, rendered `name :: domain`, plus `holes` — its open [[hole|holes]] pre-rendered as `?name : in → out` lines |
 
 Every `Display` impl substitutes `<empty>` for the empty name (the unnamed root
 type / anonymous generator), and a `Cell` with empty `input`/`output` prints as a
@@ -118,28 +120,23 @@ If there is no paste history (`tree` returns `None`), it falls back to
 those are absent. `render_diagram` is the public wrapper, also used by the REPL
 ([[interactive-repl]]).
 
-### Partial boundaries — `render_boundary_partial`
+### Hole listing — `render_map_holes`
 
-A second, structurally identical renderer exists for *partial* boundaries
-([[partial-map]]). `render_boundary_partial` / `render_tree_partial` walk the
-same paste tree but push each leaf through a `PartialMap`: a leaf inside the
-map's domain renders its image diagram, a leaf outside renders `_`. This is the
-machinery behind hole reporting.
+A map with unfilled [[hole|holes]] renders them inline, one line each
+(`render_map_holes`). `hole_names` first assigns every metavariable a display
+name after the generator it images; `render_hole_line` then prints a hole as
+`?name` (a 0-cell) or `?name : in → out`, with `render_hole_boundary` walking the
+boundary paste trees via `render_paste_tree_with_holes` — so a leaf that is
+itself a metavariable shows as another `?name`, and pure holes and conditionals
+render uniformly. `render_hole_constraints` renders the equations a *conditional*
+pending assignment imposes (`F(x.side) = a.side`). These feed both the
+`Display`/type-detail render and the interactive `holes` command
+([[interactive-session]]).
 
-### Hole reporting
-
-`render_solved_hole` turns a constraint-solver `SolvedHole` into a diagnostic.
-Its logic is a precedence ladder, *not* a simple field read:
-
-1. An `Eq`-determined `value` ⇒ `= <diagram>`.
-2. Otherwise pick the *principal* boundary dimension $k = n - 1$ if both
-   $\partial^-_k$ and $\partial^+_k$ are "available" (a resolved boundary *or* a
-   partial hint), printing `src -> tgt`; else the largest paired dimension.
-3. Otherwise list every available slot, formatted `∂⁻ₖ`/`∂⁺ₖ` via `format_slot`,
-   highest dimension first.
-
-Inconsistencies are appended in every branch. `report_solved_holes` drives this
-over an `InterpretedFile`'s `solved_holes`, emitting one diagnostic per hole.
+There is **no `SolvedHole` / `report_solved_holes` reporting path** any more:
+holes are not solved-then-reported, they are listed where they live — on the map.
+The old `render_boundary_partial` / `render_tree_partial` partial-boundary
+renderers went with it.
 
 ## Non-obvious invariants and gotchas
 
@@ -165,10 +162,10 @@ over an `InterpretedFile`'s `solved_holes`, emitting one diagnostic per hole.
 - **Term, not list.** Boundaries print as flattened $\#_k$ terms reconstructed
   from the [[diagram|paste history]], which is why a lost history degrades to a
   space-joined label list rather than erroring.
-- **Tested behaviour.** The `render_solved_hole` precedence ladder is pinned by
-  named tests: `render_unknown_boundary`, `render_dim_only`, `render_value_only`,
-  `render_value_with_inconsistencies`, `render_inconsistencies_no_boundaries`,
-  `render_dim_with_inconsistencies` (`output::normalize::tests`).
+- **Holes render where they live.** A map's open [[hole|holes]] are listed inline
+  by `render_map_holes`; there is no separate solve-then-report pass. A hole leaf
+  inside a boundary prints as a `?name` metavariable, so pure holes and
+  conditionals read uniformly.
 
 ## Mathematics
 

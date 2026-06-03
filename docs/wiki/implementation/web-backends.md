@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-01
+last-touched: 2026-06-03
 code: [web/shared/src/lib.rs, web/server/src/lib.rs, web/wasm/src/lib.rs, web/mcp/src/lib.rs]
 ---
 
@@ -149,8 +149,9 @@ three messages.
 
 - **`WebRepl` is the single shared spine.** Server, WASM, and MCP each `use
   alifib::interactive::web::WebRepl` and add only framing. Command semantics
-  cannot drift between them, because none of them re-implement a command — see
-  [[interactive-daemon-web]] for the `State` machine and the
+  cannot drift between them, because none of them re-implement a command — all
+  forward to the one `Session::apply` ([[interactive-session]]). See
+  [[interactive-daemon-web]] for the `Option<Session>` `WebRepl` wraps and the
   `Start`/`Resume`/`Shutdown`-refused contract they all inherit.
 - **`build.rs` packages JS, not math.** The bundled artifact is the frontend
   GUI; standard-library / example `.ali` text is never compiled in. Do not

@@ -27,7 +27,7 @@ Mathematical and language ideas alifib realises.
 | [[pushout]] | The colimit gluing a rule cell onto the target along the matched input | stable |
 | [[flow-graph]] | $F_k(U)$: matching as induced labelled subgraph isomorphism | stable |
 | [[reconstruction]] | Recovering a paste-tree layering from a bare ogposet + labels | stable |
-| [[hole]] | The `?` placeholder; inference of a cell from boundary/dim constraints | stable |
+| [[hole]] | The `?` placeholder: a pending assignment in a map with holes; pure vs conditional, filling | stable |
 | [[homology]] | Integer cellular homology of a complex via Smith Normal Form | stable |
 | [[string-diagram]] | The Poincaré-dual presentation; node/wire/region layout | stable |
 | [[module-system]] | The language's types, modules, `include`, `attach` (`open` is aspirational) | stable |
@@ -45,12 +45,13 @@ the `cli/` and `web/` crates are the binaries and deployment wrappers around it.
 | [[core-matching]] | `src/core/{matching,embeddings,pushout,flow,reconstruct}.rs` | stable |
 | [[core-paste-tree]] | `src/core/paste_tree.rs` — paste trees: realise, flatten, pseudo-normalise | stable |
 | [[core-partial-map]] | `src/core/partial_map.rs` + `src/interpreter/partial_map.rs` — `attach … along` | stable |
-| [[interpreter]] | `src/interpreter/*` — eval, `GlobalStore`, types, inference | stable |
+| [[interpreter]] | `src/interpreter/*` — eval, `GlobalStore`, types; holes ride out on maps | stable |
 | [[language-parser]] | `src/language/*` — lexer, chumsky parser, AST | stable |
 | [[output]] | `src/output/*` — normalize to a name-keyed, ID-free render tree | stable |
-| [[interactive-engine]] | `src/interactive/engine.rs` — rewrite sessions (start/resume) | stable |
-| [[interactive-repl]] | `src/interactive/{repl,cli,render,display}.rs` | stable |
-| [[interactive-daemon-web]] | `src/interactive/{daemon,protocol,web}.rs` | stable |
+| [[interactive-engine]] | `src/interactive/engine.rs` — rewrite sessions (start/resume/from-diagrams) | stable |
+| [[interactive-session]] | `src/interactive/{session,command,fill}.rs` — the shared command core + hole-filling | stable |
+| [[interactive-repl]] | `src/interactive/{repl,cli,richtext,display,render}.rs` — terminal front end + shared renderer | stable |
+| [[interactive-daemon-web]] | `src/interactive/{daemon,protocol,web}.rs` — `Session` over the wire | stable |
 | [[analysis]] | `src/analysis/{homology,strdiag}.rs` | stable |
 | [[aux]] | `src/aux/*` — ids, errors, loader, bitset/intset, graph | stable |
 | [[codegen]] | `src/codegen.rs` — fluent builders for programmatic ASTs | stable |

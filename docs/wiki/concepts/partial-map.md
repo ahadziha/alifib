@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-01
+last-touched: 2026-06-03
 ---
 
 # Partial map
@@ -77,9 +77,12 @@ The language surfaces partial maps through two faces:
   boundary — the categorical pushout/amalgamation read operationally. Omitting
   `along` attaches a disjoint copy (the empty map).
 
-A clause `gen => ?` leaves the image a [[hole]]; the elaborator then *infers*
-the missing image from boundary constraints induced by the map on `gen`'s
-boundary — this is the refinement-by-inference workflow.
+A clause `gen => ?` leaves the image a [[hole]] — a *pending assignment* the map
+records rather than commits. A map may carry holes and still be well-formed
+(even `total`, since a hole counts as covering its generator); the open holes are
+then filled later, either by the local inferences that fire as the map is built,
+or interactively (`fill`). The variant `<map> => ?` holes a whole sub-map
+pointwise. See [[hole]] for the full account.
 
 ## Implementation
 
@@ -100,12 +103,14 @@ Realised by [[core-partial-map]]. The data structure and its laws live in
   $g$'s domain exactly as the partial composite demands.
 
 The language front-end is `src/interpreter/partial_map.rs`: `interpret_partial_map`
-and `interpret_pmap_def` evaluate the surface syntax; `extend_map_for_cell`
-performs the *smart* extension that recursively maps a cell's boundary
-dependencies before the cell itself; `check_map_totality` *(internal)* implements
-the `total` keyword; and `enrich_holes` *(internal)* turns a `gen => ?` clause
-into boundary constraints for inference. The `attach ... along` statement is
-wired in `src/interpreter/include.rs::interpret_attach_instr`, which calls
+and `interpret_pmap_def` evaluate the surface syntax. Construction runs through a
+`MapBuild` *(internal)* that carries the committed `PartialMap` alongside pending
+[[hole|holes]]; `assign_cell` *(internal)* commits a determined image or records a
+hole, forcing every undefined boundary face (`ensure_defined`) before the cell
+itself, and `cascade` commits each conditional whose dependencies have closed.
+`check_map_totality` *(internal)* implements the `total` keyword, counting a holed
+generator as covered. The `attach ... along` statement is wired in
+`src/interpreter/include.rs::interpret_attach_instr`, which calls
 `interpret_pmap_def` on the `along` clause (`resolve_attach` *(internal)*).
 
 ## Related

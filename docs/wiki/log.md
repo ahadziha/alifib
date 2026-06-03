@@ -217,3 +217,37 @@ Bridge lint clean: every impl page carries `## Mathematics`, every concept page
 `## Implementation`; the three new pages are bridged and given inbound links
 (`cli` ← `interactive-repl`; `web-frontend` ← `web-backends`; `web-backends` ←
 `interactive-daemon-web`). No orphans, no dangling wiki-links.
+
+## [2026-06-03] refactor | maps-with-holes + the unified interactive Session
+
+Brought the wiki up to date with two major source restructurings landed since the
+wiki was first written (`af611fc`…`a151779`): the **maps-with-holes** redesign and
+the **shared interactive `Session`**.
+
+*Holes.* `src/interpreter/inference.rs` (the two-phase constraint solver) was
+**deleted**; a `?` is now a *pending assignment* of a partial map, recorded as a
+`MapHole` (`src/core/map_hole.rs`) — pure (`arr => ?`) or conditional (`x => a`
+with unmapped faces) — whose boundaries are paste trees over `Tag::Hole`
+metavariables, never realised. Resolution is local: case-1 + collapse inference
+and a `cascade` of ready conditionals, in `MapBuild`/`assign_cell`/`commit_one`
+(`src/interpreter/partial_map.rs`); leftovers ride out on `EvalMap::holes` and are
+filled interactively. Rewrote `[[hole]]`; updated `[[partial-map]]`,
+`[[core-partial-map]]` (interpreter half), `[[interpreter]]` (dropped the whole
+inference section, `InterpResult {context, errors}`, no `solved_holes`),
+`[[output]]` (solved-hole reporting → `render_map_holes` listing), `[[cli]]`
+(no `report_solved_holes`), `[[aux]]` (`HoleId`/`Tag::Hole`, dropped
+`inference.rs` ref), and noted collapse inference's deliberate dimension-lowering
+on `[[0001-no-identities]]`.
+
+*Interactive.* The CLI, daemon, and web REPLs were unified onto one
+`Session::apply` command surface (`session.rs`), one shared command parser
+(`command.rs`), one structured renderer (`richtext.rs`), plus interactive
+hole-filling (`fill.rs`); the per-engine `handle` was retired and `repl.rs` gutted
+to a thin adapter. New page `[[interactive-session]]` (session + command + fill).
+Rewrote `[[interactive-repl]]` (now repl/cli/richtext/display/render),
+`[[interactive-daemon-web]]` (`Session::apply` is the surface; new
+`holes`/`fill`/`done`/`load`/`save`/`backward` requests and `fill`/`holes`/
+`constraints`/`zero_cell`/`source`/`module` response fields; web `State` enum →
+`Option<Session>`), and updated `[[interactive-engine]]` (Session wraps it,
+`from_diagrams` for fills, `init` now unused) and `[[web-backends]]`/
+`[[web-frontend]]` cross-refs. README.md and INTERACTIVE.md updated to match.

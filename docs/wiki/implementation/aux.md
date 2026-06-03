@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-01
+last-touched: 2026-06-03
 code: [src/aux/mod.rs, src/aux/id.rs, src/aux/error.rs, src/aux/loader.rs, src/aux/bitset.rs, src/aux/intset.rs, src/aux/graph.rs, src/aux/path.rs]
 ---
 
@@ -17,10 +17,11 @@ code: [src/aux/mod.rs, src/aux/id.rs, src/aux/error.rs, src/aux/loader.rs, src/a
 surface (`id`, `error`, `loader`, `path`) used across the [[interpreter]] and the
 *crate-private* data structures (`bitset`, `intset`, `graph`, all
 `pub(crate)`) used only inside `core`/`analysis`. The root also re-exports the
-identifier zoo (`pub use id::{GlobalId, LocalId, ModuleId, Tag}`, `pub use
-error::Error`) and carries one stray helper, `dim_subscript`, that renders a
-dimension as Unicode subscript digits for boundary slot display
-(`src/output/normalize.rs`, `src/interpreter/inference.rs`).
+identifier zoo (`pub use id::{GlobalId, HoleId, LocalId, ModuleId, Tag}` — where
+`HoleId` names a [[hole]]'s metavariable and `Tag::Hole(HoleId)` is its
+paste-tree leaf — `pub use error::Error`) and carries one stray helper,
+`dim_subscript`, that renders a dimension as Unicode subscript digits for
+boundary-slot display.
 
 ## What it owns
 

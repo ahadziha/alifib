@@ -1,7 +1,7 @@
 ---
 kind: note
 status: stable
-last-touched: 2026-06-01
+last-touched: 2026-06-03
 ---
 
 # Source-side drift — deferred maintenance
@@ -143,3 +143,38 @@ correct (code uses `Sign::Input`/`Sign::Output`); only the comments mislead.
 - `web/EXAMPLES.md` describes a build-time-generated `dist/` manifest / deploy
   workflow that `web/frontend/package.json` (only `build`/`watch` scripts) does
   not implement — possible doc/build drift.
+
+## [2026-06-03] Refactors landed — some items now stale
+
+The **maps-with-holes** rewrite and the **shared interactive `Session`** (see
+`log.md`) touched several files this backlog points at. Re-verify before picking
+any item up — line refs in particular have moved. Known status changes:
+
+- **Item 1d — RESOLVED.** `src/interactive/mod.rs` no longer lists
+  `render_match_highlight`; the new submodule table names `render_step`. Nothing
+  to fix.
+- **Item B, `render_solved_hole` row — OBSOLETE.** That function was *deleted*
+  with `inference.rs` and the solved-hole reporting path; there is no longer a
+  doc-comment to correct. (The `sign_superscript` / `cell_from_diagram` rows of
+  the same item still need checking against current `output/normalize.rs`.)
+- **Items 1b, 1c, 1e** point at `engine.rs`, `web.rs`, `partial_map.rs` — all
+  heavily rewritten. The *symbols* they name may be gone or renamed (`engine.rs`
+  no longer has a `handle`; `partial_map.rs` no longer has `enrich_holes`). Treat
+  these as needing a fresh pass, not as verified.
+- **Items C/D** (dead `whisker_rewrite`, `parse_complex`, `Token::LAngle/RAngle`;
+  WET SNF in `homology.rs`; missing dimension-lowering guard) were re-checked and
+  **still stand** — those symbols remain present. The dimension-lowering gap is
+  now also *exercised on purpose* by collapse inference; see
+  [[0001-no-identities]].
+
+### New dead code from the refactor
+
+- **`src/interactive/engine.rs::init`** (`pub`): now **dead** — the only mention
+  repo-wide outside its own definition is the doc-link at `engine.rs:44`; there
+  are zero call sites in `src/`, `cli/`, `web/`, or tests. It was the daemon's
+  load-file-and-build-in-one-step constructor; the daemon now goes through
+  `Session::from_disk` instead, leaving `init` orphaned. Like `whisker_rewrite`
+  (item C) it is *not* behind `#[allow(dead_code)]` — only its `pub` visibility
+  dodges the warning. Delete (along with the dangling doc-link at `engine.rs:44`),
+  or rewire. Don't leave it half-alive. The live constructors are `from_store`
+  (start), `from_diagrams` (a hole-fill), and `resume`; see [[interactive-engine]].

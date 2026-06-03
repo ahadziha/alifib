@@ -1,9 +1,10 @@
 # Interactive Rewriting
 
 `alifib` provides several interfaces for constructing (n+1)-dimensional proof
-diagrams step by step: a **REPL** for interactive use, a localhost **web GUI**
-for notebook-style browser use, and a **daemon** for editor and tooling
-integration.
+diagrams step by step and for filling the `?` holes of partial maps: a **REPL**
+for interactive use, a localhost **web GUI** for notebook-style browser use, and a
+**daemon** for editor and tooling integration. All three share one command core,
+so the command set and its behaviour are identical across them.
 
 ---
 
@@ -35,9 +36,12 @@ start Idem 'id id id' id
 | `homology <name>` | Compute cellular homology of a type |
 | `start <t> <s> [<g>]` | Start a rewrite session from an initial diagram (target optional) |
 | `resume <t> <p> [<g>]` | Resume a session from a diagram `<p>`, replaying its steps (target optional) |
+| `holes` | List the open `?` holes (and constraints) of the module's maps |
+| `fill <n>` | Start a hole-filling session for hole `<n>` |
+| `backward [on\|off]` | Show or toggle backward rewrite mode (when idle) |
 | `status` / `show` | Session state, or module path when idle |
 | `print` | Print the full source file |
-| `stop` | End the active session |
+| `stop` | End the active session (or abandon a fill) |
 | `help` / `?` | Show command list |
 | `quit` / `exit` / `q` | Exit |
 
@@ -59,6 +63,7 @@ start Idem 'id id id' id
 | `history` | `h` | Show the sequence of moves applied so far |
 | `proof` | `p` | Show the running (n+1)-dim proof diagram and its source/target |
 | `store <name>` | | Store the current proof as a named diagram in the type |
+| `done` | | Finalise a hole-filling session: splice the fill into the map and re-evaluate |
 | `save <path>` | | Write the original source file with stored definitions appended |
 
 ### Display
@@ -101,6 +106,32 @@ undo, continue, or branch. `<proof>` is any diagram name or expression in the
 type. Toggle `backward on` first to run from the proof's output boundary toward
 its input; `<target>` is the goal you intend to reach, supplied separately.
 
+### Filling holes
+
+A partial map clause `gen => ?` leaves a generator's image open — a *hole*. A map
+may carry holes and still be well-formed; you close them interactively.
+
+`holes` lists every open hole in the module's maps, numbered, each shown as
+`?name : in → out` (or just `?name` for a 0-cell), followed by any *constraints*
+imposed by conditional pending assignments (the equations `F(x.side) = a.side`).
+
+`fill <n>` opens a filling session for hole `n`. Filling the image of an `m`-cell
+`x` of a map `F : D → T` means building `F(x)`:
+
+- for `m ≥ 1` it is an ordinary **rewrite session** from `F(x.in)` to `F(x.out)` —
+  the full `apply`/`auto`/`undo`/`proof`/… command set works exactly as in a
+  free rewrite;
+- for a 0-cell it is the **choice** of one of `T`'s 0-cells (`apply <k>` picks the
+  `k`-th candidate; `undo` reopens them).
+
+A hole whose image depends on other unfilled holes cannot be filled until those
+are; the REPL reports which to fill first.
+
+`done` finalises the fill: it appends `x => <proof>` to the map's definition and
+re-evaluates the file, so the hole is gone and the source is the durable record.
+An inconsistent fill is rejected at re-evaluation and the session is kept so you
+can retry.
+
 ---
 
 ## Web GUI
@@ -129,8 +160,8 @@ Then open `http://127.0.0.1:8000` locally.
 
 The web GUI has its own REPL panel. After evaluating a source file, the REPL
 enters no-session mode and accepts the same commands as the CLI REPL
-(`types`, `type`, `homology`, `start`, `stop`, etc.). Two additional commands
-are web-specific:
+(`types`, `type`, `homology`, `start`, `holes`, `fill`, `done`, `stop`, etc.).
+One additional command is web-specific:
 
 | Command | Description |
 |---------|-------------|
@@ -161,6 +192,7 @@ Otherwise the daemon starts blank and waits for a `start` request.
 ### Requests
 
 ```json
+{"command":"load","source_file":"..."}
 {"command":"start","source_file":"...","type_name":"...","initial":"...","target":"..."}
 {"command":"resume","source_file":"...","type_name":"...","proof":"...","target":"...","backward":false}
 {"command":"step","choice":0}
@@ -172,18 +204,29 @@ Otherwise the daemon starts blank and waits for a `start` request.
 {"command":"proof"}
 {"command":"list_rules"}
 {"command":"history"}
+{"command":"holes"}
+{"command":"fill","index":0,"backward":false}
+{"command":"done"}
 {"command":"store","name":"myproof"}
+{"command":"save","path":"out.ali"}
+{"command":"backward","on":true}
 {"command":"types"}
 {"command":"type","name":"Idem"}
 {"command":"shutdown"}
 ```
 
-`start` begins a fresh session from `initial`; `resume` decomposes the diagram
-`proof` into its rewrite steps and opens the session with all of them applied.
-`target` is optional in both, and `backward` (default `false`) makes `resume`
-run from the proof's output boundary instead of its input. `proof` returns the
-current proof as a re-parseable expression (for saving). All commands except
-`start` and `resume` require a session to be active.
+`load` reads a file (and its dependencies) without starting a session — the
+loaded-but-idle state from which `holes`/`fill` work. `start` begins a fresh
+rewrite from `initial`; `resume` decomposes the diagram `proof` into its rewrite
+steps and opens the session with all of them applied. `load`/`start`/`resume`
+each (re)read the file from disk, so an edited source is picked up without a
+separate reload. `target` is optional in both `start` and `resume`, and
+`backward` (default `false`) makes `resume` run from the proof's output boundary
+instead of its input. `holes` lists the module's open holes; `fill` starts a
+filling session (a rewrite, or a 0-cell choice) and `done` finalises it, returning
+the edited `source`. `proof` returns the current proof as a re-parseable
+expression (for saving). `load`, `start`, `resume`, and the read-only queries
+(`types`/`type`) need no active session; every other command does.
 
 ### Responses
 
@@ -212,6 +255,12 @@ The `data` object includes:
 | `rules` | All rewrite rules (only in response to `list_rules`) |
 | `types` | Type summaries (only in response to `types`) |
 | `type_detail` | Full type info (only in response to `type`) |
+| `message` | A canonical one-line result (`Applied …`, `Filled ?x with …`, `Stored …`) |
+| `holes` / `constraints` | Open holes / conditional constraints (only in response to `holes`) |
+| `fill` | The hole being built — type, map, domain, source, dim (present during a fill) |
+| `zero_cell` | Candidate 0-cells and the current pick (present during a 0-cell fill) |
+| `source` | The updated running source (in response to `done`/`save`) |
+| `module` | The loaded module's path (reported by `show`/`status` when idle) |
 
 `DiagramInfo` has: `label` (space-separated top-level names), `dim`,
 `cell_count`, `cells_by_dim` (labels at every dimension from 0 to top).
@@ -220,6 +269,19 @@ The `data` object includes:
 
 **`store`** — stores the current proof as a named diagram (let-binding) in the
 active type. After success, `type` will show the new diagram.
+
+**`holes`** — lists the module's open holes (in `data.holes`) and the constraints
+imposed by conditional pending assignments (`data.constraints`), without needing an
+active session.
+
+**`fill`** — opens a filling session for the hole at `index` (as numbered by
+`holes`). A hole on an `m`-cell with `m ≥ 1` becomes a rewrite session; a 0-cell
+hole becomes a choice (`step`/`choice` picks a candidate). `data.fill` identifies
+the hole; `data.zero_cell` carries the candidates of a 0-cell fill.
+
+**`done`** — finalises the active fill: splices the proof into the map's
+definition, re-evaluates, and returns the edited `source`. An inconsistent fill
+errors and the session is kept.
 
 **`types`** — lists all named types in the loaded source file. The `types` array
 in the response contains `{name, max_dim, generator_count, diagram_count}` for

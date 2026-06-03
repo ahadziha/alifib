@@ -50,6 +50,11 @@ under the name `T`.
 `along [ gen => diagram, ... ]`. These are used by `attach` to identify
 generators across types.
 
+**Holes** — a clause `gen => ?` leaves a generator's image open: a *hole*. A map
+may carry holes and still be well-formed (even `total`). Some holes are inferred
+as the rest of the map is fixed; the rest are filled interactively in the REPL
+(`holes` / `fill <n>` / `done`). See `examples/Hole_examples.ali`.
+
 **Diagram expressions** — vertical composition is written by juxtaposition
 (`f g`), horizontal composition by `f #0 g` (pasting along a 0-cell boundary),
 and grouping with parentheses.
@@ -107,10 +112,11 @@ alifib repl examples/Idem.ali --type Idem --source lhs --target rhs
 ```
 
 After loading, the REPL is in **no-session** mode: inspection commands like
-`types`, `type <name>`, and `homology <name>` work immediately. Use
+`types`, `type <name>`, `homology <name>`, and `holes` work immediately. Use
 `start <type> <source> [<target>]` to begin a rewrite session (target is
-optional), or `resume <type> <proof> [<target>]` to reopen a stored proof
-diagram as a live session. Composite diagram expressions can be quoted:
+optional), `resume <type> <proof> [<target>]` to reopen a stored proof
+diagram as a live session, or `fill <n>` to start filling an open `?` hole.
+Composite diagram expressions can be quoted:
 
 ```
 start Idem 'id id id' id
@@ -125,11 +131,14 @@ Key commands:
 |---------|-------------|
 | `start <t> <s> [<g>]` | Start a rewrite session (target optional) |
 | `resume <t> <p> [<g>]` | Resume a session from a stored proof diagram (target optional) |
+| `holes` | List the open `?` holes of the module's maps |
+| `fill <n>` | Start a hole-filling session for hole `n` (a rewrite, or a 0-cell choice) |
 | `apply <n>` | Apply rewrite at index `n` (alias `a`) |
 | `undo [<n>]` | Undo last step, or back to step `n` (alias `u`) |
 | `redo [<n>]` | Redo last undone step, or forward to step `n` |
 | `rules` | List available rewrite rules (alias `r`) |
 | `proof` | Show the running proof diagram (alias `p`) |
+| `done` | Finalise a hole-filling session, splicing the fill into the map |
 | `store <name>` | Store the current proof as a named diagram |
 | `save <path>` | Write source file with stored definitions appended |
 | `stop` | End the active session |
@@ -161,6 +170,9 @@ Key requests:
 {"command":"undo"}
 {"command":"redo"}
 {"command":"proof"}
+{"command":"holes"}
+{"command":"fill","index":0}
+{"command":"done"}
 {"command":"store","name":"myproof"}
 {"command":"types"}
 {"command":"type","name":"Idem"}
@@ -170,7 +182,10 @@ Key requests:
 
 Every response is `{"status":"ok","data":{...}}` or `{"status":"error","message":"..."}`.
 The `data` object always includes the current session state (step count, current diagram,
-available rewrites). Informational commands add extra fields: `types`, `type_detail`, `cell_detail`.
+available rewrites). Informational commands add extra fields: `types`, `type_detail`,
+`cell_detail`, `holes`/`constraints` (the `holes` command), and `fill`/`zero_cell`
+(during a hole-filling session). All three front-ends — REPL, daemon, web — share one
+command core, so the command set and responses are identical across them.
 
 See `INTERACTIVE.md` for the full protocol reference.
 
