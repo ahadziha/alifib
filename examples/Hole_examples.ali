@@ -1,0 +1,61 @@
+(*
+	This file illustrates how holes work in alifib:
+
+    - in the first example, we have an explicit hole as the image of
+      a generator, which in turn determines implicit holes for the 
+      images of its boundary cells;
+    
+    - in the second example, we have implicit holes determined
+      by the fact that an assignment is underdetermined (there is no
+      univocal assignment on the boundary cells); the assignment
+      is left “pending”, and determines constraints that must be
+      satisfied by the hole fillers.
+*)
+
+@Type
+Arrow <<= {
+	s, t,
+    arr: s -> t
+},
+
+X <<= { 
+	x, y, z,
+    f: x -> y,
+    g: y -> z,
+    h: x -> z,
+    r: f g -> h 
+},
+
+M <<= {
+	v,
+    a: v -> v,
+    m: a a -> a
+}
+
+(* 
+	Explicit hole: the assignment of the image of `arr`
+    is left open.
+    This determines two further implicit holes for the images of
+    its boundaries.
+*)
+@X
+let total F :: Arrow = [ 
+	arr => ?
+]
+
+(* 
+	Implicit hole: the assignment of `m` as the image of `r`
+    is underdetermined; there are multiple possibilities for the
+	images of `f` and of `g`.
+    
+    The pending assignment determines a constraint:
+    ` ?f #0 ?g = a #0 a `.
+    There are three pairs of hole fillers compatible with the constraint:
+    1) f => a, g => a,
+    2) f => a #0 a, g => v,
+    3) f => v, g => a #0 a.
+*)
+@M
+let total G :: X = [ 
+	r => m 
+]

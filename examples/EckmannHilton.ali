@@ -1,0 +1,44 @@
+(*
+	This file sets up the stage for the Eckmann-Hilton argument: 
+    two endo-2-morphisms of an identity morphism commute 
+    (in general, up to a 3-morphism).
+
+	It imports the Bicategory module and constructs a bicategory
+    with a single object, no non-identity morphisms, and two
+    2-morphisms.
+    
+    The proof itself is left as holes in an equation,
+    modelled as a map from the Bicategory.Equation type.
+*)
+
+@Type
+include Bicategory,
+let Object = Bicategory.Object,
+let Morphism = Bicategory.Morphism,
+let 2Morphism = Bicategory.2Morphism,
+let Equation = Bicategory.Equation,
+
+EckmannHilton <<= {
+	pt,
+	attach Pt :: Object along [ ob => pt ],
+
+    a: Pt.id -> Pt.id,
+    b: Pt.id -> Pt.id,
+
+    attach A :: 2Morphism along [ 
+    	Src => Pt.Id,
+        Tgt => Pt.Id,
+        2mor => a ],
+    attach B :: 2Morphism along [
+    	Src => Pt.Id,
+        Tgt => Pt.Id,
+        2mor => b ]
+}
+
+@EckmannHilton
+let total Commutativity :: Equation = [
+	lhs => a b,
+    rhs => b a,
+    dir => ?,
+    inv => ?
+]
