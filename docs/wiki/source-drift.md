@@ -132,6 +132,9 @@ correct (code uses `Sign::Input`/`Sign::Output`); only the comments mislead.
 - `web/EXAMPLES.md` describes a build-time-generated `dist/` manifest / deploy
   workflow that `web/frontend/package.json` (only `build`/`watch` scripts) does
   not implement — possible doc/build drift.
+- `docs/HOMOLOGY.md` cites `src/core/homology.rs`; the code is at
+  `src/analysis/homology.rs`. Stale path. (Moved here from the `analysis` wiki
+  page, which should describe current code, not flag external-doc drift.)
 
 ## [2026-06-03] Refactors landed — some items now stale
 

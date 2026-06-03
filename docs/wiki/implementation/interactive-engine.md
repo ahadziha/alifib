@@ -31,9 +31,8 @@ them.
 the cursor into the step history, the undo/redo buffer, and the on-demand
 assembly of the proof. It is a thin orchestration layer over the core pipeline —
 all the real matching, pushout, and reconstruction lives in [[core-matching]].
-Persistence is no longer a module of its own (`session.rs` was retired): the only
-durable artefact is the proof term, rendered by `proof_expr` and re-ingested by
-`resume`.
+Persistence is not a concern of its own: the only durable artefact is the proof
+term, rendered by `proof_expr` and re-ingested by `resume`.
 
 ## Key public types
 
@@ -85,10 +84,6 @@ from_store:                                                          flatten_at(
   boundary (forward) or output boundary (backward), the current diagram is the
   opposite boundary, and `assemble_proof` reproduces `d`. The `target` is the
   supplied goal — the *original* session's target — never read off `d`.
-
-A fourth constructor, `init` (load from a path, then build), survives in the
-source but is **currently unused** — the daemon's old pre-load path now goes
-through `Session::from_disk` instead. Treat it as legacy until rewired or removed.
 
 ### One manual step
 
@@ -171,14 +166,13 @@ generator-free `add_diagram`, and returns fresh `Arc`s so the caller
 - **History is display-only — there is no replay.** `HistoryEntry` records a
   rule name and the chosen indices for the UI; nothing reconstructs a session by
   re-running them. A session is reconstructed by `resume` *from the proof diagram*,
-  whose paste tree already encodes the step decomposition. This is why the old
-  `SessionFile`/move-log was retired: a move log stored rule names but replayed on
-  enumeration indices, so it was fragile and binary-version-bound, and carried
-  nothing the proof diagram doesn't.
+  whose paste tree already encodes the step decomposition — so the proof term is
+  the only thing a session needs to round-trip, and there is no move-log to keep
+  in sync with it.
 - **Rule patterns are built once.** `build_rule_patterns` runs at construction
   only; every `step`/`auto`/`refresh_rewrites` reuses the same `rule_patterns`
-  map. Re-slicing rule boundaries per step was a hot spot — see [[core-matching]]
-  §`RulePattern`.
+  map. Re-slicing rule boundaries per step would be a hot spot — see
+  [[core-matching]] §`RulePattern`.
 - **`backward` flips three things in lockstep.** It chooses the pattern boundary
   inside `RulePattern`, the `step_sign` used to read the next diagram (`Output` vs
   `Input`), *and* the paste order in `assemble_proof`. They must agree; a mismatch
@@ -193,11 +187,11 @@ generator-free `add_diagram`, and returns fresh `Arc`s so the caller
   proof's initial-side boundary $\cong$ the initial diagram and that the proof
   round-trips through the sourcefier + interpreter. Both failures are phrased as
   engine/sourcefier bugs, because for a well-formed engine they cannot fire.
-- **The engine has no `handle` method.** Command dispatch is no longer the
-  engine's job — the old shared `handle` was retired when the
-  [[interactive-session|`Session`]] became the single command surface. The engine
-  exposes only the operations (`step`, `undo`, `auto`, `assemble_proof`, the
-  accessors); `Session::apply` is what turns a `Request` into one of them.
+- **The engine does not dispatch commands.** That is the
+  [[interactive-session|`Session`]]'s job: `Session::apply` turns a `Request` into
+  one of the engine's operations. The engine exposes only those operations
+  (`step`, `undo`, `auto`, `assemble_proof`, the accessors), no command surface of
+  its own.
 
 ## Mathematics
 

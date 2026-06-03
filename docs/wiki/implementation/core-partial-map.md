@@ -173,9 +173,9 @@ language-level pushout-flavoured operation, distinct from the ogposet pushout in
 ### Holes — pending assignments, not a solver
 
 A clause RHS may be a hole `?` (or a whole map may be holed pointwise,
-`<map> => ?`). There is **no longer a separate constraint-collection-and-solve
-phase**: a hole is just a pending entry of the `MapBuild`, carried out of
-interpretation on `EvalMap::holes` and stored on the map (`Complex::map_holes`).
+`<map> => ?`). A hole is a pending entry of the `MapBuild` — there is no separate
+constraint-collection-and-solve phase — carried out of interpretation on
+`EvalMap::holes` and stored on the map (`Complex::map_holes`).
 A hole's boundaries are kept as paste trees with `Tag::Hole` metavariable leaves,
 never realised, so a hole can later be filled by a non-round diagram; its
 outstanding dependencies are exactly those metavariable leaves (`MapHole::deps`).

@@ -24,7 +24,7 @@ algebra. It elaborates declarations (`generator`, `let`, `map`, `include`,
 every global entity an opaque id, and threads a copy-on-write store through the
 whole program. Unfilled `?` [[hole|holes]] in a map are not errors — they are
 carried on the map itself (`Complex::map_holes`) for the interactive layer to
-list and fill; the interpreter no longer runs a separate hole solver. The entry
+list and fill, not resolved by a solver pass. The entry
 points are `interpret_program` (one `Program` against a `Context`) and
 `InterpretedFile::load` (a file plus its whole dependency closure).
 
@@ -188,7 +188,7 @@ the expanded fragment are relocated to the `for`-block's own span by
 well-formed one is a *prefix of [[partial-map|partial maps]]*, then a *single
 basic [[diagram]]*, then a *suffix of boundary operators* (`.in` $=
 \partial^-$, `.out` $= \partial^+$). It is computed in two passes —
-`decompose` then `execute` — instead of the old eager walk:
+`decompose` then `execute`:
 
 - **`decompose`** collects the pieces into a `Decomp` (`Diagram { maps, diagram,
   diagram_span, bds }`, a non-empty `Map { maps }` chain, or `Hole`) doing only
@@ -211,22 +211,20 @@ boundary-preservation of maps, $\varphi(\partial x) = \partial(\varphi x)$. Pinn
 by `boundary_suffix_collapses_to_one_direct_call`,
 `boundary_underflow_is_rejected`, `maps_are_applied_after_the_boundary` (in
 `diagram.rs`) and `delta_simplicial_identities_hold` (`tests/interpreter.rs`, the
-pure map-chain form). This two-pass scheme replaced an earlier eager dot-access
-walk that composed and applied maps codimension-by-codimension.
+pure map-chain form).
 
 ## Holes live on the map
 
-`?` holes are no longer resolved by a dedicated solver phase (the old
-`inference.rs` was retired). A hole is a *pending assignment* recorded directly
-on the map being built: `partial_map.rs` threads a `MapBuild` through the clauses,
-committing what it can and leaving a `MapHole` where information is incomplete,
-and the leftover holes ride out on `EvalMap::holes` into the type complex
-(`Complex::map_holes`). Resolution is the local inference (case-1, collapse,
-forced faces) and conditional `cascade` of [[core-partial-map]] at interpretation
-time, plus the interactive `fill` workflow ([[interactive-session]]) afterward.
-See [[hole]] for the full model. There is consequently no longer a `solve` call in
-`load.rs`, no `InterpResult.holes`/`constraints`, and no `solved_holes` on
-`InterpretedFile`.
+A `?` hole is a *pending assignment* recorded directly on the map being built, not
+resolved by a dedicated solver phase. `partial_map.rs` threads a `MapBuild`
+through the clauses, committing what it can and leaving a `MapHole` where
+information is incomplete; the leftover holes ride out on `EvalMap::holes` into the
+type complex (`Complex::map_holes`). Resolution is the local inference (case-1,
+collapse, forced faces) and conditional `cascade` of [[core-partial-map]] at
+interpretation time, plus the interactive `fill` workflow ([[interactive-session]])
+afterward. So holes live on the map: there is no separate `solve` pass,
+`InterpResult` carries only `{ context, errors }`, and an `InterpretedFile` keeps
+no hole state of its own. See [[hole]] for the full model.
 
 ## Non-obvious invariants & gotchas
 

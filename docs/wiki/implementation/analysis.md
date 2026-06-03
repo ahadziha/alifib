@@ -150,8 +150,6 @@ source set, i.e. it is not already accounted for by the higher-dimensional flow.
   exceeds the diagram's own top dimension the node set is empty — used by the
   proof view at step 0 (see the module doc). `from_named` tries named diagrams
   first, then falls back to a generator's classifier.
-- **Stale path in legacy docs.** `docs/HOMOLOGY.md` cites `src/core/homology.rs`;
-  the code now lives at `src/analysis/homology.rs`. Treat that path as rotted.
 
 ## Mathematics
 

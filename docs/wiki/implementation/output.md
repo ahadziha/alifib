@@ -133,10 +133,7 @@ pending assignment imposes (`F(x.side) = a.side`). These feed both the
 `Display`/type-detail render and the interactive `holes` command
 ([[interactive-session]]).
 
-There is **no `SolvedHole` / `report_solved_holes` reporting path** any more:
-holes are not solved-then-reported, they are listed where they live — on the map.
-The old `render_boundary_partial` / `render_tree_partial` partial-boundary
-renderers went with it.
+Holes are not solved-then-reported; they are listed where they live — on the map.
 
 ## Non-obvious invariants and gotchas
 

@@ -151,8 +151,7 @@ HTTP/WASM/MCP crates own the transport and call its methods.
 
 - **`Session::apply` is the single shared command surface.** Both the daemon and
   `WebRepl::run_command` funnel non-lifecycle commands through it, so the two
-  transports can never drift in *which* command does *what*. The old per-engine
-  `handle` was retired with this unification; see [[interactive-session]].
+  transports cannot drift in *which* command does *what*; see [[interactive-session]].
 - **The daemon (re)loads from disk on `start`/`resume`/`load`.** Each builds a
   fresh `Session::from_disk`, so an editor that edited the file on disk gets the
   new source without a separate reload command.

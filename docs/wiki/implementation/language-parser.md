@@ -28,8 +28,7 @@ parser from `parser.rs`, then collect lex + parse errors.
   stored diagram name into AST (`interactive/engine.rs`).
 - `parse_complex(&str) -> Result<Complex, String>` — one `Complex` expression,
   terminated by `end()`, unwrapping the span via `s.inner`. **Currently has no
-  caller** (whole-repo `rg` finds only the definition); the `@ <expr>` REPL
-  command it was written for no longer exists.
+  caller** (whole-repo `rg` finds only the definition).
 - `parse_complex_instrs`, `parse_type_instrs`, `parse_local_instrs`,
   `parse_pmap_clauses` — parse a *comma-separated instruction list* (no enclosing
   block). These exist to re-parse the textual body of an expanded `for`-block
