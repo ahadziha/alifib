@@ -185,6 +185,26 @@ pub enum DComponent {
     },
 }
 
+impl DExpr {
+    /// The dotted generator name this expression denotes, if it is exactly a
+    /// (possibly qualified) name — `r`, `Sub.arr` — and nothing more.  This is
+    /// the canonical form a generator is keyed and rendered by, and so the
+    /// left-hand side a `done` assignment writes.
+    pub fn dotted_name(&self) -> Option<String> {
+        match self {
+            DExpr::Component(DComponent::Name(s)) => Some(s.clone()),
+            DExpr::Dot { base, field } => {
+                let prefix = base.inner.dotted_name()?;
+                match &field.inner {
+                    DComponent::Name(s) => Some(format!("{}.{}", prefix, s)),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Partial maps
 // ---------------------------------------------------------------------------

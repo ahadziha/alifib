@@ -409,10 +409,9 @@ pub fn finalize(
     Ok((new_store, new_source))
 }
 
-/// Render the `x => <filler>` clause and splice it into `F`'s definition,
-/// returning the edited source *without* re-evaluating.  The CLI re-evaluates
-/// from disk; the web re-evaluates with its own virtual loader, so they share
-/// only the edit.
+/// Splice the proof of `ctx`'s hole into `F`'s definition, returning the edited
+/// source *without* re-evaluating.  The CLI re-evaluates from disk; the web with
+/// its own virtual loader, so they share only the edit.
 pub fn edit_for_fill(
     store: &GlobalStore,
     ctx: &FillContext,
@@ -423,13 +422,22 @@ pub fn edit_for_fill(
         .ok_or_else(|| format!("type `{}` not found", ctx.type_name))?
         .complex.clone();
     let expr = crate::output::render_diagram(filler, &tc);
-    let clause = format!("{} => {}", ctx.source_name, expr);
-    edit_map_definition(source, &ctx.type_name, &ctx.map_name, &clause)
+    edit_map_definition(source, &ctx.type_name, &ctx.map_name, &ctx.source_name, &expr)
 }
 
-/// Append a clause to map `map_name` in type `type_name`, returning the edited
-/// source.  Errors if the definition uses a `for`-block (no single location).
-fn edit_map_definition(source: &str, type_name: &str, map_name: &str, clause: &str) -> Result<String, String> {
+/// Splice the proof `expr` of generator `source_name` into map `map_name`'s
+/// definition.  If the hole was written explicitly as `source_name => ?`, the
+/// proof *replaces* that `?` (so an explicit fill reads back as one clause);
+/// otherwise — an implicit hole, with no `?` of its own to pin onto — it is
+/// appended, committing the cell by the idempotence of `[x => ?, x => a]`.
+/// Errors only when appending into a `for`-block (no single location).
+fn edit_map_definition(
+    source: &str,
+    type_name: &str,
+    map_name: &str,
+    source_name: &str,
+    expr: &str,
+) -> Result<String, String> {
     let program = crate::language::parse(source)
         .map_err(|errs| format!("re-parse failed: {} error(s)", errs.len()))?;
     let value = find_map_def(&program, type_name, map_name)
@@ -437,6 +445,18 @@ fn edit_map_definition(source: &str, type_name: &str, map_name: &str, clause: &s
 
     match &value.inner {
         PartialMapDef::Ext(ext) => {
+            // Pin onto an explicit `source_name => ?` clause if there is one.
+            for c in &ext.clauses {
+                if let PMapEntry::Clause(cl) = &c.inner {
+                    if lhs_generator_name(&cl.lhs.inner).as_deref() == Some(source_name)
+                        && rhs_is_hole(&cl.rhs.inner)
+                    {
+                        let span = cl.rhs.span;
+                        return Ok(format!("{}{}{}", &source[..span.start], expr, &source[span.end..]));
+                    }
+                }
+            }
+            // No `?` to pin onto: append a fresh clause.
             if ext.clauses.iter().any(|c| matches!(c.inner, PMapEntry::For(_))) {
                 return Err(format!("cannot edit map `{}`: its definition uses a for-block", map_name));
             }
@@ -447,6 +467,7 @@ fn edit_map_definition(source: &str, type_name: &str, map_name: &str, clause: &s
             // indented to match the line the last clause sits on.
             let prefix = source[..close].trim_end();
             let suffix = &source[close..];
+            let clause = format!("{} => {}", source_name, expr);
             if ext.clauses.is_empty() {
                 Ok(format!("{} {} {}", prefix, clause, suffix))
             } else {
@@ -458,9 +479,28 @@ fn edit_map_definition(source: &str, type_name: &str, map_name: &str, clause: &s
         }
         PartialMapDef::PartialMap(_) => {
             let end = value.span.end;
-            Ok(format!("{} [ {} ]{}", &source[..end], clause, &source[end..]))
+            Ok(format!("{} [ {} => {} ]{}", &source[..end], source_name, expr, &source[end..]))
         }
     }
+}
+
+/// The (possibly dotted) generator name a clause's left-hand side denotes, if it
+/// is exactly one such name — `r`, `Sub.arr` — which is the canonical form a
+/// `done` assignment writes, and so the only shape a fill can be pinned back onto.
+fn lhs_generator_name(d: &ast::Diagram) -> Option<String> {
+    match d {
+        ast::Diagram::PrincipalPaste(comps) => match comps.as_slice() {
+            [c] => c.inner.dotted_name(),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Whether a clause's right-hand side is a bare hole `?`.
+fn rhs_is_hole(d: &ast::Diagram) -> bool {
+    let ast::Diagram::PrincipalPaste(comps) = d else { return false };
+    matches!(comps.as_slice(), [c] if matches!(c.inner, ast::DExpr::Component(ast::DComponent::Hole)))
 }
 
 /// Locate the `value` of map `map_name` defined in the `@type_name` block.
@@ -491,5 +531,30 @@ fn complex_matches(c: &Spanned<ast::Complex>, type_name: &str) -> bool {
         let joined = a.iter().map(|s| s.inner.as_str()).collect::<Vec<_>>().join(".");
         joined == type_name || a.last().map(|s| s.inner == type_name).unwrap_or(false)
     }).unwrap_or(false)
+}
+
+#[cfg(test)]
+mod edit_tests {
+    use super::edit_map_definition;
+
+    /// An explicit hole keyed by a *dotted* generator name (the canonical form
+    /// `done` writes) is pinned: the proof replaces its `?` in place.
+    #[test]
+    fn pins_a_dotted_explicit_hole_in_place() {
+        let src = "@Type\n\nX <<= { a, z },\n\n@X\n  let H :: D = [ Sub.arr => ?, a => z ]\n";
+        let out = edit_map_definition(src, "X", "H", "Sub.arr", "(a #0 a)").unwrap();
+        assert!(out.contains("Sub.arr => (a #0 a)"), "{out}");
+        assert!(!out.contains("=> ?"), "the hole is filled in place: {out}");
+    }
+
+    /// An implicit hole — no `?` of its own to pin onto — is appended, leaving
+    /// the explicit `?` it sprang from untouched.
+    #[test]
+    fn appends_when_no_matching_explicit_hole() {
+        let src = "@Type\n\nX <<= { a, z },\n\n@X\n  let H :: D = [ Sub => ? ]\n";
+        let out = edit_map_definition(src, "X", "H", "a", "z").unwrap();
+        assert!(out.contains("Sub => ?"), "the explicit hole stays: {out}");
+        assert!(out.contains("a => z"), "the implicit fill is appended: {out}");
+    }
 }
 

@@ -39,7 +39,9 @@ fn fill_one_dim_hole_via_rewrite() {
     let (new_store, new_source) = finalize(&store, &ctx, &filler, &path, &source).unwrap();
 
     assert!(list_open_holes(&new_store, &path).is_empty(), "no holes left after filling x");
-    assert!(new_source.contains("x =>"), "the new clause is appended to H");
+    // The explicit `x => ?` is filled in place, not left beside an appended clause.
+    assert!(!new_source.contains("=> ?"), "the explicit hole is gone: {new_source}");
+    assert_eq!(new_source.matches("x =>").count(), 1, "x is assigned exactly once: {new_source}");
 }
 
 /// A conditional pending assignment whose image boundary still has holes shows

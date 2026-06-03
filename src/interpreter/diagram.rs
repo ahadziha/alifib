@@ -14,20 +14,6 @@ use std::sync::Arc;
 
 // ---- Helpers ----
 
-fn try_dotted_name(expr: &DExpr) -> Option<String> {
-    match expr {
-        DExpr::Component(DComponent::Name(s)) => Some(s.clone()),
-        DExpr::Dot { base, field } => {
-            let prefix = try_dotted_name(&base.inner)?;
-            match &field.inner {
-                DComponent::Name(s) => Some(format!("{}.{}", prefix, s)),
-                _ => None,
-            }
-        }
-        _ => None,
-    }
-}
-
 /// Extract a `Diagram` from an `Option<Term>`, recording an error if it is a map.
 fn require_diagram_term(
     term: Option<Term>,
@@ -133,7 +119,7 @@ fn decompose(
         }
         DExpr::Dot { base, field } => {
             // Fast path: the entire dotted name is a generator or diagram in scope.
-            if let Some(dotted) = try_dotted_name(&expr.inner) {
+            if let Some(dotted) = expr.inner.dotted_name() {
                 if let Some(found) = scope.find_diagram(&dotted).or_else(|| scope.classifier(&dotted)) {
                     return (
                         Some(Decomp::Diagram {
