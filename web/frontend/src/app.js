@@ -25,6 +25,7 @@ let proofView = false;
 let proofLayout = null;
 let proofBoundaryMap = null;
 let openHoles = [];        // open holes of the module, from the `holes` command
+let openConstraints = [];  // the constraints those holes are under, same source
 let fillSession = null;    // { index, dim } when a fill is active
 
 // ── Theme ────────────────────────────────────────────────────────────────────
@@ -1079,16 +1080,26 @@ async function evaluateSource(silent = false) {
 // infobox, not the accordion, so this just refreshes the cache.
 async function fetchHoles() {
   openHoles = [];
+  openConstraints = [];
   if (!repl) return null;
   const result = await parseReplResponse(repl.run_command('{"command":"holes"}'));
-  if (result.status === 'ok' && result.data && Array.isArray(result.data.holes)) {
-    openHoles = result.data.holes;
+  if (result.status === 'ok' && result.data) {
+    if (Array.isArray(result.data.holes)) openHoles = result.data.holes;
+    if (Array.isArray(result.data.constraints)) openConstraints = result.data.constraints;
   }
   return result;
 }
 
 function holesForMap(typeName, mapName) {
   return openHoles.filter(h => h.type_name === typeName && h.map_name === mapName);
+}
+
+// The constraint equations a map's pending assignments impose, flattened across
+// its assignments — shown after the holes, in the same style.
+function constraintsForMap(typeName, mapName) {
+  return openConstraints
+    .filter(c => c.type_name === typeName && c.map_name === mapName)
+    .flatMap(c => c.equations);
 }
 
 // ── Accordion builders ───────────────────────────────────────────────────────
@@ -2503,6 +2514,15 @@ async function refreshInfobox() {
               + `<span class="infobox-hole-bd">${hi(h.boundary)}</span>`
               + `<button class="btn-fill-hole btn-secondary" data-hole-index="${h.index}">Fill</button>`
               + `</div>`;
+      }
+      html += `</div>`;
+    }
+    const mapConstraints = constraintsForMap(typeName, item.name);
+    if (mapConstraints.length) {
+      html += `<div class="infobox-holes">`;
+      html += `<div class="infobox-holes-title">Constraints</div>`;
+      for (const eq of mapConstraints) {
+        html += `<div class="infobox-hole"><span class="infobox-hole-bd">${hi(eq)}</span></div>`;
       }
       html += `</div>`;
     }

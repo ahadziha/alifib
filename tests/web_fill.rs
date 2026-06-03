@@ -43,6 +43,19 @@ fn web_help_drops_cli_only_commands() {
     assert!(!text.contains("quit"), "web help drops the CLI-only `exit`");
 }
 
+/// The `holes` response carries the constraints (keyed by type/map, with their
+/// equations) that the map infobox lists after the holes.
+#[test]
+fn web_holes_response_carries_constraints() {
+    let mut repl = WebRepl::new();
+    repl.load_source(&fixture("Constraint.ali"));
+    let holes = cmd(&mut repl, r#"{"command":"holes"}"#);
+    let cons = holes["data"]["constraints"].as_array().expect("constraints present");
+    assert_eq!(cons.len(), 1);
+    assert_eq!((cons[0]["type_name"].as_str(), cons[0]["map_name"].as_str()), (Some("D"), Some("F")));
+    assert_eq!(cons[0]["equations"], serde_json::json!(["?f #0 ?g = a #0 a"]));
+}
+
 /// The web parses typed lines with the *shared* parser, so its usage/unknown
 /// errors read exactly as the CLI's, and it classifies each line as a backend
 /// request or a UI action.
