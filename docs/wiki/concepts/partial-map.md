@@ -36,13 +36,13 @@ imply $b \in \mathrm{dom}\,f$) — together with an image diagram $f(a)$ for eac
 $a \in \mathrm{dom}\,f$, subject to the boundary law above.
 
 **Dimension constraint.** The implementation enforces exactly one inequality:
-$\dim f(a) \le \dim a$ — an image may not *raise* dimension. Lowering is not
-forbidden by a dimension test, but because alifib has [[0001-no-identities|no
-identity cells]] there is nothing for a genuine $k$-cell to collapse *to*: no
-identity exists to absorb the slack, so a refinement target must spell out
-explicit "internal step" cells rather than quietly identifying detail with an
-identity. The dimension test itself is the engine's rejection of an image whose
-dimension exceeds the source's.
+$\dim f(a) \le \dim a$ — an image may not *raise* dimension. *Lowering is
+allowed*: a $k$-cell may map to a diagram of dimension $< k$, collapsing to it
+(collapse inference does exactly this). The only thing alifib's lack of
+[[0001-no-identities|identity cells]] rules out is using "the identity on $p$" as
+a filler — there is no such cell — so a collapse maps to the genuine
+lower-dimensional cell rather than to a degenerate identity. A refinement that
+wants to mark an "internal step" must therefore name an honest cell for it.
 
 **Action on composites.** A diagram is built by pasting atoms along their
 boundaries, $U = U_1 \#_k U_2 \#_{k'} \cdots$. A partial map is determined on
@@ -94,8 +94,8 @@ Realised by [[core-partial-map]]. The data structure and its laws live in
   cell's stored boundary and compares it (after `Diagram::normal`) against
   `Diagram::boundary_normal` of the proposed image;
 - the dimension constraint is the early `image.dim() > dim` rejection in
-  `extend` — note this blocks *raising* only; the no-*lowering* half of
-  [[0001-no-identities]] is **not** enforced (see that page's warning);
+  `extend` — this blocks *raising* only; lowering is allowed by design (collapse
+  inference relies on it), so there is correctly no lower-bound guard;
 - action on composites is `PartialMap::apply`, walking the diagram's
   `PasteTree` via `partial_map::apply_tree` *(internal)*; the relabelling fast
   path fires when the `cellular` flag holds (`partial_map::remap_tag`);
@@ -116,4 +116,4 @@ generator as covered. The `attach ... along` statement is wired in
 ## Related
 
 [[diagram]] · [[boundary]] · [[rewriting]] · [[module-system]] ·
-[[regular-directed-complex]] · [[0001-no-identities]]
+[[regular-directed-complex]] · [[0001-no-identities]] · [[0002-round-boundaries]]

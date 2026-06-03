@@ -183,10 +183,11 @@ generator-free `add_diagram`, and returns fresh `Arc`s so the caller
   inside `RulePattern`, the `step_sign` used to read the next diagram (`Output` vs
   `Input`), *and* the paste order in `assemble_proof`. They must agree; a mismatch
   silently builds the wrong proof.
-- **`target_reached` requires `active_len > 0`.** Initial $\cong$ target at step 0
-  is *not* a proof — regular directed complexes have no identities, so a zero-step
-  "proof" is meaningless (see [[0001-no-identities]]). The guard encodes exactly
-  this.
+- **`target_reached` is just `current ≅ target`.** It holds at step 0 too: an
+  initial diagram already isomorphic to the target *is* a (zero-step, identity)
+  proof. An earlier version gated this on `active_len > 0` to reject zero-step
+  proofs; that guard was wrong and has been removed — a zero-step proof is a
+  proof.
 - **`resume` needs `dim > 0`.** A proof diagram must be an $(n+1)$-cell with $n+1 >
   0$; a bare $0$-diagram has no $\#_n$ chain to decompose and is rejected.
 - **`typecheck_proof` is a self-audit, not a user error path.** It checks the

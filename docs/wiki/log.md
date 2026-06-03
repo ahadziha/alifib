@@ -251,3 +251,23 @@ Rewrote `[[interactive-repl]]` (now repl/cli/richtext/display/render),
 `Option<Session>`), and updated `[[interactive-engine]]` (Session wraps it,
 `from_diagrams` for fills, `init` now unused) and `[[web-backends]]`/
 `[[web-frontend]]` cross-refs. README.md and INTERACTIVE.md updated to match.
+
+## [2026-06-03] decision | retract fabricated no-lowering rule; record roundness (0002)
+
+The original `0001-no-identities` (LLM-seeded in `b625cfb`, never a human
+decision) conflated two unrelated things: the real fact that molecules have **no
+identity cells**, and an invented rule that **maps may not lower dimension**. The
+latter does not follow from the former and is wrong — a 1-cell whose endpoints
+collapse maps to the 0-cell itself, not to a (non-existent) identity; collapse
+inference lowers dimension on purpose. That fabrication had propagated into
+`source-drift` (a phantom "⚠️ correctness gap", item A), `core-partial-map`, and
+`partial-map`.
+
+Corrected with the author: rewrote `0001` to the narrow honest statement (no
+identities; lowering is legitimate; the only `extend` guard is no-*raising*);
+**retracted source-drift item A**; fixed the `core-partial-map`/`partial-map`
+gotchas. Added **`0002-round-boundaries`** for the genuine theory-mandated
+constraint — a cell's input/output boundaries must be *round* (directed spheres),
+enforced in `Diagram::parallelism` via `cell_with_input_embedding`. Also fixed
+`interactive-engine`: `target_reached` no longer gates on `active_len > 0` (that
+guard was removed in the source — a zero-step/identity proof is a valid proof).

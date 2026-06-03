@@ -79,27 +79,19 @@ readers of the source.
 
 A page-by-page re-verification of every wiki page (plus new coverage of `cli/`
 and `web/`) surfaced further source-side rot. Same rule as above: **recorded, not
-fixed.** Item A is a **behavioural / correctness gap**, not a doc bug —
-prioritise it over the rest.
+fixed.**
 
-### A. `PartialMap::extend` does not enforce no-dimension-*lowering* ⚠️ correctness
+### A. ~~`PartialMap::extend` does not enforce no-dimension-lowering~~ — RETRACTED, not a bug (2026-06-03)
 
-`src/core/partial_map.rs::extend` rejects dimension-*raising* (`if image.dim() >
-dim`) but has **no** guard against *lowering*. A source 1-cell whose two
-endpoints both map to the same 0-cell `p`, itself sent to `p`, is accepted: `0 >
-1` is false, and `check_boundary_match` at `k = 0` compares `p` against `p` and
-passes (`Diagram::boundary_normal(·, 0, p)` clamps to the image's top dimension
-and returns `p`). So a degenerate 1-cell→0-cell map — an *identity in disguise* —
-is constructible: `let total F :: Edge` with `s => K.o, t => K.o, arr => K.o`
-loads cleanly (empirically verified; the resulting entry has source dim 1, image
-dim 0). This contradicts decision [[0001-no-identities]]; the no-identities
-discipline is only *accidentally* enforced — it fails solely when the two endpoint
-images differ (the input/output boundaries then genuinely disagree). **Fix
-(design decision):** add a lower-bound guard in `extend`. The open question is
-whether a `k`-cell may map to a longer *composite* of `k`-cells (should be
-allowed) while a strictly lower-dimensional image is forbidden — i.e. reject
-`image.dim() < dim`, not merely `>`. Wiki pages [[0001-no-identities]] and
-[[core-partial-map]] now state the gap honestly.
+This item was a **phantom**, retracted after review with the author. It rested on
+a fabricated premise — that the no-identities discipline forbids a map from
+*lowering* dimension. It does not (the original [[0001-no-identities]] page
+invented that rule; see its corrected text). Dimension-lowering maps are
+legitimate, and **collapse inference** produces them on purpose; a degenerate
+1-cell→0-cell map loading cleanly is the engine working *correctly*. There is
+nothing to fix in `extend` — its only dimension guard, no-*raising*, is the right
+one. The genuine theory-mandated structural constraint on cells is roundness of
+boundaries, [[0002-round-boundaries]], which *is* enforced.
 
 ### B. Stale doc-comments — the `03757c0` source/target→input/output rename left comments behind
 
@@ -162,10 +154,10 @@ any item up — line refs in particular have moved. Known status changes:
   no longer has a `handle`; `partial_map.rs` no longer has `enrich_holes`). Treat
   these as needing a fresh pass, not as verified.
 - **Items C/D** (dead `whisker_rewrite`, `parse_complex`, `Token::LAngle/RAngle`;
-  WET SNF in `homology.rs`; missing dimension-lowering guard) were re-checked and
-  **still stand** — those symbols remain present. The dimension-lowering gap is
-  now also *exercised on purpose* by collapse inference; see
-  [[0001-no-identities]].
+  WET SNF in `homology.rs`) were re-checked and **still stand** — those symbols
+  remain present. (The old "missing dimension-lowering guard" is **not** among
+  them — see item A above, retracted: lowering is legitimate, and collapse
+  inference relies on it.)
 
 ### New dead code from the refactor
 
