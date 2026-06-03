@@ -583,7 +583,7 @@ async function boot() {
     btnEval.textContent = 'Evaluate';
     appendReplMsg('\u{266B} No nit not, nit no not, nit nit folly bololey...', 'repl-dim');
     appendReplMsg(' ', 'repl-dim');
-    appendReplMsg(`${repl.label} engine ready. Evaluate a file to begin.`, 'repl-dim');
+    appendReplMsg(`${repl.label} engine ready — evaluate a file to begin`, 'repl-dim');
     const helpEl = document.createElement('div');
     helpEl.className = 'repl-result';
     helpEl.innerHTML = await renderHelp();
@@ -1068,8 +1068,8 @@ async function evaluateSource(silent = false) {
   if (!silent) {
     appendReplEntry('', formatOk(
       types.length
-        ? `Loaded ${types.length} type${types.length !== 1 ? 's' : ''}.`
-        : 'Loaded (no named types found).'
+        ? `Loaded ${types.length} type${types.length !== 1 ? 's' : ''}`
+        : 'Loaded (no named types found)'
     ));
   }
 }
@@ -1280,8 +1280,8 @@ async function startSession() {
   const src = inpSource.value.trim();
   const tgt = inpTarget.value.trim() || undefined;
   const backward = chkBackward.checked;
-  if (!typeName) { appendReplMsg('Select a type first.', 'repl-result err'); return; }
-  if (!src)      { appendReplMsg('Enter an initial diagram.', 'repl-result err'); return; }
+  if (!typeName) { appendReplMsg('Select a type first', 'repl-result err'); return; }
+  if (!src)      { appendReplMsg('Enter an initial diagram', 'repl-result err'); return; }
   await startSessionFromRepl(typeName, src, tgt, backward, formatStartCmd(typeName, src, tgt));
 }
 
