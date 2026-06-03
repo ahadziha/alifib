@@ -22,12 +22,12 @@ use crate::output::render_diagram;
 
 use super::engine::{load_file_context, reevaluate, resolve_type, RewriteEngine};
 use super::fill::{
-    edit_for_fill, filled_report, list_open_holes, start_fill,
+    edit_for_fill, filled_report, list_constraints, list_open_holes, start_fill,
     FillContext, FillSession,
 };
 use super::protocol::{
-    build_list_rules_response, build_response, AutoInfo, FillInfo, HoleInfo, Request,
-    ResponseData, StoredInfo, ZeroCellChoice, ZeroCellInfo,
+    build_list_rules_response, build_response, AutoInfo, FillInfo, HistoryEntry, HoleInfo,
+    ProofInfo, Request, ResponseData, StoredInfo, ZeroCellChoice, ZeroCellInfo,
 };
 
 /// How the session loads and re-evaluates source.
@@ -149,14 +149,14 @@ impl Session {
             RedoTo { step } => self.engine_undo(Some(step), true),
             Parallel { on } => self.set_parallel(on),
             SetTarget { name } => self.engine_set_target(&name),
-            Show => self.snapshot_active(),
+            Show => Ok(self.show()),
             Proof => self.proof_response(),
             History => self.history_response(),
             ListRules => self.rules_response(),
             Store { name } => self.store_proof(&name),
 
-            Load { .. } | Types | TypeInfo { .. } | Cell { .. } | Homology { .. } | Shutdown =>
-                Err("Not a session command".to_owned()),
+            Load { .. } | Types | TypeInfo { .. } | Cell { .. } | Homology { .. } | Help { .. }
+            | Shutdown => Err("Not a session command".to_owned()),
         }
     }
 
@@ -197,14 +197,13 @@ impl Session {
     }
 
     fn stop(&mut self) -> Result<ResponseData, String> {
-        let message = if self.fill.take().is_some() {
-            "Fill abandoned"
-        } else {
+        // Abandoning a fill and ending a rewrite are the same act to the user:
+        // both leave the loaded module idle, both report "Session stopped".
+        if self.fill.take().is_none() {
             self.engine = None;
-            "Session stopped"
-        };
+        }
         let mut data = self.snapshot();
-        data.message = Some(message.to_owned());
+        data.message = Some("Session stopped".to_owned());
         Ok(data)
     }
 
@@ -240,6 +239,7 @@ impl Session {
             dim: h.dim,
             boundary: h.boundary.clone(),
         }).collect();
+        data.constraints = list_constraints(&self.store, &self.root_path);
         data
     }
 
@@ -256,7 +256,7 @@ impl Session {
     }
 
     fn finalize_fill(&mut self) -> Result<ResponseData, String> {
-        let (ctx, session) = self.fill.as_ref().ok_or("No active fill — use 'fill <n>'")?;
+        let (ctx, session) = self.fill.as_ref().ok_or("No active hole-filling session — use 'fill <n>'")?;
         let filler = session.filler()?;
         let message = filled_report(&self.store, ctx, &filler);
         let new_source = edit_for_fill(&self.store, ctx, &filler, &self.source)?;
@@ -345,10 +345,15 @@ impl Session {
         Ok(data)
     }
 
-    fn set_parallel(&mut self, on: bool) -> Result<ResponseData, String> {
-        if let Some(e) = self.engine_mut() { e.set_parallel(on); }
+    fn set_parallel(&mut self, on: Option<bool>) -> Result<ResponseData, String> {
+        // Parallel mode is a property of the rewrite engine, so it needs a
+        // session — mirroring `rules`.  `None` just reports the current mode.
+        {
+            let e = self.engine_mut().ok_or("No active session")?;
+            if let Some(on) = on { e.set_parallel(on); }
+        }
         let mut data = self.snapshot();
-        data.message = Some(format!("Parallel mode {}", if on { "on" } else { "off" }));
+        data.message = Some(format!("Parallel mode {}", if data.parallel { "on" } else { "off" }));
         Ok(data)
     }
 
@@ -363,12 +368,34 @@ impl Session {
     /// identity proof on the initial diagram — still a proof — so `proof_expr`
     /// is the rendered initial diagram, never `None`, for an engine session.
     fn proof_response(&self) -> Result<ResponseData, String> {
+        // A 0-cell fill has no engine, but it is still a session: before a choice
+        // the proof is empty (`(no proof yet)`); after, it is the chosen 0-cell.
+        if let Some(zc) = self.zero_cell() {
+            let mut data = self.snapshot();
+            if let Some(name) = zc.chosen_name() {
+                data.proof_expr = Some(name.to_owned());
+                data.proof = Some(zero_cell_proof_info());
+            }
+            return Ok(data);
+        }
         let mut data = self.snapshot_active()?;
         data.proof_expr = self.engine_ref().map(stored_expr);
         Ok(data)
     }
 
     fn history_response(&self) -> Result<ResponseData, String> {
+        // In a 0-cell fill the single "move" is the choice: `1. x [choice 3]`.
+        if let Some(zc) = self.zero_cell() {
+            let mut data = self.snapshot();
+            if let (Some(name), Some(i)) = (zc.chosen_name(), zc.chosen_index()) {
+                data.history = vec![HistoryEntry {
+                    step: 1,
+                    rule_name: name.to_owned(),
+                    choice: Some(vec![i]),
+                }];
+            }
+            return Ok(data);
+        }
         match self.engine_ref() {
             Some(e) => Ok(build_response(e, true)),
             None => self.snapshot_active(),
@@ -378,13 +405,16 @@ impl Session {
     fn rules_response(&self) -> Result<ResponseData, String> {
         match self.engine_ref() {
             Some(e) => Ok(build_list_rules_response(e)),
+            // A 0-cell fill has no rewrite rules — `(no rules)`, as a rewrite
+            // session with none would show; the candidates live under `show`.
+            None if self.zero_cell().is_some() => Ok(self.snapshot()),
             None => Err("No active session".to_owned()),
         }
     }
 
     fn store_proof(&mut self, name: &str) -> Result<ResponseData, String> {
-        if matches!(&self.fill, Some((_, FillSession::ZeroCell(_)))) {
-            return Err("Nothing to store in a 0-cell fill".to_owned());
+        if self.zero_cell().is_some() {
+            return Err("Nothing to store in a 0-cell hole-filling session".to_owned());
         }
         let e = self.engine_mut().ok_or("No active session")?;
         let expr = stored_expr(e);
@@ -426,6 +456,18 @@ impl Session {
 
     fn snapshot_active(&self) -> Result<ResponseData, String> {
         if self.session_active() { Ok(self.snapshot()) } else { Err("No active session".to_owned()) }
+    }
+
+    /// `show`/`status`: the active session's state, or the loaded module's info
+    /// when idle.  Never errors — idle is a valid state to inspect.
+    fn show(&self) -> ResponseData {
+        if self.session_active() {
+            self.snapshot()
+        } else {
+            let mut d = ResponseData::empty();
+            d.module = Some(self.root_path.clone());
+            d
+        }
     }
 
     fn engine_ref(&self) -> Option<&RewriteEngine> {
@@ -485,6 +527,12 @@ impl Session {
 /// this is always defined for an active engine session.
 fn stored_expr(e: &RewriteEngine) -> String {
     e.proof_expr().unwrap_or_else(|| render_diagram(e.initial_diagram(), e.type_complex()))
+}
+
+/// The `proof` header for a 0-cell fill: dimension 0 and no boundary, which the
+/// renderer shows as a bare `proof :` above the chosen cell.
+fn zero_cell_proof_info() -> ProofInfo {
+    ProofInfo { dim: 0, step_count: 1, input_label: String::new(), output_label: String::new() }
 }
 
 fn fill_info(ctx: &FillContext) -> FillInfo {

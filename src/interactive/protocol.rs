@@ -35,8 +35,9 @@ use super::render::render_step;
 
 // ── Requests ─────────────────────────────────────────────────────────────────
 
-/// A request sent by the client to the daemon.
-#[derive(Debug, Deserialize)]
+/// A request sent by the client to the daemon.  Also `Serialize`d by the shared
+/// command parser, which hands the web a ready-to-run request for a typed line.
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "command", rename_all = "snake_case")]
 pub enum Request {
     /// Start a new rewrite session from an initial (and optional target) diagram.
@@ -115,9 +116,10 @@ pub enum Request {
     Cell {
         name: String,
     },
-    /// Toggle parallel rewrite mode.
+    /// Show or toggle parallel rewrite mode; `None` reports the current mode.
     Parallel {
-        on: bool,
+        #[serde(default)]
+        on: Option<bool>,
     },
     /// Set or change the target diagram on a running session.
     SetTarget {
@@ -156,6 +158,13 @@ pub enum Request {
     Save {
         #[serde(default)]
         path: Option<String>,
+    },
+    /// Render the command help, shared by both front-ends.  `web` drops the
+    /// CLI-only commands (`print`/`save`/`quit`) and adds the web-only ones, so
+    /// each front-end lists exactly what it supports.
+    Help {
+        #[serde(default)]
+        web: bool,
     },
     /// Shut down the daemon.
     Shutdown,
@@ -233,12 +242,20 @@ pub struct ResponseData {
     /// The module's open holes; only populated by `holes`.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub holes: Vec<HoleInfo>,
+    /// The constraints imposed by conditional pending assignments; only
+    /// populated by `holes`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub constraints: Vec<ConstraintInfo>,
     /// The boundaryless 0-cell fill state; only populated during a 0-cell fill.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub zero_cell: Option<ZeroCellInfo>,
     /// The updated running source; populated by `done`/`save`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    /// The loaded module's path, reported by `show`/`status` when idle (no
+    /// active session) so both front-ends show the same module info.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub module: Option<String>,
     /// Cellular homology; only populated by `homology`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub homology: Option<HomologyInfo>,
@@ -270,8 +287,10 @@ impl ResponseData {
             fill: None,
             message: None,
             holes: vec![],
+            constraints: vec![],
             zero_cell: None,
             source: None,
+            module: None,
             homology: None,
         }
     }
@@ -301,6 +320,18 @@ pub struct HoleInfo {
     pub source_name: String,
     pub dim: usize,
     pub boundary: String,
+}
+
+/// The constraints a single conditional pending assignment (`x => a`) imposes on
+/// a map's holes: one `lhs = rhs` equation per boundary side of `x` that still
+/// contains metavariables.  Display-only — there is no command that picks one.
+#[derive(Debug, Clone, Serialize)]
+pub struct ConstraintInfo {
+    pub type_name: String,
+    pub map_name: String,
+    pub domain_name: String,
+    /// Each equation `F(x.side) = a.side`, one per hole-bearing boundary side.
+    pub equations: Vec<String>,
 }
 
 /// The state of a boundaryless 0-cell fill: the candidate 0-cells (offered only
@@ -672,8 +703,10 @@ pub fn build_response(engine: &RewriteEngine, include_history: bool) -> Response
         fill: None,
         message: None,
         holes: vec![],
+        constraints: vec![],
         zero_cell: None,
         source: None,
+        module: None,
         homology: None,
     }
 }

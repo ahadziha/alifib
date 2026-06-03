@@ -20,9 +20,10 @@ use crate::core::map_hole::MapHole;
 use crate::core::paste_tree::realise_tree;
 use crate::interpreter::GlobalStore;
 use crate::language::ast::{self, Block, LocalInst, PMapEntry, PartialMapDef, Spanned};
-use crate::output::normalize::{domain_complex, render_hole_boundary};
+use crate::output::normalize::{domain_complex, render_hole_boundary, render_hole_constraints};
 
 use super::engine::{reevaluate, RewriteEngine};
+use super::protocol::ConstraintInfo;
 
 /// One entry of the global hole list: an *actual* hole (`image: None`) of a map
 /// in a type of the current module.
@@ -107,6 +108,13 @@ impl ZeroCellFill {
         self.choices.iter().find(|(t, _)| t == tag).map(|(_, n)| n.as_str())
     }
 
+    /// The candidate index of the chosen 0-cell — the `choice` a history entry
+    /// records, mirroring a rewrite step's match index.
+    pub fn chosen_index(&self) -> Option<usize> {
+        let tag = self.chosen.as_ref()?;
+        self.choices.iter().position(|(t, _)| t == tag)
+    }
+
     /// The filler diagram: the chosen 0-cell.
     pub fn filler(&self) -> Result<Diagram, String> {
         let tag = self.chosen.as_ref()
@@ -136,11 +144,27 @@ impl FillSession {
     }
 }
 
-/// The actual holes (`image: None`) of maps in types of the current module,
-/// numbered in a deterministic order (type, map, dim, source-generator name).
-pub fn list_open_holes(store: &GlobalStore, root_module: &str) -> Vec<HoleRef> {
-    let mut out = Vec::new();
-    let Some(module) = store.find_module(root_module) else { return out; };
+/// One map of the current module, as seen by the interactive listings: its
+/// type, the complexes it maps between, and its pending holes — everything the
+/// hole/constraint walks need, resolved once.
+struct MapView<'a> {
+    type_name: &'a str,
+    type_gid: GlobalId,
+    /// The map's target complex (where image leaves resolve).
+    target: &'a Complex,
+    map_name: &'a str,
+    /// The map's source complex (where holes are named after their generators).
+    domain: &'a Complex,
+    domain_name: String,
+    holes: &'a [MapHole],
+}
+
+/// Visit every map of every type in `root_module`, in the canonical
+/// `(type, map)` order both listings number by, resolving each map's domain.
+/// The single source of that traversal — [`list_open_holes`] and
+/// [`list_constraints`] differ only in what they read off each [`MapView`].
+fn visit_maps(store: &GlobalStore, root_module: &str, mut visit: impl FnMut(MapView)) {
+    let Some(module) = store.find_module(root_module) else { return };
 
     let mut types: Vec<(String, GlobalId)> = module
         .generators_iter()
@@ -152,19 +176,15 @@ pub fn list_open_holes(store: &GlobalStore, root_module: &str) -> Vec<HoleRef> {
     types.sort();
 
     for (type_name, gid) in types {
-        let Some(entry) = store.find_type(gid) else { continue; };
-        let tc = entry.complex.as_ref();
+        let Some(entry) = store.find_type(gid) else { continue };
+        let target = entry.complex.as_ref();
 
         let mut maps: Vec<(String, MapDomain)> =
-            tc.maps_iter().map(|(n, _, d)| (n.clone(), d.clone())).collect();
+            target.maps_iter().map(|(n, _, d)| (n.clone(), d.clone())).collect();
         maps.sort_by(|a, b| a.0.cmp(&b.0));
         for (map_name, mdom) in &maps {
-            let Some(holes) = tc.map_holes(map_name) else { continue; };
-            if holes.iter().all(|h| h.image.is_some()) {
-                continue;
-            }
+            let Some(holes) = target.map_holes(map_name) else { continue };
             let domain = domain_complex(store, mdom);
-            let domain_ref = domain.as_deref().unwrap_or(tc);
             let domain_name = match mdom {
                 MapDomain::Type(dgid) => module
                     .find_generator_by_tag(&Tag::Global(*dgid))
@@ -172,32 +192,73 @@ pub fn list_open_holes(store: &GlobalStore, root_module: &str) -> Vec<HoleRef> {
                     .unwrap_or_default(),
                 MapDomain::Module(mid) => mid.clone(),
             };
-
-            let mut actual: Vec<&MapHole> = holes.iter().filter(|h| h.image.is_none()).collect();
-            actual.sort_by_key(|h| {
-                (h.dim, domain_ref.find_generator_by_tag(&h.source).cloned().unwrap_or_default())
+            visit(MapView {
+                type_name: &type_name,
+                type_gid: gid,
+                target,
+                map_name,
+                domain: domain.as_deref().unwrap_or(target),
+                domain_name,
+                holes,
             });
-            for h in actual {
-                let source_name = domain_ref
-                    .find_generator_by_tag(&h.source)
-                    .cloned()
-                    .unwrap_or_else(|| format!("{}", h.source));
-                let boundary = render_hole_boundary(h, holes, tc, domain_ref);
-                out.push(HoleRef {
-                    index: out.len(),
-                    type_gid: gid,
-                    type_name: type_name.clone(),
-                    map_name: map_name.clone(),
-                    domain_name: domain_name.clone(),
-                    source: h.source.clone(),
-                    source_name,
-                    meta: h.meta,
-                    dim: h.dim,
-                    boundary,
-                });
-            }
         }
     }
+}
+
+/// The holes of `m`, lowest dimension first then by source-generator name — the
+/// order a hole's faces print before the holes that reference them.
+fn holes_in_order<'a>(m: &MapView<'a>, want_image: bool) -> Vec<&'a MapHole> {
+    let mut hs: Vec<&MapHole> = m.holes.iter().filter(|h| h.image.is_some() == want_image).collect();
+    hs.sort_by_key(|h| (h.dim, m.domain.find_generator_by_tag(&h.source).cloned().unwrap_or_default()));
+    hs
+}
+
+/// The actual holes (`image: None`) of maps in types of the current module,
+/// numbered in a deterministic order (type, map, dim, source-generator name).
+pub fn list_open_holes(store: &GlobalStore, root_module: &str) -> Vec<HoleRef> {
+    let mut out = Vec::new();
+    visit_maps(store, root_module, |m| {
+        for h in holes_in_order(&m, false) {
+            let source_name = m.domain
+                .find_generator_by_tag(&h.source)
+                .cloned()
+                .unwrap_or_else(|| format!("{}", h.source));
+            out.push(HoleRef {
+                index: out.len(),
+                type_gid: m.type_gid,
+                type_name: m.type_name.to_owned(),
+                map_name: m.map_name.to_owned(),
+                domain_name: m.domain_name.clone(),
+                source: h.source.clone(),
+                source_name,
+                meta: h.meta,
+                dim: h.dim,
+                boundary: render_hole_boundary(h, m.holes, m.target, m.domain),
+            });
+        }
+    });
+    out
+}
+
+/// The constraints imposed by conditional pending assignments (`x => a`) of maps
+/// in the current module: for each such assignment whose image boundary still has
+/// holes, the equations `F(x.side) = a.side`.  Ordered as [`list_open_holes`].
+pub fn list_constraints(store: &GlobalStore, root_module: &str) -> Vec<ConstraintInfo> {
+    let mut out = Vec::new();
+    visit_maps(store, root_module, |m| {
+        for h in holes_in_order(&m, true) {
+            let equations = render_hole_constraints(h, m.holes, m.target, m.domain);
+            if equations.is_empty() {
+                continue;
+            }
+            out.push(ConstraintInfo {
+                type_name: m.type_name.to_owned(),
+                map_name: m.map_name.to_owned(),
+                domain_name: m.domain_name.clone(),
+                equations,
+            });
+        }
+    });
     out
 }
 

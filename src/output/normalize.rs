@@ -368,6 +368,47 @@ pub(crate) fn render_hole_boundary(
     render_hole_line(hole, scope, &names).replace(" -> ", " → ")
 }
 
+/// Strip one layer of outer parentheses: the paste-tree renderers wrap every
+/// composite, but a constraint's two sides read better bare at the top level.
+fn unwrap_parens(s: String) -> String {
+    match (s.strip_prefix('('), s.strip_suffix(')')) {
+        (Some(_), Some(_)) => s[1..s.len() - 1].to_owned(),
+        _ => s,
+    }
+}
+
+/// The constraint equations a conditional pending assignment `x => a` imposes:
+/// for each boundary side of `x` that still contains metavariables, an equation
+/// `F(x.side) = a.side` (or `… = a` when `a` is lower-dimensional than `x`, the
+/// boundaries having collapsed onto the whole image).  `scope` is the map's
+/// target complex (image leaves), `domain` its source (hole names).  Empty for a
+/// pure hole, or when no side has holes.
+pub(crate) fn render_hole_constraints(
+    hole: &MapHole,
+    all_holes: &[MapHole],
+    scope: &Complex,
+    domain: &Complex,
+) -> Vec<String> {
+    let (Some(image), Some((input, output))) = (&hole.image, &hole.boundary) else {
+        return Vec::new();
+    };
+    let names = hole_names(all_holes, domain);
+    let same_dim = image.top_dim() == hole.dim;
+    [(Sign::Input, input), (Sign::Output, output)]
+        .into_iter()
+        .filter(|(_, tree)| !crate::core::map_hole::collect_hole_deps(tree).is_empty())
+        .filter_map(|(sign, tree)| {
+            let lhs = unwrap_parens(render_paste_tree_with_holes(tree, scope, &names));
+            let rhs = if same_dim {
+                Diagram::boundary(sign, hole.dim - 1, image).ok()?
+            } else {
+                image.clone()
+            };
+            Some(format!("{} = {}", lhs, unwrap_parens(render_diagram(&rhs, scope))))
+        })
+        .collect()
+}
+
 // ---- Display for GlobalStore ----
 
 impl fmt::Display for GlobalStore {

@@ -100,6 +100,12 @@ impl WasmRepl {
         self.inner.run_command(command_json)
     }
 
+    /// Parse a typed REPL line with the shared parser, classifying it for the
+    /// front-end (`error`/`action`/`request`).  See [`WebRepl::parse_command`].
+    pub fn parse_command(&self, line: &str) -> String {
+        self.inner.parse_command(line)
+    }
+
     /// Return string diagram data for a named item within a type.
     ///
     /// Tries named diagrams first, then generator classifiers.

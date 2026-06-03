@@ -100,6 +100,10 @@ fn handle_connection(
             let body: RunCommandBody = parse_json_body(&request.body)?;
             write_json_response(stream, 200, repl.run_command(&body.command_json))
         }
+        ("POST", "/api/parse_command") => {
+            let body: ParseCommandBody = parse_json_body(&request.body)?;
+            write_json_response(stream, 200, repl.parse_command(&body.line))
+        }
         ("POST", "/api/stop_session") => {
             repl.stop_session();
             write_json_response(stream, 200, r#"{"status":"ok"}"#.to_owned())
@@ -325,6 +329,11 @@ struct ResumeSessionBody {
 #[derive(Deserialize)]
 struct RunCommandBody {
     command_json: String,
+}
+
+#[derive(Deserialize)]
+struct ParseCommandBody {
+    line: String,
 }
 
 #[derive(Deserialize)]

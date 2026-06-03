@@ -13,8 +13,8 @@
 use serde::Serialize;
 
 use super::protocol::{
-    DiagramInfo, HoleInfo, HomologyInfo, Request, ResponseData, RuleInfo, TypeDetailInfo,
-    TypeSummaryInfo, ZeroCellInfo,
+    ConstraintInfo, DiagramInfo, HoleInfo, HomologyInfo, Request, ResponseData, RuleInfo,
+    TypeDetailInfo, TypeSummaryInfo, ZeroCellInfo,
 };
 
 /// A semantic role for a run of text — mapped to a colour per medium, never
@@ -132,7 +132,7 @@ pub fn render_kind_for(req: &Request) -> Option<RenderKind> {
         TypeInfo { .. } => RenderKind::TypeDetail,
         Homology { .. } => RenderKind::Homology,
         Parallel { .. } | Stop | Backward { .. } | Save { .. } | Done | Load { .. }
-        | Cell { .. } | Shutdown => return None,
+        | Cell { .. } | Help { .. } | Shutdown => return None,
     })
 }
 
@@ -148,7 +148,7 @@ pub fn render_response(kind: RenderKind, data: &ResponseData) -> RichText {
         RenderKind::History => history(data),
         RenderKind::Proof => proof(data),
         RenderKind::Store => store(data),
-        RenderKind::Holes => holes(&data.holes),
+        RenderKind::Holes => holes(&data.holes, &data.constraints),
         RenderKind::Types => types(&data.types),
         RenderKind::TypeDetail => data.type_detail.as_ref().map(type_detail).unwrap_or_default(),
         RenderKind::Homology => data.homology.as_ref().map(homology).unwrap_or_default(),
@@ -161,6 +161,16 @@ pub fn render_response(kind: RenderKind, data: &ResponseData) -> RichText {
 /// available rewrites (each `in → out` with its bracketed match), or none.
 fn state(data: &ResponseData) -> RichText {
     let mut t = RichText::new();
+
+    // Idle: no active session — `show`/`status` reports the loaded module instead.
+    if data.current.is_none() {
+        match &data.module {
+            Some(path) => { t.line().label("module:").plain(" ").value(path); }
+            None => { t.line().label("no active session"); }
+        }
+        return t;
+    }
+
     t.line().label("step:").plain(" ").value(data.step_count.to_string());
 
     if let Some(cur) = &data.current {
@@ -241,19 +251,36 @@ fn store(data: &ResponseData) -> RichText {
     t
 }
 
-/// The module's open holes, numbered for `fill <n>`.
-fn holes(holes: &[HoleInfo]) -> RichText {
+/// The module's open holes, numbered for `fill <n>`, followed by the constraints
+/// that conditional pending assignments impose on those holes.
+fn holes(holes: &[HoleInfo], constraints: &[ConstraintInfo]) -> RichText {
     let mut t = RichText::new();
-    if holes.is_empty() {
+    if holes.is_empty() && constraints.is_empty() {
         t.line().label("(no open holes)");
         return t;
     }
-    t.line().section("open holes:");
-    for h in holes {
-        t.line().plain("  [").value(h.index.to_string()).plain("] ")
-            .label(format!("@{} {} :: {}", h.type_name, h.map_name, h.domain_name));
-        t.line().plain("      ");
-        hole_into(&mut t, &h.boundary);
+    if !holes.is_empty() {
+        t.line().section("open holes:");
+        for h in holes {
+            t.line().plain("  [").value(h.index.to_string()).plain("] ");
+            map_header(&mut t, &h.type_name, &h.map_name, &h.domain_name);
+            t.line().plain("      ");
+            hole_into(&mut t, &h.boundary);
+        }
+    }
+    if !constraints.is_empty() {
+        t.line().section("constraints:");
+        for c in constraints {
+            t.line().plain("  ");
+            map_header(&mut t, &c.type_name, &c.map_name, &c.domain_name);
+            for eq in &c.equations {
+                t.line().plain("    ");
+                match eq.split_once(" = ") {
+                    Some((lhs, rhs)) => { t.value(lhs).plain(" = ").value(rhs); }
+                    None => { t.value(eq); }
+                }
+            }
+        }
     }
     t
 }
@@ -346,6 +373,14 @@ fn hole_into(t: &mut RichText, hole: &str) {
     }
 }
 
+/// A map's `@type name :: domain` header, appended to the current line, coloured
+/// as in the `type` view: name bright, `::` punctuation, domain dim.  The `@type`
+/// locator is dim, the line being keyed by the map.
+fn map_header(t: &mut RichText, type_name: &str, map_name: &str, domain_name: &str) {
+    t.label(format!("@{}", type_name)).plain(" ")
+        .value(map_name).plain(" :: ").label(domain_name);
+}
+
 /// The rewrite rules at the current dimension for `rules`.
 fn rules(rules: &[RuleInfo]) -> RichText {
     let mut t = RichText::new();
@@ -369,6 +404,8 @@ fn proof(data: &ResponseData) -> RichText {
         return t;
     };
     match &data.proof {
+        // A 0-cell proof has no boundary — just the header.
+        Some(p) if p.dim == 0 => { t.line().label("proof :"); }
         Some(p) => { t.line().label("proof :").plain(" ").src(&p.input_label).plain(" → ").tgt(&p.output_label); }
         None => { t.line().label("proof:"); }
     }
@@ -410,6 +447,83 @@ fn homology(h: &HomologyInfo) -> RichText {
 }
 
 fn plural(n: usize) -> &'static str { if n == 1 { "" } else { "s" } }
+
+// ── Help ───────────────────────────────────────────────────────────────────
+
+/// Where a command applies: every front-end, the CLI only, or the web only.
+/// The two front-ends share one help table and differ only in `print`/`save`/
+/// `quit` (CLI) versus `clear` (web).
+#[derive(Clone, Copy)]
+enum Scope { All, Cli, Web }
+
+/// `(token, description, scope)` — always-available commands.
+const ALWAYS: &[(&str, &str, Scope)] = &[
+    ("types",            "List all types in the file",                          Scope::All),
+    ("type <name>",      "Inspect a type: generators, diagrams, maps",          Scope::All),
+    ("homology <name>",  "Compute cellular homology of a type",                 Scope::All),
+    ("start <t> <s>",    "Start a rewrite session (target optional)",           Scope::All),
+    ("resume <t> <p>",   "Resume a session from a diagram (target optional)",    Scope::All),
+    ("holes",            "List open holes of maps in this module",              Scope::All),
+    ("fill <n>",         "Start a hole-filling session for hole <n>",           Scope::All),
+    ("backward [on|off]", "Show or toggle backward rewrite mode (default: off)", Scope::All),
+    ("status / show",    "Session state, or module info when idle",             Scope::All),
+    ("print",            "Print the running source",                            Scope::Cli),
+    ("save <path>",      "Write the running source to disk",                    Scope::Cli),
+    ("stop",             "End the active session",                              Scope::All),
+    ("clear",            "Clear the REPL output",                               Scope::Web),
+    ("help / ?",         "Show this help",                                      Scope::All),
+    ("quit / exit / q",  "Exit",                                                Scope::Cli),
+];
+
+/// `(token, description, where)` — commands needing an active session.
+const SESSION: &[(&str, &str, Scope)] = &[
+    ("apply <n> [<n2>..]", "Apply rewrite(s) at given indices (alias: a)",      Scope::All),
+    ("auto <n>",         "Apply up to <n> rewrites automatically",              Scope::All),
+    ("random <n>",       "Apply randomly selected rewrites",                    Scope::All),
+    ("parallel [on|off]", "Show or toggle parallel rewrite mode (default: on)", Scope::All),
+    ("undo [<n>]",       "Undo the last step, or back to step <n> (alias: u)",  Scope::All),
+    ("redo [<n>]",       "Redo the last undone step, or forward to step <n>",   Scope::All),
+    ("undo all / restart", "Reset to the initial diagram",                      Scope::All),
+    ("rules",            "List rewrite rules at current dimension (alias: r)",  Scope::All),
+    ("history",          "Show the move history (alias: h)",                    Scope::All),
+    ("proof",            "Show the running proof diagram (alias: p)",           Scope::All),
+    ("store <name>",     "Store the current proof as a named diagram",          Scope::All),
+    ("done",             "Finalise the hole-filling session",                  Scope::All),
+];
+
+/// The command help, shared by both front-ends.  `web` selects the web-only
+/// commands and drops the CLI-only ones, so each lists exactly what it supports.
+/// The command token is coloured like an alifib expression; descriptions plain.
+pub fn help(web: bool) -> RichText {
+    let mut t = RichText::new();
+    let shown = |scope: Scope| match scope {
+        Scope::All => true,
+        Scope::Cli => !web,
+        Scope::Web => web,
+    };
+
+    t.line().plain("Always available:");
+    for &(tok, desc, on) in ALWAYS {
+        if shown(on) { help_line(&mut t, tok, desc); }
+    }
+    t.line();
+    t.line().plain("Session commands (require active session):");
+    for &(tok, desc, on) in SESSION {
+        if shown(on) { help_line(&mut t, tok, desc); }
+    }
+    if web {
+        t.line();
+        t.line().plain("Keyboard: ↑/↓ navigate history · Ctrl+Enter evaluate file");
+    }
+    t
+}
+
+/// One help row: `  <token padded to 20> <description>`, the token in the value
+/// colour, measured on its plain length for alignment.
+fn help_line(t: &mut RichText, tok: &str, desc: &str) {
+    let pad = " ".repeat(20usize.saturating_sub(tok.len()));
+    t.line().plain("  ").value(tok).plain(format!("{pad}{desc}"));
+}
 
 /// Split a bracketed match string like `(a #0 [idem]) #0 b` into segments:
 /// `[…]` contents become [`Role::Redex`], everything else [`Role::Label`] (the

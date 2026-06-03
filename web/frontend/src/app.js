@@ -407,6 +407,10 @@ class WasmBackend {
     return this.inner.run_command(commandJson);
   }
 
+  async parse_command(line) {
+    return this.inner.parse_command(line);
+  }
+
   async get_types() {
     return this.inner.get_types();
   }
@@ -474,6 +478,10 @@ class HttpBackend {
 
   async run_command(commandJson) {
     return this.post('/api/run_command', { command_json: commandJson });
+  }
+
+  async parse_command(line) {
+    return this.post('/api/parse_command', { line });
   }
 
   async get_types() {
@@ -577,7 +585,7 @@ async function boot() {
     appendReplMsg(`${repl.label} engine ready. Evaluate a file to begin.`, 'repl-dim');
     const helpEl = document.createElement('div');
     helpEl.className = 'repl-result';
-    helpEl.textContent = HELP_TEXT;
+    helpEl.innerHTML = await renderHelp();
     replOutput.appendChild(helpEl);
     void populateExamples();
   } catch (e) {
@@ -1243,10 +1251,17 @@ inpSource.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventD
 inpTarget.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); void startSession(); } });
 btnStop.addEventListener('click', () => {
   if (!sessionActive || !repl) return;
-  void repl.stop_session();
-  resetSession();
-  appendReplEntry('stop', '<span class="meta">Session stopped</span>');
+  void stopFromRepl('stop');
 });
+
+// End the session/fill through the backend so the message matches the CLI
+// exactly (one source of truth), then reset the client-side UI.  Covers both a
+// rewrite session and a fill — the backend reports "Session stopped" for both.
+async function stopFromRepl(raw) {
+  const result = await parseReplResponse(repl.run_command('{"command":"stop"}'));
+  resetSession();
+  appendReplEntry(raw, { cls: 'meta', text: (result.data && result.data.message) || 'Session stopped' });
+}
 
 async function startSession() {
   if (!repl) return;
@@ -1428,34 +1443,6 @@ async function zeroCellCmd(command) {
 
 // Route a typed session command while a 0-cell fill is active, mirroring the CLI:
 // updates both the analysis pane and the transcript.
-async function runZeroCellText(raw, cmd, arg) {
-  if (cmd === 'stop') {
-    void repl.stop_session();
-    resetSession();
-    appendReplEntry(raw, formatOk('Session stopped'));
-    return;
-  }
-  let req;
-  switch (cmd) {
-    case 'apply': case 'a': {
-      const n = parseInt(arg.split(/\s+/)[0], 10);
-      if (Number.isNaN(n)) { appendReplEntry(raw, formatError('usage: apply <n>')); return; }
-      req = { command: 'step', choice: n };
-      break;
-    }
-    case 'undo': case 'u': case 'restart': req = { command: 'undo' }; break;
-    case 'redo':                            req = { command: 'redo' }; break;
-    case 'show': case 'status': case 'rules': case 'r': req = { command: 'show' }; break;
-    default:
-      appendReplEntry(raw, formatError("in a 0-cell fill use 'apply <n>', 'undo', 'redo', or 'done'"));
-      return;
-  }
-  const result = await parseReplResponse(repl.run_command(JSON.stringify(req)));
-  if (result.status === 'error') { appendReplEntry(raw, formatError(result)); return; }
-  await showZeroCellFill(result.data);
-  appendReplEntry(raw, renderSegments(result.rendered));
-}
-
 // Finalise the active fill: the backend appends the clause and returns the
 // updated source, which we drop into the editor (flashing the new clause) and
 // re-evaluate.
@@ -1523,71 +1510,79 @@ replInput.addEventListener('keydown', e => {
 });
 
 async function handleCommand(raw) {
-  const [cmd, ...rest] = raw.trim().split(/\s+/);
-  const arg = rest.join(' ');
+  // One shared parser (Rust, same as the CLI) classifies the line; the web only
+  // dispatches.  Usage/unknown-command errors and their wording come from there,
+  // so the two front-ends cannot drift.
+  const parsed = await parseReplResponse(repl.parse_command(raw));
+  if (parsed.status === 'error') { appendReplEntry(raw, formatError(parsed)); return; }
+  if (parsed.status === 'action') { await runAction(raw, parsed); return; }
+  // parsed.status === 'request' — hand the ready request to the backend.
+  const result = await parseReplResponse(repl.run_command(JSON.stringify(parsed.request)));
+  await renderResult(raw, parsed.request.command, result);
+}
 
-  if (cmd === 'help' || cmd === '?') {
-    appendReplEntry(raw, { cls: 'repl-result', text: HELP_TEXT });
-    return;
+// Commands the web drives as a UI flow rather than a plain backend round-trip.
+async function runAction(raw, p) {
+  switch (p.action) {
+    case 'start':    await startSessionFromRepl(p.type_name, p.initial, p.target ?? undefined, chkBackward.checked, raw); break;
+    case 'resume':   await startResumeFromRepl(p.type_name, p.proof, p.target ?? undefined, chkBackward.checked, raw); break;
+    case 'fill':     await startFill(p.index); break;
+    case 'done':     await finishFill(); break;
+    case 'stop':     await stopFromRepl(raw); break;
+    case 'clear':    replOutput.innerHTML = ''; break;
+    case 'holes':    { const r = await fetchHoles(); appendReplEntry(raw, r ? renderSegments(r.rendered) : ''); break; }
+    case 'backward': await runBackward(raw, p.on); break;
   }
+}
 
-  // Hole-filling commands drive the same flows as the GUI buttons.
-  if (cmd === 'holes') {
-    const result = await fetchHoles();
-    appendReplEntry(raw, result ? renderSegments(result.rendered) : '');
-    return;
-  }
-  if (cmd === 'fill') {
-    const n = parseInt(arg, 10);
-    if (Number.isNaN(n)) { appendReplEntry(raw, formatError({ message: 'usage: fill <n>' })); return; }
-    await startFill(n);
-    return;
-  }
-  if (cmd === 'done') {
-    await finishFill();
-    return;
-  }
+// Request tags whose (state-changing) result should refresh the diagram pane.
+const STATE_REQS = new Set(['step', 'step_multi', 'auto', 'random', 'undo', 'undo_to', 'redo', 'redo_to', 'show', 'store', 'parallel']);
 
-  // In a 0-cell fill the text REPL acts like a rewrite session: `show`/`rules`
-  // list the candidate 0-cells, `apply <n>` chooses, `undo`/`redo` reverse it.
+// Render a backend command's reply: its shared transcript view (or its message),
+// then the medium-specific follow-ups — the fill UI, the diagram pane, the editor.
+// `reqCmd` is the request's own `command` tag (e.g. `step`, `undo_to`, `store`).
+async function renderResult(raw, reqCmd, result) {
+  if (result.status === 'error') { appendReplEntry(raw, formatError(result)); return; }
+  if (result.data && result.data.module) {
+    // Idle `show`/`status`: report the editor's filename (the backend keys the
+    // module on a virtual path, so we substitute the active tab's name).
+    const tab = activeTab();
+    appendReplEntry(raw, `${dim('module:')} ${hi(tab ? tab.name : result.data.module)}`);
+    return;
+  }
+  appendReplEntry(raw, result.rendered
+    ? renderSegments(result.rendered)
+    : { cls: 'meta', text: (result.data && result.data.message) || '' });
+  // In a 0-cell fill, refresh the fill UI; otherwise the session diagram.
   if (fillSession && fillSession.dim === 0) {
-    await runZeroCellText(raw, cmd, arg);
-    return;
+    await showZeroCellFill(result.data);
+  } else if (sessionActive && STATE_REQS.has(reqCmd)) {
+    await updateVisInfo(result.data);
   }
-
-  const json = buildCommand(cmd, arg, raw);
-  if (!json) return;
-
-  const result = await parseReplResponse(repl.run_command(json));
-
-  if (result.status === 'error') {
-    appendReplEntry(raw, formatError(result));
-  } else {
-    // The backend renders the transcript (shared with the CLI) as `rendered`;
-    // `parallel` is the lone transcript command without one — show its mode line.
-    appendReplEntry(raw, result.rendered
-      ? renderSegments(result.rendered)
-      : dim('parallel mode: ' + (result.data && result.data.parallel ? 'on' : 'off')));
-    // Only update the session diagram display for state-changing commands.
-    const stateCommands = ['apply', 'a', 'auto', 'random', 'undo', 'u', 'redo', 'restart', 'show', 'status', 'store', 'parallel'];
-    if (sessionActive && stateCommands.includes(cmd)) {
-      await updateVisInfo(result.data);
-    }
-    // Append definition to editor and refresh accordion when store succeeds.
-    if (cmd === 'store' && result.data && result.data.stored) {
-      const s = result.data.stored;
-      const code = `\n\n@${s.type_name}\nlet ${s.def_name} = ${s.expr}`;
-      const doc = view.state.doc;
-      const trimmed = doc.toString().trimEnd();
-      const newText = trimmed + code + '\n';
-      view.dispatch({
-        changes: { from: 0, to: doc.length, insert: newText },
-        selection: { anchor: newText.length },
-        scrollIntoView: true,
-      });
-      await refreshAccordion();
-    }
+  // `store` appends its definition to the editor and refreshes the accordion.
+  if (reqCmd === 'store' && result.data && result.data.stored) {
+    const s = result.data.stored;
+    const code = `\n\n@${s.type_name}\nlet ${s.def_name} = ${s.expr}`;
+    const doc = view.state.doc;
+    const trimmed = doc.toString().trimEnd();
+    const newText = trimmed + code + '\n';
+    view.dispatch({
+      changes: { from: 0, to: doc.length, insert: newText },
+      selection: { anchor: newText.length },
+      scrollIntoView: true,
+    });
+    await refreshAccordion();
   }
+}
+
+// `backward` is a mode the web also surfaces as a checkbox: set it when idle,
+// only report it mid-session (where it is fixed), and take the message and the
+// resulting mode from the backend.
+async function runBackward(raw, on) {
+  const effectiveOn = sessionActive ? null : on;
+  const result = await parseReplResponse(repl.run_command(JSON.stringify({ command: 'backward', on: effectiveOn })));
+  if (!sessionActive) chkBackward.checked = !!(result.data && result.data.backward);
+  appendReplEntry(raw, { cls: 'meta', text: (result.data && result.data.message) || '' });
 }
 
 function quoteArg(s) { return /\s/.test(s) ? `'${s}'` : s; }
@@ -1596,134 +1591,6 @@ function formatStartCmd(type, src, tgt) {
   return `start ${quoteArg(type)} ${quoteArg(src)}${tgt ? ' ' + quoteArg(tgt) : ''}`;
 }
 
-function splitQuotedArgs(s) {
-  const args = [];
-  let i = 0;
-  while (i < s.length) {
-    while (i < s.length && s[i] === ' ') i++;
-    if (i >= s.length) break;
-    let tok = '';
-    const q = (s[i] === "'" || s[i] === '"') ? s[i++] : null;
-    while (i < s.length) {
-      if (q && s[i] === q) { i++; break; }
-      if (!q && /\s/.test(s[i])) break;
-      tok += s[i++];
-    }
-    if (tok) args.push(tok);
-  }
-  return args;
-}
-
-function buildCommand(cmd, arg, raw) {
-  switch (cmd) {
-    case 'show':
-    case 'status':   return '{"command":"show"}';
-    case 'undo':
-    case 'u':
-      if (arg === 'all') return JSON.stringify({ command: 'undo_to', step: 0 });
-      if (arg) return JSON.stringify({ command: 'undo_to', step: parseInt(arg, 10) });
-      return '{"command":"undo"}';
-    case 'redo':
-      if (arg) return JSON.stringify({ command: 'redo_to', step: parseInt(arg, 10) });
-      return '{"command":"redo"}';
-    case 'apply':
-    case 'a': {
-      const nums = arg.trim().split(/\s+/).map(s => parseInt(s, 10));
-      if (nums.length === 0 || nums.some(isNaN)) {
-        appendReplEntry(raw, formatError('usage: apply <n> [<n2> ...]'));
-        return null;
-      }
-      if (nums.length === 1) return JSON.stringify({ command: 'step', choice: nums[0] });
-      return JSON.stringify({ command: 'step_multi', choices: nums });
-    }
-    case 'auto': {
-      const n = parseInt(arg, 10);
-      if (isNaN(n) || n < 0) { appendReplEntry(raw, formatError('usage: auto <n>')); return null; }
-      return JSON.stringify({ command: 'auto', max_steps: n });
-    }
-    case 'random':
-      const n = parseInt(arg, 10);
-      if (isNaN(n) || n < 0) { appendReplEntry(raw, formatError('usage: random <n>')); return null; }
-      return JSON.stringify({ command: 'random', max_steps: n });
-    case 'restart':  return JSON.stringify({ command: 'undo_to', step: 0 });
-    case 'rules':
-    case 'r':        return '{"command":"list_rules"}';
-    case 'history':
-    case 'h':        return '{"command":"history"}';
-    case 'proof':
-    case 'p':        return '{"command":"proof"}';
-    case 'types':    return '{"command":"types"}';
-    case 'type':
-      if (!arg) { appendReplEntry(raw, formatError('usage: type <name>')); return null; }
-      return JSON.stringify({ command: 'type', name: arg });
-    case 'homology':
-      if (!arg) { appendReplEntry(raw, formatError('usage: homology <name>')); return null; }
-      return JSON.stringify({ command: 'homology', name: arg });
-    case 'store':
-      if (!arg) { appendReplEntry(raw, formatError('usage: store <name>')); return null; }
-      return JSON.stringify({ command: 'store', name: arg });
-    case 'parallel':
-      if (arg === 'on')  return JSON.stringify({ command: 'parallel', on: true });
-      if (arg === 'off') return JSON.stringify({ command: 'parallel', on: false });
-      if (!arg)          return JSON.stringify({ command: 'show' });
-      appendReplEntry(raw, formatError('usage: parallel [on|off]'));
-      return null;
-    case 'backward':
-      if (sessionActive) {
-        appendReplEntry(raw, `<span class="meta">Backward mode ${chkBackward.checked ? 'on' : 'off'}</span>`);
-      } else {
-        if (arg === 'on')       chkBackward.checked = true;
-        else if (arg === 'off') chkBackward.checked = false;
-        else if (arg) { appendReplEntry(raw, formatError('usage: backward [on|off]')); return null; }
-        appendReplEntry(raw, `<span class="meta">Backward mode ${chkBackward.checked ? 'on' : 'off'}</span>`);
-      }
-      return null;
-    case 'stop': {
-      if (!sessionActive) {
-        appendReplEntry(raw, formatError('no active session'));
-        return null;
-      }
-      void repl.stop_session();
-      resetSession();
-      appendReplEntry(raw, '<span class="meta">Session stopped</span>');
-      return null;
-    }
-    case 'clear':
-      replOutput.innerHTML = '';
-      return null;
-    case 'start': {
-      if (sessionActive) {
-        appendReplEntry(raw, formatError('session already active — use stop first'));
-        return null;
-      }
-      const parts = splitQuotedArgs(arg);
-      if (parts.length < 2 || parts.length > 3) {
-        appendReplEntry(raw, formatError('usage: start <type> <initial> [<target>]'));
-        return null;
-      }
-      const [typeName, src, tgt] = parts;
-      void startSessionFromRepl(typeName, src, tgt, chkBackward.checked, raw);
-      return null;
-    }
-    case 'resume': {
-      if (sessionActive) {
-        appendReplEntry(raw, formatError('session already active — use stop first'));
-        return null;
-      }
-      const parts = splitQuotedArgs(arg);
-      if (parts.length < 2 || parts.length > 3) {
-        appendReplEntry(raw, formatError('usage: resume <type> <proof> [<target>]'));
-        return null;
-      }
-      const [typeName, proof, target] = parts;
-      void startResumeFromRepl(typeName, proof, target, chkBackward.checked, raw);
-      return null;
-    }
-    default:
-      appendReplEntry(raw, formatError(`unknown command '${cmd}' — type help for commands`));
-      return null;
-  }
-}
 
 // ── Rendering ─────────────────────────────────────────────────────────────────
 
@@ -1770,9 +1637,9 @@ function esc(s) {
     .replace(/>/g, '&gt;');
 }
 
-// Span helpers for UI outside the REPL transcript (the accordion, the `parallel`
-// mode line).  Transcript rendering goes through `renderSegments` instead, which
-// maps RichText roles to the same `repl-*` classes.
+// Span helpers for UI outside the REPL transcript (the accordion, the idle
+// `module:` line).  Transcript rendering goes through `renderSegments` instead,
+// which maps RichText roles to the same `repl-*` classes.
 function hi(s)  { return `<span class="repl-hi">${esc(s)}</span>`; }
 function dim(s) { return `<span class="repl-dim">${esc(s)}</span>`; }
 
@@ -1780,8 +1647,9 @@ function dim(s) { return `<span class="repl-dim">${esc(s)}</span>`; }
 function formatOk(msg)    { return { cls: 'repl-result ok',  text: msg }; }
 
 // Errors come in two shapes:
-//   - a plain string (call-site emitted message, e.g. "usage: apply <n>")
-//   - a parsed REPL response `{message, diagnostics?}` from the engine
+//   - a parsed response `{message, diagnostics?}` from the backend or the shared
+//     command parser (the usual case — REPL message text lives there, not here)
+//   - a plain string, for the rare locally-raised message
 // When `diagnostics` is present we render a structured block with line:col
 // and a source snippet; otherwise we fall back to the flat text path.
 function formatError(messageOrResult) {
@@ -1864,35 +1732,12 @@ btnClear.addEventListener('click', () => {
   replOutput.innerHTML = '';
 });
 
-const HELP_TEXT = `Always available:
-  types               list all types in the file
-  type <name>         inspect a type
-  homology <name>     compute cellular homology of a type
-  start <t> <i>       start a rewrite session (target optional)
-  resume <t> <p>      resume a session from a diagram (target optional)
-  holes               list open holes of maps in this module
-  fill <n>            start a hole-filling session for hole <n>
-  backward [on|off]   show or toggle backward rewrite mode (default: off)
-  stop                end the active session
-  clear               clear the REPL output
-  help / ?            show this message
-
-Session commands (require active session):
-  apply <n> [<n2>..]  apply rewrite(s) at given indices (alias: a)
-  auto <n>            apply up to n rewrites automatically
-  parallel [on|off]   show or toggle parallel rewrite mode (default: on)
-  random <n>          apply up to n randomly selected rewrites
-  undo [<n>]          undo last step, or back to step n (alias: u)
-  redo [<n>]          redo last undone step, or forward to step n
-  undo all / restart  reset to the source diagram
-  show / status       show current state
-  rules (r)           list all rewrite rules
-  history (h)         show move history
-  proof (p)           show the running proof diagram
-  store <name>        store the current proof as a named diagram
-  done                finalise the active fill, extending the map
-
-Keyboard: ↑/↓ navigate history · Ctrl+Enter evaluate file`;
+// The command help is rendered by the backend (the same table the CLI prints,
+// minus the CLI-only commands), so the two front-ends never drift apart.
+async function renderHelp() {
+  const result = await parseReplResponse(repl.run_command('{"command":"help","web":true}'));
+  return result.rendered ? renderSegments(result.rendered) : '';
+}
 
 // ── Examples, load/save, syntax highlighting ─────────────────────────────────
 //

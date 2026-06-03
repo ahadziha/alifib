@@ -62,20 +62,21 @@ impl Display {
         }
     }
 
-    /// Print an error: `error: text` in red.
+    /// Print an error in red — the colour carries the "error" signal, so no
+    /// prefix when coloured.  In plain mode an `Error: ` marker stands in.
     pub fn error(&self, text: &str) {
         if self.color {
-            println!("{C_ERR}error: {text}{RESET}");
+            println!("{C_ERR}{text}{RESET}");
         } else {
-            println!("error: {text}");
+            println!("Error: {text}");
         }
     }
 
-    /// Print file source in the dim colour (grey), no prefix.
+    /// Print file source in the bright value colour, no prefix.
     pub fn file(&self, text: &str) {
         for line in text.split('\n') {
             if self.color {
-                println!("{C_DIM}{line}{RESET}");
+                println!("{C_HI}{line}{RESET}");
             } else {
                 println!("{line}");
             }
@@ -97,8 +98,6 @@ impl Display {
         if self.color { format!("{code}{s}{RESET}") } else { s.to_string() }
     }
 
-    /// An alifib expression in the code colour (amber) — used by the `help` text.
-    pub fn code(&self, s: &str) -> String { self.paint(C_SRC, s) }
     /// The input prompt marker (violet).
     pub fn acc(&self, s: &str) -> String { self.paint(C_PROMPT, s) }
 

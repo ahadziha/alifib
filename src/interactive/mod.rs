@@ -48,6 +48,7 @@
 //! | [`session`] | [`Session`](session::Session): the shared command state machine all front-ends drive |
 
 pub mod cli;
+pub mod command;
 pub mod daemon;
 pub mod display;
 pub mod engine;

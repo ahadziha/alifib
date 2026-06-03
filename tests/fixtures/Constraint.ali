@@ -1,0 +1,11 @@
+@Type
+
+C <<= { x, y, z, f : x -> y, g : y -> z, h : x -> z, r : f g -> h },
+
+D <<= { v, a : v -> v, m : a a -> a },
+
+@D
+  (* `r => m` is a conditional pending assignment: it fixes F(r) = m but cannot
+     commit until F(f), F(g) are known.  Its input boundary F(r.in) = ?f #0 ?g
+     still has holes, so it shows as the constraint `?f #0 ?g = a #0 a`. *)
+  let F :: C = [ r => m ]

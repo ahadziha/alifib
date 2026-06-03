@@ -16,6 +16,104 @@ fn cmd(repl: &mut WebRepl, json: &str) -> Value {
     serde_json::from_str(&repl.run_command(json)).unwrap()
 }
 
+/// Flatten a `rendered` RichText to its plain text (every segment, every line).
+fn rendered_text(v: &Value) -> String {
+    v["rendered"]["lines"].as_array().unwrap().iter()
+        .map(|line| line.as_array().unwrap().iter()
+            .map(|seg| seg["text"].as_str().unwrap())
+            .collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// `help` is served by the backend without a loaded source and, in web mode,
+/// lists the web-only commands while dropping the CLI-only ones.
+#[test]
+fn web_help_drops_cli_only_commands() {
+    let mut repl = WebRepl::new();
+    let help = cmd(&mut repl, r#"{"command":"help","web":true}"#);
+    assert_eq!(help["status"], "ok");
+    let text = rendered_text(&help);
+
+    assert!(text.contains("clear"), "web help lists the web-only `clear`");
+    assert!(text.contains("Keyboard:"), "web help keeps the keyboard footer");
+    assert!(text.contains("holes"), "shared commands are present");
+    assert!(!text.contains("print"), "web help drops the CLI-only `print`");
+    assert!(!text.contains("save <path>"), "web help drops the CLI-only `save`");
+    assert!(!text.contains("quit"), "web help drops the CLI-only `exit`");
+}
+
+/// The web parses typed lines with the *shared* parser, so its usage/unknown
+/// errors read exactly as the CLI's, and it classifies each line as a backend
+/// request or a UI action.
+#[test]
+fn web_parse_command_shares_the_cli_parser() {
+    let repl = WebRepl::new();
+    let parse = |line: &str| -> Value { serde_json::from_str(&repl.parse_command(line)).unwrap() };
+
+    // Unknown command and usage errors — the CLI's exact wording, built once.
+    assert_eq!(parse("frobnicate")["status"], "error");
+    assert_eq!(parse("frobnicate")["message"], "Unrecognised command 'frobnicate' — type 'help' for a list");
+    assert_eq!(parse("type")["message"], "Usage: type <name>");
+
+    // A backend command becomes a ready-to-run request (aliases included).
+    let p = parse("a 0 1");
+    assert_eq!(p["status"], "request");
+    assert_eq!(p["request"], serde_json::json!({ "command": "step_multi", "choices": [0, 1] }));
+
+    // A UI command becomes an action carrying its parsed arguments.
+    let s = parse("start C a b");
+    assert_eq!((s["status"].as_str(), s["action"].as_str()), (Some("action"), Some("start")));
+    assert_eq!(
+        (s["type_name"].as_str(), s["initial"].as_str(), s["target"].as_str()),
+        (Some("C"), Some("a"), Some("b")),
+    );
+
+    // The CLI-only `print` is unknown to the web.
+    assert_eq!(parse("print")["status"], "error");
+}
+
+/// A 0-cell fill is a session like any other: `proof`/`history`/`rules` are
+/// empty before a choice, then read out the chosen cell; `stop` says "Session
+/// stopped".  This pins the messaging the CLI and web must share.
+#[test]
+fn web_zero_cell_fill_behaves_like_a_session() {
+    let mut repl = WebRepl::new();
+    repl.load_source(&fixture("LayeredHole.ali"));
+
+    // Hole 0 is the 0-cell `a1`; filling it opens a 0-cell session.
+    let started = cmd(&mut repl, r#"{"command":"fill","index":0}"#);
+    assert_eq!(started["status"], "ok");
+    assert_eq!(started["data"]["fill"]["dim"], 0);
+
+    // Before a choice — empty, exactly as a fresh rewrite session reads.
+    assert_eq!(rendered_text(&cmd(&mut repl, r#"{"command":"proof"}"#)), "(no proof yet)");
+    assert_eq!(rendered_text(&cmd(&mut repl, r#"{"command":"history"}"#)), "(no moves yet)");
+    assert_eq!(rendered_text(&cmd(&mut repl, r#"{"command":"list_rules"}"#)), "(no rules)");
+
+    // Choose the 0-cell at index 0 (`x`).
+    let chosen = cmd(&mut repl, r#"{"command":"step","choice":0}"#);
+    assert_eq!(chosen["data"]["target_reached"], true);
+
+    // After — the proof is the chosen cell, the history records the choice.
+    assert_eq!(rendered_text(&cmd(&mut repl, r#"{"command":"proof"}"#)), "proof :\n  x");
+    assert_eq!(rendered_text(&cmd(&mut repl, r#"{"command":"history"}"#)), "  1. x [choice 0]");
+
+    // Stopping a fill is "Session stopped", as ending a rewrite is.
+    assert_eq!(cmd(&mut repl, r#"{"command":"stop"}"#)["data"]["message"], "Session stopped");
+}
+
+/// `show`/`status` while idle reports the loaded module instead of erroring,
+/// matching the CLI.
+#[test]
+fn web_show_when_idle_reports_module() {
+    let mut repl = WebRepl::new();
+    repl.load_source(&fixture("RewriteFill.ali"));
+    let shown = cmd(&mut repl, r#"{"command":"show"}"#);
+    assert_eq!(shown["status"], "ok", "idle show does not error");
+    assert!(rendered_text(&shown).contains("module:"), "idle show reports the module");
+}
+
 /// A 1-cell hole: list, fill via a rewrite, step to the target, done — and the
 /// returned source carries the new clause while the hole list empties.
 #[test]

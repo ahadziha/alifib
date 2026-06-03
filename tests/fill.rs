@@ -3,7 +3,9 @@
 use std::path::PathBuf;
 
 use alifib::interactive::engine::load_file_context;
-use alifib::interactive::fill::{finalize, list_open_holes, start_fill, FillSession};
+use alifib::interactive::fill::{
+    finalize, list_constraints, list_open_holes, start_fill, FillSession,
+};
 
 fn fixture(name: &str) -> String {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -38,6 +40,24 @@ fn fill_one_dim_hole_via_rewrite() {
 
     assert!(list_open_holes(&new_store, &path).is_empty(), "no holes left after filling x");
     assert!(new_source.contains("x =>"), "the new clause is appended to H");
+}
+
+/// A conditional pending assignment whose image boundary still has holes shows
+/// up as a constraint, not an open hole.  `r => m` (with `r : f g -> h`) leaves
+/// `?y, ?f, ?g` open and imposes `?f #0 ?g = a #0 a` on its input boundary.
+#[test]
+fn constraint_from_pending_assignment() {
+    let (store, path, _) = load_file_context(&fixture("Constraint.ali")).unwrap();
+
+    let open = list_open_holes(&store, &path);
+    let holes: Vec<&str> = open.iter().map(|h| h.source_name.as_str()).collect();
+    assert_eq!(holes, ["y", "f", "g"], "three open holes, lowest dim first");
+
+    let constraints = list_constraints(&store, &path);
+    assert_eq!(constraints.len(), 1, "one conditional assignment with hole-bearing boundary");
+    let c = &constraints[0];
+    assert_eq!((c.type_name.as_str(), c.map_name.as_str(), c.domain_name.as_str()), ("D", "F", "C"));
+    assert_eq!(c.equations, ["?f #0 ?g = a #0 a"], "only the input boundary has holes");
 }
 
 /// A hole whose input and output boundaries coincide is filled by the identity

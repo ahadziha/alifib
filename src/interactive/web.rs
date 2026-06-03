@@ -27,7 +27,7 @@ use super::protocol::{
     build_type_detail_from_store, resolve_domain_complex, step_output_strdiag_json,
     strdiag_json_from_diagram, strdiag_to_json, tag_to_json,
 };
-use super::richtext::{render_kind_for, render_response, RenderKind};
+use super::richtext::{help, render_kind_for, render_response, RenderKind};
 use super::session::{LoadStrategy, Session};
 
 pub const WEB_SOURCE_PATH: &str = "source.ali";
@@ -163,6 +163,55 @@ impl WebRepl {
         apply_json(s, req)
     }
 
+    /// Parse one typed REPL line with the **shared** parser (the same one the CLI
+    /// uses), classifying it for the web front-end.  Returns one of:
+    ///
+    /// - `{"status":"error","message":…}` — an unknown command or a `Usage:` line,
+    ///   worded identically to the CLI;
+    /// - `{"status":"action","action":…,…}` — a command the web drives as a UI
+    ///   flow (`start`/`resume`/`fill`/`done`/`stop`/`clear`/`holes`/`backward`);
+    /// - `{"status":"request","request":{…}}` — a ready [`Request`] the web hands
+    ///   to [`run_command`](Self::run_command) (it keys any follow-up on the
+    ///   request's own `command` tag).
+    ///
+    /// No execution happens here — the front-end decides what to do with the
+    /// classification, but *parsing and its errors* live in one place.
+    pub fn parse_command(&self, line: &str) -> String {
+        use crate::interactive::command::{parse, Command, Frontend};
+
+        let cmd = match parse(line, Frontend::Web) {
+            Ok(c) => c,
+            Err(message) => return serde_json::json!({ "status": "error", "message": message }).to_string(),
+        };
+        let action = |a: &str, args: serde_json::Value| {
+            let mut o = serde_json::Map::new();
+            o.insert("status".into(), "action".into());
+            o.insert("action".into(), a.into());
+            if let serde_json::Value::Object(m) = args { o.extend(m); }
+            serde_json::Value::Object(o).to_string()
+        };
+        let request = |req: Request| serde_json::json!({ "status": "request", "request": req }).to_string();
+        match cmd {
+            // Commands the web drives as a UI flow rather than a plain request.
+            Command::Start { type_name, initial, target } =>
+                action("start", serde_json::json!({ "type_name": type_name, "initial": initial, "target": target })),
+            Command::Resume { type_name, proof, target } =>
+                action("resume", serde_json::json!({ "type_name": type_name, "proof": proof, "target": target })),
+            Command::Fill(index) => action("fill", serde_json::json!({ "index": index })),
+            Command::Done => action("done", serde_json::json!({})),
+            Command::Stop => action("stop", serde_json::json!({})),
+            Command::Clear => action("clear", serde_json::json!({})),
+            Command::Holes => action("holes", serde_json::json!({})),
+            Command::Backward(on) => action("backward", serde_json::json!({ "on": on })),
+            Command::Help => request(Request::Help { web: true }),
+            // Everything else is a plain backend request via the shared mapping.
+            other => match other.to_request(false) {
+                Some(req) => request(req),
+                None => serde_json::json!({ "status": "error", "message": "command not available in the web REPL" }).to_string(),
+            },
+        }
+    }
+
     /// Send a daemon-protocol command and return a JSON response.
     ///
     /// Session commands go to [`Session::apply`]; read-only queries are served
@@ -173,6 +222,15 @@ impl WebRepl {
             Ok(r) => r,
             Err(e) => return err_json(&format!("invalid command JSON: {e}")),
         };
+        // `help` needs no loaded source — it is the same table the CLI prints,
+        // minus the CLI-only commands.
+        if let Request::Help { web } = request {
+            return serde_json::json!({
+                "status": "ok",
+                "data": ResponseData::empty(),
+                "rendered": help(web),
+            }).to_string();
+        }
         let Some(s) = self.session.as_mut() else {
             return err_json("no source loaded");
         };
