@@ -1,0 +1,6 @@
+@Type
+C <<= { c },
+D <<= C,
+E <<= { e, let f :: C = [ c => e ] }
+@E
+let g :: D = f

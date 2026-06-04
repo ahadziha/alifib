@@ -688,7 +688,7 @@ mod dotted_expr_tests {
     #[test]
     fn maps_are_applied_after_the_boundary() {
         // F : Arrow -> Graph sends s ↦ A.s, t ↦ B.t, arr ↦ (A.arr mid B.arr).
-        let (store, tc, path) = load("legacy/examples/Total.ali", "Graph");
+        let (store, tc, path) = load("tests/fixtures/Total.ali", "Graph");
 
         // `F.arr.in` takes ∂ⁱⁿ(arr) = s first, then applies F, giving A.s — and
         // dually `F.arr.out` = B.t.  This is the reordered evaluation.

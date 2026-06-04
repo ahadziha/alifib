@@ -1,0 +1,674 @@
+---
+source: tests/golden_examples.rs
+expression: "load_example(\"TM.ali\")"
+---
+Store {
+    cells_count: 48,
+    types_count: 3,
+    modules: [
+        Module {
+            path: "TM.ali",
+            types: [
+                Type {
+                    name: "",
+                    dims: [],
+                    diagrams: [],
+                    maps: [],
+                },
+                Type {
+                    name: "TM",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "after",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "before",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "left",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "right",
+                                    input: "",
+                                    output: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "INIT",
+                                    input: "left",
+                                    output: "right",
+                                },
+                                Cell {
+                                    name: "_",
+                                    input: "right",
+                                    output: "right",
+                                },
+                                Cell {
+                                    name: "__",
+                                    input: "left",
+                                    output: "left",
+                                },
+                                Cell {
+                                    name: "end",
+                                    input: "right",
+                                    output: "after",
+                                },
+                                Cell {
+                                    name: "start",
+                                    input: "before",
+                                    output: "left",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 2,
+                            cells: [
+                                Cell {
+                                    name: "absorb_end",
+                                    input: "(_ #0 end)",
+                                    output: "end",
+                                },
+                                Cell {
+                                    name: "absorb_start",
+                                    input: "(start #0 __)",
+                                    output: "start",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [
+                        Cell {
+                            name: "INIT",
+                            input: "left",
+                            output: "right",
+                        },
+                        Cell {
+                            name: "_",
+                            input: "right",
+                            output: "right",
+                        },
+                        Cell {
+                            name: "__",
+                            input: "left",
+                            output: "left",
+                        },
+                        Cell {
+                            name: "absorb_end",
+                            input: "(_ #0 end)",
+                            output: "end",
+                        },
+                        Cell {
+                            name: "absorb_start",
+                            input: "(start #0 __)",
+                            output: "start",
+                        },
+                        Cell {
+                            name: "after",
+                            input: "",
+                            output: "",
+                        },
+                        Cell {
+                            name: "before",
+                            input: "",
+                            output: "",
+                        },
+                        Cell {
+                            name: "end",
+                            input: "right",
+                            output: "after",
+                        },
+                        Cell {
+                            name: "left",
+                            input: "",
+                            output: "",
+                        },
+                        Cell {
+                            name: "right",
+                            input: "",
+                            output: "",
+                        },
+                        Cell {
+                            name: "start",
+                            input: "before",
+                            output: "left",
+                        },
+                    ],
+                    maps: [
+                        Map {
+                            name: "TM",
+                            domain: "TM",
+                            holes: [],
+                        },
+                    ],
+                },
+                Type {
+                    name: "AnBn",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "after",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "before",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "left",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "right",
+                                    input: "",
+                                    output: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "ACCEPT",
+                                    input: "left",
+                                    output: "right",
+                                },
+                                Cell {
+                                    name: "BACK",
+                                    input: "left",
+                                    output: "right",
+                                },
+                                Cell {
+                                    name: "CHECK",
+                                    input: "left",
+                                    output: "right",
+                                },
+                                Cell {
+                                    name: "INIT",
+                                    input: "left",
+                                    output: "right",
+                                },
+                                Cell {
+                                    name: "REJECT",
+                                    input: "left",
+                                    output: "right",
+                                },
+                                Cell {
+                                    name: "SEARCH",
+                                    input: "left",
+                                    output: "right",
+                                },
+                                Cell {
+                                    name: "_",
+                                    input: "right",
+                                    output: "right",
+                                },
+                                Cell {
+                                    name: "__",
+                                    input: "left",
+                                    output: "left",
+                                },
+                                Cell {
+                                    name: "a",
+                                    input: "right",
+                                    output: "right",
+                                },
+                                Cell {
+                                    name: "aX",
+                                    input: "right",
+                                    output: "right",
+                                },
+                                Cell {
+                                    name: "aX_",
+                                    input: "left",
+                                    output: "left",
+                                },
+                                Cell {
+                                    name: "a_",
+                                    input: "left",
+                                    output: "left",
+                                },
+                                Cell {
+                                    name: "b",
+                                    input: "right",
+                                    output: "right",
+                                },
+                                Cell {
+                                    name: "bX",
+                                    input: "right",
+                                    output: "right",
+                                },
+                                Cell {
+                                    name: "bX_",
+                                    input: "left",
+                                    output: "left",
+                                },
+                                Cell {
+                                    name: "b_",
+                                    input: "left",
+                                    output: "left",
+                                },
+                                Cell {
+                                    name: "end",
+                                    input: "right",
+                                    output: "after",
+                                },
+                                Cell {
+                                    name: "start",
+                                    input: "before",
+                                    output: "left",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 2,
+                            cells: [
+                                Cell {
+                                    name: "CHECK__",
+                                    input: "(CHECK #0 _)",
+                                    output: "(ACCEPT #0 _)",
+                                },
+                                Cell {
+                                    name: "CHECK_a",
+                                    input: "(CHECK #0 a)",
+                                    output: "(REJECT #0 a)",
+                                },
+                                Cell {
+                                    name: "CHECK_aX",
+                                    input: "(CHECK #0 aX)",
+                                    output: "(REJECT #0 aX)",
+                                },
+                                Cell {
+                                    name: "CHECK_b",
+                                    input: "(CHECK #0 b)",
+                                    output: "(REJECT #0 b)",
+                                },
+                                Cell {
+                                    name: "CHECK_bX",
+                                    input: "(CHECK #0 bX)",
+                                    output: "(bX_ #0 CHECK)",
+                                },
+                                Cell {
+                                    name: "CHECK_end",
+                                    input: "(CHECK #0 end)",
+                                    output: "(ACCEPT #0 end)",
+                                },
+                                Cell {
+                                    name: "INIT__",
+                                    input: "(INIT #0 _)",
+                                    output: "(ACCEPT #0 _)",
+                                },
+                                Cell {
+                                    name: "INIT_a",
+                                    input: "(INIT #0 a)",
+                                    output: "(aX_ #0 SEARCH)",
+                                },
+                                Cell {
+                                    name: "INIT_aX",
+                                    input: "(INIT #0 aX)",
+                                    output: "(aX_ #0 INIT)",
+                                },
+                                Cell {
+                                    name: "INIT_b",
+                                    input: "(INIT #0 b)",
+                                    output: "(REJECT #0 b)",
+                                },
+                                Cell {
+                                    name: "INIT_bX",
+                                    input: "(INIT #0 bX)",
+                                    output: "(bX_ #0 CHECK)",
+                                },
+                                Cell {
+                                    name: "INIT_end",
+                                    input: "(INIT #0 end)",
+                                    output: "(ACCEPT #0 end)",
+                                },
+                                Cell {
+                                    name: "SEARCH__",
+                                    input: "(SEARCH #0 _)",
+                                    output: "(REJECT #0 _)",
+                                },
+                                Cell {
+                                    name: "SEARCH_a",
+                                    input: "(SEARCH #0 a)",
+                                    output: "(a_ #0 SEARCH)",
+                                },
+                                Cell {
+                                    name: "SEARCH_aX",
+                                    input: "(SEARCH #0 aX)",
+                                    output: "(REJECT #0 aX)",
+                                },
+                                Cell {
+                                    name: "SEARCH_b",
+                                    input: "(SEARCH #0 b)",
+                                    output: "(BACK #0 bX)",
+                                },
+                                Cell {
+                                    name: "SEARCH_bX",
+                                    input: "(SEARCH #0 bX)",
+                                    output: "(bX_ #0 SEARCH)",
+                                },
+                                Cell {
+                                    name: "SEARCH_end",
+                                    input: "(SEARCH #0 end)",
+                                    output: "(REJECT #0 end)",
+                                },
+                                Cell {
+                                    name: "__BACK",
+                                    input: "(__ #0 BACK)",
+                                    output: "(__ #0 INIT)",
+                                },
+                                Cell {
+                                    name: "aX_BACK",
+                                    input: "(aX_ #0 BACK)",
+                                    output: "(BACK #0 aX)",
+                                },
+                                Cell {
+                                    name: "a_BACK",
+                                    input: "(a_ #0 BACK)",
+                                    output: "(BACK #0 a)",
+                                },
+                                Cell {
+                                    name: "absorb_end",
+                                    input: "(_ #0 end)",
+                                    output: "end",
+                                },
+                                Cell {
+                                    name: "absorb_start",
+                                    input: "(start #0 __)",
+                                    output: "start",
+                                },
+                                Cell {
+                                    name: "bX_BACK",
+                                    input: "(bX_ #0 BACK)",
+                                    output: "(BACK #0 bX)",
+                                },
+                                Cell {
+                                    name: "b_BACK",
+                                    input: "(b_ #0 BACK)",
+                                    output: "(BACK #0 b)",
+                                },
+                                Cell {
+                                    name: "start_BACK",
+                                    input: "(start #0 BACK)",
+                                    output: "(start #0 INIT)",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [
+                        Cell {
+                            name: "ACCEPT",
+                            input: "left",
+                            output: "right",
+                        },
+                        Cell {
+                            name: "BACK",
+                            input: "left",
+                            output: "right",
+                        },
+                        Cell {
+                            name: "CHECK",
+                            input: "left",
+                            output: "right",
+                        },
+                        Cell {
+                            name: "CHECK__",
+                            input: "(CHECK #0 _)",
+                            output: "(ACCEPT #0 _)",
+                        },
+                        Cell {
+                            name: "CHECK_a",
+                            input: "(CHECK #0 a)",
+                            output: "(REJECT #0 a)",
+                        },
+                        Cell {
+                            name: "CHECK_aX",
+                            input: "(CHECK #0 aX)",
+                            output: "(REJECT #0 aX)",
+                        },
+                        Cell {
+                            name: "CHECK_b",
+                            input: "(CHECK #0 b)",
+                            output: "(REJECT #0 b)",
+                        },
+                        Cell {
+                            name: "CHECK_bX",
+                            input: "(CHECK #0 bX)",
+                            output: "(bX_ #0 CHECK)",
+                        },
+                        Cell {
+                            name: "CHECK_end",
+                            input: "(CHECK #0 end)",
+                            output: "(ACCEPT #0 end)",
+                        },
+                        Cell {
+                            name: "INIT",
+                            input: "left",
+                            output: "right",
+                        },
+                        Cell {
+                            name: "INIT__",
+                            input: "(INIT #0 _)",
+                            output: "(ACCEPT #0 _)",
+                        },
+                        Cell {
+                            name: "INIT_a",
+                            input: "(INIT #0 a)",
+                            output: "(aX_ #0 SEARCH)",
+                        },
+                        Cell {
+                            name: "INIT_aX",
+                            input: "(INIT #0 aX)",
+                            output: "(aX_ #0 INIT)",
+                        },
+                        Cell {
+                            name: "INIT_b",
+                            input: "(INIT #0 b)",
+                            output: "(REJECT #0 b)",
+                        },
+                        Cell {
+                            name: "INIT_bX",
+                            input: "(INIT #0 bX)",
+                            output: "(bX_ #0 CHECK)",
+                        },
+                        Cell {
+                            name: "INIT_end",
+                            input: "(INIT #0 end)",
+                            output: "(ACCEPT #0 end)",
+                        },
+                        Cell {
+                            name: "REJECT",
+                            input: "left",
+                            output: "right",
+                        },
+                        Cell {
+                            name: "SEARCH",
+                            input: "left",
+                            output: "right",
+                        },
+                        Cell {
+                            name: "SEARCH__",
+                            input: "(SEARCH #0 _)",
+                            output: "(REJECT #0 _)",
+                        },
+                        Cell {
+                            name: "SEARCH_a",
+                            input: "(SEARCH #0 a)",
+                            output: "(a_ #0 SEARCH)",
+                        },
+                        Cell {
+                            name: "SEARCH_aX",
+                            input: "(SEARCH #0 aX)",
+                            output: "(REJECT #0 aX)",
+                        },
+                        Cell {
+                            name: "SEARCH_b",
+                            input: "(SEARCH #0 b)",
+                            output: "(BACK #0 bX)",
+                        },
+                        Cell {
+                            name: "SEARCH_bX",
+                            input: "(SEARCH #0 bX)",
+                            output: "(bX_ #0 SEARCH)",
+                        },
+                        Cell {
+                            name: "SEARCH_end",
+                            input: "(SEARCH #0 end)",
+                            output: "(REJECT #0 end)",
+                        },
+                        Cell {
+                            name: "_",
+                            input: "right",
+                            output: "right",
+                        },
+                        Cell {
+                            name: "__",
+                            input: "left",
+                            output: "left",
+                        },
+                        Cell {
+                            name: "__BACK",
+                            input: "(__ #0 BACK)",
+                            output: "(__ #0 INIT)",
+                        },
+                        Cell {
+                            name: "a",
+                            input: "right",
+                            output: "right",
+                        },
+                        Cell {
+                            name: "aX",
+                            input: "right",
+                            output: "right",
+                        },
+                        Cell {
+                            name: "aX_",
+                            input: "left",
+                            output: "left",
+                        },
+                        Cell {
+                            name: "aX_BACK",
+                            input: "(aX_ #0 BACK)",
+                            output: "(BACK #0 aX)",
+                        },
+                        Cell {
+                            name: "a_",
+                            input: "left",
+                            output: "left",
+                        },
+                        Cell {
+                            name: "a_BACK",
+                            input: "(a_ #0 BACK)",
+                            output: "(BACK #0 a)",
+                        },
+                        Cell {
+                            name: "absorb_end",
+                            input: "(_ #0 end)",
+                            output: "end",
+                        },
+                        Cell {
+                            name: "absorb_start",
+                            input: "(start #0 __)",
+                            output: "start",
+                        },
+                        Cell {
+                            name: "after",
+                            input: "",
+                            output: "",
+                        },
+                        Cell {
+                            name: "b",
+                            input: "right",
+                            output: "right",
+                        },
+                        Cell {
+                            name: "bX",
+                            input: "right",
+                            output: "right",
+                        },
+                        Cell {
+                            name: "bX_",
+                            input: "left",
+                            output: "left",
+                        },
+                        Cell {
+                            name: "bX_BACK",
+                            input: "(bX_ #0 BACK)",
+                            output: "(BACK #0 bX)",
+                        },
+                        Cell {
+                            name: "b_",
+                            input: "left",
+                            output: "left",
+                        },
+                        Cell {
+                            name: "b_BACK",
+                            input: "(b_ #0 BACK)",
+                            output: "(BACK #0 b)",
+                        },
+                        Cell {
+                            name: "before",
+                            input: "",
+                            output: "",
+                        },
+                        Cell {
+                            name: "end",
+                            input: "right",
+                            output: "after",
+                        },
+                        Cell {
+                            name: "left",
+                            input: "",
+                            output: "",
+                        },
+                        Cell {
+                            name: "right",
+                            input: "",
+                            output: "",
+                        },
+                        Cell {
+                            name: "start",
+                            input: "before",
+                            output: "left",
+                        },
+                        Cell {
+                            name: "start_BACK",
+                            input: "(start #0 BACK)",
+                            output: "(start #0 INIT)",
+                        },
+                    ],
+                    maps: [
+                        Map {
+                            name: "AnBn",
+                            domain: "AnBn",
+                            holes: [],
+                        },
+                        Map {
+                            name: "TM",
+                            domain: "TM",
+                            holes: [],
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+}

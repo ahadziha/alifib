@@ -1,0 +1,4434 @@
+---
+source: tests/golden_examples.rs
+expression: "load_example(\"Delta_complexes.ali\")"
+---
+Store {
+    cells_count: 238,
+    types_count: 21,
+    modules: [
+        Module {
+            path: "Delta.ali",
+            types: [
+                Type {
+                    name: "",
+                    dims: [],
+                    diagrams: [],
+                    maps: [],
+                },
+                Type {
+                    name: "0Simplex",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "t",
+                                    input: "",
+                                    output: "",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [
+                        Cell {
+                            name: "t",
+                            input: "",
+                            output: "",
+                        },
+                    ],
+                    maps: [
+                        Map {
+                            name: "0Simplex",
+                            domain: "0Simplex",
+                            holes: [],
+                        },
+                    ],
+                },
+                Type {
+                    name: "1Simplex",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "0.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "1.t",
+                                    input: "",
+                                    output: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "t",
+                                    input: "0.t",
+                                    output: "1.t",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [
+                        Cell {
+                            name: "t",
+                            input: "0.t",
+                            output: "1.t",
+                        },
+                    ],
+                    maps: [
+                        Map {
+                            name: "0",
+                            domain: "0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "1",
+                            domain: "0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "1Simplex",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d0",
+                            domain: "0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d1",
+                            domain: "0Simplex",
+                            holes: [],
+                        },
+                    ],
+                },
+                Type {
+                    name: "2Simplex",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "0.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "1.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "2.t",
+                                    input: "",
+                                    output: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "01.t",
+                                    input: "0.t",
+                                    output: "1.t",
+                                },
+                                Cell {
+                                    name: "02.t",
+                                    input: "0.t",
+                                    output: "2.t",
+                                },
+                                Cell {
+                                    name: "12.t",
+                                    input: "1.t",
+                                    output: "2.t",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 2,
+                            cells: [
+                                Cell {
+                                    name: "t",
+                                    input: "02.t",
+                                    output: "(01.t #0 12.t)",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [
+                        Cell {
+                            name: "t",
+                            input: "02.t",
+                            output: "(01.t #0 12.t)",
+                        },
+                    ],
+                    maps: [
+                        Map {
+                            name: "0",
+                            domain: "0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "01",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "02",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "1",
+                            domain: "0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "12",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "2",
+                            domain: "0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "2Simplex",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d0",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d1",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d2",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                    ],
+                },
+                Type {
+                    name: "3Simplex",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "0.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "1.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "2.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "3.t",
+                                    input: "",
+                                    output: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "01.t",
+                                    input: "0.t",
+                                    output: "1.t",
+                                },
+                                Cell {
+                                    name: "02.t",
+                                    input: "0.t",
+                                    output: "2.t",
+                                },
+                                Cell {
+                                    name: "03.t",
+                                    input: "0.t",
+                                    output: "3.t",
+                                },
+                                Cell {
+                                    name: "12.t",
+                                    input: "1.t",
+                                    output: "2.t",
+                                },
+                                Cell {
+                                    name: "13.t",
+                                    input: "1.t",
+                                    output: "3.t",
+                                },
+                                Cell {
+                                    name: "23.t",
+                                    input: "2.t",
+                                    output: "3.t",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 2,
+                            cells: [
+                                Cell {
+                                    name: "012.t",
+                                    input: "02.t",
+                                    output: "(01.t #0 12.t)",
+                                },
+                                Cell {
+                                    name: "013.t",
+                                    input: "03.t",
+                                    output: "(01.t #0 13.t)",
+                                },
+                                Cell {
+                                    name: "023.t",
+                                    input: "03.t",
+                                    output: "(02.t #0 23.t)",
+                                },
+                                Cell {
+                                    name: "123.t",
+                                    input: "13.t",
+                                    output: "(12.t #0 23.t)",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 3,
+                            cells: [
+                                Cell {
+                                    name: "t",
+                                    input: "(023.t #1 (012.t #0 23.t))",
+                                    output: "(013.t #1 (01.t #0 123.t))",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [
+                        Cell {
+                            name: "t",
+                            input: "(023.t #1 (012.t #0 23.t))",
+                            output: "(013.t #1 (01.t #0 123.t))",
+                        },
+                    ],
+                    maps: [
+                        Map {
+                            name: "0",
+                            domain: "0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "01",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "012",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "013",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "02",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "023",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "03",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "1",
+                            domain: "0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "12",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "123",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "13",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "2",
+                            domain: "0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "23",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "3",
+                            domain: "0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "3Simplex",
+                            domain: "3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d0",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d1",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d2",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d3",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                    ],
+                },
+                Type {
+                    name: "4Simplex",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "0.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "1.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "2.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "3.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "4.t",
+                                    input: "",
+                                    output: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "01.t",
+                                    input: "0.t",
+                                    output: "1.t",
+                                },
+                                Cell {
+                                    name: "02.t",
+                                    input: "0.t",
+                                    output: "2.t",
+                                },
+                                Cell {
+                                    name: "03.t",
+                                    input: "0.t",
+                                    output: "3.t",
+                                },
+                                Cell {
+                                    name: "04.t",
+                                    input: "0.t",
+                                    output: "4.t",
+                                },
+                                Cell {
+                                    name: "12.t",
+                                    input: "1.t",
+                                    output: "2.t",
+                                },
+                                Cell {
+                                    name: "13.t",
+                                    input: "1.t",
+                                    output: "3.t",
+                                },
+                                Cell {
+                                    name: "14.t",
+                                    input: "1.t",
+                                    output: "4.t",
+                                },
+                                Cell {
+                                    name: "23.t",
+                                    input: "2.t",
+                                    output: "3.t",
+                                },
+                                Cell {
+                                    name: "24.t",
+                                    input: "2.t",
+                                    output: "4.t",
+                                },
+                                Cell {
+                                    name: "34.t",
+                                    input: "3.t",
+                                    output: "4.t",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 2,
+                            cells: [
+                                Cell {
+                                    name: "012.t",
+                                    input: "02.t",
+                                    output: "(01.t #0 12.t)",
+                                },
+                                Cell {
+                                    name: "013.t",
+                                    input: "03.t",
+                                    output: "(01.t #0 13.t)",
+                                },
+                                Cell {
+                                    name: "014.t",
+                                    input: "04.t",
+                                    output: "(01.t #0 14.t)",
+                                },
+                                Cell {
+                                    name: "023.t",
+                                    input: "03.t",
+                                    output: "(02.t #0 23.t)",
+                                },
+                                Cell {
+                                    name: "024.t",
+                                    input: "04.t",
+                                    output: "(02.t #0 24.t)",
+                                },
+                                Cell {
+                                    name: "034.t",
+                                    input: "04.t",
+                                    output: "(03.t #0 34.t)",
+                                },
+                                Cell {
+                                    name: "123.t",
+                                    input: "13.t",
+                                    output: "(12.t #0 23.t)",
+                                },
+                                Cell {
+                                    name: "124.t",
+                                    input: "14.t",
+                                    output: "(12.t #0 24.t)",
+                                },
+                                Cell {
+                                    name: "134.t",
+                                    input: "14.t",
+                                    output: "(13.t #0 34.t)",
+                                },
+                                Cell {
+                                    name: "234.t",
+                                    input: "24.t",
+                                    output: "(23.t #0 34.t)",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 3,
+                            cells: [
+                                Cell {
+                                    name: "0123.t",
+                                    input: "(023.t #1 (012.t #0 23.t))",
+                                    output: "(013.t #1 (01.t #0 123.t))",
+                                },
+                                Cell {
+                                    name: "0124.t",
+                                    input: "(024.t #1 (012.t #0 24.t))",
+                                    output: "(014.t #1 (01.t #0 124.t))",
+                                },
+                                Cell {
+                                    name: "0134.t",
+                                    input: "(034.t #1 (013.t #0 34.t))",
+                                    output: "(014.t #1 (01.t #0 134.t))",
+                                },
+                                Cell {
+                                    name: "0234.t",
+                                    input: "(034.t #1 (023.t #0 34.t))",
+                                    output: "(024.t #1 (02.t #0 234.t))",
+                                },
+                                Cell {
+                                    name: "1234.t",
+                                    input: "(134.t #1 (123.t #0 34.t))",
+                                    output: "(124.t #1 (12.t #0 234.t))",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 4,
+                            cells: [
+                                Cell {
+                                    name: "t",
+                                    input: "((0234.t #1 (012.t #0 23.t #0 34.t)) #2 (0124.t #1 (01.t #0 12.t #0 234.t)))",
+                                    output: "((034.t #1 (0123.t #0 34.t)) #2 (0134.t #1 (01.t #0 123.t #0 34.t)) #2 (014.t #1 (01.t #0 1234.t)))",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [
+                        Cell {
+                            name: "t",
+                            input: "((0234.t #1 (012.t #0 23.t #0 34.t)) #2 (0124.t #1 (01.t #0 12.t #0 234.t)))",
+                            output: "((034.t #1 (0123.t #0 34.t)) #2 (0134.t #1 (01.t #0 123.t #0 34.t)) #2 (014.t #1 (01.t #0 1234.t)))",
+                        },
+                    ],
+                    maps: [
+                        Map {
+                            name: "0",
+                            domain: "0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "01",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "012",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "0123",
+                            domain: "3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "0124",
+                            domain: "3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "013",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "0134",
+                            domain: "3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "014",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "02",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "023",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "0234",
+                            domain: "3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "024",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "03",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "034",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "04",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "1",
+                            domain: "0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "12",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "123",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "1234",
+                            domain: "3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "124",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "13",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "134",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "14",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "2",
+                            domain: "0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "23",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "234",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "24",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "3",
+                            domain: "0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "34",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "4",
+                            domain: "0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "4Simplex",
+                            domain: "4Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d0",
+                            domain: "3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d1",
+                            domain: "3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d2",
+                            domain: "3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d3",
+                            domain: "3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d4",
+                            domain: "3Simplex",
+                            holes: [],
+                        },
+                    ],
+                },
+                Type {
+                    name: "5Simplex",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "0.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "1.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "2.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "3.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "4.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "5.t",
+                                    input: "",
+                                    output: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "01.t",
+                                    input: "0.t",
+                                    output: "1.t",
+                                },
+                                Cell {
+                                    name: "02.t",
+                                    input: "0.t",
+                                    output: "2.t",
+                                },
+                                Cell {
+                                    name: "03.t",
+                                    input: "0.t",
+                                    output: "3.t",
+                                },
+                                Cell {
+                                    name: "04.t",
+                                    input: "0.t",
+                                    output: "4.t",
+                                },
+                                Cell {
+                                    name: "05.t",
+                                    input: "0.t",
+                                    output: "5.t",
+                                },
+                                Cell {
+                                    name: "12.t",
+                                    input: "1.t",
+                                    output: "2.t",
+                                },
+                                Cell {
+                                    name: "13.t",
+                                    input: "1.t",
+                                    output: "3.t",
+                                },
+                                Cell {
+                                    name: "14.t",
+                                    input: "1.t",
+                                    output: "4.t",
+                                },
+                                Cell {
+                                    name: "15.t",
+                                    input: "1.t",
+                                    output: "5.t",
+                                },
+                                Cell {
+                                    name: "23.t",
+                                    input: "2.t",
+                                    output: "3.t",
+                                },
+                                Cell {
+                                    name: "24.t",
+                                    input: "2.t",
+                                    output: "4.t",
+                                },
+                                Cell {
+                                    name: "25.t",
+                                    input: "2.t",
+                                    output: "5.t",
+                                },
+                                Cell {
+                                    name: "34.t",
+                                    input: "3.t",
+                                    output: "4.t",
+                                },
+                                Cell {
+                                    name: "35.t",
+                                    input: "3.t",
+                                    output: "5.t",
+                                },
+                                Cell {
+                                    name: "45.t",
+                                    input: "4.t",
+                                    output: "5.t",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 2,
+                            cells: [
+                                Cell {
+                                    name: "012.t",
+                                    input: "02.t",
+                                    output: "(01.t #0 12.t)",
+                                },
+                                Cell {
+                                    name: "013.t",
+                                    input: "03.t",
+                                    output: "(01.t #0 13.t)",
+                                },
+                                Cell {
+                                    name: "014.t",
+                                    input: "04.t",
+                                    output: "(01.t #0 14.t)",
+                                },
+                                Cell {
+                                    name: "015.t",
+                                    input: "05.t",
+                                    output: "(01.t #0 15.t)",
+                                },
+                                Cell {
+                                    name: "023.t",
+                                    input: "03.t",
+                                    output: "(02.t #0 23.t)",
+                                },
+                                Cell {
+                                    name: "024.t",
+                                    input: "04.t",
+                                    output: "(02.t #0 24.t)",
+                                },
+                                Cell {
+                                    name: "025.t",
+                                    input: "05.t",
+                                    output: "(02.t #0 25.t)",
+                                },
+                                Cell {
+                                    name: "034.t",
+                                    input: "04.t",
+                                    output: "(03.t #0 34.t)",
+                                },
+                                Cell {
+                                    name: "035.t",
+                                    input: "05.t",
+                                    output: "(03.t #0 35.t)",
+                                },
+                                Cell {
+                                    name: "045.t",
+                                    input: "05.t",
+                                    output: "(04.t #0 45.t)",
+                                },
+                                Cell {
+                                    name: "123.t",
+                                    input: "13.t",
+                                    output: "(12.t #0 23.t)",
+                                },
+                                Cell {
+                                    name: "124.t",
+                                    input: "14.t",
+                                    output: "(12.t #0 24.t)",
+                                },
+                                Cell {
+                                    name: "125.t",
+                                    input: "15.t",
+                                    output: "(12.t #0 25.t)",
+                                },
+                                Cell {
+                                    name: "134.t",
+                                    input: "14.t",
+                                    output: "(13.t #0 34.t)",
+                                },
+                                Cell {
+                                    name: "135.t",
+                                    input: "15.t",
+                                    output: "(13.t #0 35.t)",
+                                },
+                                Cell {
+                                    name: "145.t",
+                                    input: "15.t",
+                                    output: "(14.t #0 45.t)",
+                                },
+                                Cell {
+                                    name: "234.t",
+                                    input: "24.t",
+                                    output: "(23.t #0 34.t)",
+                                },
+                                Cell {
+                                    name: "235.t",
+                                    input: "25.t",
+                                    output: "(23.t #0 35.t)",
+                                },
+                                Cell {
+                                    name: "245.t",
+                                    input: "25.t",
+                                    output: "(24.t #0 45.t)",
+                                },
+                                Cell {
+                                    name: "345.t",
+                                    input: "35.t",
+                                    output: "(34.t #0 45.t)",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 3,
+                            cells: [
+                                Cell {
+                                    name: "0123.t",
+                                    input: "(023.t #1 (012.t #0 23.t))",
+                                    output: "(013.t #1 (01.t #0 123.t))",
+                                },
+                                Cell {
+                                    name: "0124.t",
+                                    input: "(024.t #1 (012.t #0 24.t))",
+                                    output: "(014.t #1 (01.t #0 124.t))",
+                                },
+                                Cell {
+                                    name: "0125.t",
+                                    input: "(025.t #1 (012.t #0 25.t))",
+                                    output: "(015.t #1 (01.t #0 125.t))",
+                                },
+                                Cell {
+                                    name: "0134.t",
+                                    input: "(034.t #1 (013.t #0 34.t))",
+                                    output: "(014.t #1 (01.t #0 134.t))",
+                                },
+                                Cell {
+                                    name: "0135.t",
+                                    input: "(035.t #1 (013.t #0 35.t))",
+                                    output: "(015.t #1 (01.t #0 135.t))",
+                                },
+                                Cell {
+                                    name: "0145.t",
+                                    input: "(045.t #1 (014.t #0 45.t))",
+                                    output: "(015.t #1 (01.t #0 145.t))",
+                                },
+                                Cell {
+                                    name: "0234.t",
+                                    input: "(034.t #1 (023.t #0 34.t))",
+                                    output: "(024.t #1 (02.t #0 234.t))",
+                                },
+                                Cell {
+                                    name: "0235.t",
+                                    input: "(035.t #1 (023.t #0 35.t))",
+                                    output: "(025.t #1 (02.t #0 235.t))",
+                                },
+                                Cell {
+                                    name: "0245.t",
+                                    input: "(045.t #1 (024.t #0 45.t))",
+                                    output: "(025.t #1 (02.t #0 245.t))",
+                                },
+                                Cell {
+                                    name: "0345.t",
+                                    input: "(045.t #1 (034.t #0 45.t))",
+                                    output: "(035.t #1 (03.t #0 345.t))",
+                                },
+                                Cell {
+                                    name: "1234.t",
+                                    input: "(134.t #1 (123.t #0 34.t))",
+                                    output: "(124.t #1 (12.t #0 234.t))",
+                                },
+                                Cell {
+                                    name: "1235.t",
+                                    input: "(135.t #1 (123.t #0 35.t))",
+                                    output: "(125.t #1 (12.t #0 235.t))",
+                                },
+                                Cell {
+                                    name: "1245.t",
+                                    input: "(145.t #1 (124.t #0 45.t))",
+                                    output: "(125.t #1 (12.t #0 245.t))",
+                                },
+                                Cell {
+                                    name: "1345.t",
+                                    input: "(145.t #1 (134.t #0 45.t))",
+                                    output: "(135.t #1 (13.t #0 345.t))",
+                                },
+                                Cell {
+                                    name: "2345.t",
+                                    input: "(245.t #1 (234.t #0 45.t))",
+                                    output: "(235.t #1 (23.t #0 345.t))",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 4,
+                            cells: [
+                                Cell {
+                                    name: "01234.t",
+                                    input: "((0234.t #1 (012.t #0 23.t #0 34.t)) #2 (0124.t #1 (01.t #0 12.t #0 234.t)))",
+                                    output: "((034.t #1 (0123.t #0 34.t)) #2 (0134.t #1 (01.t #0 123.t #0 34.t)) #2 (014.t #1 (01.t #0 1234.t)))",
+                                },
+                                Cell {
+                                    name: "01235.t",
+                                    input: "((0235.t #1 (012.t #0 23.t #0 35.t)) #2 (0125.t #1 (01.t #0 12.t #0 235.t)))",
+                                    output: "((035.t #1 (0123.t #0 35.t)) #2 (0135.t #1 (01.t #0 123.t #0 35.t)) #2 (015.t #1 (01.t #0 1235.t)))",
+                                },
+                                Cell {
+                                    name: "01245.t",
+                                    input: "((0245.t #1 (012.t #0 24.t #0 45.t)) #2 (0125.t #1 (01.t #0 12.t #0 245.t)))",
+                                    output: "((045.t #1 (0124.t #0 45.t)) #2 (0145.t #1 (01.t #0 124.t #0 45.t)) #2 (015.t #1 (01.t #0 1245.t)))",
+                                },
+                                Cell {
+                                    name: "01345.t",
+                                    input: "((0345.t #1 (013.t #0 34.t #0 45.t)) #2 (0135.t #1 (01.t #0 13.t #0 345.t)))",
+                                    output: "((045.t #1 (0134.t #0 45.t)) #2 (0145.t #1 (01.t #0 134.t #0 45.t)) #2 (015.t #1 (01.t #0 1345.t)))",
+                                },
+                                Cell {
+                                    name: "02345.t",
+                                    input: "((0345.t #1 (023.t #0 34.t #0 45.t)) #2 (0235.t #1 (02.t #0 23.t #0 345.t)))",
+                                    output: "((045.t #1 (0234.t #0 45.t)) #2 (0245.t #1 (02.t #0 234.t #0 45.t)) #2 (025.t #1 (02.t #0 2345.t)))",
+                                },
+                                Cell {
+                                    name: "12345.t",
+                                    input: "((1345.t #1 (123.t #0 34.t #0 45.t)) #2 (1235.t #1 (12.t #0 23.t #0 345.t)))",
+                                    output: "((145.t #1 (1234.t #0 45.t)) #2 (1245.t #1 (12.t #0 234.t #0 45.t)) #2 (125.t #1 (12.t #0 2345.t)))",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 5,
+                            cells: [
+                                Cell {
+                                    name: "t",
+                                    input: "(((02345.t #1 (012.t #0 23.t #0 34.t #0 45.t)) #2 (0125.t #1 (01.t #0 12.t #0 235.t) #1 (01.t #0 12.t #0 23.t #0 345.t))) #3 ((045.t #1 (0234.t #0 45.t) #1 (012.t #0 23.t #0 34.t #0 45.t)) #2 (01245.t #1 (01.t #0 12.t #0 234.t #0 45.t)) #2 (015.t #1 (01.t #0 125.t) #1 (01.t #0 12.t #0 2345.t))) #3 ((045.t #1 (01234.t #0 45.t)) #2 (0145.t #1 (01.t #0 124.t #0 45.t) #1 (01.t #0 12.t #0 234.t #0 45.t)) #2 (015.t #1 (01.t #0 1245.t) #1 (01.t #0 12.t #0 234.t #0 45.t)) #2 (015.t #1 (01.t #0 125.t) #1 (01.t #0 12.t #0 2345.t))))",
+                                    output: "(((0345.t #1 (023.t #0 34.t #0 45.t) #1 (012.t #0 23.t #0 34.t #0 45.t)) #2 (01235.t #1 (01.t #0 12.t #0 23.t #0 345.t))) #3 ((045.t #1 (034.t #0 45.t) #1 (0123.t #0 34.t #0 45.t)) #2 (01345.t #1 (01.t #0 123.t #0 34.t #0 45.t)) #2 (015.t #1 (01.t #0 1235.t) #1 (01.t #0 12.t #0 23.t #0 345.t))) #3 ((045.t #1 (034.t #0 45.t) #1 (0123.t #0 34.t #0 45.t)) #2 (045.t #1 (0134.t #0 45.t) #1 (01.t #0 123.t #0 34.t #0 45.t)) #2 (0145.t #1 (01.t #0 134.t #0 45.t) #1 (01.t #0 123.t #0 34.t #0 45.t)) #2 (015.t #1 (01.t #0 12345.t))))",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [
+                        Cell {
+                            name: "t",
+                            input: "(((02345.t #1 (012.t #0 23.t #0 34.t #0 45.t)) #2 (0125.t #1 (01.t #0 12.t #0 235.t) #1 (01.t #0 12.t #0 23.t #0 345.t))) #3 ((045.t #1 (0234.t #0 45.t) #1 (012.t #0 23.t #0 34.t #0 45.t)) #2 (01245.t #1 (01.t #0 12.t #0 234.t #0 45.t)) #2 (015.t #1 (01.t #0 125.t) #1 (01.t #0 12.t #0 2345.t))) #3 ((045.t #1 (01234.t #0 45.t)) #2 (0145.t #1 (01.t #0 124.t #0 45.t) #1 (01.t #0 12.t #0 234.t #0 45.t)) #2 (015.t #1 (01.t #0 1245.t) #1 (01.t #0 12.t #0 234.t #0 45.t)) #2 (015.t #1 (01.t #0 125.t) #1 (01.t #0 12.t #0 2345.t))))",
+                            output: "(((0345.t #1 (023.t #0 34.t #0 45.t) #1 (012.t #0 23.t #0 34.t #0 45.t)) #2 (01235.t #1 (01.t #0 12.t #0 23.t #0 345.t))) #3 ((045.t #1 (034.t #0 45.t) #1 (0123.t #0 34.t #0 45.t)) #2 (01345.t #1 (01.t #0 123.t #0 34.t #0 45.t)) #2 (015.t #1 (01.t #0 1235.t) #1 (01.t #0 12.t #0 23.t #0 345.t))) #3 ((045.t #1 (034.t #0 45.t) #1 (0123.t #0 34.t #0 45.t)) #2 (045.t #1 (0134.t #0 45.t) #1 (01.t #0 123.t #0 34.t #0 45.t)) #2 (0145.t #1 (01.t #0 134.t #0 45.t) #1 (01.t #0 123.t #0 34.t #0 45.t)) #2 (015.t #1 (01.t #0 12345.t))))",
+                        },
+                    ],
+                    maps: [
+                        Map {
+                            name: "0",
+                            domain: "0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "01",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "012",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "0123",
+                            domain: "3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "01234",
+                            domain: "4Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "01235",
+                            domain: "4Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "0124",
+                            domain: "3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "01245",
+                            domain: "4Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "0125",
+                            domain: "3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "013",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "0134",
+                            domain: "3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "01345",
+                            domain: "4Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "0135",
+                            domain: "3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "014",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "0145",
+                            domain: "3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "015",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "02",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "023",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "0234",
+                            domain: "3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "02345",
+                            domain: "4Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "0235",
+                            domain: "3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "024",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "0245",
+                            domain: "3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "025",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "03",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "034",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "0345",
+                            domain: "3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "035",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "04",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "045",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "05",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "1",
+                            domain: "0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "12",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "123",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "1234",
+                            domain: "3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "12345",
+                            domain: "4Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "1235",
+                            domain: "3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "124",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "1245",
+                            domain: "3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "125",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "13",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "134",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "1345",
+                            domain: "3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "135",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "14",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "145",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "15",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "2",
+                            domain: "0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "23",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "234",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "2345",
+                            domain: "3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "235",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "24",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "245",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "25",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "3",
+                            domain: "0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "34",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "345",
+                            domain: "2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "35",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "4",
+                            domain: "0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "45",
+                            domain: "1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "5",
+                            domain: "0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "5Simplex",
+                            domain: "5Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d0",
+                            domain: "4Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d1",
+                            domain: "4Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d2",
+                            domain: "4Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d3",
+                            domain: "4Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d4",
+                            domain: "4Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d5",
+                            domain: "4Simplex",
+                            holes: [],
+                        },
+                    ],
+                },
+            ],
+        },
+        Module {
+            path: "Delta_complexes.ali",
+            types: [
+                Type {
+                    name: "",
+                    dims: [],
+                    diagrams: [],
+                    maps: [],
+                },
+                Type {
+                    name: "Delta.0Simplex",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "t",
+                                    input: "",
+                                    output: "",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [
+                        Cell {
+                            name: "t",
+                            input: "",
+                            output: "",
+                        },
+                    ],
+                    maps: [
+                        Map {
+                            name: "0Simplex",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                    ],
+                },
+                Type {
+                    name: "Delta.1Simplex",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "0.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "1.t",
+                                    input: "",
+                                    output: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "t",
+                                    input: "0.t",
+                                    output: "1.t",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [
+                        Cell {
+                            name: "t",
+                            input: "0.t",
+                            output: "1.t",
+                        },
+                    ],
+                    maps: [
+                        Map {
+                            name: "0",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "1",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "1Simplex",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d0",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d1",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                    ],
+                },
+                Type {
+                    name: "Delta.2Simplex",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "0.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "1.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "2.t",
+                                    input: "",
+                                    output: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "01.t",
+                                    input: "0.t",
+                                    output: "1.t",
+                                },
+                                Cell {
+                                    name: "02.t",
+                                    input: "0.t",
+                                    output: "2.t",
+                                },
+                                Cell {
+                                    name: "12.t",
+                                    input: "1.t",
+                                    output: "2.t",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 2,
+                            cells: [
+                                Cell {
+                                    name: "t",
+                                    input: "02.t",
+                                    output: "(01.t #0 12.t)",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [
+                        Cell {
+                            name: "t",
+                            input: "02.t",
+                            output: "(01.t #0 12.t)",
+                        },
+                    ],
+                    maps: [
+                        Map {
+                            name: "0",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "01",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "02",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "1",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "12",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "2",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "2Simplex",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d0",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d1",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d2",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                    ],
+                },
+                Type {
+                    name: "Delta.3Simplex",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "0.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "1.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "2.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "3.t",
+                                    input: "",
+                                    output: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "01.t",
+                                    input: "0.t",
+                                    output: "1.t",
+                                },
+                                Cell {
+                                    name: "02.t",
+                                    input: "0.t",
+                                    output: "2.t",
+                                },
+                                Cell {
+                                    name: "03.t",
+                                    input: "0.t",
+                                    output: "3.t",
+                                },
+                                Cell {
+                                    name: "12.t",
+                                    input: "1.t",
+                                    output: "2.t",
+                                },
+                                Cell {
+                                    name: "13.t",
+                                    input: "1.t",
+                                    output: "3.t",
+                                },
+                                Cell {
+                                    name: "23.t",
+                                    input: "2.t",
+                                    output: "3.t",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 2,
+                            cells: [
+                                Cell {
+                                    name: "012.t",
+                                    input: "02.t",
+                                    output: "(01.t #0 12.t)",
+                                },
+                                Cell {
+                                    name: "013.t",
+                                    input: "03.t",
+                                    output: "(01.t #0 13.t)",
+                                },
+                                Cell {
+                                    name: "023.t",
+                                    input: "03.t",
+                                    output: "(02.t #0 23.t)",
+                                },
+                                Cell {
+                                    name: "123.t",
+                                    input: "13.t",
+                                    output: "(12.t #0 23.t)",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 3,
+                            cells: [
+                                Cell {
+                                    name: "t",
+                                    input: "(023.t #1 (012.t #0 23.t))",
+                                    output: "(013.t #1 (01.t #0 123.t))",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [
+                        Cell {
+                            name: "t",
+                            input: "(023.t #1 (012.t #0 23.t))",
+                            output: "(013.t #1 (01.t #0 123.t))",
+                        },
+                    ],
+                    maps: [
+                        Map {
+                            name: "0",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "01",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "012",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "013",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "02",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "023",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "03",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "1",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "12",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "123",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "13",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "2",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "23",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "3",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "3Simplex",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d0",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d1",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d2",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d3",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                    ],
+                },
+                Type {
+                    name: "Delta.4Simplex",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "0.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "1.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "2.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "3.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "4.t",
+                                    input: "",
+                                    output: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "01.t",
+                                    input: "0.t",
+                                    output: "1.t",
+                                },
+                                Cell {
+                                    name: "02.t",
+                                    input: "0.t",
+                                    output: "2.t",
+                                },
+                                Cell {
+                                    name: "03.t",
+                                    input: "0.t",
+                                    output: "3.t",
+                                },
+                                Cell {
+                                    name: "04.t",
+                                    input: "0.t",
+                                    output: "4.t",
+                                },
+                                Cell {
+                                    name: "12.t",
+                                    input: "1.t",
+                                    output: "2.t",
+                                },
+                                Cell {
+                                    name: "13.t",
+                                    input: "1.t",
+                                    output: "3.t",
+                                },
+                                Cell {
+                                    name: "14.t",
+                                    input: "1.t",
+                                    output: "4.t",
+                                },
+                                Cell {
+                                    name: "23.t",
+                                    input: "2.t",
+                                    output: "3.t",
+                                },
+                                Cell {
+                                    name: "24.t",
+                                    input: "2.t",
+                                    output: "4.t",
+                                },
+                                Cell {
+                                    name: "34.t",
+                                    input: "3.t",
+                                    output: "4.t",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 2,
+                            cells: [
+                                Cell {
+                                    name: "012.t",
+                                    input: "02.t",
+                                    output: "(01.t #0 12.t)",
+                                },
+                                Cell {
+                                    name: "013.t",
+                                    input: "03.t",
+                                    output: "(01.t #0 13.t)",
+                                },
+                                Cell {
+                                    name: "014.t",
+                                    input: "04.t",
+                                    output: "(01.t #0 14.t)",
+                                },
+                                Cell {
+                                    name: "023.t",
+                                    input: "03.t",
+                                    output: "(02.t #0 23.t)",
+                                },
+                                Cell {
+                                    name: "024.t",
+                                    input: "04.t",
+                                    output: "(02.t #0 24.t)",
+                                },
+                                Cell {
+                                    name: "034.t",
+                                    input: "04.t",
+                                    output: "(03.t #0 34.t)",
+                                },
+                                Cell {
+                                    name: "123.t",
+                                    input: "13.t",
+                                    output: "(12.t #0 23.t)",
+                                },
+                                Cell {
+                                    name: "124.t",
+                                    input: "14.t",
+                                    output: "(12.t #0 24.t)",
+                                },
+                                Cell {
+                                    name: "134.t",
+                                    input: "14.t",
+                                    output: "(13.t #0 34.t)",
+                                },
+                                Cell {
+                                    name: "234.t",
+                                    input: "24.t",
+                                    output: "(23.t #0 34.t)",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 3,
+                            cells: [
+                                Cell {
+                                    name: "0123.t",
+                                    input: "(023.t #1 (012.t #0 23.t))",
+                                    output: "(013.t #1 (01.t #0 123.t))",
+                                },
+                                Cell {
+                                    name: "0124.t",
+                                    input: "(024.t #1 (012.t #0 24.t))",
+                                    output: "(014.t #1 (01.t #0 124.t))",
+                                },
+                                Cell {
+                                    name: "0134.t",
+                                    input: "(034.t #1 (013.t #0 34.t))",
+                                    output: "(014.t #1 (01.t #0 134.t))",
+                                },
+                                Cell {
+                                    name: "0234.t",
+                                    input: "(034.t #1 (023.t #0 34.t))",
+                                    output: "(024.t #1 (02.t #0 234.t))",
+                                },
+                                Cell {
+                                    name: "1234.t",
+                                    input: "(134.t #1 (123.t #0 34.t))",
+                                    output: "(124.t #1 (12.t #0 234.t))",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 4,
+                            cells: [
+                                Cell {
+                                    name: "t",
+                                    input: "((0234.t #1 (012.t #0 23.t #0 34.t)) #2 (0124.t #1 (01.t #0 12.t #0 234.t)))",
+                                    output: "((034.t #1 (0123.t #0 34.t)) #2 (0134.t #1 (01.t #0 123.t #0 34.t)) #2 (014.t #1 (01.t #0 1234.t)))",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [
+                        Cell {
+                            name: "t",
+                            input: "((0234.t #1 (012.t #0 23.t #0 34.t)) #2 (0124.t #1 (01.t #0 12.t #0 234.t)))",
+                            output: "((034.t #1 (0123.t #0 34.t)) #2 (0134.t #1 (01.t #0 123.t #0 34.t)) #2 (014.t #1 (01.t #0 1234.t)))",
+                        },
+                    ],
+                    maps: [
+                        Map {
+                            name: "0",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "01",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "012",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "0123",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "0124",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "013",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "0134",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "014",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "02",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "023",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "0234",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "024",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "03",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "034",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "04",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "1",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "12",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "123",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "1234",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "124",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "13",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "134",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "14",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "2",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "23",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "234",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "24",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "3",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "34",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "4",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "4Simplex",
+                            domain: "Delta.4Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d0",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d1",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d2",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d3",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d4",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                    ],
+                },
+                Type {
+                    name: "Delta.5Simplex",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "0.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "1.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "2.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "3.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "4.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "5.t",
+                                    input: "",
+                                    output: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "01.t",
+                                    input: "0.t",
+                                    output: "1.t",
+                                },
+                                Cell {
+                                    name: "02.t",
+                                    input: "0.t",
+                                    output: "2.t",
+                                },
+                                Cell {
+                                    name: "03.t",
+                                    input: "0.t",
+                                    output: "3.t",
+                                },
+                                Cell {
+                                    name: "04.t",
+                                    input: "0.t",
+                                    output: "4.t",
+                                },
+                                Cell {
+                                    name: "05.t",
+                                    input: "0.t",
+                                    output: "5.t",
+                                },
+                                Cell {
+                                    name: "12.t",
+                                    input: "1.t",
+                                    output: "2.t",
+                                },
+                                Cell {
+                                    name: "13.t",
+                                    input: "1.t",
+                                    output: "3.t",
+                                },
+                                Cell {
+                                    name: "14.t",
+                                    input: "1.t",
+                                    output: "4.t",
+                                },
+                                Cell {
+                                    name: "15.t",
+                                    input: "1.t",
+                                    output: "5.t",
+                                },
+                                Cell {
+                                    name: "23.t",
+                                    input: "2.t",
+                                    output: "3.t",
+                                },
+                                Cell {
+                                    name: "24.t",
+                                    input: "2.t",
+                                    output: "4.t",
+                                },
+                                Cell {
+                                    name: "25.t",
+                                    input: "2.t",
+                                    output: "5.t",
+                                },
+                                Cell {
+                                    name: "34.t",
+                                    input: "3.t",
+                                    output: "4.t",
+                                },
+                                Cell {
+                                    name: "35.t",
+                                    input: "3.t",
+                                    output: "5.t",
+                                },
+                                Cell {
+                                    name: "45.t",
+                                    input: "4.t",
+                                    output: "5.t",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 2,
+                            cells: [
+                                Cell {
+                                    name: "012.t",
+                                    input: "02.t",
+                                    output: "(01.t #0 12.t)",
+                                },
+                                Cell {
+                                    name: "013.t",
+                                    input: "03.t",
+                                    output: "(01.t #0 13.t)",
+                                },
+                                Cell {
+                                    name: "014.t",
+                                    input: "04.t",
+                                    output: "(01.t #0 14.t)",
+                                },
+                                Cell {
+                                    name: "015.t",
+                                    input: "05.t",
+                                    output: "(01.t #0 15.t)",
+                                },
+                                Cell {
+                                    name: "023.t",
+                                    input: "03.t",
+                                    output: "(02.t #0 23.t)",
+                                },
+                                Cell {
+                                    name: "024.t",
+                                    input: "04.t",
+                                    output: "(02.t #0 24.t)",
+                                },
+                                Cell {
+                                    name: "025.t",
+                                    input: "05.t",
+                                    output: "(02.t #0 25.t)",
+                                },
+                                Cell {
+                                    name: "034.t",
+                                    input: "04.t",
+                                    output: "(03.t #0 34.t)",
+                                },
+                                Cell {
+                                    name: "035.t",
+                                    input: "05.t",
+                                    output: "(03.t #0 35.t)",
+                                },
+                                Cell {
+                                    name: "045.t",
+                                    input: "05.t",
+                                    output: "(04.t #0 45.t)",
+                                },
+                                Cell {
+                                    name: "123.t",
+                                    input: "13.t",
+                                    output: "(12.t #0 23.t)",
+                                },
+                                Cell {
+                                    name: "124.t",
+                                    input: "14.t",
+                                    output: "(12.t #0 24.t)",
+                                },
+                                Cell {
+                                    name: "125.t",
+                                    input: "15.t",
+                                    output: "(12.t #0 25.t)",
+                                },
+                                Cell {
+                                    name: "134.t",
+                                    input: "14.t",
+                                    output: "(13.t #0 34.t)",
+                                },
+                                Cell {
+                                    name: "135.t",
+                                    input: "15.t",
+                                    output: "(13.t #0 35.t)",
+                                },
+                                Cell {
+                                    name: "145.t",
+                                    input: "15.t",
+                                    output: "(14.t #0 45.t)",
+                                },
+                                Cell {
+                                    name: "234.t",
+                                    input: "24.t",
+                                    output: "(23.t #0 34.t)",
+                                },
+                                Cell {
+                                    name: "235.t",
+                                    input: "25.t",
+                                    output: "(23.t #0 35.t)",
+                                },
+                                Cell {
+                                    name: "245.t",
+                                    input: "25.t",
+                                    output: "(24.t #0 45.t)",
+                                },
+                                Cell {
+                                    name: "345.t",
+                                    input: "35.t",
+                                    output: "(34.t #0 45.t)",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 3,
+                            cells: [
+                                Cell {
+                                    name: "0123.t",
+                                    input: "(023.t #1 (012.t #0 23.t))",
+                                    output: "(013.t #1 (01.t #0 123.t))",
+                                },
+                                Cell {
+                                    name: "0124.t",
+                                    input: "(024.t #1 (012.t #0 24.t))",
+                                    output: "(014.t #1 (01.t #0 124.t))",
+                                },
+                                Cell {
+                                    name: "0125.t",
+                                    input: "(025.t #1 (012.t #0 25.t))",
+                                    output: "(015.t #1 (01.t #0 125.t))",
+                                },
+                                Cell {
+                                    name: "0134.t",
+                                    input: "(034.t #1 (013.t #0 34.t))",
+                                    output: "(014.t #1 (01.t #0 134.t))",
+                                },
+                                Cell {
+                                    name: "0135.t",
+                                    input: "(035.t #1 (013.t #0 35.t))",
+                                    output: "(015.t #1 (01.t #0 135.t))",
+                                },
+                                Cell {
+                                    name: "0145.t",
+                                    input: "(045.t #1 (014.t #0 45.t))",
+                                    output: "(015.t #1 (01.t #0 145.t))",
+                                },
+                                Cell {
+                                    name: "0234.t",
+                                    input: "(034.t #1 (023.t #0 34.t))",
+                                    output: "(024.t #1 (02.t #0 234.t))",
+                                },
+                                Cell {
+                                    name: "0235.t",
+                                    input: "(035.t #1 (023.t #0 35.t))",
+                                    output: "(025.t #1 (02.t #0 235.t))",
+                                },
+                                Cell {
+                                    name: "0245.t",
+                                    input: "(045.t #1 (024.t #0 45.t))",
+                                    output: "(025.t #1 (02.t #0 245.t))",
+                                },
+                                Cell {
+                                    name: "0345.t",
+                                    input: "(045.t #1 (034.t #0 45.t))",
+                                    output: "(035.t #1 (03.t #0 345.t))",
+                                },
+                                Cell {
+                                    name: "1234.t",
+                                    input: "(134.t #1 (123.t #0 34.t))",
+                                    output: "(124.t #1 (12.t #0 234.t))",
+                                },
+                                Cell {
+                                    name: "1235.t",
+                                    input: "(135.t #1 (123.t #0 35.t))",
+                                    output: "(125.t #1 (12.t #0 235.t))",
+                                },
+                                Cell {
+                                    name: "1245.t",
+                                    input: "(145.t #1 (124.t #0 45.t))",
+                                    output: "(125.t #1 (12.t #0 245.t))",
+                                },
+                                Cell {
+                                    name: "1345.t",
+                                    input: "(145.t #1 (134.t #0 45.t))",
+                                    output: "(135.t #1 (13.t #0 345.t))",
+                                },
+                                Cell {
+                                    name: "2345.t",
+                                    input: "(245.t #1 (234.t #0 45.t))",
+                                    output: "(235.t #1 (23.t #0 345.t))",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 4,
+                            cells: [
+                                Cell {
+                                    name: "01234.t",
+                                    input: "((0234.t #1 (012.t #0 23.t #0 34.t)) #2 (0124.t #1 (01.t #0 12.t #0 234.t)))",
+                                    output: "((034.t #1 (0123.t #0 34.t)) #2 (0134.t #1 (01.t #0 123.t #0 34.t)) #2 (014.t #1 (01.t #0 1234.t)))",
+                                },
+                                Cell {
+                                    name: "01235.t",
+                                    input: "((0235.t #1 (012.t #0 23.t #0 35.t)) #2 (0125.t #1 (01.t #0 12.t #0 235.t)))",
+                                    output: "((035.t #1 (0123.t #0 35.t)) #2 (0135.t #1 (01.t #0 123.t #0 35.t)) #2 (015.t #1 (01.t #0 1235.t)))",
+                                },
+                                Cell {
+                                    name: "01245.t",
+                                    input: "((0245.t #1 (012.t #0 24.t #0 45.t)) #2 (0125.t #1 (01.t #0 12.t #0 245.t)))",
+                                    output: "((045.t #1 (0124.t #0 45.t)) #2 (0145.t #1 (01.t #0 124.t #0 45.t)) #2 (015.t #1 (01.t #0 1245.t)))",
+                                },
+                                Cell {
+                                    name: "01345.t",
+                                    input: "((0345.t #1 (013.t #0 34.t #0 45.t)) #2 (0135.t #1 (01.t #0 13.t #0 345.t)))",
+                                    output: "((045.t #1 (0134.t #0 45.t)) #2 (0145.t #1 (01.t #0 134.t #0 45.t)) #2 (015.t #1 (01.t #0 1345.t)))",
+                                },
+                                Cell {
+                                    name: "02345.t",
+                                    input: "((0345.t #1 (023.t #0 34.t #0 45.t)) #2 (0235.t #1 (02.t #0 23.t #0 345.t)))",
+                                    output: "((045.t #1 (0234.t #0 45.t)) #2 (0245.t #1 (02.t #0 234.t #0 45.t)) #2 (025.t #1 (02.t #0 2345.t)))",
+                                },
+                                Cell {
+                                    name: "12345.t",
+                                    input: "((1345.t #1 (123.t #0 34.t #0 45.t)) #2 (1235.t #1 (12.t #0 23.t #0 345.t)))",
+                                    output: "((145.t #1 (1234.t #0 45.t)) #2 (1245.t #1 (12.t #0 234.t #0 45.t)) #2 (125.t #1 (12.t #0 2345.t)))",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 5,
+                            cells: [
+                                Cell {
+                                    name: "t",
+                                    input: "(((02345.t #1 (012.t #0 23.t #0 34.t #0 45.t)) #2 (0125.t #1 (01.t #0 12.t #0 235.t) #1 (01.t #0 12.t #0 23.t #0 345.t))) #3 ((045.t #1 (0234.t #0 45.t) #1 (012.t #0 23.t #0 34.t #0 45.t)) #2 (01245.t #1 (01.t #0 12.t #0 234.t #0 45.t)) #2 (015.t #1 (01.t #0 125.t) #1 (01.t #0 12.t #0 2345.t))) #3 ((045.t #1 (01234.t #0 45.t)) #2 (0145.t #1 (01.t #0 124.t #0 45.t) #1 (01.t #0 12.t #0 234.t #0 45.t)) #2 (015.t #1 (01.t #0 1245.t) #1 (01.t #0 12.t #0 234.t #0 45.t)) #2 (015.t #1 (01.t #0 125.t) #1 (01.t #0 12.t #0 2345.t))))",
+                                    output: "(((0345.t #1 (023.t #0 34.t #0 45.t) #1 (012.t #0 23.t #0 34.t #0 45.t)) #2 (01235.t #1 (01.t #0 12.t #0 23.t #0 345.t))) #3 ((045.t #1 (034.t #0 45.t) #1 (0123.t #0 34.t #0 45.t)) #2 (01345.t #1 (01.t #0 123.t #0 34.t #0 45.t)) #2 (015.t #1 (01.t #0 1235.t) #1 (01.t #0 12.t #0 23.t #0 345.t))) #3 ((045.t #1 (034.t #0 45.t) #1 (0123.t #0 34.t #0 45.t)) #2 (045.t #1 (0134.t #0 45.t) #1 (01.t #0 123.t #0 34.t #0 45.t)) #2 (0145.t #1 (01.t #0 134.t #0 45.t) #1 (01.t #0 123.t #0 34.t #0 45.t)) #2 (015.t #1 (01.t #0 12345.t))))",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [
+                        Cell {
+                            name: "t",
+                            input: "(((02345.t #1 (012.t #0 23.t #0 34.t #0 45.t)) #2 (0125.t #1 (01.t #0 12.t #0 235.t) #1 (01.t #0 12.t #0 23.t #0 345.t))) #3 ((045.t #1 (0234.t #0 45.t) #1 (012.t #0 23.t #0 34.t #0 45.t)) #2 (01245.t #1 (01.t #0 12.t #0 234.t #0 45.t)) #2 (015.t #1 (01.t #0 125.t) #1 (01.t #0 12.t #0 2345.t))) #3 ((045.t #1 (01234.t #0 45.t)) #2 (0145.t #1 (01.t #0 124.t #0 45.t) #1 (01.t #0 12.t #0 234.t #0 45.t)) #2 (015.t #1 (01.t #0 1245.t) #1 (01.t #0 12.t #0 234.t #0 45.t)) #2 (015.t #1 (01.t #0 125.t) #1 (01.t #0 12.t #0 2345.t))))",
+                            output: "(((0345.t #1 (023.t #0 34.t #0 45.t) #1 (012.t #0 23.t #0 34.t #0 45.t)) #2 (01235.t #1 (01.t #0 12.t #0 23.t #0 345.t))) #3 ((045.t #1 (034.t #0 45.t) #1 (0123.t #0 34.t #0 45.t)) #2 (01345.t #1 (01.t #0 123.t #0 34.t #0 45.t)) #2 (015.t #1 (01.t #0 1235.t) #1 (01.t #0 12.t #0 23.t #0 345.t))) #3 ((045.t #1 (034.t #0 45.t) #1 (0123.t #0 34.t #0 45.t)) #2 (045.t #1 (0134.t #0 45.t) #1 (01.t #0 123.t #0 34.t #0 45.t)) #2 (0145.t #1 (01.t #0 134.t #0 45.t) #1 (01.t #0 123.t #0 34.t #0 45.t)) #2 (015.t #1 (01.t #0 12345.t))))",
+                        },
+                    ],
+                    maps: [
+                        Map {
+                            name: "0",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "01",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "012",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "0123",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "01234",
+                            domain: "Delta.4Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "01235",
+                            domain: "Delta.4Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "0124",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "01245",
+                            domain: "Delta.4Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "0125",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "013",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "0134",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "01345",
+                            domain: "Delta.4Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "0135",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "014",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "0145",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "015",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "02",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "023",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "0234",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "02345",
+                            domain: "Delta.4Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "0235",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "024",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "0245",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "025",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "03",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "034",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "0345",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "035",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "04",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "045",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "05",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "1",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "12",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "123",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "1234",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "12345",
+                            domain: "Delta.4Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "1235",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "124",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "1245",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "125",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "13",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "134",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "1345",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "135",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "14",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "145",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "15",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "2",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "23",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "234",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "2345",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "235",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "24",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "245",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "25",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "3",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "34",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "345",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "35",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "4",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "45",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "5",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "5Simplex",
+                            domain: "Delta.5Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d0",
+                            domain: "Delta.4Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d1",
+                            domain: "Delta.4Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d2",
+                            domain: "Delta.4Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d3",
+                            domain: "Delta.4Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d4",
+                            domain: "Delta.4Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "d5",
+                            domain: "Delta.4Simplex",
+                            holes: [],
+                        },
+                    ],
+                },
+                Type {
+                    name: "S1",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "v.t",
+                                    input: "",
+                                    output: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "loop.t",
+                                    input: "v.t",
+                                    output: "v.t",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [],
+                    maps: [
+                        Map {
+                            name: "S1",
+                            domain: "S1",
+                            holes: [],
+                        },
+                        Map {
+                            name: "loop",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "v",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                    ],
+                },
+                Type {
+                    name: "Bouquet3",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "v.t",
+                                    input: "",
+                                    output: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "a.loop.t",
+                                    input: "v.t",
+                                    output: "v.t",
+                                },
+                                Cell {
+                                    name: "b.loop.t",
+                                    input: "v.t",
+                                    output: "v.t",
+                                },
+                                Cell {
+                                    name: "c.loop.t",
+                                    input: "v.t",
+                                    output: "v.t",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [],
+                    maps: [
+                        Map {
+                            name: "Bouquet3",
+                            domain: "Bouquet3",
+                            holes: [],
+                        },
+                        Map {
+                            name: "a",
+                            domain: "S1",
+                            holes: [],
+                        },
+                        Map {
+                            name: "b",
+                            domain: "S1",
+                            holes: [],
+                        },
+                        Map {
+                            name: "c",
+                            domain: "S1",
+                            holes: [],
+                        },
+                        Map {
+                            name: "v",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                    ],
+                },
+                Type {
+                    name: "Dunce",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "v.t",
+                                    input: "",
+                                    output: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "loop.t",
+                                    input: "v.t",
+                                    output: "v.t",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 2,
+                            cells: [
+                                Cell {
+                                    name: "hat.t",
+                                    input: "loop.t",
+                                    output: "(loop.t #0 loop.t)",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [],
+                    maps: [
+                        Map {
+                            name: "Dunce",
+                            domain: "Dunce",
+                            holes: [],
+                        },
+                        Map {
+                            name: "S1",
+                            domain: "S1",
+                            holes: [],
+                        },
+                        Map {
+                            name: "hat",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "loop",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "v",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                    ],
+                },
+                Type {
+                    name: "T",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "v.t",
+                                    input: "",
+                                    output: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "a.t",
+                                    input: "v.t",
+                                    output: "v.t",
+                                },
+                                Cell {
+                                    name: "b.t",
+                                    input: "v.t",
+                                    output: "v.t",
+                                },
+                                Cell {
+                                    name: "c.t",
+                                    input: "v.t",
+                                    output: "v.t",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 2,
+                            cells: [
+                                Cell {
+                                    name: "L.t",
+                                    input: "c.t",
+                                    output: "(b.t #0 a.t)",
+                                },
+                                Cell {
+                                    name: "U.t",
+                                    input: "c.t",
+                                    output: "(a.t #0 b.t)",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [],
+                    maps: [
+                        Map {
+                            name: "L",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "T",
+                            domain: "T",
+                            holes: [],
+                        },
+                        Map {
+                            name: "U",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "a",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "b",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "c",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "v",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                    ],
+                },
+                Type {
+                    name: "RP2",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "v.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "w.t",
+                                    input: "",
+                                    output: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "a.t",
+                                    input: "v.t",
+                                    output: "w.t",
+                                },
+                                Cell {
+                                    name: "b.t",
+                                    input: "v.t",
+                                    output: "w.t",
+                                },
+                                Cell {
+                                    name: "c.t",
+                                    input: "v.t",
+                                    output: "v.t",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 2,
+                            cells: [
+                                Cell {
+                                    name: "L.t",
+                                    input: "b.t",
+                                    output: "(c.t #0 a.t)",
+                                },
+                                Cell {
+                                    name: "U.t",
+                                    input: "a.t",
+                                    output: "(c.t #0 b.t)",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [],
+                    maps: [
+                        Map {
+                            name: "L",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "RP2",
+                            domain: "RP2",
+                            holes: [],
+                        },
+                        Map {
+                            name: "U",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "a",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "b",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "c",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "v",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "w",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                    ],
+                },
+                Type {
+                    name: "K",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "v.t",
+                                    input: "",
+                                    output: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "a.t",
+                                    input: "v.t",
+                                    output: "v.t",
+                                },
+                                Cell {
+                                    name: "b.t",
+                                    input: "v.t",
+                                    output: "v.t",
+                                },
+                                Cell {
+                                    name: "c.t",
+                                    input: "v.t",
+                                    output: "v.t",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 2,
+                            cells: [
+                                Cell {
+                                    name: "L.t",
+                                    input: "b.t",
+                                    output: "(c.t #0 a.t)",
+                                },
+                                Cell {
+                                    name: "U.t",
+                                    input: "c.t",
+                                    output: "(a.t #0 b.t)",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [],
+                    maps: [
+                        Map {
+                            name: "K",
+                            domain: "K",
+                            holes: [],
+                        },
+                        Map {
+                            name: "L",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "U",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "a",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "b",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "c",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "v",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                    ],
+                },
+                Type {
+                    name: "S2",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "U.0.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "U.1.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "U.2.t",
+                                    input: "",
+                                    output: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "U.01.t",
+                                    input: "U.0.t",
+                                    output: "U.1.t",
+                                },
+                                Cell {
+                                    name: "U.02.t",
+                                    input: "U.0.t",
+                                    output: "U.2.t",
+                                },
+                                Cell {
+                                    name: "U.12.t",
+                                    input: "U.1.t",
+                                    output: "U.2.t",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 2,
+                            cells: [
+                                Cell {
+                                    name: "L.t",
+                                    input: "U.02.t",
+                                    output: "(U.01.t #0 U.12.t)",
+                                },
+                                Cell {
+                                    name: "U.t",
+                                    input: "U.02.t",
+                                    output: "(U.01.t #0 U.12.t)",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [],
+                    maps: [
+                        Map {
+                            name: "L",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "S2",
+                            domain: "S2",
+                            holes: [],
+                        },
+                        Map {
+                            name: "U",
+                            domain: "Delta.2Simplex",
+                            holes: [],
+                        },
+                    ],
+                },
+                Type {
+                    name: "S3",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "U.0.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "U.1.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "U.2.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "U.3.t",
+                                    input: "",
+                                    output: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "U.01.t",
+                                    input: "U.0.t",
+                                    output: "U.1.t",
+                                },
+                                Cell {
+                                    name: "U.02.t",
+                                    input: "U.0.t",
+                                    output: "U.2.t",
+                                },
+                                Cell {
+                                    name: "U.03.t",
+                                    input: "U.0.t",
+                                    output: "U.3.t",
+                                },
+                                Cell {
+                                    name: "U.12.t",
+                                    input: "U.1.t",
+                                    output: "U.2.t",
+                                },
+                                Cell {
+                                    name: "U.13.t",
+                                    input: "U.1.t",
+                                    output: "U.3.t",
+                                },
+                                Cell {
+                                    name: "U.23.t",
+                                    input: "U.2.t",
+                                    output: "U.3.t",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 2,
+                            cells: [
+                                Cell {
+                                    name: "U.012.t",
+                                    input: "U.02.t",
+                                    output: "(U.01.t #0 U.12.t)",
+                                },
+                                Cell {
+                                    name: "U.013.t",
+                                    input: "U.03.t",
+                                    output: "(U.01.t #0 U.13.t)",
+                                },
+                                Cell {
+                                    name: "U.023.t",
+                                    input: "U.03.t",
+                                    output: "(U.02.t #0 U.23.t)",
+                                },
+                                Cell {
+                                    name: "U.123.t",
+                                    input: "U.13.t",
+                                    output: "(U.12.t #0 U.23.t)",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 3,
+                            cells: [
+                                Cell {
+                                    name: "L.t",
+                                    input: "(U.023.t #1 (U.012.t #0 U.23.t))",
+                                    output: "(U.013.t #1 (U.01.t #0 U.123.t))",
+                                },
+                                Cell {
+                                    name: "U.t",
+                                    input: "(U.023.t #1 (U.012.t #0 U.23.t))",
+                                    output: "(U.013.t #1 (U.01.t #0 U.123.t))",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [],
+                    maps: [
+                        Map {
+                            name: "L",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "S3",
+                            domain: "S3",
+                            holes: [],
+                        },
+                        Map {
+                            name: "U",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                    ],
+                },
+                Type {
+                    name: "S4",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "U.0.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "U.1.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "U.2.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "U.3.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "U.4.t",
+                                    input: "",
+                                    output: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "U.01.t",
+                                    input: "U.0.t",
+                                    output: "U.1.t",
+                                },
+                                Cell {
+                                    name: "U.02.t",
+                                    input: "U.0.t",
+                                    output: "U.2.t",
+                                },
+                                Cell {
+                                    name: "U.03.t",
+                                    input: "U.0.t",
+                                    output: "U.3.t",
+                                },
+                                Cell {
+                                    name: "U.04.t",
+                                    input: "U.0.t",
+                                    output: "U.4.t",
+                                },
+                                Cell {
+                                    name: "U.12.t",
+                                    input: "U.1.t",
+                                    output: "U.2.t",
+                                },
+                                Cell {
+                                    name: "U.13.t",
+                                    input: "U.1.t",
+                                    output: "U.3.t",
+                                },
+                                Cell {
+                                    name: "U.14.t",
+                                    input: "U.1.t",
+                                    output: "U.4.t",
+                                },
+                                Cell {
+                                    name: "U.23.t",
+                                    input: "U.2.t",
+                                    output: "U.3.t",
+                                },
+                                Cell {
+                                    name: "U.24.t",
+                                    input: "U.2.t",
+                                    output: "U.4.t",
+                                },
+                                Cell {
+                                    name: "U.34.t",
+                                    input: "U.3.t",
+                                    output: "U.4.t",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 2,
+                            cells: [
+                                Cell {
+                                    name: "U.012.t",
+                                    input: "U.02.t",
+                                    output: "(U.01.t #0 U.12.t)",
+                                },
+                                Cell {
+                                    name: "U.013.t",
+                                    input: "U.03.t",
+                                    output: "(U.01.t #0 U.13.t)",
+                                },
+                                Cell {
+                                    name: "U.014.t",
+                                    input: "U.04.t",
+                                    output: "(U.01.t #0 U.14.t)",
+                                },
+                                Cell {
+                                    name: "U.023.t",
+                                    input: "U.03.t",
+                                    output: "(U.02.t #0 U.23.t)",
+                                },
+                                Cell {
+                                    name: "U.024.t",
+                                    input: "U.04.t",
+                                    output: "(U.02.t #0 U.24.t)",
+                                },
+                                Cell {
+                                    name: "U.034.t",
+                                    input: "U.04.t",
+                                    output: "(U.03.t #0 U.34.t)",
+                                },
+                                Cell {
+                                    name: "U.123.t",
+                                    input: "U.13.t",
+                                    output: "(U.12.t #0 U.23.t)",
+                                },
+                                Cell {
+                                    name: "U.124.t",
+                                    input: "U.14.t",
+                                    output: "(U.12.t #0 U.24.t)",
+                                },
+                                Cell {
+                                    name: "U.134.t",
+                                    input: "U.14.t",
+                                    output: "(U.13.t #0 U.34.t)",
+                                },
+                                Cell {
+                                    name: "U.234.t",
+                                    input: "U.24.t",
+                                    output: "(U.23.t #0 U.34.t)",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 3,
+                            cells: [
+                                Cell {
+                                    name: "U.0123.t",
+                                    input: "(U.023.t #1 (U.012.t #0 U.23.t))",
+                                    output: "(U.013.t #1 (U.01.t #0 U.123.t))",
+                                },
+                                Cell {
+                                    name: "U.0124.t",
+                                    input: "(U.024.t #1 (U.012.t #0 U.24.t))",
+                                    output: "(U.014.t #1 (U.01.t #0 U.124.t))",
+                                },
+                                Cell {
+                                    name: "U.0134.t",
+                                    input: "(U.034.t #1 (U.013.t #0 U.34.t))",
+                                    output: "(U.014.t #1 (U.01.t #0 U.134.t))",
+                                },
+                                Cell {
+                                    name: "U.0234.t",
+                                    input: "(U.034.t #1 (U.023.t #0 U.34.t))",
+                                    output: "(U.024.t #1 (U.02.t #0 U.234.t))",
+                                },
+                                Cell {
+                                    name: "U.1234.t",
+                                    input: "(U.134.t #1 (U.123.t #0 U.34.t))",
+                                    output: "(U.124.t #1 (U.12.t #0 U.234.t))",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 4,
+                            cells: [
+                                Cell {
+                                    name: "L.t",
+                                    input: "((U.0234.t #1 (U.012.t #0 U.23.t #0 U.34.t)) #2 (U.0124.t #1 (U.01.t #0 U.12.t #0 U.234.t)))",
+                                    output: "((U.034.t #1 (U.0123.t #0 U.34.t)) #2 (U.0134.t #1 (U.01.t #0 U.123.t #0 U.34.t)) #2 (U.014.t #1 (U.01.t #0 U.1234.t)))",
+                                },
+                                Cell {
+                                    name: "U.t",
+                                    input: "((U.0234.t #1 (U.012.t #0 U.23.t #0 U.34.t)) #2 (U.0124.t #1 (U.01.t #0 U.12.t #0 U.234.t)))",
+                                    output: "((U.034.t #1 (U.0123.t #0 U.34.t)) #2 (U.0134.t #1 (U.01.t #0 U.123.t #0 U.34.t)) #2 (U.014.t #1 (U.01.t #0 U.1234.t)))",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [],
+                    maps: [
+                        Map {
+                            name: "L",
+                            domain: "Delta.4Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "S4",
+                            domain: "S4",
+                            holes: [],
+                        },
+                        Map {
+                            name: "U",
+                            domain: "Delta.4Simplex",
+                            holes: [],
+                        },
+                    ],
+                },
+                Type {
+                    name: "Lens",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "v.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "w.t",
+                                    input: "",
+                                    output: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "a.t",
+                                    input: "w.t",
+                                    output: "v.t",
+                                },
+                                Cell {
+                                    name: "b.t",
+                                    input: "w.t",
+                                    output: "v.t",
+                                },
+                                Cell {
+                                    name: "inner.t",
+                                    input: "v.t",
+                                    output: "v.t",
+                                },
+                                Cell {
+                                    name: "outer.t",
+                                    input: "w.t",
+                                    output: "w.t",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [],
+                    maps: [
+                        Map {
+                            name: "Lens",
+                            domain: "Lens",
+                            holes: [],
+                        },
+                        Map {
+                            name: "a",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "b",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "inner",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "outer",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "v",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "w",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                    ],
+                },
+                Type {
+                    name: "L2_1",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "v.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "w.t",
+                                    input: "",
+                                    output: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "a.t",
+                                    input: "w.t",
+                                    output: "v.t",
+                                },
+                                Cell {
+                                    name: "b.t",
+                                    input: "w.t",
+                                    output: "v.t",
+                                },
+                                Cell {
+                                    name: "inner.t",
+                                    input: "v.t",
+                                    output: "v.t",
+                                },
+                                Cell {
+                                    name: "outer.t",
+                                    input: "w.t",
+                                    output: "w.t",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 2,
+                            cells: [
+                                Cell {
+                                    name: "T1.012.t",
+                                    input: "a.t",
+                                    output: "(outer.t #0 b.t)",
+                                },
+                                Cell {
+                                    name: "T1.013.t",
+                                    input: "b.t",
+                                    output: "(outer.t #0 a.t)",
+                                },
+                                Cell {
+                                    name: "T1.023.t",
+                                    input: "b.t",
+                                    output: "(a.t #0 inner.t)",
+                                },
+                                Cell {
+                                    name: "T1.123.t",
+                                    input: "a.t",
+                                    output: "(b.t #0 inner.t)",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 3,
+                            cells: [
+                                Cell {
+                                    name: "T1.t",
+                                    input: "(T1.023.t #1 (T1.012.t #0 inner.t))",
+                                    output: "(T1.013.t #1 (outer.t #0 T1.123.t))",
+                                },
+                                Cell {
+                                    name: "T2.t",
+                                    input: "(T1.123.t #1 (T1.013.t #0 inner.t))",
+                                    output: "(T1.012.t #1 (outer.t #0 T1.023.t))",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [],
+                    maps: [
+                        Map {
+                            name: "L2_1",
+                            domain: "L2_1",
+                            holes: [],
+                        },
+                        Map {
+                            name: "Lens",
+                            domain: "Lens",
+                            holes: [],
+                        },
+                        Map {
+                            name: "T1",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "T2",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "a",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "b",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "inner",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "outer",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "v",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "w",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                    ],
+                },
+                Type {
+                    name: "L3_1",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "v.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "w.t",
+                                    input: "",
+                                    output: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "T1.12.t",
+                                    input: "w.t",
+                                    output: "v.t",
+                                },
+                                Cell {
+                                    name: "a.t",
+                                    input: "w.t",
+                                    output: "v.t",
+                                },
+                                Cell {
+                                    name: "b.t",
+                                    input: "w.t",
+                                    output: "v.t",
+                                },
+                                Cell {
+                                    name: "inner.t",
+                                    input: "v.t",
+                                    output: "v.t",
+                                },
+                                Cell {
+                                    name: "outer.t",
+                                    input: "w.t",
+                                    output: "w.t",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 2,
+                            cells: [
+                                Cell {
+                                    name: "T1.012.t",
+                                    input: "a.t",
+                                    output: "(outer.t #0 T1.12.t)",
+                                },
+                                Cell {
+                                    name: "T1.013.t",
+                                    input: "b.t",
+                                    output: "(outer.t #0 a.t)",
+                                },
+                                Cell {
+                                    name: "T1.023.t",
+                                    input: "b.t",
+                                    output: "(a.t #0 inner.t)",
+                                },
+                                Cell {
+                                    name: "T1.123.t",
+                                    input: "a.t",
+                                    output: "(T1.12.t #0 inner.t)",
+                                },
+                                Cell {
+                                    name: "T2.012.t",
+                                    input: "T1.12.t",
+                                    output: "(outer.t #0 b.t)",
+                                },
+                                Cell {
+                                    name: "T2.123.t",
+                                    input: "T1.12.t",
+                                    output: "(b.t #0 inner.t)",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 3,
+                            cells: [
+                                Cell {
+                                    name: "T1.t",
+                                    input: "(T1.023.t #1 (T1.012.t #0 inner.t))",
+                                    output: "(T1.013.t #1 (outer.t #0 T1.123.t))",
+                                },
+                                Cell {
+                                    name: "T2.t",
+                                    input: "(T1.123.t #1 (T2.012.t #0 inner.t))",
+                                    output: "(T1.012.t #1 (outer.t #0 T2.123.t))",
+                                },
+                                Cell {
+                                    name: "T3.t",
+                                    input: "(T2.123.t #1 (T1.013.t #0 inner.t))",
+                                    output: "(T2.012.t #1 (outer.t #0 T1.023.t))",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [],
+                    maps: [
+                        Map {
+                            name: "L3_1",
+                            domain: "L3_1",
+                            holes: [],
+                        },
+                        Map {
+                            name: "Lens",
+                            domain: "Lens",
+                            holes: [],
+                        },
+                        Map {
+                            name: "T1",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "T2",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "T3",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "a",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "b",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "inner",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "outer",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "v",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "w",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                    ],
+                },
+                Type {
+                    name: "L4_1",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "v.t",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "w.t",
+                                    input: "",
+                                    output: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "T1.12.t",
+                                    input: "w.t",
+                                    output: "v.t",
+                                },
+                                Cell {
+                                    name: "T2.12.t",
+                                    input: "w.t",
+                                    output: "v.t",
+                                },
+                                Cell {
+                                    name: "a.t",
+                                    input: "w.t",
+                                    output: "v.t",
+                                },
+                                Cell {
+                                    name: "b.t",
+                                    input: "w.t",
+                                    output: "v.t",
+                                },
+                                Cell {
+                                    name: "inner.t",
+                                    input: "v.t",
+                                    output: "v.t",
+                                },
+                                Cell {
+                                    name: "outer.t",
+                                    input: "w.t",
+                                    output: "w.t",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 2,
+                            cells: [
+                                Cell {
+                                    name: "T1.012.t",
+                                    input: "a.t",
+                                    output: "(outer.t #0 T1.12.t)",
+                                },
+                                Cell {
+                                    name: "T1.013.t",
+                                    input: "b.t",
+                                    output: "(outer.t #0 a.t)",
+                                },
+                                Cell {
+                                    name: "T1.023.t",
+                                    input: "b.t",
+                                    output: "(a.t #0 inner.t)",
+                                },
+                                Cell {
+                                    name: "T1.123.t",
+                                    input: "a.t",
+                                    output: "(T1.12.t #0 inner.t)",
+                                },
+                                Cell {
+                                    name: "T2.012.t",
+                                    input: "T1.12.t",
+                                    output: "(outer.t #0 T2.12.t)",
+                                },
+                                Cell {
+                                    name: "T2.123.t",
+                                    input: "T1.12.t",
+                                    output: "(T2.12.t #0 inner.t)",
+                                },
+                                Cell {
+                                    name: "T3.012.t",
+                                    input: "T2.12.t",
+                                    output: "(outer.t #0 b.t)",
+                                },
+                                Cell {
+                                    name: "T3.123.t",
+                                    input: "T2.12.t",
+                                    output: "(b.t #0 inner.t)",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 3,
+                            cells: [
+                                Cell {
+                                    name: "T1.t",
+                                    input: "(T1.023.t #1 (T1.012.t #0 inner.t))",
+                                    output: "(T1.013.t #1 (outer.t #0 T1.123.t))",
+                                },
+                                Cell {
+                                    name: "T2.t",
+                                    input: "(T1.123.t #1 (T2.012.t #0 inner.t))",
+                                    output: "(T1.012.t #1 (outer.t #0 T2.123.t))",
+                                },
+                                Cell {
+                                    name: "T3.t",
+                                    input: "(T2.123.t #1 (T3.012.t #0 inner.t))",
+                                    output: "(T2.012.t #1 (outer.t #0 T3.123.t))",
+                                },
+                                Cell {
+                                    name: "T4.t",
+                                    input: "(T3.123.t #1 (T1.013.t #0 inner.t))",
+                                    output: "(T3.012.t #1 (outer.t #0 T1.023.t))",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [],
+                    maps: [
+                        Map {
+                            name: "L4_1",
+                            domain: "L4_1",
+                            holes: [],
+                        },
+                        Map {
+                            name: "Lens",
+                            domain: "Lens",
+                            holes: [],
+                        },
+                        Map {
+                            name: "T1",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "T2",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "T3",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "T4",
+                            domain: "Delta.3Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "a",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "b",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "inner",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "outer",
+                            domain: "Delta.1Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "v",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                        Map {
+                            name: "w",
+                            domain: "Delta.0Simplex",
+                            holes: [],
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+}

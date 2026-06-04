@@ -12,14 +12,6 @@ fn fixture(name: &str) -> String {
         .into_owned()
 }
 
-fn legacy_example(name: &str) -> String {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("legacy/examples")
-        .join(name)
-        .to_string_lossy()
-        .into_owned()
-}
-
 fn example(name: &str) -> String {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("examples")
@@ -122,7 +114,7 @@ fn magma_interpretation() {
 
 #[test]
 fn empty2_single_type_with_one_cell() {
-    let file = InterpretedFile::load(&Loader::default(vec![]), &legacy_example("Empty2.ali"))
+    let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("Empty2.ali"))
         .ok()
         .expect("Empty2.ali should interpret without errors");
     let norm = file.state.normalize();
@@ -135,7 +127,7 @@ fn empty2_single_type_with_one_cell() {
 
 #[test]
 fn empty_maps_across_types() {
-    let file = InterpretedFile::load(&Loader::default(vec![]), &legacy_example("Empty.ali"))
+    let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("Empty.ali"))
         .ok()
         .expect("Empty.ali should interpret without errors");
     let norm = file.state.normalize();
@@ -153,7 +145,7 @@ fn empty_maps_across_types() {
 
 #[test]
 fn total_composite_map() {
-    let file = InterpretedFile::load(&Loader::default(vec![]), &legacy_example("Total.ali"))
+    let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("Total.ali"))
         .ok()
         .expect("Total.ali should interpret without errors");
     let norm = file.state.normalize();
@@ -168,7 +160,7 @@ fn total_composite_map() {
 
 #[test]
 fn tutorial_pair_maps() {
-    let file = InterpretedFile::load(&Loader::default(vec![]), &legacy_example("Tutorial.ali"))
+    let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("Tutorial.ali"))
         .ok()
         .expect("Tutorial.ali should interpret without errors");
     let norm = file.state.normalize();
@@ -185,7 +177,7 @@ fn tutorial_pair_maps() {
 
 #[test]
 fn theory_function_and_set_maps() {
-    let file = InterpretedFile::load(&Loader::default(vec![]), &legacy_example("Theory.ali"))
+    let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("Theory.ali"))
         .ok()
         .expect("Theory.ali should interpret without errors");
     let norm = file.state.normalize();

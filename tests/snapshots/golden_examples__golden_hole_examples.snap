@@ -1,0 +1,252 @@
+---
+source: tests/golden_examples.rs
+expression: "load_example(\"Hole_examples.ali\")"
+---
+Store {
+    cells_count: 13,
+    types_count: 4,
+    modules: [
+        Module {
+            path: "Hole_examples.ali",
+            types: [
+                Type {
+                    name: "",
+                    dims: [],
+                    diagrams: [],
+                    maps: [],
+                },
+                Type {
+                    name: "Arrow",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "s",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "t",
+                                    input: "",
+                                    output: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "arr",
+                                    input: "s",
+                                    output: "t",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [
+                        Cell {
+                            name: "arr",
+                            input: "s",
+                            output: "t",
+                        },
+                        Cell {
+                            name: "s",
+                            input: "",
+                            output: "",
+                        },
+                        Cell {
+                            name: "t",
+                            input: "",
+                            output: "",
+                        },
+                    ],
+                    maps: [
+                        Map {
+                            name: "Arrow",
+                            domain: "Arrow",
+                            holes: [],
+                        },
+                    ],
+                },
+                Type {
+                    name: "X",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "x",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "y",
+                                    input: "",
+                                    output: "",
+                                },
+                                Cell {
+                                    name: "z",
+                                    input: "",
+                                    output: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "f",
+                                    input: "x",
+                                    output: "y",
+                                },
+                                Cell {
+                                    name: "g",
+                                    input: "y",
+                                    output: "z",
+                                },
+                                Cell {
+                                    name: "h",
+                                    input: "x",
+                                    output: "z",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 2,
+                            cells: [
+                                Cell {
+                                    name: "r",
+                                    input: "(f #0 g)",
+                                    output: "h",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [
+                        Cell {
+                            name: "f",
+                            input: "x",
+                            output: "y",
+                        },
+                        Cell {
+                            name: "g",
+                            input: "y",
+                            output: "z",
+                        },
+                        Cell {
+                            name: "h",
+                            input: "x",
+                            output: "z",
+                        },
+                        Cell {
+                            name: "r",
+                            input: "(f #0 g)",
+                            output: "h",
+                        },
+                        Cell {
+                            name: "x",
+                            input: "",
+                            output: "",
+                        },
+                        Cell {
+                            name: "y",
+                            input: "",
+                            output: "",
+                        },
+                        Cell {
+                            name: "z",
+                            input: "",
+                            output: "",
+                        },
+                    ],
+                    maps: [
+                        Map {
+                            name: "F",
+                            domain: "Arrow",
+                            holes: [
+                                "?s",
+                                "?t",
+                                "?arr : ?s -> ?t",
+                            ],
+                        },
+                        Map {
+                            name: "X",
+                            domain: "X",
+                            holes: [],
+                        },
+                    ],
+                },
+                Type {
+                    name: "M",
+                    dims: [
+                        Dim {
+                            dim: 0,
+                            cells: [
+                                Cell {
+                                    name: "v",
+                                    input: "",
+                                    output: "",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 1,
+                            cells: [
+                                Cell {
+                                    name: "a",
+                                    input: "v",
+                                    output: "v",
+                                },
+                            ],
+                        },
+                        Dim {
+                            dim: 2,
+                            cells: [
+                                Cell {
+                                    name: "m",
+                                    input: "(a #0 a)",
+                                    output: "a",
+                                },
+                            ],
+                        },
+                    ],
+                    diagrams: [
+                        Cell {
+                            name: "a",
+                            input: "v",
+                            output: "v",
+                        },
+                        Cell {
+                            name: "m",
+                            input: "(a #0 a)",
+                            output: "a",
+                        },
+                        Cell {
+                            name: "v",
+                            input: "",
+                            output: "",
+                        },
+                    ],
+                    maps: [
+                        Map {
+                            name: "G",
+                            domain: "X",
+                            holes: [
+                                "?y",
+                                "?f : v -> ?y",
+                                "?g : ?y -> v",
+                                "?r : (?f #0 ?g) -> a",
+                            ],
+                        },
+                        Map {
+                            name: "M",
+                            domain: "M",
+                            holes: [],
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+}
