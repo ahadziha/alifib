@@ -46,7 +46,7 @@ run_once() {
 
   send() { echo "$1" >&3; read -r REPLY <&4; }
 
-  send "{\"command\":\"init\",\"source_file\":\"$FILE\",\"type_name\":\"$TYPE\",\"source_diagram\":\"$SOURCE\"}"
+  send "{\"command\":\"start\",\"source_file\":\"$FILE\",\"type_name\":\"$TYPE\",\"source_diagram\":\"$SOURCE\"}"
   send "{\"command\":\"parallel\",\"on\":$parallel}"
 
   local t0 t1
