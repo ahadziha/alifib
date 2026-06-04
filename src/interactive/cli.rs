@@ -31,7 +31,7 @@ pub struct ReplArgs {
 /// Arguments for the `alifib serve` subcommand.
 ///
 /// All fields are optional: `alifib serve` with no arguments starts blank
-/// and waits for an `Init` request; with arguments it pre-loads the session
+/// and waits for a `Start` request; with arguments it pre-loads the session
 /// and emits an initial state response before entering the request loop.
 pub struct ServeArgs {
     /// Path to the `.ali` source file (required if any of the others are given).

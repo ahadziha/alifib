@@ -239,7 +239,8 @@ impl Diagram {
         self.shape.dim
     }
 
-    /// True if the diagram's input and output boundaries are equal (prerequisite for pasting).
+    /// True if the diagram is round: its input and output interiors are disjoint
+    /// at every dimension (delegates to [`Ogposet::is_round`]).
     pub fn is_round(&self) -> bool {
         self.shape.is_round()
     }
@@ -469,114 +470,6 @@ impl Diagram {
         Ok((diagram, input_emb))
     }
 
-    /// Construct the (n+1)-dimensional whiskered rewrite step S = U ∪_V R.
-    ///
-    /// Given:
-    /// - `current` (U): the n-dimensional current diagram
-    /// - `match_emb` (ι): embedding V.shape → U.shape from subdiagram matching
-    /// - `rule_tag`: the tag of the (n+1)-generator being applied
-    /// - `input` (V): the rule's input boundary (the matched pattern)
-    /// - `output` (T): the rule's output boundary (the replacement)
-    ///
-    /// Returns an (n+1)-dimensional diagram S with:
-    /// - Input n-boundary = U
-    /// - Output n-boundary = U[V → T]
-    /// - One interior (n+1)-cell (the whiskered rule application)
-    ///
-    /// Works uniformly for all n ≥ 0.
-    pub fn whisker_rewrite(
-        current: &Diagram,
-        match_emb: &Embedding,
-        rule_tag: &Tag,
-        input: &Diagram,
-        output: &Diagram,
-    ) -> Result<Diagram, Error> {
-        // Build rule cell R and get the input-boundary embedding σ: V → R.
-        let (rule_cell, input_into_rule) =
-            Diagram::cell_with_input_embedding(rule_tag.clone(), input, output)?;
-
-        // Pushout: S = U ∪_V R.
-        // match_emb: V → U   and   input_into_rule: V → R share dom = V.shape.
-        let Pushout { tip, inl, inr } =
-            super::pushout::pushout(match_emb, &input_into_rule);
-
-        // Merge labels from U (dims 0..n) and R (dims 0..n+1).
-        let result_labels = merge_pushout_labels(
-            &tip.sizes(),
-            &inl.map,
-            &inr.map,
-            &current.labels,
-            &rule_cell.labels,
-            "whisker rewrite: all cells should be labelled",
-        );
-
-        // Paste history: inherit from current for dims 0..n-1; fix dim n output tree;
-        // add a properly whiskered tree at dim n+1.
-        let n = current.top_dim();
-        let mut history = current.paste_history.clone();
-        if history.len() <= n {
-            // Pad in case paste_history is shorter than expected (e.g., for 0-dim diagrams).
-            history.resize_with(n + 1, || BoundaryHistory::from_pair(
-                missing_tree(), missing_tree(),
-            ));
-        }
-
-        // The matched top-dim positions in `current`.  Sort a local copy — the embedding map
-        // order is determined by the matching algorithm and is not guaranteed to be ascending.
-        let mut matched_buf: Vec<usize> = match_emb.map.get(n).cloned().unwrap_or_default();
-        matched_buf.sort_unstable();
-        let matched: &[usize] = &matched_buf;
-
-        // Build the whiskered trees:
-        //   - dim n+1 input tree:  idle cells + rule_tag + idle cells (= the whiskered rule)
-        //   - dim n+1 output tree: idle cells + output labels + idle cells
-        //   - dim n output tree:   same as dim n+1 output (= the rewritten n-boundary)
-        //
-        // Paste dimension for folding the pieces: n-1 (or 0 if n == 0, but for n=0 there
-        // is at most one piece so the fold dimension is never actually used in a Node).
-        let paste_dim = n.saturating_sub(1);
-        let num_top = current.labels.get(n).map(Vec::len).unwrap_or(0);
-        let out_top = output.labels.get(output.top_dim()).map(Vec::as_slice).unwrap_or(&[]);
-
-        let mut in_pieces: Vec<PasteTree> = Vec::new();
-        let mut out_pieces: Vec<PasteTree> = Vec::new();
-        let mut i = 0;
-        let mut out_i = 0;
-        while i < num_top {
-            if matched.binary_search(&i).is_ok() {
-                // This is the start of the matched segment; the rule_tag covers it all.
-                in_pieces.push(PasteTree::Leaf(rule_tag.clone()));
-                // The output boundary's labels expand in place of the matched segment.
-                while out_i < out_top.len() {
-                    out_pieces.push(PasteTree::Leaf(out_top[out_i].clone()));
-                    out_i += 1;
-                }
-                // Skip all matched positions.
-                while i < num_top && matched.binary_search(&i).is_ok() {
-                    i += 1;
-                }
-            } else {
-                let idle = PasteTree::Leaf(current.labels[n][i].clone());
-                in_pieces.push(idle.clone());
-                out_pieces.push(idle);
-                i += 1;
-            }
-        }
-
-        let in_tree = fold_trees(in_pieces, paste_dim);
-        let out_tree = fold_trees(out_pieces, paste_dim);
-
-        // Fix the dim-n history: input n-boundary is unchanged (= current); output
-        // n-boundary is the rewritten diagram, described by out_tree.
-        history[n] = BoundaryHistory::from_pair(
-            history[n].input.clone(),
-            out_tree.clone(),
-        );
-        // Dim n+1: both input and output describe the whiskered (n+1)-cell.
-        history.push(BoundaryHistory::from_pair(in_tree, out_tree));
-
-        Ok(Diagram::make(tip, result_labels, history))
-    }
 }
 
 // ---- Helpers ----
@@ -584,19 +477,6 @@ impl Diagram {
 /// Sentinel paste tree used when history data is absent.
 fn missing_tree() -> PasteTree {
     PasteTree::Leaf(Tag::Local("?".into()))
-}
-
-/// Fold a list of paste trees into one by left-associative `Node{dim, ...}` nesting.
-/// Returns the single element unchanged if `pieces` has length 1, and `missing_tree()`
-/// if `pieces` is empty.
-fn fold_trees(pieces: Vec<PasteTree>, dim: usize) -> PasteTree {
-    let mut iter = pieces.into_iter();
-    let Some(first) = iter.next() else { return missing_tree(); };
-    iter.fold(first, |acc, p| PasteTree::Node {
-        dim,
-        left: Arc::new(acc),
-        right: Arc::new(p),
-    })
 }
 
 /// Get a paste tree from a history slice at position `k`, falling back to `fallback()`.

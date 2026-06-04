@@ -587,6 +587,14 @@ fn assemble_low_dim_step(
 ///
 /// If `first_only` is set, returns as soon as the first family is verified.
 /// Otherwise, returns all maximal verified families.
+///
+/// Retained, not dead: this is the *deterministic exhaustive* counterpart to the
+/// greedy auto-rewrite path ([`greedy_parallel_auto_step`]), solving a different
+/// problem — enumerating *all* maximal compatible families rather than grabbing
+/// one. Family enumeration is worst-case exponential in the number of matches, so
+/// it is intentionally kept out of the interactive engine's hot path; it lives
+/// here as a backend capability, exercised by the tests below. Keep the
+/// `#[allow(dead_code)]` until a caller (a tool, not the auto-step loop) wires it.
 #[allow(dead_code)]
 pub(crate) fn find_compatible_families(
     matches: &[CandidateMatch],
@@ -816,6 +824,7 @@ fn try_or_shrink(
 }
 
 /// Find the size of the maximum independent set in the conflict graph.
+/// Helper for [`find_compatible_families`] — retained with it (see its note).
 #[allow(dead_code)]
 fn max_independent_set_size(conflicts: &[Vec<bool>], n: usize) -> usize {
     let mut max_size = 0;
@@ -824,6 +833,7 @@ fn max_independent_set_size(conflicts: &[Vec<bool>], n: usize) -> usize {
     max_size
 }
 
+/// Helper for [`find_compatible_families`] — retained with it (see its note).
 #[allow(dead_code)]
 fn max_is_dfs(
     conflicts: &[Vec<bool>],
@@ -849,6 +859,7 @@ fn max_is_dfs(
 
 /// Enumerate independent sets of exactly `target_size` in lex order, calling
 /// `callback` for each. Stops early if `callback` returns `true`.
+/// Helper for [`find_compatible_families`] — retained with it (see its note).
 #[allow(dead_code)]
 fn enumerate_independent_sets_of_size(
     conflicts: &[Vec<bool>],

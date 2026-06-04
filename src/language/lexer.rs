@@ -72,6 +72,10 @@ pub fn lexer<'src>(
         just(']').to(Token::RBrack),
         just('(').to(Token::LParen),
         just(')').to(Token::RParen),
+        // `<`/`>` delimit for-block variable instances (`<ctx>`): the for-body is
+        // scanned as raw tokens (see parser `for_body`) and `<var>` substituted
+        // textually (see `eval::expand_body`). Not consumed by a named production,
+        // but load-bearing — without these the body could not lex.
         just('<').to(Token::LAngle),
         just('>').to(Token::RAngle),
         just('.').to(Token::Dot),

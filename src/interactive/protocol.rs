@@ -303,11 +303,22 @@ pub struct HomologyInfo {
     pub euler_characteristic: i64,
 }
 
-/// One homology group `H_d`, with its display string (e.g. `Z`, `Z/2`).
+/// One homology group `H_d`, with its display string (e.g. `Z`, `Z/2`) and the
+/// torsion witnesses for its finite-order classes (empty if `H_d` is free).
 #[derive(Debug, Clone, Serialize)]
 pub struct HomologyGroupInfo {
     pub dim: usize,
     pub display: String,
+    pub witnesses: Vec<TorsionWitnessInfo>,
+}
+
+/// A torsion class of `H_d`, made self-certifying: the witnessing `d`-cycle and
+/// the `(d+1)`-chain preimage `w` with `d(w) = order · cycle`.
+#[derive(Debug, Clone, Serialize)]
+pub struct TorsionWitnessInfo {
+    pub order: i64,
+    pub cycle: String,
+    pub preimage: String,
 }
 
 /// One open hole of a map in the current module, numbered for `fill`.
@@ -1056,7 +1067,17 @@ pub fn build_homology_data(
     let h = crate::analysis::homology::compute_homology(&tc);
     Ok(HomologyInfo {
         groups: h.groups.iter()
-            .map(|(dim, g)| HomologyGroupInfo { dim: *dim, display: format!("{}", g) })
+            .map(|(dim, g)| HomologyGroupInfo {
+                dim: *dim,
+                display: format!("{}", g),
+                witnesses: h.torsion_witnesses.get(dim).map_or_else(Vec::new, |ws| {
+                    ws.iter().map(|w| TorsionWitnessInfo {
+                        order: w.order,
+                        cycle: w.cycle_str(),
+                        preimage: w.preimage_str(),
+                    }).collect()
+                }),
+            })
             .collect(),
         euler_characteristic: h.euler_characteristic,
     })

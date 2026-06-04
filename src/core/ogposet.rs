@@ -5,8 +5,8 @@
 //! build new ogposets from old ones:
 //!
 //! - [`boundary`] — extract the sub-ogposet on the sign-side k-boundary
-//! - [`boundary_traverse`] — normalised boundary (memoised)
-//! - [`normalisation`] — canonical cell ordering (memoised)
+//! - [`boundary_traverse`] — normalised boundary
+//! - [`normalisation`] — canonical cell ordering
 //! - [`find_isomorphism`] — decide shape isomorphism via canonical forms
 //! - [`traverse`] — general sub-ogposet traversal (drives all of the above)
 
@@ -528,7 +528,8 @@ pub(super) fn traverse(g: &Arc<Ogposet>, initial_stack: Vec<(usize, IntSet)>, ma
 
 /// Compute the normal form of `g`: reorder its cells into the canonical
 /// input-first traversal order.  Returns the normalised ogposet and the
-/// embedding that maps new indices to old ones.  Memoised by pointer identity.
+/// embedding that maps new indices to old ones.  Returns identity if `g` is
+/// already normal; otherwise recomputed on every call (no cache).
 pub(super) fn normalisation(g: &Arc<Ogposet>) -> (Arc<Ogposet>, Embedding) {
     if g.is_normal() {
         return (Arc::clone(g), Embedding::id(Arc::clone(g)));
@@ -566,8 +567,8 @@ fn build_stack_cell_n(g: &Ogposet) -> Vec<(usize, IntSet)> {
     inputs
 }
 
-/// Compute the normalised `sign`-boundary of `g` at dimension `k`.  Memoised
-/// by (pointer, sign, effective_k).
+/// Compute the normalised `sign`-boundary of `g` at dimension `k`.  Recomputed
+/// on every call (no cache).
 ///
 /// - `Input` / `Output`: traverses the sign-extremal cells at every level 0..=k,
 ///   producing the normalised sign-side boundary sub-ogposet.
@@ -641,7 +642,6 @@ pub(super) fn find_isomorphism(u: &Arc<Ogposet>, v: &Arc<Ogposet>) -> Result<Emb
 /// indexed by dimension 0..=max_seed_dim; every face of every seed cell is
 /// recursively included.  Used by the flow-graph and matching algorithms where
 /// only membership queries are needed, not a full sub-ogposet.
-#[allow(dead_code)]
 pub(super) fn closure(g: &Ogposet, seeds: &[(usize, &[usize])]) -> Vec<BitSet> {
     if g.dim < 0 || seeds.is_empty() {
         return vec![];

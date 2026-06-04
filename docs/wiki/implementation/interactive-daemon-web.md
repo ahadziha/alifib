@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-03
+last-touched: 2026-06-04
 code: [src/interactive/daemon.rs, src/interactive/protocol.rs, src/interactive/web.rs]
 ---
 
@@ -67,7 +67,7 @@ an idle session, or a 0-cell fill). The per-command extras:
 | `history` / `rules` | `history` / `list_rules` | the move list / the dimension's rules |
 | `types` / `type_detail` / `cell_detail` | `types` / `type` / `cell` | type summaries / full detail / cell detail |
 | `auto` / `stored` | `auto`/`random` / `store` | the step-count summary / the appended `let` clause |
-| `homology` | `homology` | `HomologyInfo` (groups + Euler characteristic) |
+| `homology` | `homology` | `HomologyInfo` (groups + Euler characteristic; each group carries its `TorsionWitnessInfo`s — cycle + certifying preimage) |
 | `fill` | during any fill | `FillInfo` — the hole being built (type, map, domain, source, dim) |
 | `holes` / `constraints` | `holes` | `HoleInfo` per open hole / `ConstraintInfo` per conditional pending assignment |
 | `zero_cell` | during a 0-cell fill | `ZeroCellInfo` — candidate 0-cells and the current pick |

@@ -613,7 +613,7 @@ fn cell_data_compatible(lhs: &CellData, rhs: &CellData) -> bool {
     }
 }
 
-/// Interpret an extension-style partial map (`{ prefix? clause* }`).
+/// Interpret an extension-style partial map (`prefix? [ clause, … ]`).
 ///
 /// Evaluates the optional prefix, then each clause in order.  Pending `arr => ?`
 /// clauses are turned into holes in a final pass that processes them in ascending

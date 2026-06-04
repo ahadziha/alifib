@@ -285,3 +285,143 @@ practical consequence (with [[0002-round-boundaries]]): lower-dimensional
 structure must be represented explicitly — e.g. TRS constants are 2-cells
 `node : unit -> cod` over an explicit unit 1-cell (`examples/TRS.ali`), with
 explicit unitor cells, not 2-cells with empty input.
+
+## [2026-06-04] refactor | Source-drift 1a — drop phantom "memoised" claims in ogposet.rs
+
+`normalisation` and `boundary_traverse` were doc-commented as memoised (module
+doc L8–9, plus per-fn "Memoised by pointer identity" / "by (pointer, sign,
+effective_k)"). No cache exists — no field, `OnceCell`, or `lazy_static`; both
+call `traverse(…)` fresh every time. Deleted the four false mentions; the only
+short-circuit, `normalisation`'s `is_normal()` identity return, is now described
+as such (idempotence, not memoisation). Pure doc fix, no behaviour change; build
+green. Adding a real `Arc`-keyed cache was deliberately *not* done — that is a
+perf design decision, deferred. See `docs/wiki/source-drift.md`.
+
+## [2026-06-04] refactor | Source-drift 1b — re-point dead find_matches doc-link
+
+`Engine::rule_patterns` (engine.rs:73) doc-linked `[find_matches]`, which is now
+`#[cfg(test)]`-only in `core/matching.rs` (matching.rs:120) — a dead intra-doc
+link in any non-test build. Re-pointed at `[for_each_rule_candidate]`, the
+per-call production enumerator that actually receives `rule_patterns`. Verified
+the link resolves via `cargo doc --no-deps`. Pure doc fix.
+
+Incidental: `cargo doc` surfaced four *unrelated* pre-existing broken intra-doc
+links not in this backlog — `repl`, `load_source`, `set_cell`,
+`register_generator`. Recorded here; not yet triaged.
+
+## [2026-06-04] refactor | Source-drift 1c — WebRepl backend count
+
+web.rs module doc claimed `WebRepl` is shared by "both web backends" (server +
+wasm); the MCP server (`web/mcp/src/lib.rs:2,31`) is a third consumer. Reworded
+to count-free phrasing that lists all three (server/wasm/mcp) so a future fourth
+backend can't re-rot the number. The secondary "L48" mention from the original
+item was already removed in the web.rs rewrite. Pure doc fix.
+
+## [2026-06-04] refactor | Source-drift 1e — partial-map extension grammar shorthand
+
+`interpret_partial_map_ext` (partial_map.rs:616) documented the extension grammar
+as `{ prefix? clause* }`. Per `parser.rs:172–199` the block is delimited by
+`LBrack`/`RBrack` with comma-separated entries, and the prefix is the map *before*
+the bracket (`F [ … ]`). Corrected to `prefix? [ clause, … ]`. Note this is more
+accurate than the backlog's proposed `[ prefix? clause* ]`, which mislocated the
+prefix inside the brackets and implied whitespace repetition. Pure doc fix.
+
+## [2026-06-04] refactor | Source-drift dead-code — KEEP find_compatible_families, document intent
+
+The exhaustive maximal-independent-set parallel-rewrite strategy
+(`find_compatible_families` + `max_independent_set_size`/`max_is_dfs`/
+`enumerate_independent_sets_of_size`, all `#[allow(dead_code)]`, test-only
+callers) was flagged "wire-in-or-delete, don't leave half-alive". User decision:
+KEEP it. It solves a different problem from the live greedy path
+(`greedy_parallel_auto_step`): deterministic enumeration of *all* maximal
+compatible families vs greedily grabbing one. Exponential, so intentionally out
+of the engine hot path, but a wanted backend capability. Resolved the "half-alive"
+status not by deleting/wiring but by making retention explicit: a rationale note
+on the function (why kept, why `allow(dead_code)` stays) + helper markers. Tests
+retained and green; greedy disjointness is independently covered by
+`greedy_parallel_in_four_chain`. No behaviour change.
+
+## [2026-06-04] refactor | Source-drift WET — unify Smith Normal Form behind a Tracker trait
+
+`homology.rs` carried two parallel SNF families — untracked (`smith_normal_form`,
+for `matrix_rank`) and basis-tracked (`smith_normal_form_with_basis`, for
+`compute_homology`'s torsion witnesses) — with near-identical pivot loops and
+duplicated 2×2 integer row arithmetic (~150 LOC overlap; correctness risk of two
+copies drifting). Parameterised over a `Tracker` trait (7 elementary mirror ops):
+`NoTrack` no-ops; `FullTrack` mirrors row ops inverted onto `u_inv` and column ops
+directly onto `v`, preserving `U·M·V = diag`. One `snf_reduce<T>` + generic
+`find_and_move_pivot`/`eliminate_column`/`eliminate_row` now drive both. Tails kept
+separate (plain: enforce+sort on the diagonal; tracked: raw diagonal +
+`enforce_divisibility_tracked`/`sort_diag_tracked` in the caller). Net −88 LOC; all
+34 homology tests + full 143-test lib suite green before and after.
+
+## [2026-06-04] refactor | Surface torsion witnesses in the homology command
+
+Follow-on to the SNF Tracker refactor: the tracked path's whole purpose —
+torsion witnesses (a witnessing n-cycle + the (n+1)-chain preimage certifying its
+order) — had no user-facing consumer. `build_homology_data` computed them via
+`compute_homology` and discarded them, so `homology <name>` showed only groups +
+Euler characteristic on every front-end (CLI/web/MCP share `richtext::homology`).
+Added `TorsionWitnessInfo` (order + formatted cycle + preimage) to
+`HomologyGroupInfo`, exposed `TorsionWitness::cycle_str`/`preimage_str`, populated
+from `h.torsion_witnesses`, and rendered each as an indented sub-line under its
+`H_d`. Verified: `homology RP2` → `H_1 = Z/2` with `cycle: c.t (preimage: L.t +
+U.t)`; free spaces (S1, H_3 of RP^3) show none. Full 201-test workspace green.
+Wiki: updated implementation/analysis.md (SNF bullet now describes the unified
+Tracker driver) and implementation/interactive-daemon-web.md (HomologyInfo row).
+
+## [2026-06-04] refactor | Source-drift Section B — rename-leftover doc-comments swept
+
+Cleared the remaining `03757c0` source/target→input/output rename leftovers
+flagged in source-drift.md §B. Fixed: `core/diagram.rs::is_round` (was "boundaries
+are equal" + "prerequisite for pasting" → mirrors `Ogposet::is_round`: disjoint
+input/output interiors); `output/normalize.rs::cell_from_diagram` (doc → input/
+output, locals `src_diag`/`tgt_diag` → `in_diag`/`out_diag`);
+`interactive/engine.rs::step_sign` (Target/Source → Output/Input);
+`interactive/cli.rs::ServeArgs` ("Init request" → "Start", matching `Request`).
+Found already-fixed/obsolete (no action): `interpreter/diagram.rs`
+(`push_parallel_constraints` + `globular_propagate` gone with the inference
+layer), `output/normalize.rs::sign_superscript`/`render_solved_hole` (deleted),
+`interactive/display.rs` palette (already "input/output side"),
+`interpreter/types.rs::InterpResult` (already "merge"). Pure doc fixes; build green.
+
+## [2026-06-04] refactor | Source-drift dead-code — closure attr removed; whisker_rewrite deleted; LAngle/RAngle retracted
+
+Three §C dead-code items. (1) `ogposet::closure` carried a stale
+`#[allow(dead_code)]` despite live callers (`matching` isomorphism/reconstruct) —
+removed the attribute; no warning, confirming liveness. (2) `diagram::whisker_rewrite`
+(pub, zero callers/tests) — deleted along with its now-orphaned private helper
+`fold_trees` (build confirmed the orphan). Unlike `find_compatible_families` it
+solves no distinct problem: `construct_parallel_step` builds the same step as a
+1-member family. Net −122 LOC. (3) `Token::LAngle`/`RAngle` flagged "dead" —
+**RETRACTED, not a bug** (user caught it): `<…>` is the for-block variable-instance
+syntax; `parser::for_body` consumes the tokens via a wildcard scan and
+`eval::expand_body` substitutes `<var>` textually. Deleting them would break every
+for-block (`LambdaSigma_Term.ali` confirms). Added a lexer comment so it isn't
+re-flagged. Build + tests green throughout.
+
+## [2026-06-04] refactor | Source-drift dead-code — delete parse_complex/complex_parser and engine::init
+
+Two more §C/§refactor dead items, both genuine deletions. (1)
+`language::parse_complex` + `parser::complex_parser` served the removed `@ <expr>`
+REPL grammar; no callers/tests, and the live for-block re-parse uses the separate
+`parse_complex_instrs` → `complex_instrs_parser`. Deleted both; `complex_parser`
+only composed shared builders so nothing downstream orphaned. (2)
+`engine::init` (pub, superseded by `Session::from_disk`) — deleted with its
+only-caller helper `load_context` and the orphaned alias `LoadedRewriteContext`;
+re-pointed the struct doc-link to `from_store`/`resume`. Section C now fully
+resolved (closure attr, whisker_rewrite, LAngle/RAngle-retracted, parse_complex,
+init). Build clean; 201-test workspace green; 57 language + 11 interactive tests green.
+
+## [2026-06-04] refactor | Source-drift Section D — external-doc notes resolved
+
+The three notes outside `src/`. (1) `docs/interp/interp.tex` (the user's paper):
+fixed two factual errors — deleted the phantom "cached by pointer identity"
+sentence (no cache exists, cf. item 1a) and corrected "input-extremal = no input
+cofaces" → "no output cofaces" (`ogposet::extremal`: `Sign::Input` ⇒
+`cofaces_out.is_empty()`). (2) `docs/HOMOLOGY.md`: stale path
+`src/core/homology.rs` → `src/analysis/homology.rs` (L39, L138, text + links).
+(3) `web/EXAMPLES.md`: **retracted, not a bug** — the `dist/` manifest/deploy
+workflow it describes is real, implemented by `scripts/build_examples_manifest.py`
+run from `.github/workflows/deploy.yml:57`, not `package.json`. Backlog now fully
+worked through.

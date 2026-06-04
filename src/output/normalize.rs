@@ -216,14 +216,14 @@ fn cell_from_data(name: &str, data: &CellData, complex: &Complex) -> Cell {
     }
 }
 
-/// Convert a named diagram into a [`Cell`] by extracting its source and target
+/// Convert a named diagram into a [`Cell`] by extracting its input and output
 /// boundaries and resolving their labels against `complex`. Falls back to a
 /// 0-dimensional cell if the boundary cannot be computed.
 fn cell_from_diagram(name: &str, diag: &Diagram, complex: &Complex) -> Cell {
     let Some(k) = diag.top_dim().checked_sub(1) else {
         return Cell { name: name.to_owned(), input: String::new(), output: String::new() };
     };
-    let (Ok(src_diag), Ok(tgt_diag)) = (
+    let (Ok(in_diag), Ok(out_diag)) = (
         Diagram::boundary(Sign::Input, k, diag),
         Diagram::boundary(Sign::Output, k, diag),
     ) else {
@@ -231,8 +231,8 @@ fn cell_from_diagram(name: &str, diag: &Diagram, complex: &Complex) -> Cell {
     };
     Cell {
         name: name.to_owned(),
-        input: render_diagram_tree(&src_diag, complex),
-        output: render_diagram_tree(&tgt_diag, complex),
+        input: render_diagram_tree(&in_diag, complex),
+        output: render_diagram_tree(&out_diag, complex),
     }
 }
 

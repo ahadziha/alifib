@@ -41,7 +41,7 @@ pub struct ProofCache {
 
 /// Stateful rewrite session engine.
 ///
-/// Load once with [`RewriteEngine::init`] or [`RewriteEngine::resume`];
+/// Load once with [`RewriteEngine::from_store`] or [`RewriteEngine::resume`];
 /// then use [`step`](RewriteEngine::step), [`undo`](RewriteEngine::undo), and
 /// the accessor methods to drive the session without re-interpreting the
 /// source file.
@@ -70,7 +70,7 @@ pub struct RewriteEngine {
     /// Per-rule precomputed pattern data (normalised input or output boundary
     /// + embedding into the rule's shape, depending on [`backward`]).
     /// Built once when the engine is constructed and reused for every
-    /// [`find_matches`] call.
+    /// [`for_each_rule_candidate`] call.
     rule_patterns: HashMap<String, RulePattern>,
 
     /// Incremental proof cache, active only while proof view is enabled.
@@ -160,8 +160,6 @@ pub fn load_type_context(
     Ok((store, type_complex, canonical_path))
 }
 
-type LoadedRewriteContext = (Arc<GlobalStore>, Arc<Complex>, Diagram, Option<Diagram>);
-
 fn seeded_rng() -> Xoshiro256PlusPlus {
     #[cfg(not(target_arch = "wasm32"))]
     let seed = std::time::SystemTime::now()
@@ -217,26 +215,6 @@ pub fn eval_diagram_expr(
         return Err(format!("'{}': {}", expr, msgs.join("; ")));
     }
     diagram_opt.ok_or_else(|| format!("'{}' did not produce a diagram", expr))
-}
-
-/// Load a file and locate the type complex and source/target diagrams.
-///
-/// Source and target may be diagram names or diagram expressions.
-fn load_context(
-    source_file: &str,
-    type_name: &str,
-    initial_diagram_name: &str,
-    target_diagram_name: Option<&str>,
-) -> Result<LoadedRewriteContext, String> {
-    let (store, type_complex, canonical_path) = load_type_context(source_file, type_name)?;
-
-    let initial_diagram =
-        eval_diagram_expr(&store, &type_complex, &canonical_path, initial_diagram_name)?;
-    let target_diagram = target_diagram_name
-        .map(|expr| eval_diagram_expr(&store, &type_complex, &canonical_path, expr))
-        .transpose()?;
-
-    Ok((store, type_complex, initial_diagram, target_diagram))
 }
 
 /// Check that `source` and `target` are parallel: same dimension, and (for
@@ -489,46 +467,6 @@ impl RewriteEngine {
             type_complex,
             initial_diagram,
             target_diagram,
-        })
-    }
-
-    /// Load the source file and initialise a fresh session (no moves applied).
-    pub fn init(
-        source_file: &str,
-        type_name: &str,
-        initial_diagram_name: &str,
-        target_diagram_name: Option<&str>,
-    ) -> Result<Self, String> {
-        let (store, type_complex, initial_diagram, target_diagram) =
-            load_context(source_file, type_name, initial_diagram_name, target_diagram_name)?;
-        if let Some(ref target) = target_diagram {
-            check_parallel(&initial_diagram, target)?;
-        }
-
-        let rule_patterns = build_rule_patterns(&type_complex, initial_diagram.top_dim(), false)?;
-        let rewrites = collect_confirmed_matches(
-            &type_complex, &rule_patterns, &initial_diagram,
-        )?;
-
-        Ok(Self {
-            current_diagram: initial_diagram.clone(),
-            steps: Vec::new(),
-            history: Vec::new(),
-            active_len: 0,
-            rewrites,
-            parallel: true,
-            backward: false,
-            rng: seeded_rng(),
-            rule_patterns,
-            proof_cache: None,
-            store,
-            type_complex,
-            initial_diagram,
-            target_diagram,
-            source_file: source_file.to_owned(),
-            type_name: type_name.to_owned(),
-            initial_diagram_name: initial_diagram_name.to_owned(),
-            target_diagram_name: target_diagram_name.map(str::to_owned),
         })
     }
 
@@ -829,7 +767,7 @@ impl RewriteEngine {
     pub fn backward(&self) -> bool { self.backward }
 
     /// The boundary sign used to extract the new current diagram from a step.
-    /// Forward: `Target` (output boundary). Backward: `Source` (input boundary).
+    /// Forward: `Output`. Backward: `Input`.
     fn step_sign(&self) -> Sign {
         if self.backward { Sign::Input } else { Sign::Output }
     }

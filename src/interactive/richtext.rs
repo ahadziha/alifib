@@ -441,6 +441,11 @@ fn homology(h: &HomologyInfo) -> RichText {
     }
     for g in &h.groups {
         t.line().plain("  ").label(format!("H_{}", g.dim)).plain(" = ").value(&g.display);
+        for w in &g.witnesses {
+            t.line()
+                .plain("      ").label(format!("Z/{}", w.order)).plain(" cycle: ").value(&w.cycle)
+                .plain("  (preimage: ").value(&w.preimage).plain(")");
+        }
     }
     t.line().plain("  ").label("χ").plain(" = ").value(h.euler_characteristic.to_string());
     t

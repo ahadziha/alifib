@@ -557,18 +557,6 @@ pub fn diagram_parser<'tokens, 'src: 'tokens>()
     build_diagram()
 }
 
-/// Parses `Address? { ComplexInstr, ... }` or a bare `Address`.
-/// Used by `language::parse_complex` to parse the expression following `@`
-/// at the interactive REPL prompt.
-pub fn complex_parser<'tokens, 'src: 'tokens>()
--> impl Parser<'tokens, TokenInput<'tokens, 'src>, Spanned<Complex>, extra::Err<Rich<'tokens, Token<'src>, SimpleSpan>>>
-{
-    let diagram = build_diagram();
-    let partial_map = build_partial_map(diagram.clone());
-    let partial_map_def = build_partial_map_def(diagram.clone(), partial_map.clone());
-    build_complex(diagram, partial_map_def)
-}
-
 pub fn program_parser<'tokens, 'src: 'tokens>()
 -> impl Parser<'tokens, TokenInput<'tokens, 'src>, Program, E<'tokens, 'src>> {
     let diagram = build_diagram();

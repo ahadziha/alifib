@@ -473,10 +473,9 @@ indices.
 
   \item \textbf{Normalisation.}
     $\mathsf{norm}(G)$ produces a canonical reordering of the cells
-    by traversing from the input-extremal cells (those with no input
+    by traversing from the input-extremal cells (those with no output
     cofaces). Two ogposets are isomorphic if and only if they have
-    the same normal form. Both normalisation and boundary extraction
-    are cached by pointer identity.
+    the same normal form.
 
   \item \textbf{Isomorphism.}
     $\mathsf{iso}(G_1, G_2)$ checks whether $G_1 \cong G_2$ by

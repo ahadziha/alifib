@@ -36,7 +36,7 @@ in the target of `g` it contributes `+3`, and so on.
 
 alifib reads those faces directly off each generator's classifier
 (`labels_at(d − 1)` together with `faces_of(Output/Input, d, 0)`) — see
-`compute_homology` in [`src/core/homology.rs`](../src/core/homology.rs).
+`compute_homology` in [`src/analysis/homology.rs`](../src/analysis/homology.rs).
 
 A short calculation (or Hatcher §2.2) shows `d_{n-1} ∘ d_n = 0`:
 every `(n−2)`-face of an `n`-cell appears twice in the double boundary
@@ -135,4 +135,4 @@ up on.
 - Hadzihasanovic, *Combinatorics of higher-categorical diagrams* —
   regular directed complexes and their geometric realisation as
   regular CW complexes.
-- Implementation: [`src/core/homology.rs`](../src/core/homology.rs).
+- Implementation: [`src/analysis/homology.rs`](../src/analysis/homology.rs).

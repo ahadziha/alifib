@@ -29,6 +29,13 @@ pub struct TorsionWitness {
     pub preimage: Vec<(String, i64)>,
 }
 
+impl TorsionWitness {
+    /// The witnessing cycle, formatted in the original `C_n` basis.
+    pub fn cycle_str(&self) -> String { format_cycle(&self.cycle) }
+    /// The certifying preimage `w` with `d(w) = order · cycle`, formatted in `C_{n+1}`.
+    pub fn preimage_str(&self) -> String { format_cycle(&self.preimage) }
+}
+
 impl std::fmt::Display for TorsionWitness {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Z/{} cycle: {}", self.order, format_cycle(&self.cycle))?;
@@ -331,48 +338,196 @@ fn mat_mul(a: &[Vec<i64>], b: &[Vec<i64>]) -> Vec<Vec<i64>> {
 ///
 /// Returns the diagonal entries [d_1, d_2, ...] with d_i | d_{i+1},
 /// sorted so that zero entries come last.
-fn smith_normal_form(matrix: &[Vec<i64>]) -> Vec<i64> {
-    if matrix.is_empty() { return vec![]; }
-    let num_rows = matrix.len();
-    let num_cols = matrix[0].len();
-    if num_cols == 0 { return vec![]; }
+// The pivot-elimination driver below is shared between plain SNF (for rank) and
+// basis-tracking SNF (for homology, which needs change-of-basis matrices to
+// produce torsion witnesses). A `Tracker` parameterises the inner elementary
+// operations: `NoTrack` is a zero-cost no-op; `FullTrack` mirrors each row op —
+// *inverted* — onto `u_inv` and each column op directly onto `v`, maintaining
+// the invariant `U · M · V = diag` on completion. Only the post-loop tail
+// (divisibility/sort) differs between the two callers, so the loop lives once.
 
-    // Work on a mutable copy.
-    let mut m: Vec<Vec<i64>> = matrix.to_vec();
+/// Mirrors the elementary operations the SNF driver applies to `m` onto the
+/// change-of-basis matrices. A row op `E` on `m` (`M := E·M`) is mirrored as the
+/// *inverse* column op on `u_inv` (keeping `U·U⁻¹ = I`); a column op is mirrored
+/// as the *same* column op on `v`.
+trait Tracker {
+    fn row_swap(&mut self, p: usize, r: usize);
+    fn row_add(&mut self, dest: usize, src: usize, q: i64);
+    fn row_negate(&mut self, r: usize);
+    fn row_gcd(&mut self, p: usize, r: usize, s: i64, t: i64, a: i64, b: i64);
+    fn col_swap(&mut self, p: usize, c: usize);
+    fn col_add(&mut self, dest: usize, src: usize, q: i64);
+    fn col_gcd(&mut self, p: usize, c: usize, s: i64, t: i64, a: i64, b: i64);
+}
 
-    let min_dim = num_rows.min(num_cols);
+/// Zero-cost tracker for the untracked path (`matrix_rank`): every op is a no-op.
+struct NoTrack;
+impl Tracker for NoTrack {
+    fn row_swap(&mut self, _: usize, _: usize) {}
+    fn row_add(&mut self, _: usize, _: usize, _: i64) {}
+    fn row_negate(&mut self, _: usize) {}
+    fn row_gcd(&mut self, _: usize, _: usize, _: i64, _: i64, _: i64, _: i64) {}
+    fn col_swap(&mut self, _: usize, _: usize) {}
+    fn col_add(&mut self, _: usize, _: usize, _: i64) {}
+    fn col_gcd(&mut self, _: usize, _: usize, _: i64, _: i64, _: i64, _: i64) {}
+}
+
+/// Tracker maintaining both change-of-basis matrices (used by `compute_homology`).
+struct FullTrack<'a> {
+    u_inv: &'a mut Vec<Vec<i64>>,
+    v: &'a mut Vec<Vec<i64>>,
+}
+impl Tracker for FullTrack<'_> {
+    fn row_swap(&mut self, p: usize, r: usize) {
+        for row in self.u_inv.iter_mut() { row.swap(p, r); }
+    }
+    /// Inverse of `R_dest += q·R_src` is `C_src -= q·C_dest` on `u_inv`.
+    fn row_add(&mut self, dest: usize, src: usize, q: i64) {
+        for row in self.u_inv.iter_mut() {
+            let cd = row[dest];
+            row[src] -= q * cd;
+        }
+    }
+    fn row_negate(&mut self, r: usize) {
+        for row in self.u_inv.iter_mut() { row[r] = -row[r]; }
+    }
+    /// Inverse 2×2 block `[[a, -t], [b, s]]` on cols `(p, r)` of `u_inv`.
+    fn row_gcd(&mut self, p: usize, r: usize, s: i64, t: i64, a: i64, b: i64) {
+        for row in self.u_inv.iter_mut() {
+            let cp = row[p];
+            let cr = row[r];
+            row[p] = a * cp + b * cr;
+            row[r] = -t * cp + s * cr;
+        }
+    }
+    fn col_swap(&mut self, p: usize, c: usize) {
+        for row in self.v.iter_mut() { row.swap(p, c); }
+    }
+    /// Same op as on `m`: `C_dest -= q·C_src` on `v`.
+    fn col_add(&mut self, dest: usize, src: usize, q: i64) {
+        for row in self.v.iter_mut() {
+            let cs = row[src];
+            row[dest] -= q * cs;
+        }
+    }
+    /// Same 2×2 block on cols `(p, c)` of `v` as applied to `m`.
+    fn col_gcd(&mut self, p: usize, c: usize, s: i64, t: i64, a: i64, b: i64) {
+        for row in self.v.iter_mut() {
+            let o1 = row[p];
+            let o2 = row[c];
+            row[p] = s * o1 + t * o2;
+            row[c] = -b * o1 + a * o2;
+        }
+    }
+}
+
+/// Find the smallest-magnitude nonzero entry in `m[pivot..][pivot..]` and move it
+/// to `(pivot, pivot)` with a row and a column swap (mirrored onto `t`).
+fn find_and_move_pivot<T: Tracker>(
+    m: &mut [Vec<i64>], t: &mut T, pivot: usize, nrows: usize, ncols: usize,
+) -> bool {
+    let mut best: Option<(usize, usize, i64)> = None;
+    for r in pivot..nrows {
+        for c in pivot..ncols {
+            let val = m[r][c].abs();
+            if val > 0 && (best.is_none() || val < best.unwrap().2) {
+                best = Some((r, c, val));
+            }
+        }
+    }
+    let Some((br, bc, _)) = best else { return false; };
+    if br != pivot {
+        m.swap(pivot, br);
+        t.row_swap(pivot, br);
+    }
+    if bc != pivot {
+        for row in m.iter_mut() { row.swap(pivot, bc); }
+        t.col_swap(pivot, bc);
+    }
+    true
+}
+
+/// Eliminate entries below the pivot in its column with row operations.
+/// Simple subtraction when the pivot divides the entry; GCD-based otherwise.
+fn eliminate_column<T: Tracker>(m: &mut [Vec<i64>], t: &mut T, pivot: usize, nrows: usize) {
+    let ncols = m[0].len();
+    let pv = m[pivot][pivot];
+    for r in (pivot + 1)..nrows {
+        if m[r][pivot] == 0 { continue; }
+        if pv != 0 && m[r][pivot] % pv == 0 {
+            let q = m[r][pivot] / pv;
+            for j in 0..ncols { m[r][j] -= q * m[pivot][j]; }
+            t.row_add(r, pivot, -q);
+        } else {
+            let (g, s, tt) = extended_gcd(pv, m[r][pivot]);
+            let a = pv / g;
+            let b = m[r][pivot] / g;
+            let old_p = m[pivot].clone();
+            let old_r = m[r].clone();
+            for j in 0..ncols {
+                m[pivot][j] = s * old_p[j] + tt * old_r[j];
+                m[r][j] = -b * old_p[j] + a * old_r[j];
+            }
+            t.row_gcd(pivot, r, s, tt, a, b);
+        }
+    }
+}
+
+/// Eliminate entries right of the pivot in its row with column operations.
+/// Simple subtraction when the pivot divides the entry; GCD-based otherwise.
+fn eliminate_row<T: Tracker>(m: &mut [Vec<i64>], t: &mut T, pivot: usize, ncols: usize) {
+    let nrows = m.len();
+    let pv = m[pivot][pivot];
+    for c in (pivot + 1)..ncols {
+        if m[pivot][c] == 0 { continue; }
+        if pv != 0 && m[pivot][c] % pv == 0 {
+            let q = m[pivot][c] / pv;
+            for r in 0..nrows { m[r][c] -= q * m[r][pivot]; }
+            t.col_add(c, pivot, q);
+        } else {
+            let (g, s, tt) = extended_gcd(pv, m[pivot][c]);
+            let a = pv / g;
+            let b = m[pivot][c] / g;
+            let old_p: Vec<i64> = (0..nrows).map(|r| m[r][pivot]).collect();
+            let old_c: Vec<i64> = (0..nrows).map(|r| m[r][c]).collect();
+            for r in 0..nrows {
+                m[r][pivot] = s * old_p[r] + tt * old_c[r];
+                m[r][c] = -b * old_p[r] + a * old_c[r];
+            }
+            t.col_gcd(pivot, c, s, tt, a, b);
+        }
+    }
+}
+
+/// Reduce `m` to Smith form in place (diagonal, each pivot positive), mirroring
+/// every elementary op onto `t`. Does *not* enforce divisibility or sort — each
+/// caller owns that tail (the plain path normalises the diagonal directly; the
+/// tracked path collapses 2×2 blocks so the basis stays valid).
+fn snf_reduce<T: Tracker>(m: &mut [Vec<i64>], t: &mut T, nrows: usize, ncols: usize) {
+    let min_dim = nrows.min(ncols);
     let mut pivot = 0;
-
     while pivot < min_dim {
-        // Find a nonzero entry in the submatrix m[pivot..][pivot..].
-        if !find_and_move_pivot(&mut m, pivot, num_rows, num_cols) {
+        if !find_and_move_pivot(m, t, pivot, nrows, ncols) {
             break; // remaining submatrix is zero
         }
-
-        // Eliminate entries in the pivot row and column.
-        // After eliminating, check if the pivot divides all entries in the
-        // remaining submatrix. If not, add a non-divisible entry's row to
-        // the pivot row and repeat. The pivot value strictly decreases each
-        // time a GCD reduction occurs, guaranteeing termination.
+        // Zero out the pivot row and column; then, if the pivot fails to divide
+        // some remaining entry, fold that entry's row into the pivot row so the
+        // next pass reduces the pivot via GCD. The pivot strictly decreases on
+        // each such reduction, guaranteeing termination.
         loop {
-            // Phase 1: zero out pivot column and row.
             loop {
-                eliminate_column(&mut m, pivot, num_rows);
-                eliminate_row(&mut m, pivot, num_cols);
-                if is_pivot_clean(&m, pivot, num_rows, num_cols) { break; }
+                eliminate_column(m, t, pivot, nrows);
+                eliminate_row(m, t, pivot, ncols);
+                if is_pivot_clean(m, pivot, nrows, ncols) { break; }
             }
-            // Phase 2: check divisibility in the remaining submatrix.
             let pv = m[pivot][pivot];
             if pv == 0 { break; }
             let mut found_bad = false;
-            'search: for r in (pivot + 1)..num_rows {
-                for c in (pivot + 1)..num_cols {
+            'search: for r in (pivot + 1)..nrows {
+                for c in (pivot + 1)..ncols {
                     if m[r][c] % pv != 0 {
-                        // Add row r to pivot row to introduce a non-divisible entry,
-                        // which will reduce the pivot via GCD on the next iteration.
-                        for j in 0..num_cols {
-                            m[pivot][j] += m[r][j];
-                        }
+                        for j in 0..ncols { m[pivot][j] += m[r][j]; }
+                        t.row_add(pivot, r, 1);
                         found_bad = true;
                         break 'search;
                     }
@@ -380,16 +535,24 @@ fn smith_normal_form(matrix: &[Vec<i64>]) -> Vec<i64> {
             }
             if !found_bad { break; }
         }
-
-        // Ensure the pivot is positive.
         if m[pivot][pivot] < 0 {
-            for j in 0..num_cols { m[pivot][j] = -m[pivot][j]; }
+            for j in 0..ncols { m[pivot][j] = -m[pivot][j]; }
+            t.row_negate(pivot);
         }
-
         pivot += 1;
     }
+}
 
-    // Extract diagonal and enforce divisibility.
+fn smith_normal_form(matrix: &[Vec<i64>]) -> Vec<i64> {
+    if matrix.is_empty() { return vec![]; }
+    let nrows = matrix.len();
+    let ncols = matrix[0].len();
+    if ncols == 0 { return vec![]; }
+
+    let mut m: Vec<Vec<i64>> = matrix.to_vec();
+    snf_reduce(&mut m, &mut NoTrack, nrows, ncols);
+
+    let min_dim = nrows.min(ncols);
     let mut diag: Vec<i64> = (0..min_dim).map(|i| m[i][i].abs()).collect();
     enforce_divisibility(&mut diag);
 
@@ -436,161 +599,15 @@ fn smith_normal_form_with_basis(matrix: &[Vec<i64>]) -> (Vec<i64>, Vec<Vec<i64>>
     let mut u_inv: Vec<Vec<i64>> = identity(num_rows);
     let mut v: Vec<Vec<i64>> = identity(num_cols);
 
+    snf_reduce(&mut m, &mut FullTrack { u_inv: &mut u_inv, v: &mut v }, num_rows, num_cols);
+
     let min_dim = num_rows.min(num_cols);
-    let mut pivot = 0;
-
-    while pivot < min_dim {
-        if !find_and_move_pivot_tracked(&mut m, &mut u_inv, &mut v, pivot, num_rows, num_cols) {
-            break;
-        }
-        loop {
-            loop {
-                eliminate_column_tracked(&mut m, &mut u_inv, pivot, num_rows);
-                eliminate_row_tracked(&mut m, &mut v, pivot, num_cols);
-                if is_pivot_clean(&m, pivot, num_rows, num_cols) { break; }
-            }
-            let pv = m[pivot][pivot];
-            if pv == 0 { break; }
-            let mut found_bad = false;
-            'search: for r in (pivot + 1)..num_rows {
-                for c in (pivot + 1)..num_cols {
-                    if m[r][c] % pv != 0 {
-                        row_add_tracked(&mut m, &mut u_inv, pivot, r, 1);
-                        found_bad = true;
-                        break 'search;
-                    }
-                }
-            }
-            if !found_bad { break; }
-        }
-
-        if m[pivot][pivot] < 0 {
-            row_negate_tracked(&mut m, &mut u_inv, pivot);
-        }
-
-        pivot += 1;
-    }
-
     let diag: Vec<i64> = (0..min_dim).map(|i| m[i][i]).collect();
     (diag, u_inv, v)
 }
 
 fn identity(n: usize) -> Vec<Vec<i64>> {
     (0..n).map(|i| (0..n).map(|j| if i == j { 1 } else { 0 }).collect()).collect()
-}
-
-/// Row swap on `m` with corresponding column swap on `u_inv`.
-///
-/// A row op E applied to M also acts on U (U := E·U). The corresponding action
-/// on U^{-1} (so that U·U^{-1} stays the identity) is right-multiplication by
-/// E^{-1}. For a row swap (self-inverse), that's a column swap on U_inv.
-fn row_swap_tracked(m: &mut [Vec<i64>], u_inv: &mut [Vec<i64>], p: usize, r: usize) {
-    m.swap(p, r);
-    for row in u_inv.iter_mut() {
-        row.swap(p, r);
-    }
-}
-
-/// `R_dest += q · R_src` on `m`, with the inverse column op `C_src -= q · C_dest` on `u_inv`.
-fn row_add_tracked(m: &mut [Vec<i64>], u_inv: &mut [Vec<i64>], dest: usize, src: usize, q: i64) {
-    let ncols = m[0].len();
-    for j in 0..ncols {
-        m[dest][j] += q * m[src][j];
-    }
-    for row in u_inv.iter_mut() {
-        let cd = row[dest];
-        row[src] -= q * cd;
-    }
-}
-
-/// Negate row `r` on `m`, with the corresponding column negation on `u_inv`.
-fn row_negate_tracked(m: &mut [Vec<i64>], u_inv: &mut [Vec<i64>], r: usize) {
-    let ncols = m[0].len();
-    for j in 0..ncols { m[r][j] = -m[r][j]; }
-    for row in u_inv.iter_mut() { row[r] = -row[r]; }
-}
-
-/// 2×2 GCD-style row op replacing `(R_p, R_r)` with `(s·R_p + t·R_r, -b·R_p + a·R_r)`.
-/// The inverse column op on `u_inv` is the 2×2 block `[[a, -t], [b, s]]` on cols `(p, r)`.
-fn row_gcd_tracked(
-    m: &mut [Vec<i64>], u_inv: &mut [Vec<i64>],
-    p: usize, r: usize,
-    s: i64, t: i64, a: i64, b: i64,
-) {
-    let ncols = m[0].len();
-    let old_p = m[p].clone();
-    let old_r = m[r].clone();
-    for j in 0..ncols {
-        m[p][j] = s * old_p[j] + t * old_r[j];
-        m[r][j] = -b * old_p[j] + a * old_r[j];
-    }
-    for row in u_inv.iter_mut() {
-        let cp = row[p];
-        let cr = row[r];
-        row[p] = a * cp + b * cr;
-        row[r] = -t * cp + s * cr;
-    }
-}
-
-/// Like `find_and_move_pivot` but mirrors the row swap onto `u_inv` and the
-/// column swap onto `v`.
-fn find_and_move_pivot_tracked(
-    m: &mut [Vec<i64>], u_inv: &mut [Vec<i64>], v: &mut [Vec<i64>],
-    pivot: usize, nrows: usize, ncols: usize,
-) -> bool {
-    let mut best: Option<(usize, usize, i64)> = None;
-    for r in pivot..nrows {
-        for c in pivot..ncols {
-            let val = m[r][c].abs();
-            if val > 0 {
-                if best.is_none() || val < best.unwrap().2 {
-                    best = Some((r, c, val));
-                }
-            }
-        }
-    }
-    let Some((br, bc, _)) = best else { return false; };
-    if br != pivot {
-        row_swap_tracked(m, u_inv, pivot, br);
-    }
-    if bc != pivot {
-        for row in m.iter_mut() { row.swap(pivot, bc); }
-        for row in v.iter_mut() { row.swap(pivot, bc); }
-    }
-    true
-}
-
-/// Like `eliminate_row` but mirrors the column ops onto `v`.
-fn eliminate_row_tracked(m: &mut [Vec<i64>], v: &mut [Vec<i64>], pivot: usize, ncols: usize) {
-    let nrows = m.len();
-    let pv = m[pivot][pivot];
-    for c in (pivot + 1)..ncols {
-        if m[pivot][c] == 0 { continue; }
-        if pv != 0 && m[pivot][c] % pv == 0 {
-            let q = m[pivot][c] / pv;
-            // C_c -= q · C_pivot on both m and v.
-            for r in 0..nrows { m[r][c] -= q * m[r][pivot]; }
-            for row in v.iter_mut() { row[c] -= q * row[pivot]; }
-        } else {
-            let (g, s, t) = extended_gcd(pv, m[pivot][c]);
-            let a = pv / g;
-            let b = m[pivot][c] / g;
-            // 2×2 column op on cols (pivot, c): new_pivot = s·old_pivot + t·old_c,
-            // new_c = -b·old_pivot + a·old_c. Apply to m and to v.
-            for r in 0..nrows {
-                let o1 = m[r][pivot];
-                let o2 = m[r][c];
-                m[r][pivot] = s * o1 + t * o2;
-                m[r][c] = -b * o1 + a * o2;
-            }
-            for row in v.iter_mut() {
-                let o1 = row[pivot];
-                let o2 = row[c];
-                row[pivot] = s * o1 + t * o2;
-                row[c] = -b * o1 + a * o2;
-            }
-        }
-    }
 }
 
 /// Like `enforce_divisibility` but tracks `u_inv` so that, for every adjacent pair
@@ -683,104 +700,6 @@ fn permute_first_n_columns(mat: &mut [Vec<i64>], perm: &[usize], n: usize) {
             .map(|c| if c < n { row[perm[c]] } else { row[c] })
             .collect();
         *row = new_row;
-    }
-}
-
-/// Like `eliminate_column` but mirrors row ops onto `u_inv`.
-fn eliminate_column_tracked(m: &mut [Vec<i64>], u_inv: &mut [Vec<i64>], pivot: usize, nrows: usize) {
-    let pv = m[pivot][pivot];
-    for r in (pivot + 1)..nrows {
-        if m[r][pivot] == 0 { continue; }
-        if pv != 0 && m[r][pivot] % pv == 0 {
-            let q = m[r][pivot] / pv;
-            // R_r -= q · R_pivot, i.e. R_r += (-q) · R_pivot.
-            row_add_tracked(m, u_inv, r, pivot, -q);
-        } else {
-            let (g, s, t) = extended_gcd(pv, m[r][pivot]);
-            let a = pv / g;
-            let b = m[r][pivot] / g;
-            row_gcd_tracked(m, u_inv, pivot, r, s, t, a, b);
-        }
-    }
-}
-
-/// Find a nonzero entry in m[pivot..][pivot..] and swap it to (pivot, pivot).
-fn find_and_move_pivot(m: &mut [Vec<i64>], pivot: usize, nrows: usize, ncols: usize) -> bool {
-    // Prefer the smallest nonzero absolute value for better elimination.
-    let mut best: Option<(usize, usize, i64)> = None;
-    for r in pivot..nrows {
-        for c in pivot..ncols {
-            let v = m[r][c].abs();
-            if v > 0 {
-                if best.is_none() || v < best.unwrap().2 {
-                    best = Some((r, c, v));
-                }
-            }
-        }
-    }
-    let Some((br, bc, _)) = best else { return false; };
-    m.swap(pivot, br);
-    for row in m.iter_mut() {
-        row.swap(pivot, bc);
-    }
-    true
-}
-
-/// Eliminate entries in the pivot column below the pivot using row operations.
-///
-/// Uses simple subtraction when the pivot divides the entry (avoids changing
-/// the pivot row). Falls back to GCD-based operations when it doesn't.
-fn eliminate_column(m: &mut [Vec<i64>], pivot: usize, nrows: usize) {
-    let ncols = m[0].len();
-    let pv = m[pivot][pivot];
-    for r in (pivot + 1)..nrows {
-        if m[r][pivot] == 0 { continue; }
-        if pv != 0 && m[r][pivot] % pv == 0 {
-            // Simple case: subtract a multiple of the pivot row.
-            let q = m[r][pivot] / pv;
-            for j in 0..ncols {
-                m[r][j] -= q * m[pivot][j];
-            }
-        } else {
-            // GCD case: replace pivot with gcd.
-            let (g, s, t) = extended_gcd(pv, m[r][pivot]);
-            let a = pv / g;
-            let b = m[r][pivot] / g;
-            let old_pivot_row = m[pivot].clone();
-            let old_r_row = m[r].clone();
-            for j in 0..ncols {
-                m[pivot][j] = s * old_pivot_row[j] + t * old_r_row[j];
-                m[r][j] = -b * old_pivot_row[j] + a * old_r_row[j];
-            }
-        }
-    }
-}
-
-/// Eliminate entries in the pivot row to the right of the pivot using column operations.
-///
-/// Uses simple subtraction when the pivot divides the entry. Falls back to
-/// GCD-based operations when it doesn't.
-fn eliminate_row(m: &mut [Vec<i64>], pivot: usize, ncols: usize) {
-    let nrows = m.len();
-    let pv = m[pivot][pivot];
-    for c in (pivot + 1)..ncols {
-        if m[pivot][c] == 0 { continue; }
-        if pv != 0 && m[pivot][c] % pv == 0 {
-            let q = m[pivot][c] / pv;
-            for r in 0..nrows {
-                m[r][c] -= q * m[r][pivot];
-            }
-        } else {
-            let (g, s, t) = extended_gcd(pv, m[pivot][c]);
-            let a = pv / g;
-            let b = m[pivot][c] / g;
-            let old_pivot_col: Vec<i64> = (0..nrows).map(|r| m[r][pivot]).collect();
-            let old_c_col: Vec<i64> = (0..nrows).map(|r| m[r][c]).collect();
-            for r in 0..nrows {
-                m[r][pivot] = s * old_pivot_col[r] + t * old_c_col[r];
-                m[r][c] = -b * old_pivot_col[r] + a * old_c_col[r];
-            }
-        }
     }
 }
 

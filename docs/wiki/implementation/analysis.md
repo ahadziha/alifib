@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-01
+last-touched: 2026-06-04
 code: [src/analysis/homology.rs, src/analysis/strdiag.rs]
 ---
 
@@ -112,27 +112,24 @@ source set, i.e. it is not already accounted for by the higher-dimensional flow.
   $d_{n+1}(\text{preimage})$ from the ogposet for eleven types and checks both
   identities; `witness_torsion_example`, `witness_races_k_contention`,
   `witness_aba_bug` pin specific cycles.
-- **Two parallel SNF families — untracked and tracked.** They are *separate*
-  code, not one parameterised driver. The **untracked** family —
-  `smith_normal_form` (diagonal only) with helpers `find_and_move_pivot`,
-  `eliminate_column`, `eliminate_row`, `enforce_divisibility` — has the single
-  caller `matrix_rank`, used everywhere a rank is wanted. The **tracked** family
-  — `smith_normal_form_with_basis` (returns `u_inv`/`v`) with the mirrored
-  helpers `find_and_move_pivot_tracked`, `eliminate_column_tracked`,
-  `eliminate_row_tracked`, `enforce_divisibility_tracked`, `sort_diag_tracked`,
-  and the elementary-op carriers `row_swap_tracked` / `row_add_tracked` /
-  `row_negate_tracked` / `row_gcd_tracked` — is called only from
-  `compute_homology` (for witnesses). Both share the same pivot strategy:
-  `find_and_move_pivot{,_tracked}` picks the *smallest* nonzero $|m_{rc}|$ to
-  bound the GCD reductions, guaranteeing termination. The tracked variant
-  additionally mirrors every row op as the inverse column op on `u_inv` and
-  every column op onto `v` — that inverse-op bookkeeping is the whole point
-  (see the doc comments on those `fn`s, all *(internal)*). The driver loops and
-  the integer 2×2 row arithmetic are near line-for-line duplicated across the
-  two families (~150 LOC of overlap), so the two copies of the subtle SNF logic
-  must be kept in lockstep — a known correctness risk, **not yet DRY** (tracked
-  in `source-drift.md`: parameterise over a `Tracker` trait so one generic
-  driver serves both).
+- **One SNF driver, parameterised by a `Tracker`.** A single generic
+  `snf_reduce<T: Tracker>` runs the pivot/eliminate loop once, with generic
+  helpers `find_and_move_pivot`, `eliminate_column`, `eliminate_row`. The pivot
+  strategy picks the *smallest* nonzero $|m_{rc}|$ to bound the GCD reductions,
+  guaranteeing termination. The `Tracker` trait (seven elementary mirror ops —
+  `row_swap`/`row_add`/`row_negate`/`row_gcd` + `col_swap`/`col_add`/`col_gcd`)
+  has two impls: zero-cost **`NoTrack`** (all no-ops), used by `smith_normal_form`
+  → `matrix_rank`; and **`FullTrack`**, used by `smith_normal_form_with_basis` →
+  `compute_homology`, which mirrors every row op as the *inverse* column op on
+  `u_inv` and every column op directly onto `v` — that inverse-op bookkeeping is
+  the whole point of tracking (see the `FullTrack` method doc comments, all
+  *(internal)*). Only the post-loop **tails** differ, and stay separate by design:
+  the plain path normalises the diagonal in place (`enforce_divisibility` + sort),
+  while the tracked path returns the *raw* positional diagonal and lets
+  `compute_homology` run `enforce_divisibility_tracked` / `sort_diag_tracked` so
+  the basis columns stay paired with `diag[i]`. (This replaced the former two
+  near-line-for-line-duplicated families; see `source-drift.md`, the 2026-06-04
+  WET resolution.)
 - **Generator ordering is the chosen basis.** Sorting `gens_by_dim` by name is
   load-bearing: it fixes which generator is row/column $i$, hence what the
   witness coefficients *mean*. Change the sort and the witness coordinates

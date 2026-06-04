@@ -1,7 +1,8 @@
 //! Shared browser-facing API for the web GUI.
 //!
-//! `WebRepl` is the stateful adapter used by both web backends — the HTTP
-//! server at `web/server/` and the WASM bindings at `web/wasm/`.  It is a thin
+//! `WebRepl` is the stateful adapter shared by the web backends — the HTTP
+//! server at `web/server/`, the WASM bindings at `web/wasm/`, and the MCP
+//! server at `web/mcp/`.  It is a thin
 //! wrapper over the shared [`Session`] (with a virtual-module loader): command
 //! dispatch is `session.apply`, the same machine the CLI and stdio daemon use.
 //! The only web-specific work is the structured-diagnostics load path, the
