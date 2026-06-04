@@ -38,27 +38,6 @@ fn parse_paste_dim(context: &Context, dim: &Spanned<String>) -> Step<usize> {
         .unwrap_or_else(|_| fail(context, dim.span, format!("Invalid paste dimension: {}", dim.inner)))
 }
 
-
-/// Returns `true` if `diagram` is a single un-parenthesized or parenthesized `?`.
-pub(super) fn is_pure_hole_diagram(diagram: &ast::Diagram) -> bool {
-    match diagram {
-        ast::Diagram::PrincipalPaste(exprs) if exprs.len() == 1 => {
-            is_pure_hole_dexpr(&exprs[0].inner)
-        }
-        _ => false,
-    }
-}
-
-pub(super) fn is_pure_hole_dexpr(expr: &ast::DExpr) -> bool {
-    match expr {
-        ast::DExpr::Component(ast::DComponent::Hole) => true,
-        ast::DExpr::Component(ast::DComponent::Paren(inner)) => {
-            is_pure_hole_diagram(&inner.inner)
-        }
-        _ => false,
-    }
-}
-
 // ---- Diagram interpretation ----
 
 /// A structural decomposition of a dotted expression into deferred parts.
@@ -310,11 +289,6 @@ pub fn interpret_dcomponent(
             let (term_opt, result) = interpret_diagram_as_term(context, scope, inner_diag);
             (term_opt.map(Component::Value), result)
         }
-        DComponent::Hole => fail(
-            context,
-            span,
-            "`?` is only allowed as the entire right-hand side of a partial-map clause",
-        ),
         DComponent::Run { strategy, diagram } => match strategy.inner {
             ast::Strategy::Auto => interpret_run_auto(context, scope, diagram, span),
         },

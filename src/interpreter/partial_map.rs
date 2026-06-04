@@ -1,4 +1,4 @@
-use super::diagram::{interpret_diagram_as_term, is_pure_hole_diagram};
+use super::diagram::interpret_diagram_as_term;
 use super::resolve::{interpret_address, resolve_map_domain_complex, resolve_module_domain, resolve_type_complex};
 use super::types::{
     Context, EvalMap, InterpResult, Step, Term,
@@ -658,25 +658,28 @@ fn interpret_partial_map_clause(ctx: &PartialMapCtx<'_>, mut build: MapBuild, cl
 
     // Pure-hole RHS `... => ?`: the image is unknown.  A cell source becomes one
     // hole; a map source holes every constituent cell of its image (pointwise).
-    // The RHS is not evaluated as a diagram.
-    if is_pure_hole_diagram(&clause.rhs.inner) {
-        let res = match &left_term {
-            Term::Diag(source) => assign_cell(&mut build, &left_result.context, ctx.domain, source, None),
-            Term::Map(f_map) => hole_map_image(&mut build, &left_result.context, ctx.domain, f_map),
-        };
-        return match res {
-            Ok(()) => (Some(build), left_result),
-            Err(e) => {
-                let mut r = left_result;
-                let blame = build.blame_span.take().unwrap_or(span);
-                r.add_error(make_error_from_core(blame, e));
-                (None, r)
-            }
-        };
-    }
+    // The hole is its own RHS variant — there is no diagram to evaluate.
+    let rhs = match &clause.rhs {
+        ast::ClauseRhs::Hole(_) => {
+            let res = match &left_term {
+                Term::Diag(source) => assign_cell(&mut build, &left_result.context, ctx.domain, source, None),
+                Term::Map(f_map) => hole_map_image(&mut build, &left_result.context, ctx.domain, f_map),
+            };
+            return match res {
+                Ok(()) => (Some(build), left_result),
+                Err(e) => {
+                    let mut r = left_result;
+                    let blame = build.blame_span.take().unwrap_or(span);
+                    r.add_error(make_error_from_core(blame, e));
+                    (None, r)
+                }
+            };
+        }
+        ast::ClauseRhs::Diagram(rhs) => rhs,
+    };
 
     let (right_opt, right_result) =
-        interpret_diagram_as_term(&left_result.context, ctx.scope, &clause.rhs);
+        interpret_diagram_as_term(&left_result.context, ctx.scope, rhs);
     let mut combined = left_result.merge(right_result);
     let Some(right_term) = right_opt else { return (None, combined); };
 

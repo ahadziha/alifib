@@ -217,7 +217,8 @@ fn map_hole_basic_loads() {
 }
 
 /// A hole embedded in a composite RHS (`arr => ? g`) is not the basic case and
-/// must be rejected.
+/// must be rejected.  `?` is only a clause RHS, not a diagram component, so this
+/// is now caught at parse time.
 #[test]
 fn embedded_hole_is_error() {
     let result = InterpretedFile::load(&Loader::default(vec![]), &fixture("EmbeddedHole.ali"));

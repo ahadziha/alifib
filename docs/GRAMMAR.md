@@ -101,12 +101,14 @@
 -- * a concatenation of explicit pastings
 -- * each of which is a concatenation of implicit pastings
 -- * each part of which is a dotted series of components
--- * which are either names, partial maps, anonymous maps, boundaries, (diagrams), or holes
+-- * which are either names, partial maps, anonymous maps, boundaries, or (diagrams)
+-- A hole "?" is not a component: it may appear only as the whole right-hand
+-- side of a partial map clause (see <PMapClause> below).
 
 <Diagram> ::= <DPrincipal> | <Diagram> "#" <Nat> <DPrincipal>
 <DPrincipal> ::= <DExpr> | <DPrincipal> <DExpr>
 <DExpr> ::= <DComponent> | <DExpr> "." <DComponent>
-<DComponent> ::= <Name> | <AnonMap> | <RunExpr> | <Bd> | "(" <Diagram> ")" | "?"
+<DComponent> ::= <Name> | <AnonMap> | <RunExpr> | <Bd> | "(" <Diagram> ")"
 <Bd> ::= "in" | "out"
 <RunExpr> ::= "(" "run" <Strategy> "on" <Diagram> ")"
 <Strategy> ::= "auto"
@@ -131,4 +133,7 @@
 <PMapExt> ::= [ <PMap> ] "[" <PMapEntries> "]"
 <PMapEntries> ::= <PMapEntry> { "," <PMapEntry> } [ "," ]
 <PMapEntry> ::= <PMapClause> | <ForBlock>
-<PMapClause> ::= <Diagram> "=>" <Diagram>
+
+-- A clause names the image of a diagram, or leaves it open with a bare hole "?".
+
+<PMapClause> ::= <Diagram> "=>" <Diagram> | <Diagram> "=>" "?"

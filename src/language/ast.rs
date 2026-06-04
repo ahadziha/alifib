@@ -178,7 +178,6 @@ pub enum DComponent {
     In,
     Out,
     Paren(Box<Spanned<Diagram>>),
-    Hole,
     Run {
         strategy: Spanned<Strategy>,
         diagram: Box<Spanned<Diagram>>,
@@ -238,7 +237,15 @@ pub enum PartialMapBasic {
 
 pub struct PartialMapClause {
     pub lhs: Spanned<Diagram>,
-    pub rhs: Spanned<Diagram>,
+    pub rhs: ClauseRhs,
+}
+
+/// The right-hand side of a partial-map clause: either a diagram naming the
+/// image, or a bare hole `?` declining to.  A hole is *only* legal here — it is
+/// not a diagram component — so it carries just the span of its `?` token.
+pub enum ClauseRhs {
+    Diagram(Spanned<Diagram>),
+    Hole(Span),
 }
 
 pub enum PMapEntry {

@@ -42,7 +42,6 @@ impl fmt::Display for DComponent {
             Self::In => f.write_str("in"),
             Self::Out => f.write_str("out"),
             Self::Paren(d) => write!(f, "({})", d.inner),
-            Self::Hole => f.write_str("?"),
             Self::Run { strategy, diagram } => {
                 write!(f, "(run {} on {})", strategy.inner, diagram.inner)
             }
@@ -100,7 +99,10 @@ impl fmt::Display for NameWithBoundary {
 
 impl fmt::Display for PartialMapClause {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} => {}", self.lhs.inner, self.rhs.inner)
+        match &self.rhs {
+            ClauseRhs::Diagram(d) => write!(f, "{} => {}", self.lhs.inner, d.inner),
+            ClauseRhs::Hole(_) => write!(f, "{} => ?", self.lhs.inner),
+        }
     }
 }
 

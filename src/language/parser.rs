@@ -4,7 +4,7 @@ use chumsky::recursive::Recursive;
 use chumsky::span::SimpleSpan;
 
 use super::ast::{
-    Address, AssertStmt, AttachStmt, Block, Boundary, ComplexInstr, Complex, DComponent, DExpr,
+    Address, AssertStmt, AttachStmt, Block, Boundary, ClauseRhs, ComplexInstr, Complex, DComponent, DExpr,
     DefPartialMap, Diagram, ForBlock, ForIndex, Generator, IncludeModule, IncludeStmt, IndexDecl,
     LetDiag, LocalInst, NameWithBoundary, PMapEntry, PartialMap, PartialMapBasic,
     PartialMapClause, PartialMapDef, PartialMapExt, Program, Span, Spanned, Strategy, TypeInst,
@@ -153,10 +153,15 @@ fn build_partial_map_def<'tokens, 'src: 'tokens>(
     partial_map: RPartialMap<'tokens, 'src>,
 ) -> RPartialMapDef<'tokens, 'src> {
     recursive(move |_| {
+        let clause_rhs = choice((
+            t(Token::Question).map_with(|_, e| ClauseRhs::Hole(cspan(e.span()))),
+            diagram.clone().map(ClauseRhs::Diagram),
+        ));
+
         let clause = diagram
             .clone()
             .then_ignore(t(Token::FatArrow))
-            .then(diagram.clone())
+            .then(clause_rhs)
             .map_with(|(lhs, rhs), e| sp(PMapEntry::Clause(PartialMapClause { lhs, rhs }), cspan(e.span())));
 
         let pmap_for = for_block()
@@ -408,7 +413,6 @@ fn build_diagram<'tokens, 'src: 'tokens>() -> RDiagram<'tokens, 'src> {
                 .map(|d| DComponent::Paren(Box::new(d))),
             t(Token::In).map(|_| DComponent::In),
             t(Token::Out).map(|_| DComponent::Out),
-            t(Token::Question).map(|_| DComponent::Hole),
             select_ref! {
                 Token::Str(s) => *s,
             }.map_with(|s, e| expand_string_literal(s, cspan(e.span()))),
@@ -770,10 +774,15 @@ pub fn pmap_clauses_parser<'tokens, 'src: 'tokens>()
 -> impl Parser<'tokens, TokenInput<'tokens, 'src>, Vec<Spanned<PMapEntry>>, E<'tokens, 'src>> {
     let diagram = build_diagram();
 
+    let clause_rhs = choice((
+        t(Token::Question).map_with(|_, e| ClauseRhs::Hole(cspan(e.span()))),
+        diagram.clone().map(ClauseRhs::Diagram),
+    ));
+
     let clause = diagram
         .clone()
         .then_ignore(t(Token::FatArrow))
-        .then(diagram)
+        .then(clause_rhs)
         .map_with(|(lhs, rhs), e| sp(PMapEntry::Clause(PartialMapClause { lhs, rhs }), cspan(e.span())));
 
     let pmap_for = for_block()

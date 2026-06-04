@@ -338,7 +338,6 @@ impl Printer {
             }
             DComponent::In => self.s("in"),
             DComponent::Out => self.s("out"),
-            DComponent::Hole => self.s("?"),
             DComponent::Paren(inner) => {
                 self.s("(");
                 self.diagram(&inner.inner);
@@ -428,6 +427,9 @@ impl Printer {
     fn partial_map_clause(&mut self, clause: &PartialMapClause) {
         self.diagram(&clause.lhs.inner);
         self.s(" => ");
-        self.diagram(&clause.rhs.inner);
+        match &clause.rhs {
+            ClauseRhs::Diagram(d) => self.diagram(&d.inner),
+            ClauseRhs::Hole(_) => self.s("?"),
+        }
     }
 }

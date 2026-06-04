@@ -448,11 +448,10 @@ fn edit_map_definition(
             // Pin onto an explicit `source_name => ?` clause if there is one.
             for c in &ext.clauses {
                 if let PMapEntry::Clause(cl) = &c.inner {
-                    if lhs_generator_name(&cl.lhs.inner).as_deref() == Some(source_name)
-                        && rhs_is_hole(&cl.rhs.inner)
-                    {
-                        let span = cl.rhs.span;
-                        return Ok(format!("{}{}{}", &source[..span.start], expr, &source[span.end..]));
+                    if lhs_generator_name(&cl.lhs.inner).as_deref() == Some(source_name) {
+                        if let ast::ClauseRhs::Hole(span) = &cl.rhs {
+                            return Ok(format!("{}{}{}", &source[..span.start], expr, &source[span.end..]));
+                        }
                     }
                 }
             }
@@ -495,12 +494,6 @@ fn lhs_generator_name(d: &ast::Diagram) -> Option<String> {
         },
         _ => None,
     }
-}
-
-/// Whether a clause's right-hand side is a bare hole `?`.
-fn rhs_is_hole(d: &ast::Diagram) -> bool {
-    let ast::Diagram::PrincipalPaste(comps) = d else { return false };
-    matches!(comps.as_slice(), [c] if matches!(c.inner, ast::DExpr::Component(ast::DComponent::Hole)))
 }
 
 /// Locate the `value` of map `map_name` defined in the `@type_name` block.
