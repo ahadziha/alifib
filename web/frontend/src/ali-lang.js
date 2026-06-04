@@ -4,7 +4,7 @@ import { Tag } from '@lezer/highlight';
 import { tags } from '@lezer/highlight';
 
 const KEYWORDS_CONTROL = new Set(['attach', 'along', 'include', 'assert', 'for', 'bar', 'index']);
-const KEYWORDS_OTHER   = new Set(['let', 'def', 'as', 'total', 'map', 'run', 'in', 'out', 'on']);
+const KEYWORDS_OTHER   = new Set(['let', 'as', 'total', 'map', 'run', 'in', 'out', 'on']);
 
 export const aliTags = {
   decoType: Tag.define(),
@@ -47,16 +47,31 @@ const aliMode = {
       return 'blockComment';
     }
 
+    const quote = stream.peek();
+    if (quote === '"' || quote === "'") {
+      stream.next();
+      while (!stream.eol()) {
+        const c = stream.next();
+        if (c === '\\') { stream.next(); }
+        else if (c === quote) { break; }
+      }
+      return 'string';
+    }
+
     if (stream.peek() === '@') {
       stream.next();
-      stream.match(/^[A-Za-z_][A-Za-z0-9_.]*/);
+      stream.match(/^[A-Za-z0-9_][A-Za-z0-9_.]*/);
       return stream.current() === '@Type' ? 'decoType' : 'decoId';
     }
 
     if (stream.match(/^<[A-Za-z_][A-Za-z0-9_]*>/)) return 'interpolation';
 
-    if (stream.match(/^[A-Za-z_][A-Za-z0-9_]*/)) {
+    // Identifiers may start with a digit (e.g. `2Morphism`, `0Simplex`); only an
+    // all-digit token is a number. Matches the lexer, which lexes `[A-Za-z0-9_]+`
+    // as one identifier unless every character is a digit.
+    if (stream.match(/^[A-Za-z0-9_]+/)) {
       const word = stream.current();
+      if (/^[0-9]+$/.test(word)) return null;
       if (KEYWORDS_CONTROL.has(word) || KEYWORDS_OTHER.has(word)) return 'keyword';
       const rest = stream.string.slice(stream.pos);
       if (/^[ \t]*<<=/.test(rest)) return 'typeHead';
@@ -94,6 +109,7 @@ export const aliLanguage = StreamLanguage.define(aliMode);
 
 export const aliDarkHighlight = HighlightStyle.define([
   { tag: tags.blockComment,  color: '#6b8a6b', fontStyle: 'italic' },
+  { tag: tags.string,        color: '#ce9178' },
   { tag: tags.keyword,       color: '#c586c0', fontWeight: '600' },
   { tag: aliTags.decoType,   color: '#7c6af2', fontWeight: '600' },
   { tag: aliTags.decoId,     color: '#5fa8d3' },
@@ -107,6 +123,7 @@ export const aliDarkHighlight = HighlightStyle.define([
 
 export const aliLightHighlight = HighlightStyle.define([
   { tag: tags.blockComment,  color: '#6a8a58', fontStyle: 'italic' },
+  { tag: tags.string,        color: '#a85d2a' },
   { tag: tags.keyword,       color: '#a03870', fontWeight: '600' },
   { tag: aliTags.decoType,   color: '#1a7a7a', fontWeight: '600' },
   { tag: aliTags.decoId,     color: '#1a6060' },
