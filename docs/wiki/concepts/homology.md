@@ -160,7 +160,7 @@ show torsion as a contention diagnostic.
 engine* — the daemon (`src/interactive/daemon.rs`) and engine
 (`src/interactive/engine.rs`) both short-circuit `Request::Homology` rather than
 running it through the rewriting machinery, since it needs only the static
-complex. See [[interactive-repl]]. (`INTERACTIVE.md` lists the `homology <name>`
+complex. See [[interactive-repl]]. (`docs/INTERACTIVE.md` lists the `homology <name>`
 command.)
 
 ## Related

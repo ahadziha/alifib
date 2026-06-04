@@ -100,4 +100,4 @@ On top of that, alifib can *rewrite*. A strategy expression such as
 `(run auto on d)` reduces a diagram by applying the ambient type's higher cells
 as directed rewrite rules until it reaches a normal form, and the interactive
 interfaces (REPL, web GUI, daemon) build such rewrites step by step — see
-[`INTERACTIVE.md`](../INTERACTIVE.md).
+[`INTERACTIVE.md`](INTERACTIVE.md).

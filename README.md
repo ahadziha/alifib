@@ -144,7 +144,7 @@ Key commands:
 | `stop` | End the active session |
 | `help` | Full command list |
 
-See `INTERACTIVE.md` for the complete reference.
+See `docs/INTERACTIVE.md` for the complete reference.
 
 ### Daemon
 
@@ -187,7 +187,7 @@ available rewrites). Informational commands add extra fields: `types`, `type_det
 (during a hole-filling session). All three front-ends — REPL, daemon, web — share one
 command core, so the command set and responses are identical across them.
 
-See `INTERACTIVE.md` for the full protocol reference.
+See `docs/INTERACTIVE.md` for the full protocol reference.
 
 ### Web GUI
 
@@ -266,7 +266,6 @@ web/
   wasm/        alifib-wasm crate — WebAssembly bindings (built via wasm-pack)
 editors/       Editor integrations (e.g. VS Code syntax highlighting)
 examples/      Example .ali files (served by `alifib web` at runtime)
-docs/          Grammar, interpreter description, and design notes
+docs/          Grammar, interactive & testing guides, homology, design notes
 plugins/trs/   Plugin: convert term rewriting systems to alifib
-INTERACTIVE.md Full reference for the REPL, web GUI, and daemon
 ```
