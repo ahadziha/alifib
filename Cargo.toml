@@ -1,7 +1,7 @@
 [workspace]
-members = ["cli", "plugins/trs", "web/mcp", "web/server", "web/shared"]
+members = ["cli", "web/mcp", "web/server", "web/shared"]
 # Running `cargo build` / `cargo run` / `cargo test` from the workspace root
-# defaults to the CLI binary + its transitive deps.  Plugins and web crates
+# defaults to the CLI binary + its transitive deps.  The web crates
 # still build on explicit request (e.g. `cargo build --workspace`).
 default-members = ["cli"]
 

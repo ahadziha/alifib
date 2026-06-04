@@ -68,12 +68,12 @@ See `examples/` for more, and `docs/GRAMMAR.md` for the full grammar.
 ## Building
 
 The repository is a Cargo workspace. The default target is the `alifib` CLI
-binary — everything else (web server, wasm bindings, plugins) is opt-in.
+binary — everything else (web server, wasm bindings) is opt-in.
 
 ```
 cargo build --release              # builds the `alifib` CLI binary
 cargo test                         # runs the CLI + library tests
-cargo build --release --workspace  # also builds plugins and the web server
+cargo build --release --workspace  # also builds the web server
 ```
 
 The WebAssembly crate at `web/wasm/` is intentionally outside the workspace
@@ -266,6 +266,5 @@ web/
   wasm/        alifib-wasm crate — WebAssembly bindings (built via wasm-pack)
 editors/       Editor integrations (e.g. VS Code syntax highlighting)
 examples/      Example .ali files (served by `alifib web` at runtime)
-docs/          Grammar, interactive & testing guides, homology, design notes
-plugins/trs/   Plugin: convert term rewriting systems to alifib
+docs/          Grammar, homology, and the interactive & testing guides
 ```
