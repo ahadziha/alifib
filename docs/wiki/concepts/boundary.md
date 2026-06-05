@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-01
+last-touched: 2026-06-05
 ---
 
 # Boundary
@@ -64,13 +64,22 @@ heap of cells.
 ### Roundness
 
 A diagram is **round** when its input and output boundaries are *disjoint* in
-every dimension below the top — they share no cell except where forced. Concretely
-(after the trivial cases $\dim \le 0$ and a single top cell) one accumulates the
-input and output layers dimension by dimension and checks they stay disjoint at
-each level. Roundness is the precondition for composition: $\#_k$ is only defined
-when both arguments are round, so that the glued boundaries are clean spheres and
-the result is again a well-formed molecule. A non-round diagram has a tangled
-frontier and cannot serve as a [[molecule]].
+every dimension below the top — they share no cell except where forced — so that
+together they close up into a directed sphere. Concretely (after the trivial
+cases $\dim \le 0$ and a single top cell) one accumulates the input and output
+layers dimension by dimension and checks they stay disjoint at each level.
+
+Roundness is a property of the **shape**, not of the labelling: it is read off
+the bare [[oriented-graded-poset]], ignoring which generators sit on the cells.
+And it is the precondition for a diagram to be the **input or output boundary of
+a cell** — the gate of cell construction, where the two boundary diagrams must be
+round and parallel before they can bound a single $(n{+}1)$-cell (see
+[[0002-round-boundaries]]). It is *not* a precondition for **pasting**: $\#_k$
+glues along a *shared* $k$-boundary and asks only that
+$\partial^+_k U = \partial^-_k V$, never re-checking roundness of its arguments.
+The round shapes are the [[regular-directed-complex|regular]] ones; the labelling
+that bounds a cell may still identify cells, so the [[directed-complex|type]] it
+builds need not itself be regular.
 
 ## Implementation
 
@@ -115,7 +124,8 @@ A generator's declared boundary is stored directly on its `CellData::Boundary
 ## Related
 
 [[diagram]] · [[molecule]] · [[oriented-graded-poset]] ·
-[[regular-directed-complex]] · [[rewriting]] · [[output]] · [[atom]]
+[[regular-directed-complex]] · [[directed-complex]] · [[rewriting]] · [[output]] ·
+[[atom]]
 
 ## Notation
 

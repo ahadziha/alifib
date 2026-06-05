@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-03
+last-touched: 2026-06-05
 code: [src/output/mod.rs, src/output/normalize.rs, src/output/types.rs]
 ---
 
@@ -26,9 +26,10 @@ contents.
 The render boundary of the whole interpreter. `mod.rs` re-exports the data
 types (`Cell`, `Dim`, `Map`, `Module`, `Store`, `Type`) and the one public
 rendering helper `render_diagram`; the map-[[hole]] listing helpers
-(`render_hole_line`, `render_hole_boundary`, `render_hole_constraints`,
-`domain_complex`) are crate-internal to `normalize.rs`, used by the type-detail
-render and the interactive hole listings ([[interactive-session]]).
+`render_hole_boundary`, `render_hole_constraints`, and `domain_complex` are
+`pub(crate)` in `normalize.rs`, consumed by the interactive hole listings
+([[interactive-session]]), while `render_hole_line` / `render_map_holes` are
+module-private and drive the type-detail render.
 `Display for GlobalStore` (in `normalize.rs`) routes through
 `GlobalStore::normalize`. The module owns no semantics — it never decides what a
 diagram *means*, only how to spell one.

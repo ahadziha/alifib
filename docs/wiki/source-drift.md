@@ -229,3 +229,18 @@ any item up — line refs in particular have moved. Known status changes:
   `LoadedRewriteContext` (build confirmed each orphan in turn). Re-pointed the
   `engine.rs:44` doc-link to the live `from_store`/`resume`. Build clean, full
   201-test workspace green.
+
+## [2026-06-05] note | `docs/interp/interp.tex` no longer on disk
+
+The full update pass found the `[[oriented-graded-poset]]` citation "interp.tex
+§Oriented Graded Posets" stale: `docs/interp/` now holds only `interp.pdf` plus
+LaTeX build artifacts (`.aux`/`.toc`/`.fls`/`.fdb_latexmk`/`.log`), no `interp.tex`,
+and the whole directory is untracked (`git status` shows `??`). The wiki citation
+was re-pointed to `docs/interp/interp.pdf §3.1`. Note §D above and the 2026-06-04
+log entry record *editing* `interp.tex` (the author's paper); those records now
+point at an absent source file — the edits presumably live in the author's working
+copy of the `.tex`. No source/code action; the re-pointed citation is the only
+change. The two long-standing `src/`-side items remain as recorded:
+`aux::intset::intersection` is still fully dead (zero callers, kept per user), and
+`ogposet::closure` is confirmed live (its stale `#[allow(dead_code)]` was removed
+2026-06-04). No new source rot surfaced.

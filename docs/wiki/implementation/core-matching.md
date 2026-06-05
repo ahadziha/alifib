@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-01
+last-touched: 2026-06-05
 code: [src/core/matching.rs, src/core/embeddings.rs, src/core/pushout.rs, src/core/flow.rs, src/core/reconstruct.rs]
 ---
 
@@ -82,11 +82,15 @@ of $y$. So matching $U$ inside $V$ becomes a **labelled, path-induced subgraph
 isomorphism** of $\mathbf{F}(U)$ into $\mathbf{F}(V)$.
 
 `TargetFlowData::new(target)` builds $\mathbf{F}(V)$ once and is reused across
-*all* rules. `find_path_induced_matches` does backtracking subgraph search:
-label-filtered candidate sets, most-constrained-variable ordering, and the
-path-induced constraint (edge in pattern iff edge in target). Each surviving
-vertex match yields a tentative set of `image_positions` (the top-cells it
-covers). dim-0 targets are special-cased in `for_each_candidate_dim0`.
+*all* rules. The production entry point is `for_each_rule_candidate`, which builds
+the target flow data once and then drives `for_each_candidate_in_rule` over every
+rule of the right dimension; that inner loop calls `find_path_induced_matches` to
+do the backtracking subgraph search: label-filtered candidate sets,
+most-constrained-variable ordering, and the path-induced constraint (edge in
+pattern iff edge in target). Each surviving vertex match yields a tentative set
+of `image_positions` (the top-cells it covers). dim-0 targets are special-cased
+in `for_each_candidate_dim0`. (`find_matches` is a `#[cfg(test)]`-only helper that
+walks this same path for a single rule; production never calls it.)
 
 ### 3. Confirm the match — `check_match_isomorphism`
 
@@ -164,15 +168,19 @@ engine calls it from `RewriteEngine::auto` when `parallel` is set
 (`src/interactive/engine.rs`) and so does the interpreter's auto-normalisation
 (`src/interpreter/diagram.rs`).
 
-> **Unwired:** `find_compatible_families` (with helpers
-> `max_independent_set_size`, `max_is_dfs`,
-> `enumerate_independent_sets_of_size`) implements the *exhaustive* alternative —
-> enumerate maximal independent sets in size-descending order, verify each by
-> constructing the step, prune dominated sub-families. It is `pub(crate)` behind
-> `#[allow(dead_code)]` with **no production caller**; only `#[cfg(test)] mod
-> tests` (`idem_parallel_in_four_chain`, `idem_no_parallel_in_three_chain`)
-> exercises it. Treat it as test-only until it is wired into a parallel mode or
-> deleted (tracked in `source-drift.md`).
+> **Deterministic exhaustive alternative (retained, not dead):**
+> `find_compatible_families` (with helpers `max_independent_set_size`,
+> `max_is_dfs`, `enumerate_independent_sets_of_size`) solves a *different*
+> problem from the greedy live path: it enumerates **all** maximal compatible
+> families — maximal independent sets in the conflict graph, in size-descending
+> order — verifying each by constructing the step and pruning dominated
+> sub-families. Family enumeration is worst-case exponential in the number of
+> matches, so it is deliberately kept out of the interactive engine's hot path
+> and lives here as a backend capability. It is `pub(crate)` behind
+> `#[allow(dead_code)]` with a documented retention rationale on the function
+> itself; its only callers today are the tests `idem_parallel_in_four_chain` and
+> `idem_no_parallel_in_three_chain`. The `#[allow(dead_code)]` stays until a tool
+> (not the auto-step loop) wires it. This is intentional retention, not rot.
 
 Every confirmation — singleton or family — funnels through `try_family` →
 `construct_parallel_step`, so individual and parallel rewrites share one code
@@ -200,12 +208,15 @@ one-element slice).
 
 ## Mathematics
 
-This cluster realises [[rewriting]] over [[regular-directed-complex|regular
-directed complexes]]. The matching map and pushout injections are
+This cluster realises [[rewriting]] inside a type — a [[directed-complex]] of
+generators — whose shapes (atoms, molecules, diagrams) are
+[[regular-directed-complex|regular]]. The matching map and pushout injections are
 [[partial-map|partial/total maps]] of [[oriented-graded-poset|oriented graded
 posets]]. A rule's pattern is the $n$-[[boundary]] of an [[atom]]; the target is
-a [[molecule]]/[[diagram]]. The flow graph $\mathbf{F}_k$ and the layering used
-in reconstruction come from Hadzihasanovic–Kessler (Definition 61). See
+a [[molecule]]/[[diagram]]. The pushout glues (pastes) the rule's cell onto the
+target — it builds a *larger* diagram, not a composite reduced to one cell. The
+flow graph $\mathbf{F}_k$ and the layering used in reconstruction come from
+Hadzihasanovic–Kessler (Definition 61). See
 [[core-diagram]] for `Diagram`/`BoundaryHistory`, [[core-paste-tree]] for
 `PasteTree`/`realise_tree`, [[core-complex]] for `classifier` and generator
 lookup, and [[interactive-engine]] for how steps are driven in a session.

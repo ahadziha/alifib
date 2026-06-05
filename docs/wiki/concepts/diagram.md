@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-01
+last-touched: 2026-06-05
 ---
 
 # Diagram
@@ -11,6 +11,16 @@ directed]] [[oriented-graded-poset]] shape, every cell of which carries a label 
 a generator ([[atom]]) or, via a let-binding, the name of another diagram. Where a
 molecule is a *shape*, a diagram is that shape *decorated*. It is the runtime
 value alifib computes with.
+
+The *shape* of a diagram is always a [[regular-directed-complex|regular directed
+complex]] (the shape of a [[molecule]]). A **type**, by contrast, is assembled by
+identifying the boundaries of many such cells through labelling, and the realised
+object need only be a [[directed-complex]] — not necessarily regular. The canonical
+witness is a point `pt` with one arrow `a : pt -> pt`: the arrow's boundary shape is
+the round 0-sphere (two *distinct* endpoint 0-cells), but the labels send both to
+`pt`, identifying them into a directed loop. That loop is a fine directed complex
+yet not a regular CW complex. So labels can collapse a regular shape into a
+non-regular type, while every individual diagram value keeps a regular shape.
 
 ## Definition
 
@@ -26,8 +36,10 @@ each itself a $k$-dimensional diagram, obtained by restricting $U$ to the
 appropriate side of its $k$-skeleton. The two top boundaries $\partial^\pm_{n-1}U$
 of an $n$-diagram are its *input* and *output*; when together they form a directed
 sphere — input and output interiors disjoint at every dimension — the diagram is
-**round** (see [[boundary]]), the precondition for it to be a single [[atom]]'s
-boundary.
+**round** (see [[boundary]]). Roundness is a property of the *shape* alone (it
+ignores labels), and it is the precondition for a diagram to be the input or output
+boundary of a single [[atom|cell]] one dimension up — *not* a precondition for
+pasting.
 
 ### Pasting ($\#_k$)
 
@@ -40,9 +52,19 @@ $$
 U \#_k V .
 $$
 The result glues $U$ and $V$ along that boundary (a pushout of shapes) and is the
-basic way larger diagrams are built from atoms. Pasting is associative and the
-labelled analogue of composition in a higher category — but note alifib has **no
-identities** (see [[0001-no-identities]]), so there are no degenerate units.
+basic way larger diagrams are built from atoms.
+
+**Pasting is not composition.** Pasting combines cells into a *larger* diagram; it
+never reduces the pair to a single cell. Reducing to one cell would be
+*composition*, a higher-algebraic operation that plain alifib types do not have.
+So do not read $\#_k$ as the labelled analogue of categorical composition. Pasting
+*is* associative and *is* unital — the boundaries act as units, with no separate
+identity cells, since alifib has **no identities** (see [[0001-no-identities]]).
+
+The juxtaposition `f g` written in the surface syntax is **principal pasting**:
+shorthand for $f \#_k g$ at $k = \min(\dim f, \dim g) - 1$, the largest $k$ at
+which the two can meet. Anything written with an explicit `#n` is the general
+$\#_n$.
 
 ### Atoms as cells
 
@@ -59,17 +81,19 @@ $a$ on top yields its **classifier** diagram. See [[atom]].
   `Vec<Vec<Tag>>`; a `paste_history` records the $\#_k$ tree that built it.
 - **Atoms** are made by `Diagram::cell` from `CellData` (`Zero` for a 0-cell,
   `Boundary { boundary_in, boundary_out }` for the globular data of an $n$-cell).
-- **Pasting** $\#_k$ is `Diagram::paste(k, u, v)`, gated by `pastability`.
+- **Pasting** $\#_k$ is `Diagram::paste(k, u, v)`, gated by `Diagram::pastability`
+  (boundary agreement only — *not* roundness).
 - **Boundaries** $\partial^\pm_k$ are `Diagram::boundary(Sign, k, &d)` and
   `Diagram::boundary_normal`, with `Sign::Input` $= \partial^-$ and
   `Sign::Output` $= \partial^+$ — see [[boundary]].
 - **Top dimension** is `Diagram::top_dim` (with `dim()` returning $-1$ for the
-  empty diagram); roundness is `is_round`.
+  empty diagram); roundness of the shape is `Diagram::is_round`.
 
 Diagrams are stored in a [[core-complex|Complex]] both as classifiers (for
-generators) and as let-bound values. Rewriting builds new diagrams via
-`Diagram::whisker_rewrite` — see [[rewriting]].
+generators) and as let-bound values. Rewriting builds new diagrams through
+`matching::construct_parallel_step` → `pushout::multi_pushout` — see [[rewriting]].
 
 ## Related
 
-[[molecule]] · [[atom]] · [[boundary]] · [[oriented-graded-poset]] · [[rewriting]]
+[[molecule]] · [[atom]] · [[boundary]] · [[regular-directed-complex]] ·
+[[directed-complex]] · [[oriented-graded-poset]] · [[rewriting]]

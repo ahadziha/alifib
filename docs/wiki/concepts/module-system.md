@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-01
+last-touched: 2026-06-05
 ---
 
 # Module system
@@ -9,19 +9,27 @@ last-touched: 2026-06-01
 A program in alifib is a forest of named [[core-complex|complexes]] organised at
 two scales. A **type** is a single [[diagram|diagram]]-generator together with
 the whole complex grown inside its body — an [[atom|atom]] equipped with its own
-ambient universe of cells, maps, and lower atoms. A **module** is a `.ali` file:
-the complex accumulated by elaborating all of its top-level declarations, keyed
-by its canonical path. The module system is the calculus by which one such
-complex is carried into another — by **inclusion** (`include`), by
+ambient universe of cells, maps, and lower atoms. The complex of a type is a
+[[directed-complex]] (its shapes — the [[atom|atoms]] and [[molecule|molecules]]
+it names — are [[regular-directed-complex|regular]]). A **module** is a `.ali`
+file: the [[directed-complex]] accumulated by elaborating all of its top-level
+declarations, keyed by its canonical path. The module system is the calculus by
+which one such complex is carried into another — by **inclusion** (`include`), by
 **attachment along a [[partial-map]]** (`attach … along`), and (aspirationally,
 see [[module-open-semantics]]) by **opening** a name without importing its
 universe.
 
 Mathematically these are not bookkeeping conveniences. They are the two
-canonical ways one [[regular-directed-complex]] embeds in another: as a
+canonical ways one [[directed-complex]] embeds in another: as a
 *sub-complex* (an inclusion, the identity on shared generators) or as a *gluing*
 (a pushout-style colimit that freely adjoins the un-identified cells of one
 complex along a map). The whole system is the syntax of these colimits.
+
+A third axis, orthogonal to inclusion/attachment, is **naming**: how a source
+name reaches across module boundaries. Two devices do this — *qualified names*
+(dotted addresses walked through the maps already in scope) and *scoped include
+resolution* (the search by which a bare `include <Name>` is matched to a file).
+Both are described under [Naming across modules](#naming-across-modules) below.
 
 ## Definition
 
@@ -104,6 +112,43 @@ current source there is **no `open` keyword**: the lexer's keyword set
 and the eager `include` is the substance of the open question
 [[module-open-semantics]].
 
+### Naming across modules
+
+Once a module is in the store, two distinct mechanisms reach a name across the
+boundary it was declared behind.
+
+**Qualified names.** A dotted address `p₁.p₂.….a` is *not* a string key into a
+flat namespace; it is a **walk through the maps in scope**. Resolution starts in
+the current module's complex and consumes the prefix segment by segment: each
+$p_i$ must name a [[partial-map]] whose domain is a *module* (recall the
+`MapDomain::{Type, Module}` split) — and `include M` records exactly such a map
+under the alias `M`. Naming a map whose domain is a *type*, or a name that is no
+map at all, is an error: only module-valued maps may be traversed. After the
+prefix is walked, the scope has advanced into the named submodule's complex, and
+the final segment `a` is looked up there as a type generator. So `A.Aux.Ob`
+means: from `A` (a module included into me), step into its `Aux` (a module `A`
+itself included), and take the type `Ob` there. Because each module carries its
+own inclusion maps, **the same dotted name resolves relative to where it is
+written** — two modules each importing a module called `Aux` see *their own*
+`Aux`. The two scoped-resolution tests below exercise precisely this.
+
+**Scoped include resolution.** A bare `include <Name>` does not name a file
+directly; the loader searches for `<Name>.ali` in a precedence order owned by
+the [[aux]] layer (`Loader::with_parent_dir` + `find_file`): (1) the including
+file's own directory, (2) a *same-named subdirectory* (so `Foo.ali` may keep
+private submodules in a `Foo/` directory and include them by bare name), then
+(3) the directories of `ALIFIB_PATH`. **The closest directory wins**, so two
+files in different directories that both `include Aux` may resolve to *different*
+files. The loader then interprets the whole dependency graph **leaves-first** in
+topological order into one shared store, with cycle detection — the semantic side
+of this (the three-phase `InterpretedFile::load` pipeline, the
+parent/name → canonical-path resolution map) is documented in [[interpreter]].
+
+The upshot: *resolution is lexical, not global*. A module exports names; an
+importer chooses local aliases for them; and a qualified name is read against the
+importer's own map of aliases. There is no single global symbol table that all
+modules share.
+
 ## Implementation
 
 Realised by [[interpreter]]; parsed by [[language-parser]].
@@ -145,14 +190,34 @@ Realised by [[interpreter]]; parsed by [[language-parser]].
   `type_id_of_named_diagram` (internal) for the id, `resolve_type_complex` for
   the `find_type` step). See [[interpreter]] for the full walk.
 
+- **Qualified names** are walked by `interpret_address` →
+  `resolve_address_prefix_scope` (internal, `resolve.rs`): each prefix segment is
+  looked up with `Complex::find_map`; its `MapDomain` must be `Module(id)`, and
+  the scope advances to `find_module_arc(id)`. A `MapDomain::Type` prefix or a
+  missing map is rejected. The final segment is resolved by
+  `type_id_of_named_diagram` in the advanced scope. The single-segment module
+  domain of a `:: Name` block is resolved separately by `resolve_module_domain` →
+  `GlobalStore::resolve_module_by_name` (short name → `(path, Arc<Complex>)`).
+
+- **Scoped include resolution** is owned by [[aux]] (`Loader::with_parent_dir`,
+  `find_file`, `resolve_recursive`); the interpreter consumes the resulting
+  `ModuleResolutions` map in `interpret_include_module_instr`
+  (`context.resolutions.resolve(module_id, module_name)` → canonical path) and
+  reads the pre-interpreted complex out of the store. The leaves-first
+  topological interpretation is `InterpretedFile::load` ([[interpreter]]).
+  Behaviour is pinned by `submodule_in_same_named_directory` and
+  `virtual_loader_subdirectory_resolution` (`tests/interpreter.rs`): the latter
+  has `A.ali` and `B.ali` each `include Aux`, resolving to the *distinct* files
+  `A/Aux.ali` and `B/Aux.ali`, then addressing them as `A.Aux.Ob` / `B.Aux.Ob`.
+
 - **Surface syntax.** `IncludeModule` / `IncludeStmt` / `AttachStmt` in
   `src/language/ast.rs`; their statement productions (`include_stmt`,
   `attach_stmt`) in `src/language/parser.rs`, the keyword set in
-  `src/language/lexer.rs`. The grammar is `docs/grammar.md`. No `open` production
+  `src/language/lexer.rs`. The grammar is `docs/GRAMMAR.md`. No `open` production
   exists.
 
 ## Related
 
 [[partial-map]] · [[core-complex]] · [[diagram]] · [[atom]] ·
-[[regular-directed-complex]] · [[module-open-semantics]] · [[interpreter]] ·
-[[language-parser]]
+[[directed-complex]] · [[regular-directed-complex]] · [[module-open-semantics]] ·
+[[interpreter]] · [[language-parser]] · [[aux]]

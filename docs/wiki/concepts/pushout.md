@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-01
+last-touched: 2026-06-05
 ---
 
 # Pushout
@@ -16,7 +16,8 @@ In alifib this is the engine of substitution. To rewrite, we match a copy of a
 rule's input $V$ inside a target diagram $U$, then **replace** that copy by the
 rule's body. The replacement is precisely a pushout: $V$ is the seam, $U$ is one
 arm, the rule cell $R$ is the other, and we glue $R$ onto $U$ along the matched
-$V$.
+$V$. This gluing builds a *larger* shape — it is the pasting/substitution that
+realises [[rewriting]], not a reduce-to-one-cell composition.
 
 ## Definition
 
@@ -95,11 +96,13 @@ Used by:
   binary pushout when the family is a singleton), then merges labels from the
   target and the rewrite diagrams over the tip.
 
-`Diagram::whisker_rewrite` (`src/core/diagram.rs`) is an *unused* alternative
-that forms the same $S = U \cup_V R$ from a match embedding and the
-input-into-rule embedding of `Diagram::cell_with_input_embedding` via one binary
-`pushout`; it has no caller in the tree (see `source-drift.md`). The production
-step is built by `construct_parallel_step`/`multi_pushout`, never `whisker_rewrite`.
+Matching glues via `multi_pushout` directly. The binary `pushout::pushout`
+wrapper is instead the gluing behind the basic diagram operations in
+`src/core/diagram.rs`: `Diagram::paste` (gluing two diagrams along their shared
+$k$-boundary, the pasting $\#_k$) and `Diagram::cell_with_input_embedding`
+(gluing a cell's input and output boundary diagrams into the new cell's boundary
+sphere). Both build *larger* shapes — pasting and cell construction, not
+reduce-to-one-cell composition.
 
 The colimit is purely combinatorial: it glues *shapes*. Cell **labels** (the
 [[atom]] tags decorating positions) are not part of the universal property — they

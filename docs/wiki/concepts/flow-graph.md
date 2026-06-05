@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-01
+last-touched: 2026-06-05
 ---
 
 # Flow graph

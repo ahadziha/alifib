@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-03
+last-touched: 2026-06-05
 code: [cli/src/main.rs]
 ---
 
@@ -38,7 +38,7 @@ subcommand keyword, then delegates everything interactive to the library.
 | `main` | parse argv, build a `Loader`, dispatch on `RunMode`, `exit(1)` on error |
 | `parse_args` *(internal)* | argv → `Args`; peels off `repl`/`web`/`mcp`/`serve` subcommands first, else walks the rest for batch flags |
 | `RunMode` *(internal)* | the mode enum: `Interpret`, `Ast`, `Print`, `Bench(n)`, `Repl`/`Web`/`Mcp`/`Serve(args)` |
-| `run_interpreter` *(internal)* | default mode: load + interpret a file, write output, report solved holes |
+| `run_interpreter` *(internal)* | default mode: load + interpret a file, write the elaborated rendering (holes appear inline) |
 | `run_ast` / `run_print` *(internal)* | parse-only modes: dump `Program::to_string` or `language::print_program` |
 | `run_bench` *(internal)* | reload the file `n` times, print mean ms/reload |
 | `run_web_cmd` / `run_mcp_cmd` *(internal)* | construct an `ExampleSet` and start the web / MCP server |
@@ -98,8 +98,11 @@ there is no separate hole-reporting pass.
 - **`web`/`mcp` examples dir defaults to `"examples"`.** Both `run_web_cmd` and
   `run_mcp_cmd` do `args.examples_dir.unwrap_or_else(|| "examples".to_string())`
   relative to cwd.
-- **`--bench` refuses files with holes.** `run_bench` errors out
-  (`benchmark file contains holes`) rather than timing an incomplete elaboration.
+- **`--bench` loads once, then times `n` reloads.** `run_bench` does a first
+  `InterpretedFile::load(...).into_result()?` (so a load error aborts before
+  timing) and then reloads the file `n` more times, printing the mean ms/reload.
+  It does *not* special-case files with holes — unfilled holes elaborate fine and
+  are timed like any other reload.
 - **A single `Loader::default(vec![])` is built in `main`** (no extra search
   paths) and shared by every batch mode; the interactive modes build their own
   loaders downstream.

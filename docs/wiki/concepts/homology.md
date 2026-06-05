@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-01
+last-touched: 2026-06-05
 ---
 
 # Homology
@@ -10,10 +10,14 @@ Strip the labels off a [[diagram]] and what remains is an
 [[oriented-graded-poset|oriented graded poset]]: a finite set of cells, graded
 by dimension, with each cell's faces split by orientation into input ($-$)
 and output ($+$). That orientation is exactly the datum a **chain complex**
-needs. alifib reads the signed face structure of a [[regular-directed-complex]]
-as integer differentials and computes the **integer cellular homology**
-$H_n(G; \mathbb{Z})$ — free ranks (the [Betti numbers](https://en.wikipedia.org/wiki/Betti_number)),
-torsion invariants, and the Euler characteristic — by **Smith Normal Form**.
+needs. A **type** is a [[directed-complex]] — a cell complex that need *not* be
+regular, since labels may identify distinct boundary cells (only the individual
+[[atom|atoms]]/[[molecule|molecules]] it is built from are
+[[regular-directed-complex|regular]]). alifib reads the signed face structure of
+that complex as integer differentials and computes the **integer cellular
+homology** $H_n(G; \mathbb{Z})$ — free ranks (the
+[Betti numbers](https://en.wikipedia.org/wiki/Betti_number)), torsion
+invariants, and the Euler characteristic — by **Smith Normal Form**.
 
 Homology is a coarse but honest invariant: it forgets all directedness and
 keeps only the additive boundary algebra, so two shapes with the same homology
@@ -26,8 +30,9 @@ witness tests below).
 
 ### The chain complex
 
-Let $G$ be a regular directed complex with cell sets $G_n$ (the $n$-dimensional
-[[atom|generators]]). The **$n$-chains** form the free abelian group on $G_n$:
+Let $G$ be a [[directed-complex|directed complex]] (a type) with cell sets $G_n$
+(the $n$-dimensional [[atom|generators]]). The **$n$-chains** form the free
+abelian group on $G_n$:
 
 $$ C_n \;=\; \mathbb{Z}\langle G_n \rangle, \qquad C_n \cong \mathbb{Z}^{|G_n|}. $$
 
@@ -47,7 +52,7 @@ higher-categorical diagrams* (2024) (`docs/papers/`).
 The defining law $\partial_{n-1} \circ \partial_n = 0$ ($d^2 = 0$) holds because
 each $(n{-}2)$-face of $g$ is reached through both an input and an output
 $(n{-}1)$-face, so its net coefficient cancels. This is the **acyclicity** of
-the regular-directed-complex structure made arithmetic; alifib re-checks it as a
+the [[directed-complex]] structure made arithmetic; alifib re-checks it as a
 runtime assertion (see *Implementation*).
 
 ### Homology groups
@@ -129,41 +134,52 @@ differentials[n])` is zero; the Euler-characteristic agreement
 $\chi_{\text{chain}} = \chi_{\text{homology}}$ is asserted via
 `Homology::euler_from_homology`.
 
-**Smith Normal Form.** `homology::smith_normal_form` *(internal)* drives a
-classic pivot loop — `find_and_move_pivot` (smallest nonzero entry first),
-`eliminate_column` / `eliminate_row`, with an `extended_gcd` fallback when the
-pivot fails to divide an entry — then `enforce_divisibility` collapses each
-non-divisible adjacent pair $(a, b)$ to $(\gcd, \operatorname{lcm})$. Ranks come
-from `matrix_rank` = count of nonzero SNF diagonal entries. Behaviour is pinned
-by `smith_identity`, `smith_with_torsion` (`[[2,4],[0,6]] → [2,6]`),
-`smith_unit_d3`, and `smith_zero_matrix`.
+**Smith Normal Form (one driver).** A single generic
+`homology::snf_reduce<T: Tracker>` *(internal)* runs the classic pivot loop —
+`find_and_move_pivot` (smallest nonzero entry first), `eliminate_column` /
+`eliminate_row`, with an `extended_gcd` fallback when the pivot fails to divide
+an entry. The `Tracker` trait (seven elementary mirror ops) is what lets *one*
+loop serve both callers: the zero-cost `NoTrack` (all no-ops) drives
+`smith_normal_form` → `matrix_rank` (ranks = count of nonzero SNF diagonal
+entries), while `FullTrack` drives `smith_normal_form_with_basis` for witnesses.
+The plain path then normalises the diagonal in place (`enforce_divisibility`
+collapses each non-divisible adjacent pair $(a, b)$ to
+$(\gcd, \operatorname{lcm})$, then sorts). Behaviour is pinned by
+`smith_identity`, `smith_with_torsion` (`[[2,4],[0,6]] → [2,6]`),
+`smith_unit_d3`, and `smith_zero_matrix`. See [[analysis]] for the `Tracker`
+mechanics.
 
-**Torsion witnesses.** For $H_n$ the code runs
-`smith_normal_form_with_basis` *(internal)* on $\partial_{n+1}$, which tracks
-$U^{-1}$ and $V$ alongside $M$, then applies the *tracked* normalisations
-`enforce_divisibility_tracked` and `sort_diag_tracked` so the witness columns
-stay paired with the reported invariants even when divisibility mixes pairs
-(raw $[3,2] \to$ canonical $[1,6]$). Each $d_i > 1$ yields a `TorsionWitness`
-$\{order, cycle, preimage\}$ with the invariant $d_i \cdot z =
-\partial_{n+1}(p)$. Evidence: `tracked_enforce_divisibility_crt` and
-`tracked_sort_diag_permutes_witnesses` check the change-of-basis algebra;
+**Torsion witnesses.** For $H_n$ the code runs `smith_normal_form_with_basis`
+*(internal)* on $\partial_{n+1}$ with `FullTrack`, which mirrors each row op —
+*inverted* — onto $U^{-1}$ and each column op directly onto $V$, maintaining
+$U \cdot M \cdot V = \operatorname{diag}$. It then applies the *tracked*
+normalisations `enforce_divisibility_tracked` and `sort_diag_tracked` so the
+witness columns stay paired with the reported invariants even when divisibility
+mixes pairs (raw $[3,2] \to$ canonical $[1,6]$). Each $d_i > 1$ yields a
+`TorsionWitness` $\{order, cycle, preimage\}$ with the invariant
+$d_i \cdot z = \partial_{n+1}(p)$. Evidence: `tracked_enforce_divisibility_crt`
+and `tracked_sort_diag_permutes_witnesses` check the change-of-basis algebra;
 `all_witnesses_are_cycles` (and `verify_witnesses_valid`) re-applies the real
 differential to confirm every reported witness is a cycle whose order-multiple
 is the boundary of its preimage. The concurrency-flavoured cases
 `witness_torsion_example`, `witness_races_k_contention`, and `witness_aba_bug`
 show torsion as a contention diagnostic.
 
-**REPL / protocol.** The interactive layer exposes a `homology <Type>` command:
-`Cmd::Homology(String)` in `src/interactive/repl.rs` dispatches to
-`dispatch_homology`, and the daemon protocol carries `Request::Homology { name }`
-(`src/interactive/protocol.rs`). Note the homology query *bypasses the rewrite
-engine* — the daemon (`src/interactive/daemon.rs`) and engine
-(`src/interactive/engine.rs`) both short-circuit `Request::Homology` rather than
-running it through the rewriting machinery, since it needs only the static
-complex. See [[interactive-repl]]. (`docs/INTERACTIVE.md` lists the `homology <name>`
-command.)
+**Surfaced to users.** Witnesses are not merely computed — they are *shown*. The
+interactive layer exposes a `homology <Type>` command on every front-end
+(CLI / web / MCP), all sharing one renderer: `interactive::protocol::build_homology_data`
+flattens each group into a `HomologyGroupInfo` carrying its
+`Vec<TorsionWitnessInfo>` (order + formatted `cycle` + `preimage`, via
+`TorsionWitness::cycle_str` / `preimage_str`), and `richtext::homology` prints
+each `H_d` line followed by one indented sub-line per witness. So
+`homology RP2` prints `H_1 = Z/2` together with a `cycle: …  (preimage: …)`
+sub-line; a torsion-free space (e.g. `LinearizableCAS`) shows none
+(`witness_none_when_torsion_free`). The homology query *bypasses the rewrite
+engine* — it needs only the static complex, so the daemon/engine short-circuit
+it rather than running the rewriting machinery. See [[interactive-repl]] and
+[[interactive-daemon-web]]; `docs/HOMOLOGY.md` walks the `homology RP2` output.
 
 ## Related
 
-[[oriented-graded-poset]] · [[boundary]] · [[regular-directed-complex]] ·
-[[diagram]] · [[atom]] · [[analysis]]
+[[oriented-graded-poset]] · [[boundary]] · [[directed-complex]] ·
+[[regular-directed-complex]] · [[diagram]] · [[atom]] · [[analysis]]

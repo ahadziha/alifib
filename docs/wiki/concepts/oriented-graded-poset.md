@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-01
+last-touched: 2026-06-05
 ---
 
 # Oriented graded poset
@@ -9,16 +9,25 @@ last-touched: 2026-06-01
 An **oriented graded poset** (*ogposet*) is the bare combinatorial shape beneath
 every alifib value: a finite set of faces stratified by dimension, where each
 covering step between dimensions carries an orientation — a $\pm$ sign splitting
-a cell's faces into **input** ($-$) and **output** ($+$). It is the substrate of
-a [[regular-directed-complex]], hence of every [[molecule]] and [[diagram]];
-strip the labels off a diagram and what remains is its ogposet. The
-[[boundary|boundaries]] $\partial^\pm_k$ are nothing but this orientation read
-off the face structure.
+a cell's faces into **input** ($-$) and **output** ($+$). It is the substrate
+beneath a [[directed-complex]], and in particular beneath the well-behaved
+[[regular-directed-complex|regular]] ones — the shapes in which every
+[[molecule]] lives. Strip the labels off a [[diagram]] and what remains is its
+ogposet. The [[boundary|boundaries]] $\partial^\pm_k$ are nothing but this
+orientation read off the face structure.
+
+The ogposet is genuinely the *bare* layer: it carries shape, not labels and not
+the regularity constraints. A [[regular-directed-complex]] is an ogposet whose
+every cell is regular (round boundary spheres, no identities); a general
+[[directed-complex]] — what a *type* assembles to once labelling-identifications
+have been applied — need not be regular at all. The atoms and molecules that
+alifib builds are the regular shapes, but the ogposet substrate underlies
+directed complexes generally.
 
 ## Definition
 
-Following Hadzihasanovic, an ogposet $G$ consists of (interp.tex §Oriented
-Graded Posets):
+Following Hadzihasanovic, an ogposet $G$ consists of (`docs/interp/interp.pdf`
+§3.1 *Oriented Graded Posets*):
 
 - a **dimension** $\dim G \in \mathbb{Z}_{\ge -1}$, with $-1$ the empty ogposet;
 - for each $0 \le d \le \dim G$ a finite set of **cells** $G_d$;
@@ -43,8 +52,13 @@ $k$, and comes with an embedding back into $G$.
 
 **Roundness.** $G$ is **round** when, at every dimension, the interior touched
 by the input boundary is disjoint from that touched by the output boundary.
-Roundness is the precondition for $G$ to be the input/output shape of a single
-[[atom]] — a globe-like shape with two well-separated poles.
+Roundness is a property of the *bare shape* — it inspects the orientation alone,
+ignoring any labels. It is the precondition for $G$ to serve as the input/output
+boundary of a single **cell** — a globe-like shape with two well-separated poles
+— and is checked exactly there, when a cell is formed from a pair of parallel
+diagrams. It is **not** a precondition for pasting: composing two diagrams along
+a shared $k$-boundary checks only that the boundaries agree, never roundness (see
+[[diagram]]).
 
 Two ogposets are *isomorphic* exactly when they share a canonical form; the
 canonical form is obtained by an input-first **traversal** that walks the
@@ -71,14 +85,23 @@ Realised by `Ogposet` and `Sign` in `src/core/ogposet.rs` — see [[core-ogposet
 - `Sign` *(internal `pub(crate)` enum)* is the orientation: variants `Input`,
   `Output`, `Both` — exactly the $\partial^-$ / $\partial^+$ / union split above.
   `Ogposet::faces_of` and `cofaces_of` dispatch on it.
-- **Extremality** is `Ogposet::extremal(sign, k)` *(internal)*; **maximality** is
-  `Ogposet::maximal`; **roundness** is the public `Ogposet::is_round` (with
-  `is_pure` as a helper).
+- **Extremality** is `Ogposet::extremal(sign, k)` *(internal)*, defined by
+  *missing cofaces* — an `Input`-extremal cell has no output coface, an
+  `Output`-extremal one has no input coface. **Maximality** (`Ogposet::maximal`)
+  is no coface at all; **purity** (`is_pure`) is every below-top cell having a
+  coface. **Roundness** is the public `Ogposet::is_round` (built on `is_pure` and
+  `build_layer`); it reads the bare shape, never labels.
 - **Boundary extraction** $\partial^s_k$ is `ogposet::boundary` *(internal)*,
-  returning the sub-ogposet and its `Embedding`; its normalised cousin is
-  `boundary_traverse`.
+  returning the faithful sub-ogposet and its `Embedding`; its normalised cousin
+  is `boundary_traverse`. The latter's `Both` branch is special: it returns the
+  full boundary *sphere* of an $n$-cell (via `build_stack_cell_n`), so it ignores
+  $k$ beyond clamping — used when forming a cell from two parallel diagrams.
 - **Canonical form / isomorphism**: `normalisation` and `find_isomorphism`,
-  both driven by the general `traverse`.
+  both driven by the general `traverse`. Shape equality is decided by comparing
+  canonical forms; the result is recomputed on every call (no memoisation).
+- The membership-only paths `closure` and `signed_k_boundary_of_cell` answer
+  "is this cell in the downward closure?" / "what is $\partial^\alpha_k(x)$ of one
+  cell?" without building a sub-ogposet.
 
 Note: this is the *shape only*. Labels and paste history live one layer up in
 `Diagram` (`src/core/diagram.rs`, see [[core-diagram]]), which holds the shape as
@@ -90,4 +113,4 @@ shape layer.
 
 ## Related
 
-[[regular-directed-complex]] · [[molecule]] · [[diagram]] · [[boundary]] · [[atom]] · [[partial-map]]
+[[directed-complex]] · [[regular-directed-complex]] · [[molecule]] · [[diagram]] · [[boundary]] · [[atom]] · [[partial-map]]

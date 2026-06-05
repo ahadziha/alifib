@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-04
+last-touched: 2026-06-05
 code: [src/interactive/daemon.rs, src/interactive/protocol.rs, src/interactive/web.rs]
 ---
 

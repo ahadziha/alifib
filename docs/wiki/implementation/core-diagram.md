@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-01
+last-touched: 2026-06-05
 code: [src/core/diagram.rs, src/core/ogposet.rs]
 ---
 
@@ -9,21 +9,19 @@ code: [src/core/diagram.rs, src/core/ogposet.rs]
 
 `src/core/diagram.rs` is where a [[molecule]] becomes a runtime value. A
 **`Diagram`** is a labelled [[oriented-graded-poset]] carrying a record of how it
-was pasted together. Three things travel in lockstep:
+was pasted together. Three arrays travel in lockstep:
 
-```rust
-pub struct Diagram {
-    shape: Arc<Ogposet>,              // the combinatorial substrate
-    labels: Vec<Vec<Tag>>,            // labels[dim][pos]
-    paste_history: Vec<BoundaryHistory>, // paste_history[dim]
-}
-```
+- `shape: Arc<Ogposet>` — the combinatorial substrate ([[oriented-graded-poset]]);
+- `labels: Vec<Vec<Tag>>` — `labels[dim][pos]` names every cell with a `Tag`
+  (a generator's global id, or a local name);
+- `paste_history: Vec<BoundaryHistory>` — `paste_history[dim]` remembers, per
+  dimension, the input/output **paste trees** so a diagram can later be re-derived
+  from its generators ([[core-paste-tree|`realise_tree`]]).
 
-The shape lives in `src/core/ogposet.rs` (see [[oriented-graded-poset]]); `labels`
-names every cell with a `Tag` (a generator's global id, or a local name); and
-`paste_history` remembers, per dimension, the input/output **paste trees** so a
-diagram can later be re-derived from its generators
-([[core-paste-tree|`realise_tree`]]).
+The *shape* of any `Diagram` value is a [[regular-directed-complex|regular
+directed complex]] (the shape of a [[molecule]]). The labels may identify
+boundary cells, so a **type** built from generators is only a [[directed-complex]],
+not necessarily regular — see [[diagram]].
 
 ## Key public types
 
@@ -36,33 +34,53 @@ diagram can later be re-derived from its generators
   two sides as `ogposet::Sign` minus its `Both`; the diagram-level `Sign` is always
   exactly one side, and `Sign::as_ogposet_sign` maps each to the matching ogposet
   sign.
-- **`Diagram`** itself — constructed via `Diagram::cell`, composed via
+- **`Diagram`** itself — constructed via `Diagram::cell`, pasted via
   `Diagram::paste`, sliced via `Diagram::boundary` / `Diagram::boundary_normal`.
 
 ## Construction: cells
 
-`Diagram::cell(tag, &CellData)` is the only way to mint an [[atom]]:
+`Diagram::cell(tag, &CellData)` is the only way to mint an [[atom]]; it dispatches
+on the `CellData`:
 
-- `CellData::Zero` → `cell0`: a one-point [[oriented-graded-poset]]
-  (`Ogposet::point`) labelled `tag`.
-- `CellData::Boundary { .. }` → `cell_n`: checks the input and output boundaries
-  are **parallel** (`Diagram::parallelism` — same dimension, both round, equal
-  boundary shape and labels), takes their `pushout` to glue the shared boundary,
-  then bolts one new top cell on at dimension $d+1$ spanning them — input boundary
-  below, output above (`build_cell_shape`). The new cell's
-  `paste_history` is a `Leaf(tag)` at the top (`build_cell_paste_history`) — this
-  is the invariant that `is_cell` checks.
+- `CellData::Zero` → `Diagram::cell0` *(internal)*: a one-point
+  [[oriented-graded-poset]] (`Ogposet::point`) labelled `tag`.
+- `CellData::Boundary { boundary_in, boundary_out }` → `Diagram::cell_n`
+  *(internal)*, a thin wrapper over `Diagram::cell_with_input_embedding`
+  *(pub(super))*. That checks the two boundaries are **parallel**
+  (`Diagram::parallelism`), takes their `pushout` to glue the shared boundary
+  sphere, then `build_cell_shape` bolts one new top cell on at dimension $d+1$
+  spanning them — input boundary below (`inl` image), output above (`inr` image).
+  `build_cell_paste_history` makes the new cell's `paste_history` a `Leaf(tag)` at
+  the top — the invariant `is_cell` checks. `cell_with_input_embedding` also
+  returns the embedding of the input boundary into the new cell (extended with a
+  `NO_PREIMAGE` row at dim $d+1$ for the new top cell); the rewrite engine needs
+  this embedding when it pushes a rule cell onto a match.
+
+`Diagram::parallelism` *(internal)* is the cell-construction gate: it requires the
+input and output to (1) have equal dimension, (2) each be **round** in *shape*
+(`Diagram::is_round`), and (3) share an equal boundary sphere in both shape and
+labels (computed with `ogposet::boundary_traverse(Both, …)`). This is the only
+place roundness is enforced. Pasting does **not** check roundness (see below).
 
 ## Pasting: $\#_k$
 
-`Diagram::paste(k, u, v)` realises composition along the $k$-[[boundary]]:
+`Diagram::paste(k, u, v)` glues two diagrams along their shared $k$-[[boundary]].
+This is **pasting, not composition**: it builds a *larger* diagram and never
+reduces the pair to a single cell — composition is a higher-algebraic op plain
+alifib types do not have (see [[diagram]]). The juxtaposition `f g` of the surface
+syntax is *principal pasting*, $f \#_k g$ at $k = \min(\dim f, \dim g) - 1$
+(`interpreter::diagram::interpret_sequence_as_term`).
 
-1. `pastability(k, u, v)` checks $\partial^+_k u$ and $\partial^-_k v$ agree in
-   both shape and labels (via `ogposet::boundary_traverse`).
+1. `Diagram::pastability(k, u, v)` *(internal)* checks $\partial^+_k u$ and
+   $\partial^-_k v$ agree in both shape and labels (via
+   `ogposet::boundary_traverse`). It checks *only* this boundary agreement — it
+   does **not** call `is_round`. Any claim that $\#_k$ requires round arguments is
+   wrong; the only roundness gate is `parallelism`, at cell construction.
 2. `pushout` glues `u.shape` and `v.shape` along that shared boundary.
 3. `merge_pushout_labels` routes each side's labels into the merged cell
    positions; `paste_histories` builds the combined `paste_history` (`paste_tree`
-   inherits below $k$, joins into a `Node { dim: k, .. }` above $k$).
+   inherits from $u$ below $k$, takes input from $u$ / output from $v$ at $k$, and
+   joins into a `Node { dim: k, .. }` above $k$).
 
 The result is a new `Diagram` whose history records the $\#_k$ that produced it.
 
@@ -88,13 +106,18 @@ relabels the sub-shape and `boundary_history` clamps the history to match.
 - `dim()` returns the `isize` shape dimension; **negative means the empty
   diagram**. `top_dim()` clamps that to a `usize` (0 for empty).
 - `top_label` / `labels_at` / `all_labels` read the label arrays.
-- `is_round` (the directed-sphere condition — input and output interiors stay
-  disjoint at every dimension; delegates to `ogposet::is_round`), `is_normal`
-  (canonical cell order), `is_cell` (top paste tree is a single `Leaf`).
-  Roundness gates **cell construction** (`parallelism` rejects non-round input or
-  output boundaries), not `paste` — `pastability` checks only boundary agreement.
-- `equal` is structural (same shape, same labels); `isomorphic` is up to the
-  canonical shape isomorphism (`ogposet::find_isomorphism` + `pullback_labels`).
+- `is_round` is a property of the **shape**: it delegates straight to
+  `Ogposet::is_round` (`src/core/ogposet.rs`), the directed-sphere condition that
+  the shape be `is_pure` and have its input and output interiors disjoint at every
+  dimension. Labels are irrelevant. `is_normal` reports canonical cell order;
+  `is_cell` is `true` iff the top-dimensional input paste tree is a single
+  `PasteTree::Leaf` — i.e. the diagram was minted as one cell, not assembled by
+  $\#_k$ (false for the empty diagram). Roundness gates **cell construction**
+  (`parallelism` rejects non-round input or output boundaries), not `paste` —
+  `pastability` checks only boundary agreement.
+- `equal` is structural (same shape via `Ogposet::equal`, same labels at every
+  position); `isomorphic` is equality up to the canonical shape isomorphism
+  (tries `equal` first, then `ogposet::find_isomorphism` + `pullback_labels`).
 
 ## Non-obvious invariants & gotchas
 
@@ -108,19 +131,23 @@ relabels the sub-shape and `boundary_history` clamps the history to match.
 - **`missing_tree()` sentinel.** Where history is genuinely absent the code falls
   back to `Leaf(Tag::Local("?"))`; `hist_tree_or_top` instead reuses a side's own
   top tree to preserve lower-dimensional cell identity in mixed-dimension pastes.
-- **`whisker_rewrite`** is the rewriting-specific constructor: it builds the
-  $(n+1)$-cell $S = U \cup_V R$ for a [[rewriting|rewrite step]] by pushing out the
-  match embedding against the rule cell's input embedding
-  (`cell_with_input_embedding`), then splices the rule's output labels in place of
-  the matched segment in the dim-$n$ output tree.
+- **No rewrite constructor lives here.** Diagram-level rewriting is *not* a method
+  of `Diagram`. The production rewrite path is
+  `matching::construct_parallel_step` → `pushout::multi_pushout` (see
+  [[core-matching]], [[rewriting]]). `cell_with_input_embedding` supplies the
+  input-boundary embedding that the matching/pushout machinery consumes, but the
+  step itself is assembled outside this module.
 
 ## Mathematics
 
 A `Diagram` is a labelled [[molecule]] — see [[diagram]] for the conceptual
 account of pasting ($\#_k$), top dimension, and boundaries
-$\partial^-_k$/$\partial^+_k$. The substrate is the [[oriented-graded-poset]]; the
-boundary operators are [[boundary]]; `CellData` is the globular data of an
-[[atom]]; `whisker_rewrite` realises [[rewriting]]. A `Diagram` is stored and
-named inside a [[core-complex|Complex]]; its `paste_history` is a
-[[core-paste-tree|`PasteTree`]] per dimension, and `realise_tree` (there) inverts
-pasting.
+$\partial^-_k$/$\partial^+_k$. The substrate is the [[oriented-graded-poset]] whose
+shapes are [[regular-directed-complex|regular directed complexes]]; a *type*
+built from labelled generators is only a [[directed-complex]]. The boundary
+operators are [[boundary]]; `CellData` is the globular data of an [[atom]];
+rewriting that builds new diagrams is [[rewriting]] (via
+`matching::construct_parallel_step` → `pushout::multi_pushout`, *not* a `Diagram`
+method). A `Diagram` is stored and named inside a [[core-complex|Complex]]; its
+`paste_history` is a [[core-paste-tree|`PasteTree`]] per dimension, and
+`realise_tree` (there) inverts pasting.

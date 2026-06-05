@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-01
+last-touched: 2026-06-05
 code: [src/language/mod.rs, src/language/lexer.rs, src/language/token.rs, src/language/parser.rs, src/language/ast.rs, src/language/ast_fmt.rs, src/language/ast_print.rs, src/language/error.rs]
 ---
 
@@ -26,9 +26,6 @@ parser from `parser.rs`, then collect lex + parse errors.
   expression, terminated by `end()`. The [[interactive-engine|engine]] uses it on
   the slow path of `eval_diagram_expr` to turn a prompt expression that isn't a
   stored diagram name into AST (`interactive/engine.rs`).
-- `parse_complex(&str) -> Result<Complex, String>` — one `Complex` expression,
-  terminated by `end()`, unwrapping the span via `s.inner`. **Currently has no
-  caller** (whole-repo `rg` finds only the definition).
 - `parse_complex_instrs`, `parse_type_instrs`, `parse_local_instrs`,
   `parse_pmap_clauses` — parse a *comma-separated instruction list* (no enclosing
   block). These exist to re-parse the textual body of an expanded `for`-block
@@ -70,14 +67,19 @@ A generator is `NameWithBoundary <<= Complex` (`Token::LArrow`, lexed from
 The diagram grammar is the heart of the parser and is genuinely recursive
 (through parentheses and anonymous maps). Levels, outermost first:
 
-1. **Explicit pasting** — `lhs #n rhs…` folds left into `Diagram::Paste { lhs,
-   dim, rhs }`. The `#n` carries the [[boundary|composition dimension]] $\#_n$.
-2. **Implicit pasting** — a juxtaposed run of `DExpr`s becomes
-   `Diagram::PrincipalPaste`.
+1. **Explicit paste** — `lhs #n rhs…` folds left (via `foldl` over `Token::Hash`)
+   into `Diagram::Paste { lhs, dim, rhs }`. The `#n` names the **paste dimension**:
+   `lhs` and `rhs` are pasted along their shared $n$-[[boundary]], i.e. $\#_n$.
+2. **Implicit (principal) pasting** — a juxtaposed run of `DExpr`s becomes
+   `Diagram::PrincipalPaste`; the interpreter pastes them at the *principal*
+   dimension $\min(\dim) - 1$ (it is a paste, not a separate composition — see
+   [[interpreter]]).
 3. **Dotted access** — `a.b.c` folds left into nested `DExpr::Dot`.
-4. **Components** (`DComponent`): `in` / `out` keywords, `?` ([[rewriting|hole]]),
+4. **Components** (`DComponent`): `in` / `out` keywords,
    `(d)` parenthesised, `(map … :: Complex)` anonymous [[partial-map]], `(run auto
-   on d)` rewrite request, a name, or a **string literal**.
+   on d)` rewrite request, a name, or a **string literal**. (A `?` hole is *not* a
+   diagram component — it is only the right-hand side of a partial-map clause; see
+   below.)
 
 `run`'s `auto` and `on` are *not* keywords — they're matched as bare
 `Token::Ident("auto")` / `Token::Ident("on")` inside `build_diagram`, so they
@@ -96,7 +98,10 @@ to their logical char first.
 `PartialMapDef` is either a `PartialMap` (a dotted chain of
 `PartialMapBasic` — name, parenthesised, or nested `(map …)`) or an `Ext`
 (`PartialMapExt`): an optional prefix map plus a bracketed list of `lhs => rhs`
-rewrite clauses. `[clauses]` alone is a bare `Ext` with no prefix.
+rewrite clauses. `[clauses]` alone is a bare `Ext` with no prefix. A clause's
+right-hand side is a `ClauseRhs`: either a diagram or a bare `?` ([[hole]]). The
+`?` is legal **only** here — it carries just the span of its token (`ClauseRhs::Hole`)
+and is not a diagram component.
 
 ### For-blocks and indices (string templating)
 
@@ -106,20 +111,24 @@ is a `ForBlock`: it iterates `v` over the index, optionally excluding the `bar`
 set.
 
 The body is **not parsed at grammar time**. `for_body` matches *balanced braces*
-and records only the body's `Span`; `ForBlock.body_text` is left empty. After
-parsing, `resolve_for_bodies_*` (in `mod.rs`) walk the AST and splice the raw
-source text `source[body_span]` into `body_text`. The interpreter later
-substitutes `v` and re-parses each expansion via the instruction-list parsers
-above. This deferred, text-level expansion is why `for`-blocks can appear at
-every instruction level and inside partial-map clause lists (`PMapEntry::For`).
+(over arbitrary tokens, so `<var>` instances inside lex fine) and records only the
+body's `Span`; `ForBlock.body_text` is left empty. After parsing,
+`resolve_for_bodies_*` (in `mod.rs`, via `resolve_fb`) walk the AST and splice the
+raw source text `source[body_span]` into `body_text`. The interpreter later expands
+it: `eval::expand_body` replaces the literal `<v>` token in `body_text` with each
+index value (comma-joining the copies), and re-parses each expansion via the
+instruction-list parsers above (`parse_complex_instrs` / `parse_type_instrs` /
+`parse_local_instrs`). This deferred, text-level expansion is why `for`-blocks can
+appear at every instruction level and inside partial-map clause lists
+(`PMapEntry::For`).
 
 ### Parser-reuse pattern
 
 The mutually-recursive sub-grammars are built by `build_*` helpers that take and
 return *type-erased* `recursive()` handles (the `R<…>` alias) — this both breaks
 construction-time recursion and stops the generic types exploding into giant
-symbol names. The public surface is small: `program_parser`, `complex_parser`,
-`diagram_parser`, and the four `*_instrs`/`pmap_clauses` parsers. Each
+symbol names. The public surface is small: `program_parser`, `diagram_parser`,
+and the four `*_instrs`/`pmap_clauses` parsers. Each
 re-assembles whatever slice of the `build_diagram → build_partial_map →
 build_partial_map_def → build_complex` chain it needs (`pmap_clauses_parser` only
 needs `build_diagram`). To expose a new sub-grammar, follow this chain and erase
@@ -141,10 +150,11 @@ consumers. The shape mirrors the grammar:
 | `Complex` | `Address(Address)` or `Block { address, body }` — an inline complex |
 | `Diagram` | `PrincipalPaste(Vec<DExpr>)` (implicit) or `Paste { lhs, dim, rhs }` (explicit `#n`) |
 | `DExpr` | `Component(DComponent)` or `Dot { base, field }` |
-| `DComponent` | leaf: `Name`, `In`, `Out`, `Hole`, `Paren`, `AnonMap`, `Run` |
+| `DComponent` | leaf: `Name`, `In`, `Out`, `Paren`, `AnonMap`, `Run` (no `Hole`) |
 | `PartialMapDef` | `PartialMap(PartialMap)` or `Ext(PartialMapExt)` |
 | `PartialMap` / `PartialMapBasic` | dotted chain of name / paren / `AnonMap` |
 | `PMapEntry` | a partial-map clause `Clause(lhs => rhs)` or a nested `For` |
+| `ClauseRhs` | a clause RHS: `Diagram(…)` or `Hole(Span)` — the only place `?` is legal |
 | `ForBlock` / `IndexDecl` / `ForIndex` | the string-templating machinery |
 
 `Address` is a type alias for `Vec<Spanned<String>>` (a dotted name path).
@@ -152,14 +162,20 @@ consumers. The shape mirrors the grammar:
 ## Lexer (`src/language/lexer.rs`, `token.rs`)
 
 `token.rs` defines the single `Token<'src>` enum: fifteen keyword variants
-(`Include … Run`, the exact set `ident_or_nat_or_kw` matches), the punctuation/
-symbol variants, and the three data-carrying variants `Ident(&str)`, `Nat(&str)`,
-`Str(&str)` that borrow from the source. Its `Display` impl renders each token
-back to its surface lexeme — used in chumsky's `Rich` error messages, not for
-source reconstruction. **Dead tokens:** `LAngle`/`RAngle` (`<`/`>`) are lexed but
-consumed by **no** grammar production (whole-repo `rg` finds zero uses outside
-`token.rs`/`lexer.rs`); the boundary arrow is `->` (`Token::Arrow`), not angle
-brackets.
+(`Include`, `Attach`, `Along`, `Assert`, `In`, `Out`, `Type`, `Let`, `Total`,
+`Map`, `As`, `Index`, `For`, `Bar`, `Run` — the exact set `ident_or_nat_or_kw`
+matches, with **no `open`**), the punctuation/symbol variants, and the three
+data-carrying variants `Ident(&str)`, `Nat(&str)`, `Str(&str)` that borrow from
+the source. Its `Display` impl renders each token back to its surface lexeme —
+used in chumsky's `Rich` error messages, not for source reconstruction.
+
+**`LAngle`/`RAngle` (`<`/`>`) are not dead.** No *named* production consumes them,
+but they are load-bearing for `for`-block bodies: a body is scanned as raw tokens
+(`for_body` matches balanced braces over any tokens), and the variable instance
+syntax `<var>` substituted in that body — e.g. `<ctx>` — must lex, which it could
+not without `<`/`>`. The for-body lexes, then `eval::expand_body` does the
+textual `<var>` → value replacement (see [[interpreter]]). The boundary arrow is
+still `->` (`Token::Arrow`), not angle brackets.
 
 `lexer()` is a chumsky parser over `&str` producing `Vec<(Token, SimpleSpan)>`
 (here `Spanned<T>` is the lexer-local tuple alias `(T, Span)`, distinct from
@@ -224,10 +240,9 @@ conventions, and clamps out-of-range offsets to source length.
   `*_instrs` entry points run it; building a `Program` by hand does not.
 - `end()` placement is inconsistent: `program_parser` and the four
   `*_instrs`/`pmap_clauses` parsers append `then_ignore(end())` themselves, but
-  `complex_parser` and `diagram_parser` do **not** — their `mod.rs` callers
-  (`parse_complex`, `parse_diagram`) tack on `end()` at the call site. Reusing
-  `complex_parser`/`diagram_parser` at a boundary without your own `end()` will
-  silently accept trailing tokens.
+  `diagram_parser` does **not** — its `mod.rs` caller `parse_diagram` tacks on
+  `end()` at the call site. Reusing `diagram_parser` at a boundary without your
+  own `end()` will silently accept trailing tokens.
 
 ## Mathematics
 

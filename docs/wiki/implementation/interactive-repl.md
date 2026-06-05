@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-03
+last-touched: 2026-06-05
 code: [src/interactive/repl.rs, src/interactive/cli.rs, src/interactive/richtext.rs, src/interactive/display.rs, src/interactive/render.rs]
 ---
 
@@ -108,7 +108,7 @@ painter `acc` colours the `❯` prompt.
 
 `render_step(step, scope)` walks a rewrite step's input [[core-paste-tree|paste
 tree]], wrapping every leaf whose label is the applied rule in `[brackets]` and
-chaining composition nodes as `(… #k …)`, matching the house $\#_k$ notation. Its
+chaining paste nodes as `(… #k …)`, matching the house $\#_k$ notation. Its
 caller is the protocol's `RewriteInfo.match_display` builder ([[interactive-daemon-web]]),
 which `richtext` then re-segments for display. It degrades to `"?"` on a step with
 no input tree rather than panicking.

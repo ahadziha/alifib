@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-03
+last-touched: 2026-06-05
 code: [web/shared/src/lib.rs, web/server/src/lib.rs, web/wasm/src/lib.rs, web/mcp/src/lib.rs]
 ---
 
@@ -69,7 +69,13 @@ request line and `Content-Length` (no keep-alive — every response sets
 - **`/api/*`** — each route deserialises a typed body struct (`LoadSourceBody`,
   `StartSessionBody`, …) and forwards to the matching `WebRepl` method, writing
   the returned JSON envelope back verbatim. `StartSessionBody` carries the same
-  `serde(alias)` back-compat field names as the protocol's `Start`.
+  `serde(alias)` back-compat field names as the protocol's `Start`. Beyond
+  `load_source`/`start_session`/`resume_session`/`run_command` there are
+  `parse_command` (the shared line classifier — [[web-frontend]]), the
+  `get_*_strdiag` family (`get_strdiag`/`get_session_strdiag`/`get_target_strdiag`/
+  `get_rewrite_preview_strdiag`/`get_map_image_strdiag`), and the proof-view pair
+  (`set_proof_view`/`get_proof_strdiag`); each maps 1:1 to the `WebRepl` method of
+  the same name.
 - **`/examples/index.json`** and `GET /examples/<rel>.ali` — backed by
   `ExampleSet::index_json` / `read_path`; a rejected path returns a bare 404
   rather than leaking the reason.
@@ -99,9 +105,10 @@ filesystem module search.
 `WasmRepl { inner: WebRepl }` is a `#[wasm_bindgen]` newtype whose every method
 delegates straight to `inner`: `load_source` (parsing an optional
 `modules_json` string into the modules map), `start_session`, `resume_session`,
-`run_command`, the `get_*_strdiag` family, `set_proof_view`, `reset`,
-`stop_session`. There is no transport and no server — JS calls these methods
-directly on the in-page module. The crate is `crate-type = ["cdylib"]`; the
+`run_command`, `parse_command` (the shared line classifier the frontend leans on
+— see [[web-frontend]]), the `get_*_strdiag` family, `set_proof_view`,
+`get_proof_strdiag`, `reset`, `stop_session`. There is no transport and no
+server — JS calls these methods directly on the in-page module. The crate is `crate-type = ["cdylib"]`; the
 WASM memory-discipline reasons it exists (peak linear-memory pages are never
 returned, so the old store must be dropped before the new one is allocated)
 live in `WebRepl::load_source_with_modules` and are covered in

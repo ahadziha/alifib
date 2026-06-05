@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-04
+last-touched: 2026-06-05
 code: [src/analysis/homology.rs, src/analysis/strdiag.rs]
 ---
 
@@ -30,7 +30,7 @@ Both are pure functions of the ogposet incidence; they own no state.
 | Type / fn | Role |
 | --- | --- |
 | `homology::AbelianGroup` | f.g. abelian group: `free_rank: usize` + `torsion: Vec<i64>` (divisibility-ordered). |
-| `homology::TorsionWitness` | `order`, `cycle` (in $C_n$), `preimage` (in $C_{n+1}$) — all in the *original* generator bases. |
+| `homology::TorsionWitness` | `order`, `cycle` (in $C_n$), `preimage` (in $C_{n+1}$) — all in the *original* generator bases. `cycle_str` / `preimage_str` format them for the user-facing display (see *Mathematics* / [[homology]]). |
 | `homology::Homology` | per-dimension `groups`, `euler_characteristic`, `torsion_witnesses` map. |
 | `homology::compute_homology(&Complex)` | the entry point. |
 | `strdiag::VertexKind` | `Node` (top-dim cell) or `Wire` (codim-1 cell). |
@@ -154,11 +154,11 @@ These modules are real *realisations* of derived structure over the ogposet,
 not mere support code:
 
 - `homology.rs` realises the **integer cellular chain complex** $(C_\bullet,
-  \partial)$ of a [[regular-directed-complex]] and its **[[homology]]** — free
-  rank, torsion, Euler characteristic, with torsion classes made concrete as
-  cycles and bounding chains. The differential is exactly the signed
-  input/output face boundary $\partial^-, \partial^+$ of the
-  [[oriented-graded-poset]].
+  \partial)$ of a type — a [[directed-complex]] (a cell complex, not necessarily
+  [[regular-directed-complex|regular]]) — and its **[[homology]]**: free rank,
+  torsion, Euler characteristic, with torsion classes made concrete as cycles
+  and bounding chains. The differential is exactly the signed input/output face
+  boundary $\partial^-, \partial^+$ of the [[oriented-graded-poset]].
 - `strdiag.rs` realises the **[[string-diagram]]** layout of a [[diagram]]:
   the height/width/depth partial orders that place nodes and wires in the
   plane, derived from the codimension-$1$/$2$/$3$ face cascades of the

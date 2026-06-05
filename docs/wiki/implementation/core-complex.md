@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-01
+last-touched: 2026-06-05
 code: [src/core/complex.rs]
 ---
 
@@ -69,15 +69,26 @@ Both forms therefore answer `find_diagram(name)`. To tell them apart:
 `find_generator(name)` is `Some((tag, dim))` for a generator and `None` for a
 let-binding; `generators_iter()` yields only generators. This pairing is enacted
 at `src/interpreter/eval.rs` (local cells: `add_generator` then `add_diagram`
-then `add_local_cell`; module root and type definition do the same), in
+then `add_local_cell`; module root and type definition do the same) and in
 `src/interpreter/global_store.rs::insert_global_cell` (a free function, not a
-method: `add_generator` then `add_diagram`), and in
-`src/interpreter/include.rs`. The classifier is the
+method: `add_generator` then `add_diagram`). The classifier is the
 boundary-encoding [[diagram]] for the generator.
 
+**`attach`/`include` is the deliberate exception.**
+`src/interpreter/include.rs::extend_scope_with_attached_generators` (and
+`insert_generators_by_tag`) call `add_generator` *alone* — there is no paired
+`add_diagram` on that path. An attached generator is therefore reachable by name
+(`find_generator`), by tag, and through its `classifier`, but **not** through
+`find_diagram`. Don't read "every generator answers `find_diagram`" as universal:
+it holds for cells declared in a type/module body, not for ones imported by
+attachment.
+
 A generator additionally records an **insertion order** (`generator_order`),
-consumed by `src/output/normalize.rs` to emit generators in declaration order
-rather than the `BTreeMap`'s lexical order.
+consumed by `src/output/normalize.rs` (which sorts `generators_iter()` by
+`generator_order`) to emit generators in declaration order rather than the
+`BTreeMap`'s lexical order. The fixture round-trip tests `delta_simplicial_identities_hold`
+and `magma_interpretation` exercise this registration-and-normalisation path
+end-to-end.
 
 ## Boundary extraction
 
@@ -103,10 +114,12 @@ global store, `GlobalStore::cell_data_for_tag(complex, tag)`:
   call and the generator becomes invisible to diagram lookup.
 - **`used_names` ignores generators.** `add_diagram`, `add_map`, `add_index`
   populate `used_names`; `add_generator` does *not*. So `name_in_use` answers
-  "taken by a diagram/map/index" — but since a generator always also gets an
-  `add_diagram` (see the data-flow above), its name lands in `used_names` that
-  way. The one site that checks generators explicitly anyway is
-  `src/interactive/engine.rs` (`name_in_use(n) || find_generator(n).is_some()`);
+  "taken by a diagram/map/index". A body-declared generator's name lands in
+  `used_names` anyway, because the caller also calls `add_diagram` (see the
+  data-flow above) — but an *attached* generator (`add_generator` alone) does
+  **not**, so `name_in_use` will not see it. The one site that checks generators
+  explicitly is `src/interactive/engine.rs`
+  (`name_in_use(n) || find_generator(n).is_some()`);
   `src/interpreter/types.rs::ensure_name_free` checks only `name_in_use`.
 - **Three indices, one truth.** `Generators` keeps `by_name`, `by_tag`,
   `by_dim`, and `classifiers` redundantly for O(1) lookup each way.
@@ -124,14 +137,15 @@ global store, `GlobalStore::cell_data_for_tag(complex, tag)`:
 
 ## Mathematics
 
-A `Complex` realises no theorem; it is the *ambient namespace* in which the
-combinatorics of a [[regular-directed-complex]] are assembled and named. Its
+A `Complex` realises no theorem; it is the *ambient namespace* of one type or
+module — and a type is a [[directed-complex]], not necessarily regular. Its
 generators are the [[atom|atoms]] (each carries a classifier [[diagram]] encoding
 its boundary), and the diagrams it stores are [[molecule|molecules]] built by
-pasting those atoms. The maps are [[partial-map|partial maps]] between the
-underlying complexes. So the bridge here is a *support* relationship: `Complex`
-holds the data the mathematics operates on, rather than implementing an operation
-of the theory. See [[core-diagram]] for `Diagram` / `CellData` / `Sign`,
+pasting those atoms; atoms and molecules are the [[regular-directed-complex|regular]]
+*shapes*. The maps are [[partial-map|partial maps]] between the underlying
+complexes. So the bridge here is a *support* relationship: `Complex` holds the
+data the mathematics operates on, rather than implementing an operation of the
+theory. See [[core-diagram]] for `Diagram` / `CellData` / `Sign`,
 [[core-matching]] for how `classifier` and `find_generator_by_tag` feed the
 rewriting engine, and [[interpreter]] for how a `Complex` sits inside
 `GlobalStore`.

@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-01
+last-touched: 2026-06-05
 ---
 
 # Molecule
@@ -35,17 +35,25 @@ two clauses, closed under one operation:
 
 The matching condition in clause 2 is the heart of well-formedness: $\#_k$ is a
 *partial* operation, defined exactly when the boundaries are equal as oriented
-shapes (and, in the labelled setting, as labellings). Not every regular directed
-complex arises this way — molecules are precisely the **pasting-decomposable** ones.
-A molecule is an [[atom]] iff it has a single top-dimensional cell (it is then
-*indecomposable* under $\#_k$ at the top dimension).
+shapes (and, in the labelled setting, as labellings). It does **not** require the
+arguments to be round — roundness gates *cell construction*, not pasting (see the
+round bullet below, and correction in [[diagram]]). Not every regular directed
+complex arises this way — molecules are precisely the **pasting-decomposable**
+ones. A molecule is an [[atom]] iff it has a single top-dimensional cell (it is
+then *indecomposable* under $\#_k$ at the top dimension).
+
+Pasting builds a *larger* shape; it is **not composition**, which would reduce a
+diagram to a single cell — a higher-algebraic operation plain alifib types do not
+have. The surface juxtaposition `U V` is *principal pasting*, $U \#_k V$ at
+$k = \min(\dim U, \dim V) - 1$.
 
 Two derived notions recur:
 
 - A molecule is **round** when its input and output boundaries are spheres —
   $\partial^-_{n-1}U$ and $\partial^+_{n-1}U$ share a boundary and together close
-  up. Roundness is the precondition for a molecule to be the boundary of a *cell*
-  one dimension up. Every atom is round.
+  up. Roundness is a property of the *shape* alone (it ignores any labelling), and
+  it is the precondition for a molecule to be the input/output boundary of a *cell*
+  one dimension up — not a precondition for pasting. Every atom is round.
 - The **dimension** $\dim U$ is the largest dimension of any cell; the empty
   molecule has dimension $-1$.
 
@@ -65,17 +73,28 @@ substrate is an [[oriented-graded-poset]] (`src/core/ogposet.rs`); the labelling
 names each cell with a generator, so a `Diagram` is a molecule *over* a
 [[core-complex|Complex]] of generators.
 
+The *shape* of a molecule (and so of every `Diagram` value) is a
+[[regular-directed-complex|regular directed complex]]. A **type**, assembled from
+generators whose boundaries the labelling identifies, is in general only a
+[[directed-complex]] — it need not be regular. (Canonical witness: a point with one
+arrow `a : pt -> pt`; the arrow's shape is the round 0-sphere with two distinct
+endpoints, but the labels send both to `pt`, realising a directed loop that is a
+fine directed complex yet not a regular CW complex. See [[diagram]].)
+
 - **Atoms** are minted by `Diagram::cell(tag, &CellData)`, where `CellData::Zero`
   is the point and `CellData::Boundary { boundary_in, boundary_out }` carries an
   [[atom]]'s globular input/output as two $(n-1)$-`Diagram`s.
 - **Pasting** $\#_k$ is `Diagram::paste(k, u, v)`. The boundary-agreement
   precondition $\partial^+_k U = \partial^-_k V$ is checked by `Diagram::pastability`
-  (internal) before the pushout glues the two shapes; the matching condition above
-  is exactly what `pastability` enforces.
+  (internal) before the pushout glues the two shapes; this is *all* `pastability`
+  enforces — it does **not** check roundness.
 - **Boundaries** $\partial^\pm_k$ are `Diagram::boundary` / `Diagram::boundary_normal`.
-- **Roundness** is `Diagram::is_round`; atomicity is `Diagram::is_cell`, which
-  tests that the top-dimensional paste history is a single `Leaf` (i.e. the
-  diagram was minted as one cell, not assembled by $\#_k$) — see [[core-diagram]].
+- **Roundness** is `Diagram::is_round`, which delegates to `Ogposet::is_round`: it
+  inspects the bare shape and ignores labels. Roundness is enforced only by
+  `Diagram::parallelism` at cell construction, never by `paste`. Atomicity is
+  `Diagram::is_cell`, which tests that the top-dimensional input paste history is a
+  single `Leaf` (i.e. the diagram was minted as one cell, not assembled by $\#_k$)
+  — see [[core-diagram]].
 
 The full bridge — construction, pasting, boundary clamping, the three-arrays
 invariant — lives in [[core-diagram]]; the conceptual gloss of a `Diagram` as a
@@ -84,4 +103,4 @@ labelled molecule is [[diagram]].
 ## Related
 
 [[atom]] · [[diagram]] · [[boundary]] · [[regular-directed-complex]] ·
-[[oriented-graded-poset]] · [[rewriting]]
+[[directed-complex]] · [[oriented-graded-poset]] · [[rewriting]]

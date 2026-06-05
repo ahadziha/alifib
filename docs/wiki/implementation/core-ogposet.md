@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-01
+last-touched: 2026-06-05
 code: [src/core/ogposet.rs]
 ---
 
@@ -79,8 +79,14 @@ build_stack_cell_n   ─┘        │  closure of seeds, canonical order
   index). `remap_adjacency` then rebuilds the tables. `mark_normal` stamps the
   result's `normal` flag so downstream code can skip re-normalising.
 - `normalisation` seeds `traverse` with `build_stack_extremal(Input, …)` and
-  marks the result normal; `boundary_traverse` seeds with `build_stack_paste`
-  (sided) or `build_stack_cell_n` (the `Both` shared boundary of an $n$-cell).
+  marks the result normal; if `g` is already `normal` it short-circuits to an
+  identity `Embedding`. `boundary_traverse` dispatches on sign: `Input`/`Output`
+  seed `build_stack_paste(sign, g, k)` (clamped to `g.dim`) for the *sided*
+  $k$-boundary; `Both` seeds `build_stack_cell_n(g)` — which ignores `k` (beyond
+  the clamping arithmetic) and returns the full boundary **sphere** of an
+  $n$-cell (input-extremal cells at every level $0..d{-}1$ plus output-extremal
+  cells at $d{-}1$), the shape needed when forming a cell from two parallel
+  $(n{-}1)$-diagrams.
 - `find_isomorphism(u, v)` normalises both and compares canonical forms with
   `Ogposet::equal`; on a match it composes the two normalisation embeddings (and
   their inverses) into the iso, with cheap pre-checks (`dim`, `sizes`, then a raw
@@ -94,6 +100,18 @@ build_stack_cell_n   ─┘        │  closure of seeds, canonical order
   walk order; `boundary_traverse` returns the *normalised* boundary. Both are
   needed: the former for a faithful sub-shape, the latter when shapes must be
   compared by canonical form. Conflating them silently breaks isomorphism checks.
+- **`boundary_traverse`'s `Both` branch ignores `k`.** For `Input`/`Output` it
+  takes the sided $k$-boundary (`build_stack_paste`, $k$ clamped to `g.dim`); for
+  `Both` it dispatches to `build_stack_cell_n` and returns the *whole* boundary
+  sphere of an $n$-cell, so the `k` argument is consumed only by the clamping
+  arithmetic and otherwise discarded. This is the shared boundary used to form a
+  cell from two parallel diagrams.
+- **No caching — every call recomputes.** `normalisation` and `boundary_traverse`
+  recompute from scratch on each invocation; there is no memoisation by pointer
+  identity or otherwise. (`normalisation` does short-circuit when `g` is already
+  `normal`, but that is a flag check, not a cache.) A comment once claiming
+  pointer-identity memoisation was removed (2026-06-04) — it described code that
+  never existed.
 - **`extremal` is defined by *missing cofaces*, not by faces.** An `Input`-
   extremal $k$-cell is one with no *output* coface (nothing has consumed it as a
   target), and dually for `Output`. This is the input/output-boundary frontier,
@@ -118,10 +136,11 @@ build_stack_cell_n   ─┘        │  closure of seeds, canonical order
   $\Delta^\pm_k$ of one cell?" without building a sub-ogposet, these avoid the
   `traverse` + `remap_adjacency` cost: `closure` returns a `Vec<BitSet>` of the
   down-closure (called by `matching::check_match_isomorphism` and
-  `reconstruct`), and `signed_k_boundary_of_cell` returns the $k$-cell indices of
-  one cell's sign-side boundary (called by `flow`). `signed_k_boundary_of_cell`
-  fast-paths `dim == k+1` to a direct face-table read. (`closure` carries a stale
-  `#[allow(dead_code)]` despite these live callers — see [[source-drift]].)
+  `reconstruct::build_layers`), and `signed_k_boundary_of_cell` returns the
+  $k$-cell indices of one cell's sign-side boundary (called by `flow`).
+  `signed_k_boundary_of_cell` fast-paths `dim == k+1` to a direct face-table
+  read. Both are plainly live — the `#[allow(dead_code)]` `closure` once carried
+  was removed (2026-06-04), confirming the symbol via a clean build.
 - **`restrict` lives next door, not here.** The task framing pairs "closure /
   restrict"; `closure` is in this module, but `restrict_ogposet` — restrict an
   `Ogposet` to a per-dimension kept-cell mask (`&[BitSet]`) — is `reconstruct::restrict_ogposet`
@@ -135,10 +154,14 @@ build_stack_cell_n   ─┘        │  closure of seeds, canonical order
 
 `Ogposet` is the direct realisation of an [[oriented-graded-poset]]: the four
 signed tables *are* the input/output face order, and `Sign` *is* the $\pm$
-orientation. The roundness and purity predicates (`is_round`, `is_pure`) and the
-canonical `normalisation` are the conditions and constructions that cut the
-[[oriented-graded-poset|ogposets]] down to a [[regular-directed-complex]], the
-substrate in which [[molecule|molecules]] live (Hadzihasanovic). The two
+orientation. The ogposet is the bare substrate beneath a [[directed-complex]]
+generally; the roundness and purity predicates (`is_round`, `is_pure`) and the
+canonical `normalisation` are the conditions and constructions that single out
+the well-behaved [[regular-directed-complex|regular]] shapes in which
+[[molecule|molecules]] live (Hadzihasanovic). Note `is_round` is a *shape*
+property — it inspects the bare ogposet and ignores any labels — which is why a
+labelled type assembled by identifications can be a non-regular directed complex
+even though its constituent atoms and molecules are regular. The two
 boundary operations realise the input/output [[boundary|boundaries]]
 $\partial^-_k$ / $\partial^+_k$ at the shape level — `boundary` for a faithful
 sub-shape, `boundary_traverse` for the normalised one — which `Diagram` lifts to

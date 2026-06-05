@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-03
+last-touched: 2026-06-05
 code: [src/aux/mod.rs, src/aux/id.rs, src/aux/error.rs, src/aux/loader.rs, src/aux/bitset.rs, src/aux/intset.rs, src/aux/graph.rs, src/aux/path.rs]
 ---
 
@@ -29,7 +29,7 @@ boundary-slot display.
 |---|---|
 | `id.rs` | the three identifier kinds + `Tag`, the local/global union |
 | `error.rs` | `Error` (message + notes) and `report_load_file_error` |
-| `loader.rs` | `Loader` — read source, resolve `#use` includes, return `LoadedFile` |
+| `loader.rs` | `Loader` — read source, resolve `include <Name>` directives, return `LoadedFile` |
 | `path.rs` | canonicalisation and search-path dedup |
 | `bitset.rs` | `BitSet` — dense membership over `0..N` for traversal scratch |
 | `intset.rs` | `IntSet = Vec<usize>` kept sorted/deduped + merge ops |
@@ -102,6 +102,42 @@ file, recurses into its dependencies *first*, then `insert_module` +
 invariant that keeps a resolution from ever pointing at an unstored program.
 `ModuleStore::into_parts` drains `dep_order` to hand back modules leaves-first.
 
+## Include resolution — the search-path precedence
+
+`loader.rs` owns the *filesystem* side of the [[module-system]]: turning a bare
+`include <Name>` into a concrete `.ali` file. (The *semantic* side — splicing the
+resolved module's generators into scope — lives in the [[interpreter]] and
+[[module-system]].) The directories searched for `<Name>.ali` are assembled by
+`Loader::with_parent_dir`, in this strict precedence order:
+
+1. **The including file's own directory.** `Foo.ali`'s includes are first sought
+   in the directory holding `Foo.ali`.
+2. **A same-named subdirectory.** `Foo.ali` may keep private submodules in a
+   `Foo/` directory beside it and include them by bare name: `include Aux` from
+   `…/Foo.ali` resolves `…/Foo/Aux.ali`. (The stem is `file_stem`; the subdir is
+   `parent.join(stem)`.)
+3. **The inherited search paths** — cwd seeded by `Loader::default`, then the
+   `ALIFIB_PATH` directories (`:`-separated on Unix, `;` on Windows, via
+   `Loader::path_separator`/`split_paths`), then any `extra_search_paths`.
+
+`find_file` walks this list and the **first** directory holding `<Name>.ali`
+wins (closest-wins). Because each module recurses with its *own*
+`with_parent_dir` loader, two files in different directories that both
+`include Aux` may resolve to different `Aux.ali` files — pinned by
+`virtual_loader_subdirectory_resolution` (`tests/interpreter.rs`), where sibling
+roots `A.ali` and `B.ali` each resolve `Aux` to their own `A/Aux.ali` and
+`B/Aux.ali`. The same-named-subdirectory rule on the real filesystem is pinned by
+`submodule_in_same_named_directory` (`SubMod.ali` resolves `Aux` from `SubMod/`).
+Duplicate directories are collapsed by `path::normalize_search_paths` (or a plain
+`HashSet` filter for the virtual loader), preserving order, so a directory that
+appears under two spellings is searched once.
+
+`ModuleResolutions` is the durable output: a nested map keyed by
+`(parent canonical path, module name)` → the dependency's canonical path, looked
+up later by `resolve(parent, name)` without allocation. Cycles are caught by the
+`visited` set in `resolve_all_modules`/`resolve_recursive` — re-encountering a
+path still on the recursion stack yields `LoadFileError::Cycle`.
+
 ## Non-obvious invariants & gotchas
 
 - **`GlobalId` is monotone and never reused.** A single global atomic counter,
@@ -159,3 +195,9 @@ None of these structures *is* an OGP or a flow graph; each is the integer-set
 plumbing those constructions are expressed in. For the identifier and error
 plumbing's role in the elaboration pipeline, see [[interpreter]] and
 [[core-complex]] (where `Tag` keys the lookup chain).
+
+The `loader`/`path` half realises the file-system side of the
+[[module-system]]: `include <Name>` is the language's import form, and the
+search-path precedence above is *how a name becomes a file*. Splicing that
+resolved file's contents into the importing scope is the module system's
+*semantic* side — see [[interpreter]] and [[module-system]].

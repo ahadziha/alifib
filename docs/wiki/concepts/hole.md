@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-03
+last-touched: 2026-06-05
 code: [src/core/map_hole.rs, src/interpreter/partial_map.rs, src/interactive/fill.rs, src/output/normalize.rs]
 ---
 
@@ -77,6 +77,18 @@ When a filled hole's image becomes known, its paste tree is **substituted** for
 its metavariable in every other hole's boundary trees, and any conditional whose
 dependencies have all closed is **cascaded** into the real map. The cascade
 repeats until no ready conditional remains.
+
+These behaviours are pinned by integration fixtures: `collapsed_boundary_infers_image`
+and `collapse_inference_cascades_through_implicit_faces` (collapse, including
+through implicitly-forced faces), `inferred_assignment_fills_hole` (a case-1
+inference closing an earlier `?`), `fill_is_order_independent` and
+`prefix_extension_fills_holes` (filling and cascading regardless of clause order),
+`redundant_hole_then_value_commits` and `hole_on_defined_generator_is_noop` (the
+idempotence $[\,x \Rightarrow ?,\ x \Rightarrow a\,] \equiv [\,x \Rightarrow a\,]$),
+and `layered_holes_load` (a hole's metavariable appearing in a higher hole's
+boundary tree). A pending assignment whose boundary is later filled to violate its
+own constraint is rejected and **blamed on the pending clause**, not the filler
+(`wrong_filler_blames_pending_assignment`, `inconsistent_fill_is_error`).
 
 **Interactively.** A hole that survives interpretation is *open* — a normal,
 non-error state of the map. The interactive front-ends ([[interactive-session]])

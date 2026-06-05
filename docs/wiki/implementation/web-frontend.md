@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-03
+last-touched: 2026-06-05
 code: [web/frontend/src/app.js, web/frontend/src/ali-lang.js, web/frontend/index.html]
 ---
 
@@ -31,12 +31,12 @@ REPL — are documented in [[interactive-daemon-web]] / [[interactive-repl]]).
 
 | Area (`app.js` section) | Responsibility |
 |---|---|
-| **Backend abstraction** (`WasmBackend`, `HttpBackend`, `createBackend`, `backendConfig`) | one async method surface (`load_source`, `start_session`, `run_command`, `get_*_strdiag`, …) over two transports; selected at boot |
+| **Backend abstraction** (`WasmBackend`, `HttpBackend`, `createBackend`, `backendConfig`) | one async method surface (`load_source`, `parse_command`, `run_command`, `start_session`, `get_*_strdiag`, …) over two transports; selected at boot |
 | **Editor & tabs** (`makeEditorState`, `createTab`, `switchTab`, `renderTabBar`) | CodeMirror state per tab, dirty tracking, untitled-naming, the `+` tab |
 | **Evaluate** (`evaluateSource`) | reset → collect `include` modules → `load_source` → build the type accordion, populate the Type selector, cache thin/face tags |
-| **Session lifecycle** (`startSession`, `startSessionFromRepl`, `startResumeFromRepl`, `enterSession`, `resetSession`) | drive `State::Empty→Loaded→Active` from the setup form or REPL `start`/`resume` |
-| **REPL** (`handleCommand`, `buildCommand`, `splitQuotedArgs`) | parse a typed line into a protocol `Request` JSON and dispatch; history with `↑`/`↓` |
-| **Result rendering** (`renderCommandResult`, `renderState`, `renderTypes`, `renderRules`, `renderHistory`, `renderHomology`, …) | turn `ResponseData` snapshots into REPL HTML |
+| **Session lifecycle** (`startSession`, `startSessionFromRepl`, `startResumeFromRepl`, `enterSession`, `resetSession`) | drive `Empty→Loaded→Active` from the setup form or a REPL `start`/`resume` action |
+| **REPL** (`handleCommand`, `runAction`, `renderResult`) | classify a typed line via the backend's shared `parse_command`, then either drive a UI *action* or forward a ready *request* to `run_command`; history with `↑`/`↓` |
+| **Transcript rendering** (`renderSegments`, `ROLE_CLASS`, `formatError`, `renderDiagnostic`, `appendReplEntry`) | style the backend's shared **RichText** (`rendered` field) and structured diagnostics into REPL HTML — no command-specific renderers live here |
 | **String-diagram layout** (`layoutStrDiag`, `longestPathDistances`, `separateOverlaps`, `toScreen`/`fromScreen`) | position vertices from the render tree's three edge DAGs |
 | **String-diagram rendering** (`renderStrDiag`, `resizeAndRender`, `entryPoint`, `topoSort`) | draw wires (quadratic Béziers) and nodes to the canvas |
 | **Diagram interaction** (`mousedown`/drag handler, pan, zoom) | drag a vertex (height-graph BFS influence falloff), pan, zoom |
@@ -62,14 +62,19 @@ the caller parses with `parseReplResponse`. The mode comes from
   (`type_name`, `boundary_dim`, `command_json`) matching the server's routes.
 
 Both ultimately drive the *same* `WebRepl` adapter inside the `alifib` library —
-the `WasmRepl` wraps it directly, the server wraps it behind HTTP. So the
-frontend speaks the `protocol` vocabulary indirectly: commands are built as
-`{"command": …}` JSON (`buildCommand`) and handed to `run_command`, which the
-backend parses into a `Request` and forwards to `Session::apply`
-([[interactive-session]]). Session birth and death are *not* wire commands here —
-they go through the dedicated `start_session`/`resume_session`/`stop_session`/
-`reset` methods on the `WebRepl`'s single `Session`. See [[web-backends]] for the
-three backend crates and [[interactive-daemon-web]] for the protocol they share.
+the `WasmRepl` wraps it directly, the server wraps it behind HTTP. The frontend
+no longer builds `Request` JSON itself: `handleCommand` sends the raw typed line
+to the backend's **shared parser** (`parse_command`, the same Rust parser the CLI
+uses), which returns one of three classifications — `error`, `action`, or
+`request`. `action`s (`start`/`resume`/`fill`/`done`/`stop`/`clear`/`holes`/
+`backward`) are UI flows the frontend drives via `runAction`; a `request` carries
+a ready `Request` that `handleCommand` re-serialises straight into `run_command`,
+which the backend forwards to `Session::apply` ([[interactive-session]]). Keeping
+parsing — and its error wording — in one place is why the web and CLI REPLs cannot
+drift. Session birth and death are *not* wire commands here: they go through the
+dedicated `start_session`/`resume_session`/`stop_session`/`reset` methods on the
+`WebRepl`'s single `Session`. See [[web-backends]] for the three backend crates and
+[[interactive-daemon-web]] for the protocol they share.
 
 ## String diagrams: render tree → canvas
 
@@ -135,9 +140,16 @@ keeps proportions across window resizes and persists nothing.
   — the wasm-pack output is fetched at runtime by the dynamic `import`, not
   inlined. A missing `pkg/` directory only fails when the WASM backend is chosen.
 - **`start`/`resume`/`stop` are method calls, never `run_command`.** The wire
-  protocol *refuses* lifecycle commands in web mode (`WebRepl`), so `buildCommand`
-  routes the `start`/`resume`/`stop` REPL words to the dedicated backend methods
-  instead of emitting a `Request`.
+  protocol *refuses* lifecycle commands in web mode (`WebRepl`), so the shared
+  `parse_command` classifies those REPL words as `action`s; `runAction` routes
+  them to the dedicated `start_session`/`resume_session`/`stop_session` methods
+  rather than to `run_command`.
+- **Command parsing and the transcript layout both live in Rust.** The frontend
+  holds no per-command renderers — `renderResult` styles the backend's shared
+  RichText (the `rendered` field, produced by `render_response`) through
+  `renderSegments`/`ROLE_CLASS`, the web half of the one renderer the CLI also
+  uses. After a state-changing request (`STATE_REQS`: step/undo/show/store/…)
+  it refreshes the diagram pane via `updateVisInfo`/`showSessionDiagram`.
 - **Evaluate fully resets first.** `evaluateSource` calls `repl.reset()` and
   `resetSession()` before loading, then rebuilds the accordion and Type selector
   from scratch — there is no incremental reload. Include modules are gathered
@@ -149,6 +161,24 @@ keeps proportions across window resizes and persists nothing.
 - **Layout is recomputed, never cached across diagrams.** `currentLayout` is
   replaced on each `showSessionDiagram`/`selectItem`; dragging mutates only the
   abstract positions of the live layout.
+- **The examples manifest is built at deploy time, not by the frontend.** The
+  dropdown is populated from `GET examples/index.json`. Under `alifib web` that
+  file comes from `ExampleSet::index_json` ([[web-backends]]); for the static
+  WASM site it is generated by `scripts/build_examples_manifest.py`, which the
+  GitHub Pages workflow (`.github/workflows/deploy.yml`) runs to mirror
+  `examples/` into `dist/examples/` with a sorted `{display_name: relpath}`
+  manifest. Recursive example names are the relative path minus `.ali` (e.g.
+  `TRS/Aux`), and every path segment must be a valid identifier
+  (`[A-Za-z_][A-Za-z0-9_]*`) — the script enforces exactly the rules
+  `web/shared`'s `ExampleSet` does, so local preview and deploy agree.
+- **Client-side `include` resolution mirrors the interpreter's precedence.**
+  `collectIncludeModules` chases `include <Name>` transitively and
+  `resolveIncludeKey` picks the example key by the same own-dir / same-named-subdir
+  / fallback order the loader uses ([[aux]]): for a parent `Dir/Foo`, an
+  `include Aux` is tried as `Dir/Aux`, then `Dir/Foo/Aux`, then bare `Aux`. The
+  gathered `<Name>.ali → contents` map is handed to `load_source` so the backend's
+  virtual loader resolves the includes without any filesystem access; open editor
+  tabs override fetched examples for the same name.
 
 ## Mathematics
 

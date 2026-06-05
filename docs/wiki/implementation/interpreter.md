@@ -1,8 +1,8 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-01
-code: [src/interpreter/mod.rs, src/interpreter/eval.rs, src/interpreter/global_store.rs, src/interpreter/types.rs, src/interpreter/resolve.rs, src/interpreter/binding.rs, src/interpreter/include.rs, src/interpreter/load.rs]
+last-touched: 2026-06-05
+code: [src/interpreter/mod.rs, src/interpreter/eval.rs, src/interpreter/global_store.rs, src/interpreter/types.rs, src/interpreter/resolve.rs, src/interpreter/binding.rs, src/interpreter/include.rs, src/interpreter/load.rs, src/interpreter/diagram.rs, src/interpreter/partial_map.rs]
 ---
 
 # interpreter — from parsed `Program` to a `GlobalStore`
@@ -98,6 +98,30 @@ When the canonical path is unknown (e.g. from the REPL) `find_type_gid` walks
 `src/interactive/engine.rs` re-splits it into eager-load and interactive-resolve
 halves — see [[interactive-engine]].
 
+### Qualified names walk through module maps (non-obvious)
+
+A dotted address like `A.Aux.Ob` is **not** a flat string key — `interpret_address`
+(`resolve.rs`) treats every segment but the last as a *prefix* and walks it through
+`resolve_address_prefix_scope` (internal). Starting in the current module's complex,
+each prefix segment is looked up with `Complex::find_map`; its `MapDomain` must be
+`Module(id)` (an `include` registers exactly such a map under its alias), and the
+scope advances to `find_module_arc(id)`. A `MapDomain::Type` prefix, or a segment
+that names no map, is rejected (*"Domain of `…` is not a module"* / *"Partial map
+`…` not found"*). The final segment is resolved in the advanced scope by the type
+lookup chain (`type_id_of_named_diagram`). So a qualified name is resolved
+**relative to the alias maps in scope where it is written**, not against a global
+table — two modules each including a module named `Aux` resolve `…Aux.Ob` to their
+own copy (the [[module-system]] concept page covers the semantics).
+
+Two related entry points sit alongside it: `resolve_module_domain` resolves the
+single-segment name of a `:: Name` block (it rejects a dotted address) via
+`resolve_module_by_name`; and `resolve_owner_type_id` falls back to the module's
+unnamed root generator when the address is empty. The scoped *file* search that
+backs `include <Name>` is owned by [[aux]] and consumed here through
+`Context::resolutions`; `virtual_loader_subdirectory_resolution`
+(`tests/interpreter.rs`) pins both the same-named-subdirectory file resolution and
+the `A.Aux.Ob` / `B.Aux.Ob` qualified-name walk in one fixture.
+
 ## Data flow
 
 ```
@@ -182,6 +206,26 @@ index value, re-joins with commas, and re-parses via `parse_complex_instrs` /
 the expanded fragment are relocated to the `for`-block's own span by
 `relocate_errors`, so a diagnostic points at the loop, not at synthetic text.
 
+## Pasting: juxtaposition is principal pasting (`diagram.rs`)
+
+A diagram AST node is dispatched by `interpret_diagram_as_term` to one of two forms.
+
+- **Explicit paste** `lhs #k rhs…` → `interpret_paste`. The dimension `k` is parsed
+  from the `#k` token by `parse_paste_dim`; the RHS is evaluated *first*
+  (it determines the context for the left), then both are pasted with
+  `Diagram::paste(k, …)` — pasting along the shared $k$-boundary, i.e. $\#_k$.
+- **Juxtaposition** `f g h…` (a `PrincipalPaste` run) → `interpret_sequence_as_term`.
+  A single expression is just its term; a multi-expression run is folded
+  left-to-right and **pasted at the principal dimension**
+  $k = \min(\dim f, \dim g) - 1$ — in code, `prev.top_dim().min(d_right.top_dim())
+  .checked_sub(1)`, with a `None` (underflow below 0) raising *"principal paste
+  dimension is below 0"*.
+
+Juxtaposition is therefore **pasting, not composition**: `f g` is exactly `f #k g`
+at $k = \min(\dim f, \dim g) - 1$, the codimension-1 boundary the two diagrams share.
+There is no separate composition operator — every binary operation here is a paste
+$\#_k$ along a shared $k$-boundary, with juxtaposition choosing $k$ implicitly.
+
 ## Dotted diagram expressions (`diagram.rs`)
 
 `interpret_dexpr` evaluates a dotted expression like `F.G.d.in.out`. Every
@@ -191,7 +235,7 @@ basic [[diagram]]*, then a *suffix of boundary operators* (`.in` $=
 `decompose` then `execute`:
 
 - **`decompose`** collects the pieces into a `Decomp` (`Diagram { maps, diagram,
-  diagram_span, bds }`, a non-empty `Map { maps }` chain, or `Hole`) doing only
+  diagram_span, bds }` or a non-empty `Map { maps }` chain) doing only
   cheap name lookups and map evaluation — **no composition, no application**. It
   mirrors the eager reading's scoping exactly: the whole-expression qualified-name
   fast path is retried at every prefix level against the outer scope, and fields

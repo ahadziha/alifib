@@ -1,16 +1,18 @@
 ---
 kind: decision
 status: stable
-last-touched: 2026-06-03
+last-touched: 2026-06-05
 ---
 
 # 0001 — no identity cells (but composition is unital)
 
 ## Context
 
-alifib follows Hadzihasanovic's theory of [[regular-directed-complex|regular
-directed complexes]] / [[molecule|molecules]]. What that theory lacks is more
-precise than the slogan "no identities" suggests, and worth stating carefully.
+alifib follows Hadzihasanovic's theory of [[molecule|molecules]] — whose shapes
+are [[regular-directed-complex|regular directed complexes]], assembled into types
+that are the looser [[directed-complex|directed complexes]]. What the theory
+*lacks* is more precise than the slogan "no identities" suggests, and worth
+stating carefully.
 
 ## What is true
 

@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-01
+last-touched: 2026-06-05
 ---
 
 # Rewriting
@@ -22,8 +22,10 @@ steps.
 
 ## Definition
 
-Fix a [[regular-directed-complex]] of generators and let $D$ be a diagram with
-$\dim D = n$. A rule $r$ of dimension $n+1$ has input $U = \partial^-_n r$ and
+Fix a type — a [[directed-complex]] of generators (the shapes it presents are
+[[regular-directed-complex|regular]], but a type need not be) — and let $D$ be a
+diagram with $\dim D = n$. A rule $r$ of dimension $n+1$ has input
+$U = \partial^-_n r$ and
 output $V = \partial^+_n r$. A **match** of $r$ in $D$ is an embedding
 $\iota : U \hookrightarrow D$ — an isomorphism onto a sub-diagram of $D$ that
 respects orientation *and labels*. Two obligations must be met:

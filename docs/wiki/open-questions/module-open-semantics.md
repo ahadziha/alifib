@@ -1,7 +1,7 @@
 ---
 kind: question
 status: draft
-last-touched: 2026-06-01
+last-touched: 2026-06-05
 ---
 
 # What does `open` bring into scope vs `include`?

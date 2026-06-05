@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-03
+last-touched: 2026-06-05
 code: [src/interactive/session.rs, src/interactive/command.rs, src/interactive/fill.rs]
 ---
 

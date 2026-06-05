@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-03
+last-touched: 2026-06-05
 code: [src/interactive/engine.rs]
 ---
 
@@ -83,7 +83,12 @@ from_store:                                                          flatten_at(
   *is* that proof, every step already applied: the initial diagram is `d`'s input
   boundary (forward) or output boundary (backward), the current diagram is the
   opposite boundary, and `assemble_proof` reproduces `d`. The `target` is the
-  supplied goal — the *original* session's target — never read off `d`.
+  supplied goal — the *original* session's target — never read off `d`. The
+  `resume_tests` module pins this: `reconstructs_non_pseudo_normal_proof` (a
+  non-pseudo-normal `inter` splits into the two steps `[alpha·alpha, alpha]` whose
+  reassembly is `inter`), `backward_reassembles` (steps reversed, proof still
+  reassembled), `target_is_explicit` (goal supplied, never inferred), and
+  `rejects_dimension_zero_and_unknown`.
 
 ### One manual step
 
@@ -107,13 +112,19 @@ the rule. Forward rewriting takes the output boundary $\partial^+_n$
 (`Sign::Output`); backward takes the input boundary $\partial^-_n$ (`Sign::Input`).
 This is the one rule in `step_sign` (internal).
 
+`refresh_rewrites` rebuilds the applicable list via `collect_confirmed_matches`
+(internal), which walks every candidate with `for_each_rule_candidate` and keeps
+each one that `confirm_candidate` validates — both from [[core-matching]]. The
+list is always the *individual* matches; parallel mode does not change it.
+
 ### Auto, random, parallel
 
 - `auto(max_steps)` loops: stop if `target_reached()` or budget exhausted,
   otherwise take *one* step. In parallel mode that step is
   `greedy_parallel_auto_step` (a whole compatible family glued at once via
-  multi-pushout); otherwise the first confirmed singleton, found lazily. Returns
-  `(applied, stop_reason)`.
+  multi-pushout); otherwise `find_first_match` (internal) returns the first
+  candidate `confirm_candidate` validates, found lazily — both from
+  [[core-matching]]. Returns `(applied, stop_reason)`.
 - `random(max_steps)` picks a uniform index into the current `rewrites` via the
   session's seeded `Xoshiro256PlusPlus` and steps.
 - `step_multi(choices)` is *manual* parallel: it checks the chosen matches are
@@ -135,7 +146,7 @@ genuinely new `step`/`step_multi`/`auto` calls `truncate_redo` to discard it.
 
 `steps` are stored **un-pasted** — each is a single rewrite $(n+1)$-diagram.
 `assemble_proof` folds the active prefix with `Diagram::paste(n, …)` into the full
-$(n+1)$-proof, composing $\#_n$ along the rewriting dimension; backward sessions
+$(n+1)$-proof, pasting along the rewriting dimension $\#_n$; backward sessions
 paste in reverse order. This is deferred until genuinely needed — storing,
 typechecking, or rendering a proof banner. `ProofCache` makes the proof-view case
 incremental: advancing the cursor extends the cached snapshot by pasting only the
@@ -168,7 +179,11 @@ generator-free `add_diagram`, and returns fresh `Arc`s so the caller
   re-running them. A session is reconstructed by `resume` *from the proof diagram*,
   whose paste tree already encodes the step decomposition — so the proof term is
   the only thing a session needs to round-trip, and there is no move-log to keep
-  in sync with it.
+  in sync with it. `proof_expr_round_trips` pins the save→resume loop: a session's
+  `proof_expr` resumes to an isomorphic proof with the same step count.
+- **`undo`/`redo` keep working after `resume`.** A resumed session behaves like a
+  fresh one — `undo_redo_roundtrip` undoes to the start and redoes to the end,
+  restoring the corresponding diagrams.
 - **Rule patterns are built once.** `build_rule_patterns` runs at construction
   only; every `step`/`auto`/`refresh_rewrites` reuses the same `rule_patterns`
   map. Re-slicing rule boundaries per step would be a hot spot — see
@@ -179,7 +194,7 @@ generator-free `add_diagram`, and returns fresh `Arc`s so the caller
   silently builds the wrong proof.
 - **`target_reached` is just `current ≅ target`.** It holds at step 0 too: an
   initial diagram already isomorphic to the target *is* a (zero-step, identity)
-  proof — the unit of $\#_n$ on the initial diagram, valid because composition is
+  proof — the unit of $\#_n$ on the initial diagram, valid because pasting is
   unital (see [[0001-no-identities]]).
 - **`resume` needs `dim > 0`.** A proof diagram must be an $(n+1)$-cell with $n+1 >
   0$; a bare $0$-diagram has no $\#_n$ chain to decompose and is rejected.
@@ -200,8 +215,8 @@ mathematics, but it sequences the core operation into a session. A single `step`
 is exactly one rewrite — locate a rule's pattern $U$ inside the current
 [[diagram]] $V$ and substitute — performed by [[core-matching]]; the engine's job
 is to chain such steps, reading each successive $V$ off the $\partial^\pm_n$
-[[boundary]] of the previous $(n+1)$-step and finally composing them all with
-$\#_n$ in `assemble_proof`. Backward rewriting swaps $\partial^-$ and $\partial^+$
+[[boundary]] of the previous $(n+1)$-step and finally pasting them all together
+along $\#_n$ in `assemble_proof`. Backward rewriting swaps $\partial^-$ and $\partial^+$
 throughout. `resume` runs this in reverse: it takes a finished proof
 $(n+1)$-[[molecule]] apart into its steps by pseudo-normalising and flattening its
 paste tree — see [[core-paste-tree]]. The proof a session builds is the

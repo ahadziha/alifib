@@ -425,3 +425,60 @@ cofaces" → "no output cofaces" (`ogposet::extremal`: `Sign::Input` ⇒
 workflow it describes is real, implemented by `scripts/build_examples_manifest.py`
 run from `.github/workflows/deploy.yml:57`, not `package.json`. Backlog now fully
 worked through.
+
+## [2026-06-05] doc | Full update pass: conceptual corrections, coverage, invariants, code-free guides
+
+Brought the whole wiki current with `main` after the 2026-06-04 retirement point.
+Two things had landed since the last verification: a batch of **conceptual
+corrections** in `docs/CONCEPTS.md`/`README.md` (commits `81c374c`, `f83186b`,
+`497df91`, `cdbe9a9`) and the **qualified-names + scoped-include** loader work.
+Re-verified every content page against current `src/` (and `cli/`/`web/`), one
+Opus agent per subsystem cluster, with the orchestrator owning the keystone shape
+pages and this consolidation.
+
+*Conceptual corrections (orchestrator).* Added new concept page
+**`directed-complex`**: a *type* is a directed complex, **not necessarily
+regular**; the *shapes* of values (atoms, molecules) are the stricter
+[[regular-directed-complex|regular directed complexes]]. The witness is
+`a : pt -> pt` — a round attaching shape (the 0-sphere of two endpoints) whose
+labelling identifies both endpoints to `pt`, giving a non-regular but perfectly
+good directed complex. Sharpened `[[0002-round-boundaries]]`: **roundness is a
+condition on the attaching shape, not the realised boundary** (`Ogposet::is_round`
+inspects the bare shape, ignores labels; enforced at cell construction by
+`Diagram::parallelism`, *not* by pasting). Fixed `[[boundary]]` (dropped the false
+"`#_k` is only defined when both arguments are round" — `pastability` never calls
+`is_round`). Corrected `[[regular-directed-complex]]` (no longer "the structure
+the whole language rests on"; **fixed the false claim that a 1-cell cannot map to
+a 0-cell** — dimension-lowering is legitimate, only raising is guarded). Nudged
+`[[0001-no-identities]]` to the shapes-regular / type-directed framing.
+
+*Pasting ≠ composition.* Across `[[molecule]]`, `[[diagram]]`, `[[pushout]]`,
+`[[interpreter]]`, `[[language-parser]]`, the interactive pages: pasting builds a
+*larger* diagram; composition (reduce-to-one-cell) is absent from plain types.
+`f #k g` pastes along the shared $k$-boundary; juxtaposition `f g` is *principal
+pasting* at `k = min(dim) − 1` (`interpret_sequence_as_term`).
+
+*Qualified names + scoped include resolution (new coverage).* Documented the
+loader precedence — own dir → same-named subdir → `ALIFIB_PATH`, closest wins
+(`Loader::with_parent_dir`/`find_file`, `[[aux]]`) — and the dotted-address
+qualified-name walk through module-domain maps (`resolve_address_prefix_scope`,
+`resolve_module_by_name`, `[[interpreter]]`/`[[module-system]]`), with leaves-first
+topological interpretation into one shared `GlobalStore`.
+
+*Drift fixed.* Deleted-symbol citations purged: `Diagram::whisker_rewrite`
+(`[[diagram]]`, `[[pushout]]`), `parse_complex`/`complex_parser` and a bogus
+`DComponent::Hole` (`[[language-parser]]`); the stale `--bench refuses holes`
+gotcha (`[[cli]]`); a false `add_generator`+`add_diagram` pairing claim for the
+attach/include path (`[[core-complex]]`); the stale `ogposet::closure` dead-code
+note (`[[core-ogposet]]`); the `interp.tex` citation re-pointed to
+`interp.pdf §3.1` (the `.tex` is no longer on disk). The SNF Tracker unification,
+surfaced torsion witnesses, unified `Session`, three web backends, and the
+recursive example-manifest workflow were all re-confirmed.
+
+*Invariants + form.* Every page records its load-bearing invariants with
+named-test evidence and is a code-free prose guide (no pasted Rust). Bridge lint
+clean: every impl page carries `## Mathematics`, every concept page
+`## Implementation`; `directed-complex` resolves the new inbound links. All
+content pages `last-touched: 2026-06-05`; `module-open-semantics` stays `draft`.
+No source touched (the one `src/`-side note — `aux::intset::intersection` still
+dead — was already on record in `source-drift.md`).

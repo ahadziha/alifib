@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-01
+last-touched: 2026-06-05
 ---
 
 # Atom
@@ -12,6 +12,16 @@ atoms with $\#_k$, and an atom is precisely a molecule that admits no nontrivial
 decomposition. In Hadzihasanovic's combinatorics an atom of dimension $n$ is the
 *representable* molecule on a single $n$-cell — the directed analogue of an
 $n$-globe, but with arbitrary (not merely globular) input and output boundaries.
+
+An atom's *shape* is a [[regular-directed-complex|regular directed complex]]. But
+the **type** a generator declares — built by labelling that shape and identifying
+boundary cells — is only a [[directed-complex]], possibly non-regular. The arrow
+`a : pt -> pt` is the canonical case: its attaching shape is the round 0-sphere
+(two distinct endpoint 0-cells), and the labels send both to `pt`, collapsing the
+endpoints into a directed loop. The atom's classifier [[diagram]] thus has *shape*
+= the walking arrow (two 0-cells + one 1-cell) but *labels* sending both 0-cells to
+`pt`'s tag; the realised type (point + loop) is a fine directed complex that is not
+a regular CW complex. See [[diagram]].
 
 In the alifib language an atom is what a **generator** declares: `a : U -> V`
 names a single top cell whose input is the diagram $U$ and whose output is the
@@ -57,10 +67,14 @@ An atom is realised by **`Diagram::cell`** in `src/core/diagram.rs`
 
 The parallelism condition above is enforced operationally by
 `Diagram::parallelism` *(internal)*: it rejects the pair unless the two diagrams
-have equal dimension, are each *round* (`Diagram::is_round`), and have
-equal boundary shape and labels under `boundary_traverse(Both, …)`. The new top
-cell's shape is the pushout of the two boundaries glued along their shared
-sphere, with one element appended above.
+(1) have equal dimension, (2) are each *round in shape* (`Diagram::is_round`, which
+delegates to `Ogposet::is_round` and ignores labels), and (3) have an equal shared
+boundary sphere in both shape and labels — computed at the top dimension with
+`ogposet::boundary_traverse(Both, …)` and compared by `Ogposet::equal` plus a label
+check. The new top cell's shape is the pushout of the two boundaries glued along
+that shared sphere (`build_cell_shape`), with one element appended above. This is
+the *only* place roundness is checked; pasting ($\#_k$, via `Diagram::pastability`)
+does not require it — see [[core-diagram]].
 
 Atoms are stored as **generators** in the [[core-complex|Complex]] via
 `Complex::add_generator`, which keeps a classifier [[diagram]] per generator and
@@ -72,4 +86,4 @@ single-top-cell atom for that name. Boundaries are recovered with
 ## Related
 
 [[molecule]] · [[diagram]] · [[boundary]] · [[regular-directed-complex]] ·
-[[oriented-graded-poset]] · [[0001-no-identities]]
+[[directed-complex]] · [[oriented-graded-poset]] · [[0001-no-identities]]

@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-03
+last-touched: 2026-06-05
 ---
 
 # Partial map
@@ -9,10 +9,12 @@ last-touched: 2026-06-03
 A **partial map** $f : U \rightharpoonup V$ assigns, to each generating cell of a
 source [[diagram]] $U$, an image [[diagram]] in a target $V$ — but only on a
 *subset* of $U$'s generators. It is the language's notion of a structure-
-preserving morphism between [[regular-directed-complex|complexes]]: a way to say
-"this generator of $U$ *is* that piece of $V$". Where the assignment is defined
-on every generator it is **total**; the partial case is what makes incremental
-construction and refinement possible.
+preserving morphism between [[directed-complex|complexes]] (a type is a
+[[directed-complex]], not necessarily regular; its [[atom|atoms]] and
+[[molecule|molecules]] are the [[regular-directed-complex|regular]] shapes): a
+way to say "this generator of $U$ *is* that piece of $V$". Where the assignment
+is defined on every generator it is **total**; the partial case is what makes
+incremental construction and refinement possible.
 
 The defining discipline is **boundary compatibility**. A map is not free to send
 cells anywhere: if $a$ is in the domain, then so is every cell of its
@@ -43,6 +45,9 @@ allowed*: a $k$-cell may map to a diagram of dimension $< k$, collapsing to it
 a filler — there is no such cell — so a collapse maps to the genuine
 lower-dimensional cell rather than to a degenerate identity. A refinement that
 wants to mark an "internal step" must therefore name an honest cell for it.
+(`collapsed_boundary_infers_image` and `dimension_lowering_case1_is_sound` are
+the tests that pin this down — a 1-cell whose endpoints both map to a $0$-cell
+maps to that $0$-cell.)
 
 **Action on composites.** A diagram is built by pasting atoms along their
 boundaries, $U = U_1 \#_k U_2 \#_{k'} \cdots$. A partial map is determined on
@@ -79,10 +84,11 @@ The language surfaces partial maps through two faces:
 
 A clause `gen => ?` leaves the image a [[hole]] — a *pending assignment* the map
 records rather than commits. A map may carry holes and still be well-formed
-(even `total`, since a hole counts as covering its generator); the open holes are
-then filled later, either by the local inferences that fire as the map is built,
-or interactively (`fill`). The variant `<map> => ?` holes a whole sub-map
-pointwise. See [[hole]] for the full account.
+(even `total`, since a hole counts as covering its generator — `total_map_accepts_holes`);
+the open holes are then filled later, either by the local inferences that fire as
+the map is built, or interactively (`fill`). The variant `<map> => ?` holes a
+whole sub-map pointwise (`map_to_hole_holes_each_cell`). See [[hole]] for the full
+account.
 
 ## Implementation
 
@@ -116,4 +122,5 @@ generator as covered. The `attach ... along` statement is wired in
 ## Related
 
 [[diagram]] · [[boundary]] · [[rewriting]] · [[module-system]] ·
-[[regular-directed-complex]] · [[0001-no-identities]] · [[0002-round-boundaries]]
+[[directed-complex]] · [[regular-directed-complex]] · [[0001-no-identities]] ·
+[[0002-round-boundaries]]

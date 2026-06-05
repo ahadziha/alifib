@@ -18,7 +18,8 @@ Mathematical and language ideas alifib realises.
 |------|---------|--------|
 | [[molecule]] | Hadzihasanovic's molecules: the diagrams alifib computes with | stable |
 | [[atom]] | The indecomposable building blocks (generators) of molecules | stable |
-| [[regular-directed-complex]] | The combinatorial structure underlying molecules | stable |
+| [[regular-directed-complex]] | The regular shapes of values — atoms and molecules; the strict case of a directed complex | stable |
+| [[directed-complex]] | The shape of a *type*: a directed cell complex, not necessarily regular (the labelling may identify cells) | stable |
 | [[oriented-graded-poset]] | Faces with input/output orientation; the substrate of a diagram | stable |
 | [[diagram]] | A labelled molecule; pasting, top dimension, boundaries | stable |
 | [[boundary]] | Input/output boundaries $\partial^\pm_k$ and how they're computed | stable |
@@ -28,7 +29,7 @@ Mathematical and language ideas alifib realises.
 | [[flow-graph]] | $F_k(U)$: matching as induced labelled subgraph isomorphism | stable |
 | [[reconstruction]] | Recovering a paste-tree layering from a bare ogposet + labels | stable |
 | [[hole]] | The `?` placeholder: a pending assignment in a map with holes; pure vs conditional, filling | stable |
-| [[homology]] | Integer cellular homology of a complex via Smith Normal Form | stable |
+| [[homology]] | Integer cellular homology of a type (directed complex) via Smith Normal Form, with surfaced torsion witnesses | stable |
 | [[string-diagram]] | The Poincaré-dual presentation; node/wire/region layout | stable |
 | [[module-system]] | The language's types, modules, `include`, `attach` (`open` is aspirational) | stable |
 
@@ -64,7 +65,7 @@ the `cli/` and `web/` crates are the binaries and deployment wrappers around it.
 | Page | Decision | Status |
 |------|----------|--------|
 | [[0001-no-identities]] | No identity *cells*, but composition is unital (zero-step proofs are valid); model lower-dim structure explicitly | stable |
-| [[0002-round-boundaries]] | A cell's input/output boundaries must be round (directed spheres) | stable |
+| [[0002-round-boundaries]] | A cell is attached along a round *shape* (directed sphere); the realised boundary may still identify cells | stable |
 
 ## Open questions
 

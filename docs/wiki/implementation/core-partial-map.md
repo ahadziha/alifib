@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-03
+last-touched: 2026-06-05
 code: [src/core/partial_map.rs, src/interpreter/partial_map.rs, src/core/map_hole.rs]
 ---
 
@@ -147,6 +147,20 @@ entries the cellular-map law demands, leaving holes where information is genuine
 incomplete. The core checking still runs — the interpreter infers, it does not
 bypass.
 
+**Behavioural evidence** (integration fixtures in `tests/interpreter.rs`):
+`collapsed_boundary_infers_image` and `collapse_inference_cascades_through_implicit_faces`
+(collapse inference, with the cascade through forced faces);
+`dimension_lowering_case1_is_sound` (case-1 inference parametric in the *source*
+dimension — a 2-cell to a 1-cell sends `x.in` to `boundary Input 1 e`, not `e.in`);
+`inferred_assignment_fills_hole`, `fill_is_order_independent`, and
+`prefix_extension_fills_holes` (filling and cascade regardless of clause order);
+`redundant_hole_then_value_commits` / `hole_on_defined_generator_is_noop` (the
+`?`-then-value idempotence); `wrong_filler_blames_pending_assignment` and
+`inconsistent_fill_is_error` (the `blame_pending` re-aiming). The interactive
+counterparts live in `tests/fill.rs` (`fill_one_dim_hole_via_rewrite`,
+`fill_identity_hole_at_step_zero`, `fill_zero_cell_then_dependent_becomes_available`,
+`constraint_from_pending_assignment`).
+
 ### `attach … along` is realised here
 
 `attach Name :: Type along [ … ]` (`AttachStmt` in `language/ast.rs`) is *not*
@@ -242,15 +256,23 @@ EvalMap { map: PartialMap, domain: Arc<Complex>, holes: Vec<MapHole> }
   because dimension-*lowering* is legitimate — a 1-cell whose endpoints both map to
   a 0-cell `p` collapses to `p` itself, and collapse inference
   (`collapsed_boundary_image`) produces such images on purpose (see
-  [[0001-no-identities]]). The structural constraint on a cell is roundness of its
-  boundaries, [[0002-round-boundaries]].
+  [[0001-no-identities]]; tests `collapsed_boundary_infers_image`,
+  `dimension_lowering_case1_is_sound`). The structural constraint on a cell is
+  roundness of its boundaries, [[0002-round-boundaries]] — a *shape* property
+  checked at cell construction, not at pasting and not by `extend`.
+- **`total` counts a holed generator as covered.** `check_map_totality` treats a
+  generator as covered if it is committed *or* has a pending entry, so
+  `let total F :: D = [ x => ? ]` is well-formed (`total_map_accepts_holes`). The
+  keyword catches *missed* generators, not deliberate placeholders.
 
 ## Mathematics
 
 This module realises the [[partial-map]] concept: a structure-preserving partial
-function on the generators of a source [[regular-directed-complex]], lifted by
-pasting to a total map on the [[diagram|diagrams]] it generates, subject to the
-cellular-map [[boundary]] law $f(\partial^\pm_k a) = \partial^\pm_k f(a)$. `apply`
+function on the generators of a source [[directed-complex]] (the domain is a type,
+not necessarily regular; the [[diagram|diagrams]]/shapes it maps are the
+[[regular-directed-complex|regular]] ones), lifted by pasting to a total map on
+those diagrams, subject to the cellular-map [[boundary]] law
+$f(\partial^\pm_k a) = \partial^\pm_k f(a)$. `apply`
 is the lift; `extend` is the law; `compose` is the (partial) composition that
 makes complexes-and-maps a category. The interpreter's `attach … along` is the
 language surface: a refinement of one complex onto another, gluing along the named
