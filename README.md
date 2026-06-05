@@ -9,8 +9,8 @@ terms but **directed cell complexes** — spaces assembled from directed cells o
 every dimension. A value is a **diagram** drawn in such a space; and — the idea
 at the heart of the language — *a computation is itself a diagram, one dimension
 up*. Running a program does not merely return an answer: it builds a **witness of
-the whole computation**, a higher-dimensional term you can inspect, compose, and
-reason about.
+the whole computation**, a higher-dimensional term you can inspect, paste into
+larger diagrams, and reason about.
 
 We call this **computational transparency**. In an ordinary language the rules by
 which terms reduce are meta-theoretical — they live in the compiler, outside the
@@ -67,9 +67,11 @@ The name is borrowed from *Alifib*, a song on Robert Wyatt's 1974 album
 ## In one paragraph, concretely
 
 `alifib` lets you define structures using higher-dimensional generators and
-diagram composition, check that they are well-formed, and assert (directed)
-equations between them. A *regular directed complex* is the shape of a pasting
-diagram; a *molecule* is a shape built inductively by gluing atoms. The
+pasting, check that they are well-formed, and assert (directed) equations between
+them. A *molecule* is the shape of a pasting diagram, built inductively by pasting
+*atoms* (the shapes of single cells); a *regular directed complex* — the shape of
+a type — is a more general finite complex of such cells, not necessarily a single
+pasting. The
 interpreter elaborates type definitions, checks boundaries, resolves included
 modules, and verifies that maps between types are structure-preserving. The rest
 of this README is the practical reference.
@@ -142,9 +144,12 @@ fixed; the others are filled interactively in the REPL (`holes` / `fill <n>` /
 `done`) — here the two holes *are* the proof that `a` and `b` commute, built by
 hand. See also `examples/Hole_examples.ali`.
 
-**Diagram expressions** — vertical composition is written by juxtaposition
-(`f g`), horizontal composition by `f #0 g` (pasting along a 0-cell boundary),
-and grouping with parentheses.
+**Diagram expressions** — diagrams are built from generators by **pasting**, which
+combines cells into a larger diagram. (Pasting never reduces a diagram to a single
+cell; that would be *composition*, a higher-algebraic operation that plain alifib
+types do not have.) `f #k g` pastes `f` and `g` along their shared `k`-dimensional
+boundary; juxtaposition `f g` is *principal pasting*, shorthand for `f #k g` at
+`k = min(dim f, dim g) - 1`; parentheses group.
 
 **Modules** — `.ali` files can include other files. The interpreter resolves the
 full dependency graph before elaboration. Set `ALIFIB_PATH` to a

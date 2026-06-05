@@ -135,8 +135,8 @@ Each face of that tetrahedron is a way to use the language.
   bicategory, an algebraic theory; state an equation as a *directed* cell; and
   *prove* it by building the proof diagram interactively, the proof assistant
   offering you the available rewrites at each step. The classic Eckmann–Hilton
-  argument — that two ways of composing commute — becomes a diagram you assemble
-  by hand (`examples/EckmannHilton.ali`).
+  argument — that two endomorphisms of an identity commute — becomes a diagram you
+  assemble by hand (`examples/EckmannHilton.ali`).
 - **Specify abstract machines.** A Turing machine, an automaton, a term-rewriting
   system is just a type whose higher generators are its transition rules; *running*
   it produces the execution as a witnessed trace. And since parsing, evaluation,
