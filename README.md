@@ -151,8 +151,10 @@ boundary; juxtaposition `f g` is *principal pasting*, shorthand for `f #k g` at
 `k = min(dim f, dim g) - 1`; parentheses group.
 
 **Modules** — `.ali` files can include other files. The interpreter resolves the
-full dependency graph before elaboration. Set `ALIFIB_PATH` to a
-colon-separated list of directories to search for included files.
+full dependency graph before elaboration. An `include <Name>` is resolved from the
+including file's own directory, then a same-named subdirectory (so `Foo.ali` can
+keep private submodules in a `Foo/` directory and `include` them by name), then
+the directories in `ALIFIB_PATH` (a colon-separated list); the closest match wins.
 
 See `examples/` for more, and `docs/GRAMMAR.md` for the full grammar.
 
@@ -308,15 +310,17 @@ Then open `http://127.0.0.1:8000` in your local browser.
 
 The editor supports live syntax highlighting, loading/saving `.ali` files from
 your local machine, and a dropdown listing every `.ali` file in the
-examples directory. Files there are also importable as modules — any
-`include <Name>` in the editor is resolved against the same directory.
+examples directory. Files there are also importable as modules, resolved by the
+same convention the interpreter uses (see [Modules](#language) above).
 
-Subdirectories under `<examples-dir>` are allowed for organisation, but the
-module name is always the file's bare stem: `topics/braided/YangBaxter.ali`
-is `include YangBaxter`. Two files sharing a stem (case-insensitively)
-anywhere in the tree is a loud error — the server surfaces it on
-`/examples/index.json` and the deploy workflow fails the build, so you
-find out at scan time instead of via silent shadowing later.
+Subdirectories under `<examples-dir>` are traversed recursively. Each example's
+name is its relative path minus the `.ali` suffix — `Theory` for `Theory.ali`,
+`TRS/Aux` for `TRS/Aux.ali` — which is both its dropdown label and its key in
+`/examples/index.json`. Every path segment must be a valid identifier
+(`[A-Za-z_][A-Za-z0-9_]*`); other files are skipped with a warning. Because a
+module resolves its `include`s from its own same-named subdirectory first, the
+same stem may recur under different modules — `Monoidal/Aux.ali`,
+`Bicategory/Aux.ali`, `TRS/Aux.ali` — without clashing, each module seeing its own.
 
 #### Local preview
 
