@@ -1,7 +1,7 @@
 # alifib
 
-> *A programming language in which every execution is a proof, and computations
-> are geometry.*
+> *A programming language where a program and its execution are terms in one
+> syntax.*
 
 **alifib** is an experimental programming language and interactive proof
 assistant founded on *higher-dimensional rewriting*. Its types are not bags of
