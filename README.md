@@ -1,16 +1,75 @@
 # alifib
 
-An interpreter for a language of pasting diagrams in directed complexes,
-based on Amar Hadzihasanovic's theory of molecules.
+> *A programming language in which every execution is a proof, and computations
+> are geometry.*
 
-## Overview
+**alifib** is an experimental programming language and interactive proof
+assistant founded on *higher-dimensional rewriting*. Its types are not bags of
+terms but **directed cell complexes** — spaces assembled from directed cells of
+every dimension. A value is a **diagram** drawn in such a space; and — the idea
+at the heart of the language — *a computation is itself a diagram, one dimension
+up*. Running a program does not merely return an answer: it builds a **witness of
+the whole computation**, a higher-dimensional term you can inspect, compose, and
+reason about.
 
-`alifib` lets you define algebraic structures using higher-dimensional
-generators and diagram composition, check that they are well-formed, and assert
+We call this **computational transparency**. In an ordinary language the rules by
+which terms reduce are meta-theoretical — they live in the compiler, outside the
+language. In alifib the computation rules of a type are simply **extra generators
+of that type**. So: well-typed terms are verified *programs*; well-typed *higher*
+terms are verified *executions*.
+
+There is a deeper shift underneath. Classical syntax represents a program as a
+*term* — a tree. alifib represents it as a *diagram*, the natural generalisation
+of a term once you leave the world of trees: **string diagrams** generalise terms
+to non-cartesian settings (where you may not freely copy or discard), and
+**pasting diagrams** generalise string diagrams to higher dimensions. The whole
+language is built on a single combinatorial object — the diagram — and a single
+operation on it: searching for one diagram inside another.
+
+> **The full story** — what alifib is for, where it comes from, and the vision
+> behind it — is in [`docs/CONCEPTS.md`](docs/CONCEPTS.md).
+> **Try it in your browser**, no install: **<http://compose.ee/alifib>**.
+
+## What it is for
+
+A single type can be read in several ways at once — as a presentation of a
+higher-categorical structure, as a rewrite system, and as a topological cell
+complex — so one small language covers strikingly different ground:
+
+- **Proof-relevant equational reasoning** in higher-categorical structures
+  (monoidal categories, bicategories, …): equations are *directed* cells, and a
+  proof is a diagram you build interactively. See `examples/EckmannHilton.ali`.
+- **A metalanguage for abstract machines** defined by rewriting — Turing
+  machines, term-rewriting systems, automata — where the *execution trace* is a
+  first-class term, not an ephemeral side effect. See `examples/TM.ali`,
+  `examples/BinaryNat.ali`.
+- **Building finite cell complexes** and computing their invariants, e.g. the
+  `homology` command in the REPL. See `examples/Delta_complexes.ali`.
+
+## Background
+
+The mathematics is Amar Hadzihasanovic's theory of **regular directed complexes**
+and **molecules** — the subject of his book *Combinatorics of higher-categorical
+diagrams* — building on foundations laid by Richard Steiner. The data structures
+and algorithms grew out of joint work with **Diana Kessler**; the
+higher-categorical semantics (a model of (∞, n)-categories carried by directed
+complexes) from joint work with **Clémence Chanavat**. alifib is developed as part
+of [ARIA](https://www.aria.org.uk/)'s *Safeguarded AI* programme; the interpreter
+and proof assistant are joint work with **Alex Kavvos** (University of Bristol),
+with contributions from **Wessel de Weijer**.
+
+> ⚠️ **Status: experimental research software.** The language, syntax, and
+> interfaces are evolving; expect rough edges.
+
+## In one paragraph, concretely
+
+`alifib` lets you define structures using higher-dimensional generators and
+diagram composition, check that they are well-formed, and assert (directed)
 equations between them. A *regular directed complex* is the shape of a pasting
 diagram; a *molecule* is a shape built inductively by gluing atoms. The
 interpreter elaborates type definitions, checks boundaries, resolves included
-modules, and verifies that partial maps are structure-preserving.
+modules, and verifies that maps between types are structure-preserving. The rest
+of this README is the practical reference.
 
 ## Interfaces at a glance
 
@@ -27,33 +86,58 @@ modules, and verifies that partial maps are structure-preserving.
 
 Source files use the `.ali` extension. The core constructs are:
 
-**Type blocks** — declare algebraic structures with generators:
+**Type blocks** — declare structures with generators. This is the setup for the
+classic *Eckmann–Hilton argument*: a bicategory with one object, no non-identity
+1-cells, and two 2-cells `a`, `b` of its identity (`examples/EckmannHilton.ali`):
 
 ```ali
 @Type
-Ob <<= {
-  pt,
-  ob : pt -> pt
-},
+include Bicategory,
+let Object    = Bicategory.Object,
+let 2Morphism = Bicategory.2Morphism,
+let Equation  = Bicategory.Equation,
 
-Magma <<= {
-  attach Ob :: Ob,
-  m : Ob.ob Ob.ob -> Ob.ob
+EckmannHilton <<= {
+    pt,
+    attach Pt :: Object along [ ob => pt ],
+
+    a: Pt.id -> Pt.id,
+    b: Pt.id -> Pt.id,
+
+    attach A :: 2Morphism along [ Src => Pt.Id, Tgt => Pt.Id, 2mor => a ],
+    attach B :: 2Morphism along [ Src => Pt.Id, Tgt => Pt.Id, 2mor => b ]
 }
 ```
 
-A bare name like `pt` declares a 0-cell. `name : src -> tgt` declares a cell
-with a source and target diagram. `attach T :: S` imports a copy of type `S`
-under the name `T`.
+A bare name like `pt` declares a **0-cell**; `name : src -> tgt` declares a higher
+cell with source and target diagrams (`a` and `b` are 2-cells — endomorphisms of
+the identity on `pt`). `include M` pulls in another module and `let X = M.Y` makes
+a local alias. `attach T :: S along [ g => d, ... ]` glues in a copy of type `S`
+under the name `T`, the `along` clause identifying `S`'s generators with local
+diagrams — here `attach Pt :: Object along [ ob => pt ]` makes `pt` play the role
+of the object in a copy of `Object`, so that `Pt.id` is its identity 1-cell.
 
-**Partial maps** — structure-preserving assignments between types, written with
-`along [ gen => diagram, ... ]`. These are used by `attach` to identify
-generators across types.
+**Maps** — assignments from the generators of one type to diagrams in another,
+written with the same `along [ gen => diagram, ... ]` syntax that `attach` uses
+above. Continuing the example, the Eckmann–Hilton *goal* is a map into
+`Bicategory.Equation` asserting that `a b` and `b a` are equal:
 
-**Holes** — a clause `gen => ?` leaves a generator's image open: a *hole*. A map
-may carry holes and still be well-formed (even `total`). Some holes are inferred
-as the rest of the map is fixed; the rest are filled interactively in the REPL
-(`holes` / `fill <n>` / `done`). See `examples/Hole_examples.ali`.
+```ali
+@EckmannHilton
+let total Commutativity :: Equation = [
+    lhs => a b,
+    rhs => b a,
+    dir => ?,
+    inv => ?
+]
+```
+
+**Holes** — the `dir => ?` and `inv => ?` clauses leave those images open: each is
+a *hole*. A map may carry holes and still be `total` (the generator is covered,
+its image merely pending). Some holes are inferred once the rest of the map is
+fixed; the others are filled interactively in the REPL (`holes` / `fill <n>` /
+`done`) — here the two holes *are* the proof that `a` and `b` commute, built by
+hand. See also `examples/Hole_examples.ali`.
 
 **Diagram expressions** — vertical composition is written by juxtaposition
 (`f g`), horizontal composition by `f #0 g` (pasting along a 0-cell boundary),
@@ -266,5 +350,5 @@ web/
   wasm/        alifib-wasm crate — WebAssembly bindings (built via wasm-pack)
 editors/       Editor integrations (e.g. VS Code syntax highlighting)
 examples/      Example .ali files (served by `alifib web` at runtime)
-docs/          Grammar, homology, and the interactive & testing guides
+docs/          CONCEPTS (the vision), grammar, homology, interactive & testing guides
 ```
