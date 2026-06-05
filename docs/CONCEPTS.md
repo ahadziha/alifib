@@ -105,13 +105,13 @@ its technical name, with the well-formed shapes, the *molecules*, cut out by a
 short list of inductive rules. The reader need not retain any of this.
 
 What makes the construction cohere is *topological soundness* — every such complex
-is realised by an honest geometric cell complex, one genuine ball for each
-generator, with nothing torn or doubled over. The combinatorics never drift away
-from the geometry they describe. (This is what separates directed complexes from
-the older notion of *polygraph*; securing it turns on a condition called
-*roundness* — that the input and output halves of every cell's boundary be
-themselves balls. Above dimension three the diagrams then begin to obey coherence
-laws that the classical algebra of higher categories cannot derive: one of the
+is realised by an honest cell complex with exactly one cell for each generator,
+the combinatorics never drifting away from the geometry they describe. (This is
+what separates directed complexes from the older notion of *polygraph*, where a
+generator need not present a single honest cell; the discipline that secures it is
+that the boundary of every cell be a *sphere* — its input and output halves
+genuine balls. Above dimension three such diagrams begin to obey coherence laws
+that the classical algebra of higher categories cannot derive — one of the
 stranger things the theory has turned up, and nothing that needs following here.)
 
 The reward for that discipline is that a single directed complex can be read,

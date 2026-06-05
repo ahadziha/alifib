@@ -48,9 +48,9 @@ complex — so one small language covers strikingly different ground:
 
 ## Background
 
-The mathematics is Amar Hadzihasanovic's theory of **regular directed complexes**
-and **molecules** — the subject of his book *Combinatorics of higher-categorical
-diagrams* — building on foundations laid by Richard Steiner. The data structures
+The mathematics is Amar Hadzihasanovic's theory of **directed complexes** and
+**molecules** — developed in his book *Combinatorics of higher-categorical
+diagrams*, building on foundations laid by Richard Steiner. The data structures
 and algorithms grew out of joint work with **Diana Kessler**; the
 higher-categorical semantics (a model of (∞, n)-categories carried by directed
 complexes) from joint work with **Clémence Chanavat**. alifib is developed as part
@@ -69,9 +69,8 @@ The name is borrowed from *Alifib*, a song on Robert Wyatt's 1974 album
 `alifib` lets you define structures using higher-dimensional generators and
 pasting, check that they are well-formed, and assert (directed) equations between
 them. A *molecule* is the shape of a pasting diagram, built inductively by pasting
-*atoms* (the shapes of single cells); a *regular directed complex* — the shape of
-a type — is a more general finite complex of such cells, not necessarily a single
-pasting. The
+*atoms* (the shapes of single cells); a *directed complex* — the shape of a type —
+is a more general finite complex of such cells, not necessarily a single pasting. The
 interpreter elaborates type definitions, checks boundaries, resolves included
 modules, and verifies that maps between types are structure-preserving. The rest
 of this README is the practical reference.
