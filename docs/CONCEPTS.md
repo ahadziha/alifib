@@ -108,11 +108,13 @@ What makes the construction cohere is *topological soundness* — every such com
 is realised by an honest cell complex with exactly one cell for each generator,
 the combinatorics never drifting away from the geometry they describe. (This is
 what separates directed complexes from the older notion of *polygraph*, where a
-generator need not present a single honest cell; the discipline that secures it is
-that the boundary of every cell be a *sphere* — its input and output halves
-genuine balls. Above dimension three such diagrams begin to obey coherence laws
-that the classical algebra of higher categories cannot derive — one of the
-stranger things the theory has turned up, and nothing that needs following here.)
+generator need not present a single honest cell. The discipline is *roundness* —
+each cell is attached along a diagram whose *shape* is a sphere, its input and
+output halves each a ball; the attachment itself may then identify parts of that
+shape (a single point with one directed loop on it is a perfectly good cell). Above
+dimension three such diagrams begin to obey coherence laws that the classical
+algebra of higher categories cannot derive — one of the stranger things the theory
+has turned up, and nothing that needs following here.)
 
 The reward for that discipline is that a single directed complex can be read,
 faithfully, in four different ways at once — the four faces of one structure:
