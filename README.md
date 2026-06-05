@@ -58,6 +58,9 @@ of [ARIA](https://www.aria.org.uk/)'s *Safeguarded AI* programme; the interprete
 and proof assistant are joint work with **Alex Kavvos** (University of Bristol),
 with contributions from **Wessel de Weijer**.
 
+The name is borrowed from *Alifib*, a song on Robert Wyatt's 1974 album
+*Rock Bottom*.
+
 > ⚠️ **Status: experimental research software.** The language, syntax, and
 > interfaces are evolving; expect rough edges.
 
