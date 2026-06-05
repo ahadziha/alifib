@@ -1754,14 +1754,16 @@ async function renderHelp() {
 //
 // Examples are served as plain HTTP files alongside the frontend:
 //   examples/index.json   —  { "Theory": "Theory.ali",
-//                              "YangBaxter": "topics/braided/YangBaxter.ali",
+//                              "TRS/Aux": "TRS/Aux.ali",
 //                              ... }  or  { "error": "<message>" }
 //   examples/<relpath>    —  file contents
 //
-// A file's **stem** (e.g. "Theory") is its language-level identity — that's
-// what `include <name>` sees.  Subdirectories are purely organisational; the
-// stem is globally unique across the tree, enforced by the server and the
-// deploy workflow (duplicate stems → loud error, not silent shadowing).
+// A file's **name** is its relative path under the root minus ".ali" (e.g.
+// "Theory", "TRS/Aux") — the manifest key and dropdown label.  `include <Name>`
+// takes a bare identifier, resolved relative to the including file (sibling →
+// same-named subdirectory → root; see resolveIncludeKey), so the same stem may
+// name different files under different modules.  Names are paths, hence unique
+// by construction — there is no global stem-uniqueness rule.
 //
 // Under `alifib web [<dir>]`, the Rust server generates the manifest
 // dynamically.  Under a static WASM deployment (GitHub Pages etc.), the
@@ -1770,11 +1772,11 @@ async function renderHelp() {
 
 const EXAMPLES_BASE = 'examples';
 
-// Index: stem → relative path (e.g. "YangBaxter" → "topics/braided/YangBaxter.ali").
+// Index: name → relative path (e.g. "TRS/Aux" → "TRS/Aux.ali").
 // Populated once at boot by populateExamples().
 let EXAMPLES_INDEX = null;
 
-// Cache of stem → contents, filled lazily so `include <Name>` in the editor
+// Cache of name → contents, filled lazily so `include <Name>` in the editor
 // can be forwarded to the backend without a round-trip per include.
 const EXAMPLE_CONTENTS = new Map();
 
