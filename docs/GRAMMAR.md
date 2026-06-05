@@ -1,139 +1,164 @@
--- The basic identifiers are made of alphanumeric characters
+# The alifib grammar
 
-<Nat> ::= 0 | [1-9][0-9]*
+The concrete grammar of the `.ali` language, in EBNF. This is the reference for
+the surface syntax; for what the constructs *mean*, see the
+[README](../README.md) and [`CONCEPTS.md`](CONCEPTS.md).
+
+**Notation.** `::=` defines a nonterminal; `<X>` is a nonterminal; `"x"` is a
+literal token; `{ x }` is zero or more repetitions; `[ x ]` is optional; `|` is
+alternation; `( … )` groups; and regex-style character classes (e.g.
+`[A-Za-z0-9_]`) describe lexical tokens.
+
+## Lexical tokens
+
+Identifiers are made of alphanumeric characters and underscores; naturals are
+unsigned. Comments are delimited by `(* … *)` and may be nested.
+
+```ebnf
+<Nat>  ::= 0 | [1-9][0-9]*
 <Name> ::= [A-Za-z0-9_][A-Za-z0-9_]*
+```
 
--- Addresses name complexes. They are dot-qualified series of identifiers.
+## Addresses and boundaries
 
-<Address> ::= <Name> { "." <Name> }
+**Addresses** name complexes; they are dot-qualified series of identifiers. A
+**boundary** is of the form `(diagram) -> (diagram)` (the `<Diagram>` nonterminal
+is defined [below](#diagrams)). Names sometimes come with a boundary.
 
--- A boundary is of the form (diagram) -> (diagram), to be defined later.
--- Sometimes names come with boundaries.
-
-<Boundary> ::= <Diagram> "->" <Diagram>
+```ebnf
+<Address>          ::= <Name> { "." <Name> }
+<Boundary>         ::= <Diagram> "->" <Diagram>
 <NameWithBoundary> ::= <Name> [ ":" <Boundary> ]
+```
 
--- We will often make use of local definitions of _diagrams_ and _maps_.
--- A local definition of a map _must_ come with a partial map definition. The reason
--- is that a _partial map extension_ should only be allowed when its domain is
--- explicitly requested, e.g. in a let with "::" or in an anonymous map.
--- The optional "total" keyword asserts that the map is total.
+## Local definitions
 
+We often make use of local definitions of *diagrams* and *maps*. A local
+definition of a map *must* come with a partial-map definition: a partial-map
+*extension* is only allowed when its domain is explicitly requested — e.g. in a
+`let` with `::`, or in an anonymous map. The optional `total` keyword asserts
+that the map is total.
+
+```ebnf
 <LetDiag> ::= "let" <Name> "=" <Diagram>
 <DefPMap> ::= "let" ["total"] <Name> "::" <Address> "=" <PMapDef>
 <PMapDef> ::= <PMap> | <PMapExt>
+```
 
--- A program is a (potentially empty) series of blocks
+## Programs and blocks
 
+A **program** is a (possibly empty) series of blocks. A **block** is either a
+*type block* (introduced by `@Type`) or a *local block* at a complex (introduced
+by `@<Complex>`), each optionally followed by a body.
+
+```ebnf
 <Program> ::= { <Block> }
+<Block>   ::= "@" "Type" [ <TypeBlock> ] | "@" <Complex> [ <LocalBlock> ]
+```
 
--- A block is either 
--- * A _type block_, followed by a body (optionally)
--- * A _local block_ (at a complex), followed by its body
+## Type blocks
 
-<Block> ::= "@" "Type" [ <TypeBlock> ] | "@" <Complex> [ <LocalBlock> ]
+A **type block** is a series of type instructions. A **type instruction** adds
+global complexes; it can be a *generator* (declaring a name, optionally with a
+boundary, to stand for a complex), a local definition of a diagram or a map, an
+inclusion of a module, an index declaration, or a for-block.
 
--- A _type block_ is a series of type instructions:
-
-<TypeBlock> ::= <TypeInst> { "," <TypeInst> } [ "," ]
-
--- A _type instruction_ adds global complexes. It can be:
--- * a generator instruction, declaring a name (optionally with a boundary) to stand for a complex
--- * a local definition of a diagram
--- * a local definition of a map
--- * an inclusion of a module
-
-<TypeInst> ::= <Generator> | <LetDiag> | <DefPMap> | <IncludeModule> | <IndexDecl> | <ForBlock>
-<Generator> ::= <NameWithBoundary> "<<=" <Complex>
+```ebnf
+<TypeBlock>     ::= <TypeInst> { "," <TypeInst> } [ "," ]
+<TypeInst>      ::= <Generator> | <LetDiag> | <DefPMap> | <IncludeModule>
+                  | <IndexDecl> | <ForBlock>
+<Generator>     ::= <NameWithBoundary> "<<=" <Complex>
 <IncludeModule> ::= "include" <Name> [ "as" <Name> ]
+```
 
--- A _complex_ is either
--- * just an address (naming an existing complex)
--- * optionally an address, followed by a _complex block_
+## Complexes
 
-<Complex> ::= <Address> | [ <Address> ] "{" [ <ComplexBlock> ] "}"
+A **complex** is either just an address (naming an existing complex) or an
+optional address followed by a *complex block* that defines a new complex. A
+**complex instruction** can be a name with a boundary, a local definition of a
+diagram or map, an `attach` statement (attaching a copy of a previously existing
+complex), an `include` statement (making another complex a subcomplex of this
+one), an index declaration, or a for-block.
 
--- A _complex block_ defines a new complex.
--- It consists of a series of complex instructions:
-
+```ebnf
+<Complex>      ::= <Address> | [ <Address> ] "{" [ <ComplexBlock> ] "}"
 <ComplexBlock> ::= <CInstr> { "," <CInstr> } [ "," ]
+<CInstr>       ::= <NameWithBoundary> | <LetDiag> | <DefPMap> | <AttachStmt>
+                 | <IncludeStmt> | <IndexDecl> | <ForBlock>
+<IncludeStmt>  ::= "include" <Address> [ "as" <Name> ]
+<AttachStmt>   ::= "attach" <Name> "::" <Address> [ "along" <PMapDef> ]
+```
 
--- A _complex instruction_ alters a block. It can be either:
--- * A name with a boundary
--- * A local definition of a diagram
--- * A local definition of a map
--- * An attach statement (attaching a copy of a previously existing block)
--- * An include statement (making another complex a subcomplex of this one)
+## Local blocks
 
-<CInstr> ::= <NameWithBoundary> | <LetDiag> | <DefPMap> | <AttachStmt> | <IncludeStmt> | <IndexDecl> | <ForBlock>
-<IncludeStmt> ::= "include" <Address> [ "as" <Name> ]
-<AttachStmt> ::= "attach" <Name> "::" <Address> [ "along" <PMapDef> ]
+A **local block** is a series of local instructions: a local definition of a
+diagram or a partial map, an assertion that two pastings are equal, an index
+declaration, or a for-block.
 
--- A _local block_ is a series of local instructions
-
+```ebnf
 <LocalBlock> ::= <LocalInst> { "," <LocalInst> } [ "," ]
-
--- A _local instruction_ is either
--- * a local definition of a diagram
--- * a local definition of a partial map
--- * an assertion that two pastings are equal
-
-<LocalInst> ::= <LetDiag> | <DefPMap> | <AssertStmt> | <IndexDecl> | <ForBlock>
+<LocalInst>  ::= <LetDiag> | <DefPMap> | <AssertStmt> | <IndexDecl> | <ForBlock>
 <AssertStmt> ::= "assert" <Diagram> "=" <Diagram>
+```
 
--- Index declarations and for-blocks provide string templating.
--- An index is a named list of strings; a for-block expands its body
--- once per index value, substituting <var> with each value.
+## Indices and for-blocks
 
+Index declarations and for-blocks provide string templating. An **index** is a
+named list of strings; a **for-block** expands its body once per index value,
+substituting `<var>` with each value.
+
+```ebnf
 <IndexValue> ::= <Name>
-<IndexList> ::= "[" <IndexValue> { "," <IndexValue> } [","] "]"
-<IndexDecl> ::= "index" <Name> "=" <IndexList>
-<ForBlock> ::= "for" <Name> "in" ( <Name> | <IndexList> ) "{" <ForBody> "}"
+<IndexList>  ::= "[" <IndexValue> { "," <IndexValue> } [ "," ] "]"
+<IndexDecl>  ::= "index" <Name> "=" <IndexList>
+<ForBlock>   ::= "for" <Name> "in" ( <Name> | <IndexList> ) "{" <ForBody> "}"
+```
 
--- <ForBody> is raw source text (with balanced braces); occurrences of
--- <Name> delimited by < > are replaced with the current index value.
--- For-blocks and index declarations may appear in type, complex, local, and
--- partial map blocks.
+`<ForBody>` is raw source text (with balanced braces); occurrences of a `<Name>`
+delimited by `<` `>` are replaced with the current index value. For-blocks and
+index declarations may appear in type, complex, local, and partial-map blocks.
 
--- Comments are delimited by (* ... *) and may be nested.
+## Diagrams
 
--- A diagram is either
--- * a concatenation of explicit pastings
--- * each of which is a concatenation of implicit pastings
--- * each part of which is a dotted series of components
--- * which are either names, partial maps, anonymous maps, boundaries, or (diagrams)
--- A hole "?" is not a component: it may appear only as the whole right-hand
--- side of a partial map clause (see <PMapClause> below).
+A **diagram** is a `#`-separated series of *explicit pastings* — `… # k …`
+pastes along a shared `k`-boundary — each of which is a juxtaposition of
+*principal pastings*, each in turn a dotted series of components. A component is
+a name, an anonymous map, a `run` expression, a boundary destructor (`in` /
+`out`), or a parenthesised diagram.
 
-<Diagram> ::= <DPrincipal> | <Diagram> "#" <Nat> <DPrincipal>
+A hole `?` is **not** a component: it may appear only as the whole right-hand
+side of a partial-map clause (see [`<PMapClause>`](#maps) below).
+
+```ebnf
+<Diagram>    ::= <DPrincipal> | <Diagram> "#" <Nat> <DPrincipal>
 <DPrincipal> ::= <DExpr> | <DPrincipal> <DExpr>
-<DExpr> ::= <DComponent> | <DExpr> "." <DComponent>
+<DExpr>      ::= <DComponent> | <DExpr> "." <DComponent>
 <DComponent> ::= <Name> | <AnonMap> | <RunExpr> | <Bd> | "(" <Diagram> ")"
-<Bd> ::= "in" | "out"
-<RunExpr> ::= "(" "run" <Strategy> "on" <Diagram> ")"
-<Strategy> ::= "auto"
+<Bd>         ::= "in" | "out"
+<RunExpr>    ::= "(" "run" <Strategy> "on" <Diagram> ")"
+<Strategy>   ::= "auto"
+```
 
--- A general _partial map_ is a dotted sequence of basic partial maps.
--- A basic partial map is either
--- * a name
--- * a parenthesized partial map
--- * an anonymous map
+## Maps
 
-<PMap> ::= <PMapBasic> | <PMap> "." <PMapBasic>
+A general **partial map** is a dotted sequence of basic partial maps; a basic
+partial map is a name, a parenthesised partial map, or an anonymous map. An
+**anonymous map** is a partial-map definition with an explicit target type,
+enclosed in parentheses.
+
+```ebnf
+<PMap>      ::= <PMapBasic> | <PMap> "." <PMapBasic>
 <PMapBasic> ::= <Name> | <AnonMap> | "(" <PMap> ")"
+<AnonMap>   ::= "(" "map" <PMapDef> "::" <Complex> ")"
+```
 
--- An anonymous map is a partial map definition with an explicit target type,
--- enclosed in parentheses.
+An **extension** is an optional partial map followed by a number of clauses that
+extend it. A **clause** names the image of a diagram, or leaves it open with a
+bare hole `?`.
 
-<AnonMap> ::= "(" "map" <PMapDef> "::" <Complex> ")"
-
--- An extension is (optionally) a partial map followed by a number of clauses
--- that extend it.
-
-<PMapExt> ::= [ <PMap> ] "[" <PMapEntries> "]"
+```ebnf
+<PMapExt>     ::= [ <PMap> ] "[" <PMapEntries> "]"
 <PMapEntries> ::= <PMapEntry> { "," <PMapEntry> } [ "," ]
-<PMapEntry> ::= <PMapClause> | <ForBlock>
-
--- A clause names the image of a diagram, or leaves it open with a bare hole "?".
-
-<PMapClause> ::= <Diagram> "=>" <Diagram> | <Diagram> "=>" "?"
+<PMapEntry>   ::= <PMapClause> | <ForBlock>
+<PMapClause>  ::= <Diagram> "=>" <Diagram> | <Diagram> "=>" "?"
+```
