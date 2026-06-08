@@ -82,7 +82,7 @@ of this README is the practical reference.
 | `alifib <file>` | One-shot interpret / `--ast` / `--print` / `--bench` | [Interpreter](#interpreter) |
 | `alifib repl <file>` | Interactive terminal REPL with readline, history, `store`/`save` | [REPL](#repl) |
 | `alifib serve` | JSON-lines daemon on stdin/stdout for editor plugins and agents | [Daemon](#daemon) |
-| `alifib mcp [<dir>]` | Model Context Protocol server exposing the engine as tools for AI agents | [Web GUI](#web-gui) |
+| `alifib mcp [<dir>]` | Model Context Protocol server exposing the engine as tools for AI agents | [MCP server](#mcp-server) |
 | `alifib web [<dir>]` | Localhost HTTP server + browser GUI (SSH-tunnel friendly) | [Web GUI](#web-gui) |
 | Static WASM build | Same frontend, interpreter in the browser (GitHub Pages etc.) | [Local preview](#local-preview) |
 
@@ -277,10 +277,46 @@ Every response is `{"status":"ok","data":{...}}` or `{"status":"error","message"
 The `data` object always includes the current session state (step count, current diagram,
 available rewrites). Informational commands add extra fields: `types`, `type_detail`,
 `cell_detail`, `holes`/`constraints` (the `holes` command), and `fill`/`zero_cell`
-(during a hole-filling session). All three front-ends — REPL, daemon, web — share one
-command core, so the command set and responses are identical across them.
+(during a hole-filling session). All four front-ends — REPL, daemon, web, and MCP —
+share one command core, so the command set and responses are identical across them.
 
 See `docs/INTERACTIVE.md` for the full protocol reference.
+
+### MCP server
+
+A [Model Context Protocol](https://modelcontextprotocol.io) server, for driving
+the engine from AI agents (Claude Desktop, Claude Code, Cursor, …). It is a
+sibling of the daemon — the same command core, a different transport: instead of
+the raw JSON-lines protocol it speaks MCP's newline-delimited JSON-RPC 2.0 over
+stdin/stdout, so an MCP-aware client can discover and call the engine as tools.
+
+```
+alifib mcp [<examples-dir>]
+```
+
+Logs go to stderr; stdout carries protocol traffic only. The examples directory
+(default `./examples/`) is auto-seeded as virtual `<Name>.ali` modules, so
+`include <Name>` resolves in submitted source without the agent shipping the
+module contents itself.
+
+The tool surface wraps the same `WebRepl` kernel the web GUI uses:
+
+| Tool | What it does |
+|------|--------------|
+| `load_source` | Parse and interpret `.ali` source (auto-seeded modules included); returns the type list or diagnostics |
+| `start_session` | Begin a rewrite session on a type from an initial diagram (optional target; `backward` flag) |
+| `resume_session` | Reopen a stored proof diagram as a live session, decomposed into its steps |
+| `run_command` | Send any daemon-protocol command (`step`, `undo`, `holes`/`fill`/`done`, `store`, …); the arguments object *is* the command |
+| `get_types` | The full type list with generators, diagrams, and maps |
+| `get_strdiag` | String-diagram data for a named generator/diagram (optionally a boundary) |
+| `get_session_strdiag` | String-diagram data for the active session's current diagram |
+| `get_rewrite_preview_strdiag` | String-diagram data for the result of a rewrite, without committing it |
+| `list_examples` | List the auto-seeded example modules |
+
+Each call returns a single text block holding the same JSON envelope the daemon
+returns; an `"status":"error"` envelope is forwarded with MCP's `isError: true`.
+The interactive workflow — including hole-filling (`holes` → `fill` → `done`) —
+goes through `run_command`; see `docs/INTERACTIVE.md` for the command reference.
 
 ### Web GUI
 

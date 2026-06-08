@@ -2,9 +2,10 @@
 
 `alifib` provides several interfaces for constructing (n+1)-dimensional proof
 diagrams step by step and for filling the `?` holes of partial maps: a **REPL**
-for interactive use, a localhost **web GUI** for notebook-style browser use, and a
-**daemon** for editor and tooling integration. All three share one command core,
-so the command set and its behaviour are identical across them.
+for interactive use, a localhost **web GUI** for notebook-style browser use, a
+**daemon** for editor and tooling integration, and an **MCP server** for AI
+agents. All four share one command core, so the command set and its behaviour are
+identical across them.
 
 ---
 
@@ -312,6 +313,81 @@ each type.
 optional source/target boundaries), `diagrams` (including stored proofs
 with their expressions), and `maps`. Uses the live type complex for the current
 session type, so diagrams added via `store` are immediately visible.
+
+---
+
+## MCP server
+
+```
+alifib mcp [<examples-dir>]
+```
+
+The same engine as the daemon, behind the [Model Context
+Protocol](https://modelcontextprotocol.io) so an MCP-aware client (Claude
+Desktop, Claude Code, Cursor, …) can discover and call it as tools. The wire
+format is newline-delimited JSON-RPC 2.0 over stdin/stdout: logs go to stderr,
+stdout carries protocol traffic only. The examples directory (default
+`./examples/`) is auto-seeded as virtual `<Name>.ali` modules, so `include
+<Name>` resolves in submitted source without shipping the module text.
+
+The handshake is `initialize`, then any number of `tools/list` and `tools/call`
+requests. Notifications (no `id`) are not answered.
+
+```jsonc
+// → initialize
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+// ← server info + capabilities
+{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05",
+  "capabilities":{"tools":{}},"serverInfo":{"name":"alifib-mcp","version":"0.1.0"}}}
+
+// → load a module, then start a session, then take a step
+{"jsonrpc":"2.0","id":2,"method":"tools/call",
+  "params":{"name":"load_source","arguments":{"source":"@Type\ninclude TRS,"}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call",
+  "params":{"name":"start_session","arguments":{"type_name":"TRS.Unit","initial":"split merge"}}}
+{"jsonrpc":"2.0","id":4,"method":"tools/call",
+  "params":{"name":"run_command","arguments":{"command":"step","choice":0}}}
+```
+
+### Tools
+
+| Tool | Wraps |
+|------|-------|
+| `load_source` | `load` — parse/interpret source (auto-seeded modules merged in; `modules` overrides them) |
+| `start_session` | `start` — begin a rewrite from `initial` (optional `target`, `backward`) |
+| `resume_session` | `resume` — reopen a stored `proof` diagram as a live session |
+| `run_command` | any other daemon command (see below) |
+| `get_types` | the `types` query |
+| `get_strdiag` | string-diagram data for a named generator/diagram (optional `boundary_dim`/`boundary_sign`) |
+| `get_session_strdiag` | string-diagram data for the active session's current diagram |
+| `get_rewrite_preview_strdiag` | the diagram a `choice` would produce, uncommitted |
+| `list_examples` | the auto-seeded module list |
+
+`run_command` is the catch-all for the rest of the command core above: the
+`arguments` object **is** the command — set `command` to a snake_case name and
+supply that command's fields alongside it (`{"command":"step","choice":0}`,
+`{"command":"undo"}`, `{"command":"fill","index":0}`). The interactive
+hole-filling workflow lives here — `{"command":"holes"}` →
+`{"command":"fill","index":n}` → `{"command":"done"}` — exactly as in the daemon.
+`start`/`resume`/`load` are *not* accepted through `run_command` (they need a
+file path the kernel does not have in this mode); use the `start_session` /
+`resume_session` / `load_source` tools instead. An escape hatch
+`{"command_json":"<raw>"}` forwards an arbitrary JSON body verbatim.
+
+### Results
+
+Each `tools/call` returns a single text content block whose body is the **same
+JSON envelope the daemon returns** (`{"status":"ok","data":{…}}` or
+`{"status":"error","message":…}`) — so every `data` field documented under
+[Responses](#responses) applies unchanged. An error envelope is additionally
+flagged with MCP's `isError: true`, so a client can branch on it without parsing
+the body.
+
+```jsonc
+{"jsonrpc":"2.0","id":4,"result":{
+  "content":[{"type":"text","text":"{\"status\":\"ok\",\"data\":{…}}"}],
+  "isError":false}}
+```
 
 ---
 
