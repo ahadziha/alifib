@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-05
+last-touched: 2026-06-09
 code: [web/shared/src/lib.rs, web/server/src/lib.rs, web/wasm/src/lib.rs, web/mcp/src/lib.rs]
 ---
 
@@ -71,11 +71,11 @@ request line and `Content-Length` (no keep-alive — every response sets
   the returned JSON envelope back verbatim. `StartSessionBody` carries the same
   `serde(alias)` back-compat field names as the protocol's `Start`. Beyond
   `load_source`/`start_session`/`resume_session`/`run_command` there are
-  `parse_command` (the shared line classifier — [[web-frontend]]), the
-  `get_*_strdiag` family (`get_strdiag`/`get_session_strdiag`/`get_target_strdiag`/
-  `get_rewrite_preview_strdiag`/`get_map_image_strdiag`), and the proof-view pair
-  (`set_proof_view`/`get_proof_strdiag`); each maps 1:1 to the `WebRepl` method of
-  the same name.
+  `parse_command` (the shared line classifier — [[web-frontend]]), `stop_session`,
+  `get_types`, the `get_*_strdiag` family (`get_strdiag`/`get_session_strdiag`/
+  `get_target_strdiag`/`get_rewrite_preview_strdiag`/`get_map_image_strdiag`), and
+  the proof-view pair (`set_proof_view`/`get_proof_strdiag`); each maps 1:1 to the
+  `WebRepl` method of the same name.
 - **`/examples/index.json`** and `GET /examples/<rel>.ali` — backed by
   `ExampleSet::index_json` / `read_path`; a rejected path returns a bare 404
   rather than leaking the reason.
@@ -106,7 +106,7 @@ filesystem module search.
 delegates straight to `inner`: `load_source` (parsing an optional
 `modules_json` string into the modules map), `start_session`, `resume_session`,
 `run_command`, `parse_command` (the shared line classifier the frontend leans on
-— see [[web-frontend]]), the `get_*_strdiag` family, `set_proof_view`,
+— see [[web-frontend]]), `get_types`, the `get_*_strdiag` family, `set_proof_view`,
 `get_proof_strdiag`, `reset`, `stop_session`. There is no transport and no
 server — JS calls these methods directly on the in-page module. The crate is `crate-type = ["cdylib"]`; the
 WASM memory-discipline reasons it exists (peak linear-memory pages are never
@@ -125,10 +125,15 @@ JSON-RPC 2.0, logs to **stderr** (stdout is protocol-only), and dispatches by
 - `initialize` → `protocolVersion: "2024-11-05"`, `serverInfo.name:
   "alifib-mcp"`, `capabilities.tools: {}` (pinned by
   `initialize_returns_protocol_metadata`).
-- `tools/list` → the eight `tool_descriptors`: `load_source`, `start_session`,
-  `run_command`, `get_types`, `get_strdiag`, `get_session_strdiag`,
-  `get_rewrite_preview_strdiag`, `list_examples` (pinned by
-  `tools_list_advertises_expected_surface`).
+- `tools/list` → the nine `tool_descriptors`: `load_source`, `start_session`,
+  `resume_session`, `run_command`, `get_types`, `get_strdiag`,
+  `get_session_strdiag`, `get_rewrite_preview_strdiag`, `list_examples` (pinned
+  by `tools_list_advertises_expected_surface`). `resume_session` is a dedicated
+  tool because it must be: `run_command` rejects lifecycle commands, so without
+  it `WebRepl::resume_session` was unreachable over MCP. The `run_command`
+  descriptor spells out the full command vocabulary — including the
+  `holes`/`fill index`/`done` hole-filling workflow — so an agent never has to
+  guess the wire surface.
 - `tools/call` → `dispatch` routes to the matching `WebRepl` method and wraps
   the returned JSON envelope in a single `text` content block.
 - `ping` → `{}`; unknown method → JSON-RPC `-32601`; missing method → `-32600`.

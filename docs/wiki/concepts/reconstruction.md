@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-05
+last-touched: 2026-06-09
 ---
 
 # Reconstruction
@@ -38,19 +38,23 @@ $\partial^+_k(x) \cap \partial^-_k(y) \neq \varnothing$ of the maximal $k$-flow
 graph $\mathbf{M}_k(U)$. A composite $U = a_1 \#_k a_2 \#_k \cdots \#_k a_m$ can
 only have been pasted in an order *compatible* with that flow — a topological
 sort $x_1, \dots, x_m$ of $\mathbf{M}_k(U)$. Each admissible order proposes a
-layering.
+layering. (Layerings and their correspondence with topological sorts of
+$\mathbf{M}_k$ are studied in Kessler 2025, *Computational Aspects of Rewriting
+in Higher-Dimensional Diagrams*, `docs/papers/` — there as analysis of an
+existing diagram; reconstruction runs the correspondence backwards, as
+synthesis.)
 
 ### Choosing the decomposition dimension
 
 At which level $k$ do we cut? The choice is governed by the
 **layering dimension** of $U$: the least $k \ge -1$ such that $U$ has at most one
-maximal cell of dimension $> k+1$. When the layering dimension is $-1$ the
-ogposet is already irreducible — a single maximal cell — and reconstruction
-bottoms out in a leaf. Otherwise:
+maximal cell of dimension $> k+1$. When the layering dimension is $-1$ — at most
+one maximal cell of positive dimension — the ogposet is already irreducible and
+reconstruction bottoms out in a leaf. Otherwise:
 
-- For $\dim U > 3$, cut at $k = $ the layering dimension. This is the *coarsest*
-  level at which $U$ genuinely decomposes, keeping each layer as large as
-  possible and the recursion shallow.
+- For $\dim U > 3$, cut at $k = $ the layering dimension: the lowest level at
+  which $U$ genuinely decomposes, keeping each layer as large as possible and
+  the recursion shallow.
 - For $\dim U \le 3$ (and $\dim U > 1$) prefer the *frame dimension* — the
   greatest $k$ whose maximal flow graph has at least one edge, descending from
   $\dim U - 1$ and falling back to $0$. In low dimension a finer cut is cheap
@@ -84,9 +88,6 @@ is bounded (a cycle in the flow graph, or exhausting the bound, is failure). In
 dimension $\le 3$ a single sort suffices: the candidate is always valid by
 construction, so no realise-and-recheck round trip is needed.
 
-The flow-graph layering idea is Hadzihasanovic's; reconstruction is its use
-*backwards*, as synthesis rather than analysis.
-
 ## Implementation
 
 Reconstruction lives in `src/core/reconstruct.rs`, the inverse counterpart of
@@ -107,13 +108,14 @@ Reconstruction lives in `src/core/reconstruct.rs`, the inverse counterpart of
   labelling — and `reconstruct::try_sort` (internal) left-associates the
   recursively built sub-trees into a `PasteTree`.
 
-The **dim $\le 3$ fast path** in [[core-matching|matching]]
+The **tip-dim $\le 3$ fast path** in [[core-matching|matching]]
 (`matching::assemble_low_dim_step`, internal) does *not* call
 `reconstruct::reconstruct` at all: it calls `reconstruct::build_tree` to get the
 candidate tree and assembles the step's history directly, skipping the
-`realise_tree` + `check_sizes` round trip. The doc-comment on
+`realise_tree` + `check_sizes` round trip. The switch is on the *step's*
+dimension (`mp.tip.dim`), not the target's. The doc-comment on
 `assemble_low_dim_step` records why: in low dimension the candidate paste tree is
-always valid, so realisation is unnecessary. Only the dim $> 3$ branch of
+always valid, so realisation is unnecessary. Only the tip-dim $> 3$ branch of
 `matching` routes through full `reconstruct`.
 
 Behavioural evidence: the round-trip tests `reconstruct_all_idem`,

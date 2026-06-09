@@ -1,26 +1,25 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-05
+last-touched: 2026-06-09
 ---
 
 # Diagram
 
 A **diagram** is a labelled [[molecule]]: a [[regular-directed-complex|regular
 directed]] [[oriented-graded-poset]] shape, every cell of which carries a label —
-a generator ([[atom]]) or, via a let-binding, the name of another diagram. Where a
-molecule is a *shape*, a diagram is that shape *decorated*. It is the runtime
+the tag of the generator ([[atom]]) it instantiates. (A let-binding names a
+*whole* diagram in the ambient complex; it never appears as a cell label.) Where
+a molecule is a *shape*, a diagram is that shape *decorated*. It is the runtime
 value alifib computes with.
 
 The *shape* of a diagram is always a [[regular-directed-complex|regular directed
 complex]] (the shape of a [[molecule]]). A **type**, by contrast, is assembled by
 identifying the boundaries of many such cells through labelling, and the realised
-object need only be a [[directed-complex]] — not necessarily regular. The canonical
-witness is a point `pt` with one arrow `a : pt -> pt`: the arrow's boundary shape is
-the round 0-sphere (two *distinct* endpoint 0-cells), but the labels send both to
-`pt`, identifying them into a directed loop. That loop is a fine directed complex
-yet not a regular CW complex. So labels can collapse a regular shape into a
-non-regular type, while every individual diagram value keeps a regular shape.
+object need only be a [[directed-complex]] — not necessarily regular (the loop
+`a : pt -> pt` is the canonical witness; see [[directed-complex]]). Labels can
+collapse a regular shape into a non-regular type, while every individual diagram
+value keeps a regular shape.
 
 ## Definition
 
@@ -68,7 +67,9 @@ $\#_n$.
 
 ### Atoms as cells
 
-A single generating cell is a diagram with one top cell. An $n$-generator
+A single generating cell is a diagram whose shape has a *greatest element* — the
+defining property of an [[atom]] (not "one top-dimensional cell": a whiskered
+2-cell has one 2-cell yet two maximal cells). An $n$-generator
 $a : U \to V$ is determined by its parallel input/output boundaries $U, V$ (each
 an $(n-1)$-diagram); pasting that data along the shared lower boundary and adding
 $a$ on top yields its **classifier** diagram. See [[atom]].
@@ -88,6 +89,11 @@ $a$ on top yields its **classifier** diagram. See [[atom]].
   `Sign::Output` $= \partial^+$ — see [[boundary]].
 - **Top dimension** is `Diagram::top_dim` (with `dim()` returning $-1$ for the
   empty diagram); roundness of the shape is `Diagram::is_round`.
+- **Surface syntax**: juxtaposition parses to `ast::Diagram::PrincipalPaste`,
+  explicit `#n` to `ast::Diagram::Paste` (`src/language/parser.rs`); both are
+  interpreted in `src/interpreter/diagram.rs`, where the principal dimension is
+  `prev.top_dim().min(d_right.top_dim()).checked_sub(1)` — pasting below
+  dimension $0$ is an error, not a fallback.
 
 Diagrams are stored in a [[core-complex|Complex]] both as classifiers (for
 generators) and as let-bound values. Rewriting builds new diagrams through

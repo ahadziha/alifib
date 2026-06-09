@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-05
+last-touched: 2026-06-09
 code: [src/core/ogposet.rs]
 ---
 
@@ -19,11 +19,11 @@ code: [src/core/ogposet.rs]
 set of cells `0..=dim` together with, for each cell, its signed faces (one
 dimension down) and signed cofaces (one dimension up). The module owns the data
 structure, the local geometric predicates (`extremal`, `maximal`, `is_pure`,
-`is_round`, `layering_dimension`), and the four core *operations* that build a
-new shape from an old one: `boundary`, `boundary_traverse`, `normalisation`, and
-`find_isomorphism` — all driven by a single `traverse`. A `Diagram`
-(`src/core/diagram.rs`) is exactly an `Arc<Ogposet>` shape plus a label per cell;
-this module supplies the shape.
+`is_round`, `layering_dimension`), and the operations that build a new shape
+from an old one: `boundary` (its own walk), and `normalisation`,
+`boundary_traverse`, `find_isomorphism`, `signed_k_boundary_of_cell` — all
+driven by a single `traverse`. A `Diagram` (`src/core/diagram.rs`) is exactly an
+`Arc<Ogposet>` shape plus a label per cell; this module supplies the shape.
 
 ## Key public types
 
@@ -37,7 +37,7 @@ this module supplies the shape.
 | `boundary_traverse` *(pub(super))* | the *normalised* sign-side $k$-boundary; also the `Both` shared boundary of an $n$-cell |
 | `normalisation` *(pub(super))* | canonical cell reordering + embedding back to the original |
 | `find_isomorphism` *(pub(super))* | decide shape isomorphism via canonical forms |
-| `traverse` *(pub(super))* | the engine under all three above: closure of a seed stack in canonical input-first order |
+| `traverse` *(pub(super))* | the engine under the three above: closure of a seed stack in canonical input-first order |
 | `closure`, `signed_k_boundary_of_cell` *(pub(super))* | membership-only downward closure; $\Delta^\pm_k(x)$ of one cell |
 
 The four tables, indexed `[dim][cell]` into an `IntSet` (sorted `Vec<usize>`):
@@ -48,30 +48,32 @@ them uniformly, with `Sign::Both` taking the union. The whole struct is small,
 
 ## Data flow
 
-Three layered operations all funnel through one traversal:
+The layered operations all funnel through one traversal:
 
 ```
 build_stack_extremal ─┐
 build_stack_paste    ─┼─▶ traverse(g, seed_stack, mark_normal)
-build_stack_cell_n   ─┘        │  closure of seeds, canonical order
-                               │  + remap_adjacency ×4
+build_stack_cell_n   ─┤        │  closure of seeds, canonical order
+single-cell seed     ─┘        │  + remap_adjacency ×4
                                ▼
                        (sub: Arc<Ogposet>, emb: Embedding)
         ┌──────────────┬───────────────┴──────────────┐
-   normalisation   boundary_traverse          (matching/reconstruct)
-        │                │
+   normalisation   boundary_traverse      signed_k_boundary_of_cell
+        │                │                (dim > k+1 case only)
         │           Input|Output ▶ build_stack_paste
         │           Both         ▶ build_stack_cell_n
         ▼
    find_isomorphism: normalise u, v ▶ Ogposet::equal ▶ compose embeddings
 ```
 
-- `boundary(sign, k, g)` — the *order-preserving* extraction. It seeds with the
-  sign-`extremal` cells at level $k$, walks down adding every face of an already-
-  kept parent (plus any `maximal` cell at each level so nothing is dropped), then
+- `boundary(sign, k, g)` — the *order-preserving* extraction, the one operation
+  with its own walk instead of `traverse`. It seeds with the sign-`extremal`
+  cells at level $k$, walks down adding every face of an already-kept parent
+  (plus any `maximal` cell at each level so nothing is dropped), then
   `remap_adjacency` rebuilds the four tables on the chosen subset. Cell order is
   whatever the walk produced — **not** normalised. `k >= g.dim` short-circuits to
-  `g` with an identity `Embedding`; `g.dim < 0` to the empty shape.
+  `g` with an identity `Embedding`; `g.dim < 0` to the empty shape. Callers:
+  `Diagram::boundary` and `reconstruct::build_layers`.
 - `traverse(g, stack, mark_normal)` — first computes the downward closure of the
   seeds as `BitSet`s, then runs a stack machine that emits cells in *canonical
   input-first order*: a cell is marked only once all its input faces are marked,
@@ -82,11 +84,10 @@ build_stack_cell_n   ─┘        │  closure of seeds, canonical order
   marks the result normal; if `g` is already `normal` it short-circuits to an
   identity `Embedding`. `boundary_traverse` dispatches on sign: `Input`/`Output`
   seed `build_stack_paste(sign, g, k)` (clamped to `g.dim`) for the *sided*
-  $k$-boundary; `Both` seeds `build_stack_cell_n(g)` — which ignores `k` (beyond
-  the clamping arithmetic) and returns the full boundary **sphere** of an
-  $n$-cell (input-extremal cells at every level $0..d{-}1$ plus output-extremal
-  cells at $d{-}1$), the shape needed when forming a cell from two parallel
-  $(n{-}1)$-diagrams.
+  $k$-boundary; `Both` seeds `build_stack_cell_n(g)` — input-extremal cells at
+  every level $0..d{-}1$ plus output-extremal cells at $d{-}1$ — the full
+  boundary **sphere** of an $n$-cell, the shape needed when forming a cell from
+  two parallel $(n{-}1)$-diagrams.
 - `find_isomorphism(u, v)` normalises both and compares canonical forms with
   `Ogposet::equal`; on a match it composes the two normalisation embeddings (and
   their inverses) into the iso, with cheap pre-checks (`dim`, `sizes`, then a raw
@@ -100,25 +101,26 @@ build_stack_cell_n   ─┘        │  closure of seeds, canonical order
   walk order; `boundary_traverse` returns the *normalised* boundary. Both are
   needed: the former for a faithful sub-shape, the latter when shapes must be
   compared by canonical form. Conflating them silently breaks isomorphism checks.
-- **`boundary_traverse`'s `Both` branch ignores `k`.** For `Input`/`Output` it
-  takes the sided $k$-boundary (`build_stack_paste`, $k$ clamped to `g.dim`); for
-  `Both` it dispatches to `build_stack_cell_n` and returns the *whole* boundary
-  sphere of an $n$-cell, so the `k` argument is consumed only by the clamping
-  arithmetic and otherwise discarded. This is the shared boundary used to form a
-  cell from two parallel diagrams.
+- **`boundary_traverse`'s `Both` branch ignores `k` and is not marked normal.**
+  For `Input`/`Output` it takes the sided $k$-boundary and passes
+  `mark_normal = true`; for `Both` it returns the whole boundary sphere via
+  `build_stack_cell_n` — `k` is consumed only by the clamping arithmetic — and
+  passes `mark_normal = false` (the cell-sphere seed order is not the canonical
+  one).
 - **No caching — every call recomputes.** `normalisation` and `boundary_traverse`
   recompute from scratch on each invocation; there is no memoisation by pointer
-  identity or otherwise. (`normalisation` does short-circuit when `g` is already
-  `normal`, but that is a flag check, not a cache.) A comment once claiming
-  pointer-identity memoisation was removed (2026-06-04) — it described code that
-  never existed.
+  identity or otherwise. The only short-circuit is `normalisation`'s
+  `is_normal()` flag check — idempotence, not a cache. (A doc comment once
+  claimed memoisation that never existed; do not reintroduce it.)
 - **`extremal` is defined by *missing cofaces*, not by faces.** An `Input`-
   extremal $k$-cell is one with no *output* coface (nothing has consumed it as a
   target), and dually for `Output`. This is the input/output-boundary frontier,
   and `Sign::Both` is the union — the cells on either boundary.
 - **`is_round` only inspects `is_pure` shapes** and reads layers via
   `build_layer`, checking input/output interiors are disjoint at every level. A
-  single top input face (`faces_in[n].len() == 1`) is round by fiat.
+  pure shape with exactly **one top-dimensional cell** is round by fiat — the
+  `faces_in[n].len() == 1` check counts *cells at dimension $n$* (each entry is
+  one cell's face set), not input faces.
 - **`layering_dimension` counts maximal cells across *all* intermediate
   dimensions**, not just the top — non-pure shapes can have maximal cells below
   the top dimension, and they are counted. For a pure molecule of dimension $n$
@@ -137,18 +139,16 @@ build_stack_cell_n   ─┘        │  closure of seeds, canonical order
   `traverse` + `remap_adjacency` cost: `closure` returns a `Vec<BitSet>` of the
   down-closure (called by `matching::check_match_isomorphism` and
   `reconstruct::build_layers`), and `signed_k_boundary_of_cell` returns the
-  $k$-cell indices of one cell's sign-side boundary (called by `flow`).
-  `signed_k_boundary_of_cell` fast-paths `dim == k+1` to a direct face-table
-  read. Both are plainly live — the `#[allow(dead_code)]` `closure` once carried
-  was removed (2026-06-04), confirming the symbol via a clean build.
-- **`restrict` lives next door, not here.** The task framing pairs "closure /
-  restrict"; `closure` is in this module, but `restrict_ogposet` — restrict an
-  `Ogposet` to a per-dimension kept-cell mask (`&[BitSet]`) — is `reconstruct::restrict_ogposet`
-  (`src/core/reconstruct.rs`), used by `matching` after a flow candidate. This
-  module has no `#[test]` block of its own; its behaviour is pinned by the
-  `reconstruct_*` tests in `src/core/reconstruct.rs` (e.g.
-  `reconstruct_generator_with_composite_boundary`, which drives `boundary` and
-  `restrict_ogposet`) and exercised throughout `matching`.
+  $k$-cell indices of one cell's sign-side boundary (called by `flow`). The
+  latter fast-paths `dim == k+1` to a direct face-table read; only the general
+  `dim > k+1` case builds the atom via `traverse`.
+- **`restrict` lives next door, not here.** `restrict_ogposet` — restrict an
+  `Ogposet` to a per-dimension kept-cell mask (`&[BitSet]`) — is
+  `reconstruct::restrict_ogposet` (`src/core/reconstruct.rs`), used by `matching`
+  after a flow candidate. This module has no `#[test]` block of its own; its
+  behaviour is pinned by the `reconstruct_*` tests in `src/core/reconstruct.rs`
+  (e.g. `reconstruct_generator_with_composite_boundary`, which drives `boundary`
+  and `restrict_ogposet`) and exercised throughout `matching`.
 
 ## Mathematics
 

@@ -1,7 +1,7 @@
 ---
 kind: decision
 status: stable
-last-touched: 2026-06-05
+last-touched: 2026-06-09
 ---
 
 # 0002 — a cell is attached along a round shape
@@ -55,8 +55,9 @@ is not round"*), then checks the two share a boundary shape and labels via
 `boundary_traverse(Both, …)` (*"shapes of boundaries do not match"* /
 *"boundaries do not match"*) before building the cell via the boundary `pushout`.
 Roundness itself is `Diagram::is_round` → `Ogposet::is_round`
-(`src/core/ogposet.rs`), the directed-sphere disjointness test — which operates on
-the bare shape and ignores labels entirely. By contrast `Diagram::pastability`
+(`src/core/ogposet.rs`), the directed-sphere test — purity (`is_pure`) plus
+disjointness of the input and output interiors at every dimension — which operates
+on the bare shape and ignores labels entirely. By contrast `Diagram::pastability`
 (the $\#_k$ gate) does **not** call `is_round`. See [[core-diagram]] for the cell
 constructor, [[boundary]] for $\partial^\pm$, [[directed-complex]] for the
 shape-vs-realisation point, and [[pushout]] for the boundary gluing.

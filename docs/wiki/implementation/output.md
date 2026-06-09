@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-05
+last-touched: 2026-06-09
 code: [src/output/mod.rs, src/output/normalize.rs, src/output/types.rs]
 ---
 
@@ -28,8 +28,9 @@ types (`Cell`, `Dim`, `Map`, `Module`, `Store`, `Type`) and the one public
 rendering helper `render_diagram`; the map-[[hole]] listing helpers
 `render_hole_boundary`, `render_hole_constraints`, and `domain_complex` are
 `pub(crate)` in `normalize.rs`, consumed by the interactive hole listings
-([[interactive-session]]), while `render_hole_line` / `render_map_holes` are
-module-private and drive the type-detail render.
+(`fill.rs`, [[interactive-session]]) and the protocol layer
+([[interactive-daemon-web]]), while `render_hole_line` / `render_map_holes` are
+module-private and produce the `Map.holes` lines of the normalized `Store`.
 `Display for GlobalStore` (in `normalize.rs`) routes through
 `GlobalStore::normalize`. The module owns no semantics — it never decides what a
 diagram *means*, only how to spell one.
@@ -46,7 +47,7 @@ The hierarchy mirrors the interpreter's scoping: `Store` → `Module` → `Type`
 | `Type` | one named type (or the unnamed root, shown `<empty>`): generators grouped into `dims`, plus `diagrams` and `maps` sorted by name |
 | `Dim` | generators at one dimension, `cells` sorted by name |
 | `Cell` | a named generator *or* diagram with its boundary rendered as two strings `input`, `output` (both empty ⇒ a 0-cell) |
-| `Map` | a named map, rendered `name :: domain`, plus `holes` — its open [[hole|holes]] pre-rendered as `?name : in → out` lines |
+| `Map` | a named map, rendered `name :: domain`, plus `holes` — its open [[hole|holes]] pre-rendered as `?name : in -> out` lines |
 
 Every `Display` impl substitutes `<empty>` for the empty name (the unnamed root
 type / anonymous generator), and a `Cell` with empty `input`/`output` prints as a
@@ -118,21 +119,29 @@ fetches the input [[core-paste-tree|`PasteTree`]] at the top dimension
 
 If there is no paste history (`tree` returns `None`), it falls back to
 `diagram_labels` — the top-dimension labels joined by spaces, or `"?"` if even
-those are absent. `render_diagram` is the public wrapper, also used by the REPL
-([[interactive-repl]]).
+those are absent. `render_diagram` is the public wrapper, used throughout the
+interactive layer ([[interactive-engine]], [[interactive-session]],
+[[interactive-daemon-web]]).
 
 ### Hole listing — `render_map_holes`
 
 A map with unfilled [[hole|holes]] renders them inline, one line each
-(`render_map_holes`). `hole_names` first assigns every metavariable a display
-name after the generator it images; `render_hole_line` then prints a hole as
-`?name` (a 0-cell) or `?name : in → out`, with `render_hole_boundary` walking the
-boundary paste trees via `render_paste_tree_with_holes` — so a leaf that is
-itself a metavariable shows as another `?name`, and pure holes and conditionals
-render uniformly. `render_hole_constraints` renders the equations a *conditional*
-pending assignment imposes (`F(x.side) = a.side`). These feed both the
-`Display`/type-detail render and the interactive `holes` command
-([[interactive-session]]).
+(`render_map_holes`). `hole_names` first names every metavariable after its
+*source generator in the domain* (`?f`), disambiguating collisions as `?f#1`,
+`?f#2`, …; `render_hole_line` then prints a hole as `?name` (a 0-cell) or
+`?name : in -> out`, walking the boundary paste trees via
+`render_paste_tree_with_holes` — so a leaf that is itself a metavariable shows
+as another `?name`, pure holes and conditionals render uniformly, and any
+dependency is visible without a "depends on" suffix. `render_map_holes` sorts by
+`(dim, name)`, lowest dimension first, so a hole's faces print before the holes
+that reference them.
+
+Two `pub(crate)` variants serve the interactive layer: `render_hole_boundary`
+(the same line with `→` substituted for the output API's ASCII `->`) and
+`render_hole_constraints`, which renders the equations a *conditional* pending
+assignment imposes (`F(x.side) = a.side`, outer parentheses stripped by
+`unwrap_parens`). Consumed by `fill.rs` ([[interactive-session]]) and
+`protocol.rs` ([[interactive-daemon-web]]).
 
 Holes are not solved-then-reported; they are listed where they live — on the map.
 
@@ -160,10 +169,6 @@ Holes are not solved-then-reported; they are listed where they live — on the m
 - **Term, not list.** Boundaries print as flattened $\#_k$ terms reconstructed
   from the [[diagram|paste history]], which is why a lost history degrades to a
   space-joined label list rather than erroring.
-- **Holes render where they live.** A map's open [[hole|holes]] are listed inline
-  by `render_map_holes`; there is no separate solve-then-report pass. A hole leaf
-  inside a boundary prints as a `?name` metavariable, so pure holes and
-  conditionals read uniformly.
 
 ## Mathematics
 
@@ -178,5 +183,5 @@ else — sorting, name resolution, term flattening — is faithful transcription
 the [[diagram|diagram]] and its paste structure, not new theory. The bridge to
 [[diagram]] and [[boundary]] is therefore a *presentation-of* relationship, with
 exactly one true realisation (the boundary call). See [[interpreter]] for the
-`GlobalStore` being normalised and [[interactive-repl]] for the `render_*`
-consumers.
+`GlobalStore` being normalised; the `render_*` consumers live in
+[[interactive-session]] and [[interactive-daemon-web]].

@@ -1,8 +1,8 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-05
-code: [src/analysis/homology.rs, src/analysis/strdiag.rs]
+last-touched: 2026-06-09
+code: [src/analysis/mod.rs, src/analysis/homology.rs, src/analysis/strdiag.rs]
 ---
 
 # analysis — homology & string-diagram layout
@@ -30,7 +30,7 @@ Both are pure functions of the ogposet incidence; they own no state.
 | Type / fn | Role |
 | --- | --- |
 | `homology::AbelianGroup` | f.g. abelian group: `free_rank: usize` + `torsion: Vec<i64>` (divisibility-ordered). |
-| `homology::TorsionWitness` | `order`, `cycle` (in $C_n$), `preimage` (in $C_{n+1}$) — all in the *original* generator bases. `cycle_str` / `preimage_str` format them for the user-facing display (see *Mathematics* / [[homology]]). |
+| `homology::TorsionWitness` | `order`, `cycle` (in $C_n$), `preimage` (in $C_{n+1}$) — all in the *original* generator bases. `cycle_str` / `preimage_str` format them for display. |
 | `homology::Homology` | per-dimension `groups`, `euler_characteristic`, `torsion_witnesses` map. |
 | `homology::compute_homology(&Complex)` | the entry point. |
 | `strdiag::VertexKind` | `Node` (top-dim cell) or `Wire` (codim-1 cell). |
@@ -62,6 +62,11 @@ Both are pure functions of the ogposet incidence; they own no state.
    $\sum_n (-1)^n |C_n|$ directly, and $\sum_n (-1)^n \operatorname{rank} H_n$
    via `Homology::euler_from_homology` — and a `debug_assert_eq!` pins them
    equal.
+6. **Surfacing.** `protocol.rs` packages the result as `HomologyInfo` /
+   `HomologyGroupInfo`, each group carrying its witnesses as
+   `TorsionWitnessInfo` via `cycle_str` / `preimage_str`
+   ([[interactive-daemon-web]]); `richtext::homology` *(internal)* renders that
+   for the REPL ([[interactive-repl]]).
 
 ## Data flow — strdiag
 
@@ -84,6 +89,9 @@ all three graphs. Labels/tags resolve through `strdiag::resolve_label` /
 `strdiag::filtered_faces` is rewalt's hierarchical exclusion: a lower face is
 kept only if its cofaces (under `Ogposet::cofaces_of`) are disjoint from the
 source set, i.e. it is not already accounted for by the higher-dimensional flow.
+
+Consumers: `protocol.rs::strdiag_to_json` serialises a `StrDiag` for the web
+frontend's renderer ([[interactive-daemon-web]], [[web-frontend]]).
 
 ## Non-obvious invariants & gotchas
 
@@ -127,9 +135,7 @@ source set, i.e. it is not already accounted for by the higher-dimensional flow.
   the plain path normalises the diagonal in place (`enforce_divisibility` + sort),
   while the tracked path returns the *raw* positional diagonal and lets
   `compute_homology` run `enforce_divisibility_tracked` / `sort_diag_tracked` so
-  the basis columns stay paired with `diag[i]`. (This replaced the former two
-  near-line-for-line-duplicated families; see `source-drift.md`, the 2026-06-04
-  WET resolution.)
+  the basis columns stay paired with `diag[i]`.
 - **Generator ordering is the chosen basis.** Sorting `gens_by_dim` by name is
   load-bearing: it fixes which generator is row/column $i$, hence what the
   witness coefficients *mean*. Change the sort and the witness coordinates

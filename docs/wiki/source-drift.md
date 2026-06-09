@@ -1,7 +1,7 @@
 ---
 kind: note
 status: stable
-last-touched: 2026-06-03
+last-touched: 2026-06-09
 ---
 
 # Source-side drift — deferred maintenance
@@ -244,3 +244,62 @@ change. The two long-standing `src/`-side items remain as recorded:
 `aux::intset::intersection` is still fully dead (zero callers, kept per user), and
 `ogposet::closure` is confirmed live (its stale `#[allow(dead_code)]` was removed
 2026-06-04). No new source rot surfaced.
+
+## [2026-06-09] Third pass — full audit/rewrite of every wiki page
+
+Every page was audited and rewritten against current source by a parallel agent
+batch. Same rule as always: **recorded, not fixed.** Each item below was verified
+by the auditing agent against current code (several independently by two or three
+agents).
+
+### Stale doc-comments
+
+| # | Location | Wrong claim | Fix |
+|---|----------|-------------|-----|
+| 3a | `src/interpreter/types.rs` — `EvalMap::holes` doc | Holes are "Empty for any map built outside a definition block (name lookups, …)" — false for name lookups: `eval_partial_map_basic`'s `Name` arm deliberately carries `Complex::map_holes(name)` so `F [ … ]` fills them (pinned by `prefix_extension_fills_holes`). Found independently by three agents. | Drop "name lookups" from the empty list; state the carry-through. |
+| 3b | `src/interactive/fill.rs` — module header | Says `done` "appends `x => <proof>`". `edit_map_definition` *replaces an explicit `?` in place*; appending happens only for implicit holes (`pins_a_dotted_explicit_hole_in_place` / `appends_when_no_matching_explicit_hole`). | Describe the pin-in-place behaviour. |
+| 3c | `src/interpreter/partial_map.rs` — `interpret_partial_map_ext` doc | Claims pending `=> ?` clauses become holes "in a final pass … in ascending source dimension" — no such pass exists; holes are created inline per clause by `assign_cell`. | Rewrite to inline creation. |
+| 3d | `src/interpreter/partial_map.rs` — `hole_map_image` doc | Doc-links `ensure_hole`, which does not exist; the call is `ensure_defined`. | Fix the link. |
+| 3e | `src/interpreter/diagram.rs` — `interpret_diagram_as_term`, `interpret_paste` docs | Call the explicit paste syntax `` `*k` `` — the surface token is `#k` (lexer `Token::Hash`; GRAMMAR.md). | `*k` → `#k`. |
+| 3f | `src/aux/bitset.rs` — module rustdoc | `BitSet` "used exclusively in `ogposet::traverse`" — `core/reconstruct.rs` also uses it (`downsets`, `embedding_to_bitsets`). | Drop "exclusively". |
+| 3g | `src/aux/loader.rs` — `with_virtual_files` rustdoc | Speaks of "`#use` directives" — the language form is `include <Name>`. | Rename. |
+| 3h | `src/interactive/engine.rs` — `resolve_type` rustdoc | "Called by the REPL when the user types `@ <TypeName>`" — the `@` grammar is long gone (now `start <type> <source>`). | Re-point. |
+| 3i | `src/interactive/cli.rs` — `ReplArgs.type_name` doc | "set via `@ <TypeName>` interactively if absent" — same obsolete `@` grammar. | Re-point. |
+| 3j | `src/interactive/session.rs` — `Session::from_virtual` rustdoc | "Returns the session and the loaded store on success" — returns only `Result<Self, String>`. (Also dead, see below.) | Fix or delete with the fn. |
+| 3k | `src/language/ast_print.rs` — module doc | Claims unconditional print→parse round-trip equivalence; false for `for`-blocks: `Printer::for_block` emits literal `{ ... }` (re-parses, but not equivalently). | Qualify the guarantee. |
+| 3l | `web/wasm/src/lib.rs` — `run_command` and `get_strdiag` docs | "Supported commands" list omits `step_multi`/`redo`/`holes`/`fill`/`done` and claims `save` unsupported (the MCP descriptor lists it); `get_strdiag` doc has a duplicated paragraph. | Refresh both. |
+| 3m | `.github/workflows/deploy.yml` — Assemble-dist comment | Says the manifest script "fails the build on duplicate stems" — no duplicate check exists since qualified path-names (web/EXAMPLES.md rule 3). | Drop the claim. |
+
+### Dead code
+
+- **`src/aux/mod.rs::dim_subscript`** — fully dead since `af611fc` (its last
+  callers left with the inference layer); `pub` visibility dodges the warning.
+- **`src/interactive/engine.rs` — `load_type_context`, `typecheck_proof`,
+  `proof_label`** — `pub`, zero callers workspace-wide; rustdoc still claims CLI/
+  daemon callers.
+- **`src/interactive/session.rs::from_virtual`** — zero callers; the web
+  deliberately bypasses it (`load_source_with_modules` → `Session::from_loaded`)
+  to return structured `Diagnostic`s.
+- **`src/analysis/strdiag.rs::StrDiag::from_named`** — zero callers
+  workspace-wide; public builder surface only.
+- **`src/core/diagram.rs::cell_with_input_embedding`** — not dead but vestigial
+  in shape: its only caller `cell_n` discards the returned embedding (the
+  matching path uses `RulePattern::pattern_to_rewrite` instead). Simplification
+  candidate, not deletion.
+
+### Parser / grammar divergence (`docs/GRAMMAR.md` vs `src/language`)
+
+- `<ForBlock>` omits the optional `bar` exclusion clause the parser accepts.
+- `<DComponent>` omits string literals (parser accepts `Str`, expanding to pastes).
+- Lexical classes: `<Name>` is ASCII-only but the lexer accepts Unicode letters;
+  `<Nat>` forbids leading zeros but the lexer lexes `007` (`test_nat_multi_digit`).
+- `build_let_or_def` silently **drops `total`** on `let total x = <diagram>`
+  (GRAMMAR grants `total` only to the `:: address =` map form). Parser leniency
+  that loses user intent — arguably a bug, not just doc drift.
+
+### Test gap
+
+- [[0002-round-boundaries]]'s canonical loop example (`a : pt -> pt`) has no
+  named pinning test — it is exercised only incidentally inside
+  `virtual_loader_subdirectory_resolution`. A dedicated test would let 0002 cite
+  behavioural evidence per the wiki's own convention.

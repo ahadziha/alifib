@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-05
+last-touched: 2026-06-09
 ---
 
 # Oriented graded poset
@@ -10,19 +10,15 @@ An **oriented graded poset** (*ogposet*) is the bare combinatorial shape beneath
 every alifib value: a finite set of faces stratified by dimension, where each
 covering step between dimensions carries an orientation — a $\pm$ sign splitting
 a cell's faces into **input** ($-$) and **output** ($+$). It is the substrate
-beneath a [[directed-complex]], and in particular beneath the well-behaved
+beneath a [[directed-complex]], and in particular beneath the
 [[regular-directed-complex|regular]] ones — the shapes in which every
 [[molecule]] lives. Strip the labels off a [[diagram]] and what remains is its
-ogposet. The [[boundary|boundaries]] $\partial^\pm_k$ are nothing but this
-orientation read off the face structure.
-
-The ogposet is genuinely the *bare* layer: it carries shape, not labels and not
-the regularity constraints. A [[regular-directed-complex]] is an ogposet whose
-every cell is regular (round boundary spheres, no identities); a general
-[[directed-complex]] — what a *type* assembles to once labelling-identifications
-have been applied — need not be regular at all. The atoms and molecules that
-alifib builds are the regular shapes, but the ogposet substrate underlies
-directed complexes generally.
+ogposet; the [[boundary|boundaries]] $\partial^\pm_k$ are nothing but this
+orientation read off the face structure. The ogposet is genuinely the *bare*
+layer — shape, no labels, no regularity: a [[regular-directed-complex]] is an
+ogposet all of whose cells are regular, while a general [[directed-complex]] —
+what a *type* assembles to once labels identify cells — need not be regular at
+all (see [[diagram]]).
 
 ## Definition
 
@@ -40,25 +36,23 @@ The graded structure is a poset whose order is the transitive closure of "is a
 face of"; the *orientation* is the extra datum that each covering relation is
 tagged $-$ or $+$. Three derived notions do the real work.
 
-**Extremality.** A $k$-cell is **input-extremal** when it has no output coface
-(nothing consumes it as an output), **output-extremal** when it has no input
-coface. These are the cells lying on the input / output boundary of the shape.
-**Maximal** cells have no coface at all.
+**Extremality.** A $k$-cell is **input-extremal** when it has no output coface —
+no $(k{+}1)$-cell has it among its output faces, so nothing *produces* it;
+**output-extremal** when it has no input coface — nothing *consumes* it. These
+are the cells lying on the input / output frontier of the shape. **Maximal**
+cells have no coface at all.
 
-**Boundary.** The $\partial^s_k G$ for $s \in \{-,+\}$ is the sub-ogposet on the
-downward closure of the $s$-extremal $k$-cells: take everything on the $s$-side
-of the $k$-skeleton and forget the rest. It is again an ogposet of dimension
-$k$, and comes with an embedding back into $G$.
+**Boundary.** $\partial^s_k G$ for $s \in \{-,+\}$ is the sub-ogposet on the
+downward closure of the $s$-extremal $k$-cells together with the maximal cells of
+dimension $< k$. It is again an ogposet of dimension $\le k$, and comes with an
+embedding back into $G$ — the full account is [[boundary]].
 
-**Roundness.** $G$ is **round** when, at every dimension, the interior touched
-by the input boundary is disjoint from that touched by the output boundary.
-Roundness is a property of the *bare shape* — it inspects the orientation alone,
-ignoring any labels. It is the precondition for $G$ to serve as the input/output
-boundary of a single **cell** — a globe-like shape with two well-separated poles
-— and is checked exactly there, when a cell is formed from a pair of parallel
-diagrams. It is **not** a precondition for pasting: composing two diagrams along
-a shared $k$-boundary checks only that the boundaries agree, never roundness (see
-[[diagram]]).
+**Roundness.** $G$ is **round** when it is *pure* (every below-top cell has a
+coface) and, at every dimension, the interior touched by the input boundary is
+disjoint from that touched by the output boundary. Roundness is a property of
+the *bare shape* — orientation alone, no labels — and is the precondition for
+$G$ to bound a single **cell**, not for pasting; see [[boundary]] for the full
+story.
 
 Two ogposets are *isomorphic* exactly when they share a canonical form; the
 canonical form is obtained by an input-first **traversal** that walks the
@@ -94,8 +88,8 @@ Realised by `Ogposet` and `Sign` in `src/core/ogposet.rs` — see [[core-ogposet
 - **Boundary extraction** $\partial^s_k$ is `ogposet::boundary` *(internal)*,
   returning the faithful sub-ogposet and its `Embedding`; its normalised cousin
   is `boundary_traverse`. The latter's `Both` branch is special: it returns the
-  full boundary *sphere* of an $n$-cell (via `build_stack_cell_n`), so it ignores
-  $k$ beyond clamping — used when forming a cell from two parallel diagrams.
+  full boundary *sphere* of an $n$-cell (via `build_stack_cell_n`), ignoring $k$
+  entirely — used when forming a cell from two parallel diagrams.
 - **Canonical form / isomorphism**: `normalisation` and `find_isomorphism`,
   both driven by the general `traverse`. Shape equality is decided by comparing
   canonical forms; the result is recomputed on every call (no memoisation).

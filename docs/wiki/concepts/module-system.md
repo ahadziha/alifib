@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-05
+last-touched: 2026-06-09
 ---
 
 # Module system
@@ -9,27 +9,24 @@ last-touched: 2026-06-05
 A program in alifib is a forest of named [[core-complex|complexes]] organised at
 two scales. A **type** is a single [[diagram|diagram]]-generator together with
 the whole complex grown inside its body — an [[atom|atom]] equipped with its own
-ambient universe of cells, maps, and lower atoms. The complex of a type is a
-[[directed-complex]] (its shapes — the [[atom|atoms]] and [[molecule|molecules]]
-it names — are [[regular-directed-complex|regular]]). A **module** is a `.ali`
-file: the [[directed-complex]] accumulated by elaborating all of its top-level
-declarations, keyed by its canonical path. The module system is the calculus by
-which one such complex is carried into another — by **inclusion** (`include`), by
-**attachment along a [[partial-map]]** (`attach … along`), and (aspirationally,
-see [[module-open-semantics]]) by **opening** a name without importing its
-universe.
+ambient universe of cells, maps, and lower atoms, all
+[[regular-directed-complex|regular]] shapes of a [[directed-complex]]. A
+**module** is a `.ali` file: the complex accumulated by elaborating all of its
+top-level declarations, keyed by its canonical path. The module system is the
+calculus by which one such complex is carried into another, and these are
+exactly the two canonical ways one [[directed-complex]] embeds in another:
 
-Mathematically these are not bookkeeping conveniences. They are the two
-canonical ways one [[directed-complex]] embeds in another: as a
-*sub-complex* (an inclusion, the identity on shared generators) or as a *gluing*
-(a pushout-style colimit that freely adjoins the un-identified cells of one
-complex along a map). The whole system is the syntax of these colimits.
+- **inclusion** (`include`) — a *sub-complex* embedding, the identity on shared
+  generators;
+- **attachment** (`attach … along`) — a *gluing*, a [[pushout]] that freely
+  adjoins the un-identified cells of one complex along a [[partial-map]].
 
-A third axis, orthogonal to inclusion/attachment, is **naming**: how a source
-name reaches across module boundaries. Two devices do this — *qualified names*
-(dotted addresses walked through the maps already in scope) and *scoped include
-resolution* (the search by which a bare `include <Name>` is matched to a file).
-Both are described under [Naming across modules](#naming-across-modules) below.
+A third axis, orthogonal to both, is **naming**: how a source name reaches
+across module boundaries, by *qualified names* (dotted addresses walked through
+the maps in scope) and *scoped include resolution* (the file search behind a
+bare `include <Name>`). A lazy `open` that would bind a name *without*
+importing its universe is unimplemented and unsettled — see
+[[module-open-semantics]].
 
 ## Definition
 
@@ -54,14 +51,16 @@ its $(n{-}1)$-boundary already present.
 ### Inclusion
 
 For a type $S$ with complex $\mathcal{C}_S$ and an ambient complex $\mathcal{C}$,
-`include S as p` realises the **inclusion** $\iota \colon \mathcal{C}_S
-\hookrightarrow \mathcal{C}$. Concretely it copies every generator of $S$ into
-$\mathcal{C}$ under the prefix $p$, and records the identity [[partial-map]]
-$\mathrm{id}_{\mathcal{C}_S}$ as the witnessing map. Inclusion is *eager and
-total*: nothing of $S$ is left behind, and no cell is renamed up to its prefix.
-Re-including an already-present generator is idempotent (the second copy is
-skipped). The top-level form `include M` does the same for a whole module
-$M$, dropping $M$'s unnamed root generator.
+`include S` (inside a complex body) realises the **inclusion** $\iota \colon
+\mathcal{C}_S \hookrightarrow \mathcal{C}$. Concretely it copies every generator
+of $S$ into $\mathcal{C}$ under an alias prefix, and records the identity
+[[partial-map]] $\mathrm{id}_{\mathcal{C}_S}$ as the witnessing map. Inclusion
+is *eager and total*: nothing of $S$ is left behind, and no cell is renamed
+beyond its prefix. Re-including an already-present generator is idempotent (the
+second copy is skipped). The alias defaults to $S$'s own name; including a
+*non-local* type — one addressed through a dotted path — requires an explicit
+`as` alias. The `@Type`-block form `include M [as A]` does the same for a whole
+module $M$, dropping $M$'s unnamed root generator.
 
 ### Attachment as a pushout along a partial map
 
@@ -81,7 +80,7 @@ boundary:
 $$ \partial^\pm(b) \;=\; F\!\left(\partial^\pm(a)\right). $$
 The map is grown in lockstep ($F \mathrel{+}= \{a \mapsto b\}$) so that a later
 generator of $S$ — whose boundary may mention an earlier one — finds its image
-already defined. This is exactly the universal property of a pushout
+already defined. This is exactly the universal property of a [[pushout]]
 
 $$
 \begin{array}{ccc}
@@ -100,18 +99,6 @@ empty $F$, every generator is unmapped and reborn under the prefix. With a
 non-trivial $F$ (e.g. `along [ id => 2id ]`) some cells are identified with the
 ambient ones and only the remainder is freely added.
 
-### Opening (aspirational)
-
-`open M` is intended to bring a *name* from module $M$ into scope **without**
-importing $M$'s universe — a lazy, single-name binding that lets a map out of
-part of $M$ be defined without forcing the rest of $M$ to load. As of the
-current source there is **no `open` keyword**: the lexer's keyword set
-(`src/language/lexer.rs`, `ident_or_nat_or_kw`) is `include`, `attach`, `along`,
-`assert`, `in`, `out`, `Type`, `let`, `total`, `map`, `as`, `index`, `for`,
-`bar`, `run` — no `open` token exists. The distinction between this lazy `open`
-and the eager `include` is the substance of the open question
-[[module-open-semantics]].
-
 ### Naming across modules
 
 Once a module is in the store, two distinct mechanisms reach a name across the
@@ -120,29 +107,30 @@ boundary it was declared behind.
 **Qualified names.** A dotted address `p₁.p₂.….a` is *not* a string key into a
 flat namespace; it is a **walk through the maps in scope**. Resolution starts in
 the current module's complex and consumes the prefix segment by segment: each
-$p_i$ must name a [[partial-map]] whose domain is a *module* (recall the
-`MapDomain::{Type, Module}` split) — and `include M` records exactly such a map
-under the alias `M`. Naming a map whose domain is a *type*, or a name that is no
-map at all, is an error: only module-valued maps may be traversed. After the
-prefix is walked, the scope has advanced into the named submodule's complex, and
-the final segment `a` is looked up there as a type generator. So `A.Aux.Ob`
-means: from `A` (a module included into me), step into its `Aux` (a module `A`
-itself included), and take the type `Ob` there. Because each module carries its
-own inclusion maps, **the same dotted name resolves relative to where it is
-written** — two modules each importing a module called `Aux` see *their own*
-`Aux`. The two scoped-resolution tests below exercise precisely this.
+$p_i$ must name a [[partial-map]] whose domain is a *module* — and `include M`
+records exactly such a map under the alias `M`. Naming a map whose domain is a
+*type*, or a name that is no map at all, is an error: only module-valued maps
+may be traversed. After the prefix is walked, the scope has advanced into the
+named submodule's complex, and the final segment `a` is looked up there as a
+type generator. So `A.Aux.Ob` means: from `A` (a module included into me), step
+into its `Aux` (a module `A` itself included), and take the type `Ob` there.
+Because each module carries its own inclusion maps, **the same dotted name
+resolves relative to where it is written** — two modules each importing a
+module called `Aux` see *their own* `Aux`. The two scoped-resolution tests
+below exercise precisely this.
 
 **Scoped include resolution.** A bare `include <Name>` does not name a file
 directly; the loader searches for `<Name>.ali` in a precedence order owned by
 the [[aux]] layer (`Loader::with_parent_dir` + `find_file`): (1) the including
 file's own directory, (2) a *same-named subdirectory* (so `Foo.ali` may keep
 private submodules in a `Foo/` directory and include them by bare name), then
-(3) the directories of `ALIFIB_PATH`. **The closest directory wins**, so two
-files in different directories that both `include Aux` may resolve to *different*
-files. The loader then interprets the whole dependency graph **leaves-first** in
-topological order into one shared store, with cycle detection — the semantic side
-of this (the three-phase `InterpretedFile::load` pipeline, the
-parent/name → canonical-path resolution map) is documented in [[interpreter]].
+(3) the inherited search paths (the working directory, `ALIFIB_PATH`, any extra
+paths). **The closest directory wins**, so two files in different directories
+that both `include Aux` may resolve to *different* files. The loader then
+interprets the whole dependency graph **leaves-first** in topological order into
+one shared store, with cycle detection — the semantic side of this (the
+three-phase `InterpretedFile::load` pipeline, the parent/name → canonical-path
+resolution map) is documented in [[interpreter]].
 
 The upshot: *resolution is lexical, not global*. A module exports names; an
 importer chooses local aliases for them; and a qualified name is read against the
@@ -168,8 +156,9 @@ Realised by [[interpreter]]; parsed by [[language-parser]].
   (`src/interpreter/include.rs`): `prefixed_generators` + `insert_generators_by_tag`
   copy the cells, `identity_map` (`src/interpreter/types.rs`) supplies the
   witnessing $\mathrm{id}$, registered under `MapDomain::{Type,Module}` via
-  `Complex::add_map`. The
-  skip-if-present test in `insert_generators_by_tag` is the idempotence above.
+  `Complex::add_map`. The skip-if-present test in `insert_generators_by_tag` is
+  the idempotence above; the alias default and the *"Inclusion of non-local
+  types requires an alias"* rule live in `resolve_include` (internal).
 
 - **Attachment.** `interpret_attach_instr` →
   `extend_scope_with_attached_generators` (`include.rs`) is the pushout: it walks
@@ -178,7 +167,8 @@ Realised by [[interpreter]]; parsed by [[language-parser]].
   fresh image cell — `GlobalId::fresh()` + `set_cell` in `Mode::Global`, or a
   `Tag::Local` via `add_local_cell` in `Mode::Local` (an `@Local` body) — and
   grows the map with `PartialMap::insert_raw`. The grading check is the
-  `boundary_in.dim() != expected` guard.
+  `boundary_in.dim() != expected` guard. Only type domains may be attached:
+  `interpret_attach_instr` rejects `MapDomain::Module`.
 
 - **The $0$-cell-only law** for `@Type` blocks is enforced in
   `src/interpreter/eval.rs` — `interpret_type_generator` rejects a
@@ -195,9 +185,13 @@ Realised by [[interpreter]]; parsed by [[language-parser]].
   looked up with `Complex::find_map`; its `MapDomain` must be `Module(id)`, and
   the scope advances to `find_module_arc(id)`. A `MapDomain::Type` prefix or a
   missing map is rejected. The final segment is resolved by
-  `type_id_of_named_diagram` in the advanced scope. The single-segment module
-  domain of a `:: Name` block is resolved separately by `resolve_module_domain` →
-  `GlobalStore::resolve_module_by_name` (short name → `(path, Arc<Complex>)`).
+  `type_id_of_named_diagram` in the advanced scope.
+
+- **Module-domain maps.** In a `@Type` block, `let F :: M = […]` resolves `M`
+  as a *module*: `interpret_def_pmap_module` → `resolve_module_domain` →
+  `GlobalStore::resolve_module_by_name` (single-segment short name →
+  `(path, Arc<Complex>)`). In complex and `@Local` bodies the same syntax
+  resolves a *type* domain (`interpret_def_pmap`).
 
 - **Scoped include resolution** is owned by [[aux]] (`Loader::with_parent_dir`,
   `find_file`, `resolve_recursive`); the interpreter consumes the resulting
@@ -210,14 +204,15 @@ Realised by [[interpreter]]; parsed by [[language-parser]].
   has `A.ali` and `B.ali` each `include Aux`, resolving to the *distinct* files
   `A/Aux.ali` and `B/Aux.ali`, then addressing them as `A.Aux.Ob` / `B.Aux.Ob`.
 
-- **Surface syntax.** `IncludeModule` / `IncludeStmt` / `AttachStmt` in
-  `src/language/ast.rs`; their statement productions (`include_stmt`,
-  `attach_stmt`) in `src/language/parser.rs`, the keyword set in
-  `src/language/lexer.rs`. The grammar is `docs/GRAMMAR.md`. No `open` production
-  exists.
+- **Surface syntax.** `IncludeModule` (a `@Type`-block instruction) /
+  `IncludeStmt` / `AttachStmt` in `src/language/ast.rs`; their productions
+  (`include_module`, `include_stmt`, `attach_stmt`) in
+  `src/language/parser.rs`, the keyword set in `src/language/lexer.rs`. The
+  grammar is `docs/GRAMMAR.md`. No `open` token or production exists
+  ([[module-open-semantics]]).
 
 ## Related
 
-[[partial-map]] · [[core-complex]] · [[diagram]] · [[atom]] ·
+[[partial-map]] · [[pushout]] · [[core-complex]] · [[diagram]] · [[atom]] ·
 [[directed-complex]] · [[regular-directed-complex]] · [[module-open-semantics]] ·
 [[interpreter]] · [[language-parser]] · [[aux]]

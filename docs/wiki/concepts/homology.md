@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-05
+last-touched: 2026-06-09
 ---
 
 # Homology
@@ -24,7 +24,7 @@ keeps only the additive boundary algebra, so two shapes with the same homology
 may rewrite very differently. Its value here is diagnostic — torsion at $H_1$,
 for instance, flags a generator that can only be cancelled an integer multiple
 of times, which in a concurrency reading is a contention bug (see the
-witness tests below).
+witness tests under *Implementation*).
 
 ## Definition
 
@@ -97,8 +97,9 @@ $d_i \cdot z = \partial_{n+1}(p)$.
 
 #### Worked invariants
 
-The gallery tests pin the arithmetic against known spaces, each presented as a
-one-line type with a single top cell folding a word of 1-cells:
+The gallery tests (`assert_homology` runs `homology_s1` through `homology_rp3`)
+pin the arithmetic against known spaces, each presented as a one-line type with
+a single top cell folding a word of 1-cells:
 
 | Type | presentation (top 2-cell) | $H_1$ | reading |
 |---|---|---|---|
@@ -106,78 +107,58 @@ one-line type with a single top cell folding a word of 1-cells:
 | `Klein` | $f : a \to abb$ | $\mathbb{Z} \oplus \mathbb{Z}/2$ | Klein bottle |
 | `RP2` | $\mathrm{face} : \mathrm{id} \to aa$ | $\mathbb{Z}/2$ | $\mathbb{RP}^2$ |
 | `Lens5` | $\mathrm{face} : \mathrm{id} \to a^5$ | $\mathbb{Z}/5$ | lens space $L(5,1)$ |
-| `Klein4` | two relations $a^2, b^2$ | $(\mathbb{Z}/2)^2$ | divisibility splits a $\mathbb{Z}/2 \oplus \mathbb{Z}/2$ |
+| `Klein4` | two relations $a^2, b^2$ | $(\mathbb{Z}/2)^2$ | invariant factors $2 \mid 2$ |
 
-The `Lens5` case ($\partial_2 = [5]$, so $H_1 = \mathbb{Z}/5$) and `Klein4`
-(raw diagonal $[2,2]$, kept as two $\mathbb{Z}/2$ summands by the divisibility
-normalisation) are the cleanest demonstrations that the SNF, not a $\mathbb{Z}/2$
-shortcut, is doing the work.
+The `Lens5` case (SNF of $\partial_2$ is $\operatorname{diag}(1, 5)$, so $H_1 =
+\mathbb{Z}/5$) and `Klein4` (invariant factors $2 \mid 2$ — two $\mathbb{Z}/2$
+summands, not a $\mathbb{Z}/4$) are the cleanest demonstrations that the SNF,
+not a $\mathbb{Z}/2$ shortcut, is doing the work.
 
 ## Implementation
 
-Realised by [[analysis]] in `src/analysis/homology.rs`. The entry point
-`compute_homology(complex: &Complex) -> Homology` builds the differentials and
-runs the linear algebra; results are the `Homology` struct (`groups`,
-`euler_characteristic`, `torsion_witnesses`) with each group an `AbelianGroup`
-(`free_rank` + divisibility-ordered `torsion`).
+Realised by [[analysis]] in `src/analysis/homology.rs`; that page documents the
+linear algebra in full. The bridge:
 
-**Building $\partial_n$.** `compute_homology` collects generators by dimension
-(`Complex::generators_iter`, sorted for determinism) and, per top cell, reads
-the signed faces straight off the [[oriented-graded-poset]] via
-`classifier.shape.faces_of(Sign::Output, …)` / `Sign::Input` (see
-`Ogposet::faces_of` *(internal)* in `src/core/ogposet.rs`), resolving each face
-tag back to a generator with `Complex::find_generator_by_tag` and incrementing
-the matrix entry $+1$ / $-1$. This is the prose differential made literal.
-
-**$d^2 = 0$.** Checked as a `debug_assert!` that `mat_mul(differentials[n-1],
-differentials[n])` is zero; the Euler-characteristic agreement
-$\chi_{\text{chain}} = \chi_{\text{homology}}$ is asserted via
-`Homology::euler_from_homology`.
-
-**Smith Normal Form (one driver).** A single generic
-`homology::snf_reduce<T: Tracker>` *(internal)* runs the classic pivot loop —
-`find_and_move_pivot` (smallest nonzero entry first), `eliminate_column` /
-`eliminate_row`, with an `extended_gcd` fallback when the pivot fails to divide
-an entry. The `Tracker` trait (seven elementary mirror ops) is what lets *one*
-loop serve both callers: the zero-cost `NoTrack` (all no-ops) drives
-`smith_normal_form` → `matrix_rank` (ranks = count of nonzero SNF diagonal
-entries), while `FullTrack` drives `smith_normal_form_with_basis` for witnesses.
-The plain path then normalises the diagonal in place (`enforce_divisibility`
-collapses each non-divisible adjacent pair $(a, b)$ to
-$(\gcd, \operatorname{lcm})$, then sorts). Behaviour is pinned by
-`smith_identity`, `smith_with_torsion` (`[[2,4],[0,6]] → [2,6]`),
-`smith_unit_d3`, and `smith_zero_matrix`. See [[analysis]] for the `Tracker`
-mechanics.
-
-**Torsion witnesses.** For $H_n$ the code runs `smith_normal_form_with_basis`
-*(internal)* on $\partial_{n+1}$ with `FullTrack`, which mirrors each row op —
-*inverted* — onto $U^{-1}$ and each column op directly onto $V$, maintaining
-$U \cdot M \cdot V = \operatorname{diag}$. It then applies the *tracked*
-normalisations `enforce_divisibility_tracked` and `sort_diag_tracked` so the
-witness columns stay paired with the reported invariants even when divisibility
-mixes pairs (raw $[3,2] \to$ canonical $[1,6]$). Each $d_i > 1$ yields a
-`TorsionWitness` $\{order, cycle, preimage\}$ with the invariant
-$d_i \cdot z = \partial_{n+1}(p)$. Evidence: `tracked_enforce_divisibility_crt`
-and `tracked_sort_diag_permutes_witnesses` check the change-of-basis algebra;
-`all_witnesses_are_cycles` (and `verify_witnesses_valid`) re-applies the real
-differential to confirm every reported witness is a cycle whose order-multiple
-is the boundary of its preimage. The concurrency-flavoured cases
-`witness_torsion_example`, `witness_races_k_contention`, and `witness_aba_bug`
-show torsion as a contention diagnostic.
-
-**Surfaced to users.** Witnesses are not merely computed — they are *shown*. The
-interactive layer exposes a `homology <Type>` command on every front-end
-(CLI / web / MCP), all sharing one renderer: `interactive::protocol::build_homology_data`
-flattens each group into a `HomologyGroupInfo` carrying its
-`Vec<TorsionWitnessInfo>` (order + formatted `cycle` + `preimage`, via
-`TorsionWitness::cycle_str` / `preimage_str`), and `richtext::homology` prints
-each `H_d` line followed by one indented sub-line per witness. So
-`homology RP2` prints `H_1 = Z/2` together with a `cycle: …  (preimage: …)`
-sub-line; a torsion-free space (e.g. `LinearizableCAS`) shows none
-(`witness_none_when_torsion_free`). The homology query *bypasses the rewrite
-engine* — it needs only the static complex, so the daemon/engine short-circuit
-it rather than running the rewriting machinery. See [[interactive-repl]] and
-[[interactive-daemon-web]]; `docs/HOMOLOGY.md` walks the `homology RP2` output.
+- **Entry point.** `homology::compute_homology(&Complex) -> Homology`:
+  per-dimension `groups` (each an `AbelianGroup` — `free_rank` +
+  divisibility-ordered `torsion`), `euler_characteristic`, and
+  `torsion_witnesses`.
+- **The differential, literally.** Per generator, the signed codim-1 faces are
+  read off the [[oriented-graded-poset]] of its classifier via
+  `Ogposet::faces_of` *(internal)* — `Sign::Output` $\mapsto +1$, `Sign::Input`
+  $\mapsto -1$ — each face tag resolved by `Complex::find_generator_by_tag`.
+  Generators are name-sorted per dimension; that sort *is* the chosen basis.
+- **Assertions.** $d^2 = 0$ is a `debug_assert!` (`mat_mul` of adjacent
+  differentials is zero); $\chi_{\text{chain}} = \chi_{\text{homology}}$ a
+  `debug_assert_eq!` via `Homology::euler_from_homology`.
+- **One SNF driver.** `homology::snf_reduce<T: Tracker>` *(internal)* runs the
+  pivot loop once for both callers: zero-cost `NoTrack` drives
+  `smith_normal_form` → `matrix_rank`; `FullTrack` (row ops mirrored *inverted*
+  onto $U^{-1}$, column ops directly onto $V$) drives
+  `smith_normal_form_with_basis` for witnesses. The tracked normalisations
+  `enforce_divisibility_tracked` / `sort_diag_tracked` keep witness columns
+  paired with the canonical invariants even when divisibility mixes pairs (raw
+  $[3,2] \to$ canonical $[1,6]$) — mechanics on [[analysis]]. Pinned by
+  `smith_with_torsion` (`[[2,4],[0,6]] → [2,6]`), `smith_unit_d3`,
+  `smith_zero_matrix`, `tracked_enforce_divisibility_crt`,
+  `tracked_sort_diag_permutes_witnesses`.
+- **Witnesses.** Each $d_i > 1$ yields a `TorsionWitness` $\{order, cycle,
+  preimage\}$ with $d_i \cdot z = \partial_{n+1}(p)$. `all_witnesses_are_cycles`
+  (via the helper `verify_witnesses_valid`) re-applies the real differential to
+  every reported witness; the concurrency-flavoured `witness_torsion_example`,
+  `witness_races_k_contention`, and `witness_aba_bug` read torsion as
+  contention, and `witness_none_when_torsion_free` pins the silent case.
+- **Surfaced to users.** The `homology <Type>` command is served *straight from
+  the loaded store* — no rewrite engine:
+  `interactive::protocol::build_homology_data` flattens each group into a
+  `HomologyGroupInfo` carrying its `Vec<TorsionWitnessInfo>` (order + formatted
+  cycle/preimage via `TorsionWitness::cycle_str` / `preimage_str`), and the
+  shared `richtext::homology` renderer prints each `H_d` line with an indented
+  `Z/d cycle: … (preimage: …)` sub-line per witness. The REPL, web, and MCP
+  front-ends all answer it; the headless daemon alone *refuses* it
+  (`"homology not supported in daemon mode"`). See [[interactive-repl]] and
+  [[interactive-daemon-web]]; `docs/HOMOLOGY.md` walks the `homology RP2`
+  output.
 
 ## Related
 

@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-05
+last-touched: 2026-06-09
 code: [src/interactive/engine.rs]
 ---
 
@@ -18,12 +18,13 @@ code: [src/interactive/engine.rs]
 `RewriteEngine` drives [[rewriting]] interactively: you start from an initial
 diagram, apply rules one at a time (or auto, random, parallel), undo/redo along
 the line, and finally assemble the recorded steps into one $(n+1)$-proof diagram.
-It is the in-memory state the shared [[interactive-session|`Session`]] wraps — the
-REPL, daemon, and web all drive it through `Session::apply`, never directly — and
-an interactive [[hole|hole]]-fill of dimension $\ge 1$ drives one too (see
-[[interactive-session]]). The engine has no command-handling method of its own;
-it exposes `step`/`undo`/`auto`/`assemble_proof`/… and the `Session` sequences
-them.
+It is the in-memory state the shared [[interactive-session|`Session`]] wraps.
+Commands reach it only through `Session::apply`; the renderers and the web's
+proof view read (and, for the proof cache, mutate) it through
+`Session::active_engine`/`active_engine_mut`. An interactive [[hole|hole]]-fill
+of dimension $\ge 1$ drives an ordinary engine too (see [[interactive-session]]).
+The engine has no command-handling method of its own; it exposes
+`step`/`undo`/`auto`/`assemble_proof`/… and the `Session` sequences them.
 
 ## What it owns
 
@@ -39,29 +40,32 @@ term, rendered by `proof_expr` and re-ingested by `resume`.
 | Type / fn | Role |
 |---|---|
 | `RewriteEngine` | the whole session; immutable context + mutable cursor state |
-| `HistoryEntry` *(crate)* | `{ rule_name, choice: Option<Vec<usize>> }` — one applied step, **display only** (`choice` is the picked rewrite indices, `None` for an `auto`/`resume` step). There is no replay |
+| `HistoryEntry` *(crate)* | `{ rule_name, choice: Option<Vec<usize>> }` — one applied step, **display only**. `choice` is the picked rewrite indices: `Some` for manual steps *and* non-parallel auto (`Some(vec![0])`, the first match); `None` for a parallel-auto family or a step recovered by `resume`. There is no replay |
 | `ProofCache` | `{ snapshot: Diagram, at_step }` — incrementally-extended assembled proof, active only under proof view |
-| `load_file_context` / `reevaluate` / `resolve_type` / `load_type_context` | free fns that load (or re-evaluate) a `.ali` file into a `GlobalStore` and resolve a type [[core-complex|complex]] |
+| `load_file_context` / `reevaluate` / `resolve_type` | free fns that load (or re-evaluate) a `.ali` file into a `GlobalStore` and resolve a type [[core-complex|complex]] |
 | `eval_diagram_expr` | resolve a diagram by *name* (fast path) or by *parsing+interpreting* an expression (slow path) |
+
+(`load_type_context` also lives here but currently has no callers — see the
+gotchas.)
 
 ## Data flow
 
 ### Construction
 
-Three live constructors, all taking an *already-loaded* store (the `Session`
-loads the file before building, via `load_file_context` / `reevaluate`):
+Three constructors, all taking an *already-loaded* store (the `Session` loads
+the file before building, via `load_file_context` / `reevaluate`):
 
 ```
 from_store   (start)        from_diagrams  (a hole-fill)        resume   (from a proof diagram)
      │                          │                                    │
-resolve_type (TypeName → Arc<Complex>)   given initial/target        eval proof d (dim n+1);
-     │                          Diagrams directly                    pseudo_normalise its paste tree
-from_store:                                                          flatten_at(n) ⇒ each subtree a step
-  eval initial (+target?)   from_diagrams:                           (realise_tree); label by top_generators;
-  check_parallel              check_parallel(initial, target)        reverse if backward
-     │                          │                                    │  initial = ∂(initial_sign) of d
-     │                          │                                    │  current = ∂(step_sign) of last step
-     ▼                          ▼                                    ▼  target = the supplied goal, not from d
+eval_diagram_expr on the        given initial/target                 eval proof d (dim n+1);
+initial (+target?) names,       Diagrams directly                    pseudo_normalise its paste tree
+then delegate ───────────▶      check_parallel(initial, target)      flatten_at(n) ⇒ each subtree a step
+                                │                                    (realise_tree); label by top_generators;
+                                │                                    reverse if backward
+                                │                                    │  initial = ∂(initial_sign) of d
+                                │                                    │  current = ∂(step_sign) of last step
+                                ▼                                    ▼  target = the supplied goal, not from d
   build_rule_patterns(type_complex, n, backward)        ← per-rule RulePattern, ONCE
   collect_confirmed_matches(current)                    ← applicable rewrites
      ▼
@@ -70,10 +74,10 @@ from_store:                                                          flatten_at(
 
 - **`from_store`** is the *start* path (`Session::start_rewrite`): begin from an
   `initial_diagram` (a name or a diagram expression) resolved by
-  `eval_diagram_expr`, with an optional `target` and an explicit `backward` flag;
-  `steps` and `history` start empty.
-- **`from_diagrams`** is the same, but takes the initial and target as *already-built*
-  `Diagram`s plus display names. Its caller is `fill.rs::start_fill`
+  `eval_diagram_expr`, with an optional `target` and an explicit `backward` flag.
+  It delegates to `from_diagrams`; `steps` and `history` start empty.
+- **`from_diagrams`** takes the initial and target as *already-built* `Diagram`s
+  plus display names. Its other caller is `fill.rs::start_fill`
   ([[interactive-session]]): a hole's realised boundary diagrams become a rewrite
   from `F(x.in)` to `F(x.out)`, named `?x.in`/`?x.out`.
 - **`resume`** begins from a finished **proof diagram** `d` of dimension $n+1$. It
@@ -126,13 +130,16 @@ list is always the *individual* matches; parallel mode does not change it.
   candidate `confirm_candidate` validates, found lazily — both from
   [[core-matching]]. Returns `(applied, stop_reason)`.
 - `random(max_steps)` picks a uniform index into the current `rewrites` via the
-  session's seeded `Xoshiro256PlusPlus` and steps.
+  engine's seeded `Xoshiro256PlusPlus` (`seeded_rng`: time-seeded natively, a
+  counter on wasm) and steps.
 - `step_multi(choices)` is *manual* parallel: it checks the chosen matches are
-  pairwise disjoint by `image_positions`, then glues them through the family path
-  in [[core-matching]].
+  pairwise disjoint by `image_positions`, then glues them through
+  `try_family_from_members` in [[core-matching]].
 
-`set_parallel(on)` toggles parallel mode but affects **only** `auto` —
-`refresh_rewrites` always lists individual matches for manual selection.
+Parallel mode defaults to **on**. Inside the engine, `set_parallel(on)` affects
+only `auto` — `refresh_rewrites` always lists individual matches for manual
+selection — but the `Session` additionally gates multi-`apply` on it
+([[interactive-session]]).
 
 ### Cursor: undo / redo / seek
 
@@ -147,26 +154,25 @@ genuinely new `step`/`step_multi`/`auto` calls `truncate_redo` to discard it.
 `steps` are stored **un-pasted** — each is a single rewrite $(n+1)$-diagram.
 `assemble_proof` folds the active prefix with `Diagram::paste(n, …)` into the full
 $(n+1)$-proof, pasting along the rewriting dimension $\#_n$; backward sessions
-paste in reverse order. This is deferred until genuinely needed — storing,
-typechecking, or rendering a proof banner. `ProofCache` makes the proof-view case
-incremental: advancing the cursor extends the cached snapshot by pasting only the
-new steps rather than re-folding from the start.
+paste in reverse order. This is deferred until genuinely needed — storing or
+rendering a proof view. `ProofCache` makes the proof-view case incremental:
+advancing the cursor extends the cached snapshot by pasting only the new steps
+rather than re-folding from the start (`sync_proof_cache`, driven by
+`proof_diagram`; the web toggles it via `WebRepl::set_proof_view`).
 
-Two renderings of the proof, for two purposes:
-
-- **`proof_expr`** — the durable, step-structured **source** form: one step per
-  line, `d₁`, then `#ₙ d₂`, … (reversed for backward). This is what `store` writes
-  into the `.ali` and what `resume` consumes. The step layout *is* the recipe.
-- **`proof_label`** — the same proof flattened to a single line, for a status
-  banner. Both denote the same diagram.
+`proof_expr` is the durable, step-structured **source** form of the proof: one
+step per line, `d₁`, then `#ₙ d₂`, … (reversed for backward), `None` at zero
+steps. This is what `store` writes into the `.ali` and what `resume` consumes —
+the step layout *is* the recipe. (`proof_label`, a one-line flattening of the
+same diagram, currently has no callers.)
 
 `register_proof(name)` commits the assembled proof as a named let-binding in the
-type complex: it `Arc::make_mut`s the store, `modify_type_complex`s in a fresh
-generator-free `add_diagram`, and returns fresh `Arc`s so the caller
-(`Session::store_proof`) can resync `self.store`. The store key is the session's
-`source_file`, which **is the loader's canonical path** — `Session` passes its
-`root_path` into the constructor, never the raw CLI argument (the fix in
-`463898c`; see [[interactive-session]]).
+type complex: it `Arc::make_mut`s the store, `modify_type_complex`s in an
+`add_diagram` (no new generators, so the rewrite list needs no refresh), and
+returns fresh `Arc`s so the caller (`Session::store_proof`) can resync its own
+store. The store key is the session's `source_file`, which **is the loader's
+canonical path** — `Session` passes its `root_path` into the constructor, never
+the raw CLI argument.
 
 ## Non-obvious invariants & gotchas
 
@@ -175,7 +181,7 @@ generator-free `add_diagram`, and returns fresh `Arc`s so the caller
   last applied step (or the initial diagram at step 0). The proof is only
   materialised by `assemble_proof`. Mixing these up is the easy mistake.
 - **History is display-only — there is no replay.** `HistoryEntry` records a
-  rule name and the chosen indices for the UI; nothing reconstructs a session by
+  rule name and chosen indices for the UI; nothing reconstructs a session by
   re-running them. A session is reconstructed by `resume` *from the proof diagram*,
   whose paste tree already encodes the step decomposition — so the proof term is
   the only thing a session needs to round-trip, and there is no move-log to keep
@@ -194,14 +200,16 @@ generator-free `add_diagram`, and returns fresh `Arc`s so the caller
   silently builds the wrong proof.
 - **`target_reached` is just `current ≅ target`.** It holds at step 0 too: an
   initial diagram already isomorphic to the target *is* a (zero-step, identity)
-  proof — the unit of $\#_n$ on the initial diagram, valid because pasting is
-  unital (see [[0001-no-identities]]).
+  proof — `assemble_proof` then returns the initial diagram itself, valid because
+  pasting is unital (see [[0001-no-identities]]; pinned by
+  `fill_identity_hole_at_step_zero` in `tests/fill.rs`).
 - **`resume` needs `dim > 0`.** A proof diagram must be an $(n+1)$-cell with $n+1 >
   0$; a bare $0$-diagram has no $\#_n$ chain to decompose and is rejected.
-- **`typecheck_proof` is a self-audit, not a user error path.** It checks the
-  proof's initial-side boundary $\cong$ the initial diagram and that the proof
-  round-trips through the sourcefier + interpreter. Both failures are phrased as
-  engine/sourcefier bugs, because for a well-formed engine they cannot fire.
+- **Dead public API.** `load_type_context`, `typecheck_proof` (a self-audit:
+  proof boundary ≅ initial, plus a sourcefier round-trip, both phrased as engine
+  bugs), and `proof_label` currently have **no callers** anywhere in the
+  workspace; their rustdoc still claims CLI/daemon use. Don't cite them as live
+  behaviour.
 - **The engine does not dispatch commands.** That is the
   [[interactive-session|`Session`]]'s job: `Session::apply` turns a `Request` into
   one of the engine's operations. The engine exposes only those operations
@@ -221,7 +229,7 @@ throughout. `resume` runs this in reverse: it takes a finished proof
 $(n+1)$-[[molecule]] apart into its steps by pseudo-normalising and flattening its
 paste tree — see [[core-paste-tree]]. The proof a session builds is the
 $(n+1)$-molecule whose input/output boundaries are the initial and final
-$n$-diagrams; its type-correctness is what `typecheck_proof` audits. See
-[[core-matching]] for the matching/pushout/reconstruct pipeline each step invokes,
-[[interactive-session]] for the `Session` that sequences these methods, and
-[[interactive-repl]] / [[interactive-daemon-web]] for the front ends that drive it.
+$n$-diagrams. See [[core-matching]] for the matching/pushout/reconstruct pipeline
+each step invokes, [[interactive-session]] for the `Session` that sequences these
+methods, and [[interactive-repl]] / [[interactive-daemon-web]] for the front ends
+that drive it.

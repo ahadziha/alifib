@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-05
+last-touched: 2026-06-09
 code: [src/core/map_hole.rs, src/interpreter/partial_map.rs, src/interactive/fill.rs, src/output/normalize.rs]
 ---
 
@@ -9,21 +9,18 @@ code: [src/core/map_hole.rs, src/interpreter/partial_map.rs, src/interactive/fil
 
 A **hole**, written `?` in the surface language, is a *pending assignment* in a
 [[partial-map|partial map]]: an entry the map cannot yet commit because part of
-its image is unknown. Holes only ever live inside a map. Where a clause
-`arr => a` names the image of a generator outright, a clause `arr => ?` declines
-to name it, leaving the image *open* — to be supplied later, interactively, or
-inferred from the structure the rest of the map already fixes.
+its image is unknown. Where a clause `arr => a` names the image of a generator
+outright, `arr => ?` declines to name it, leaving the image *open* — to be
+inferred from the structure the rest of the map fixes, or supplied later,
+interactively. A hole is anchored to exactly one domain generator of one map,
+and its meaning is operational: a map with holes is a map that is not yet
+total, and *filling* a hole is extending the map by one more clause until,
+eventually, no hole remains.
 
-This is a deliberate narrowing from the older, free-floating notion of a hole as
-"any unknown the surrounding equations must pin down". A hole is now anchored to
-exactly one domain generator of one map, and its meaning is operational: a map
-with holes is a map that is not yet total, and *filling* a hole is extending the
-map by one more clause until, eventually, no hole remains.
-
-## Two flavours
+## Definition
 
 A hole records the image of a generator $x$ of the map's domain. It comes in two
-kinds, distinguished by whether the image diagram is yet known:
+flavours, distinguished by whether the image diagram is yet known:
 
 - **Pure hole**, written `arr => ?`: the image of `arr` is wholly unknown. The
   hole carries only `arr`'s dimension and, once those are forced, its boundaries.
@@ -39,24 +36,19 @@ cellular-map law); writing `r => m` for a cell whose source `f g` is not yet
 mapped leaves `r` pending and turns `f`, `g` into the unknowns, subject to the
 **constraint** that $F(f) \#_0 F(g) = \partial^- m$.
 
-## Boundaries as paste trees, not diagrams
-
-The crux of the design: a hole's boundaries are stored as **paste trees** whose
-leaves may be *metavariables*, never as realised [[diagram|diagrams]]. Each hole
-owns a process-unique metavariable `HoleId` (rendered `?name`, after the
-generator it images), and a dependent hole refers to another by carrying that
-metavariable as a `Tag::Hole(id)` leaf in its boundary tree.
-
-Keeping boundaries unrealised is what lets a hole be filled by a *non-round* or
-even lower-dimensional diagram: there is no premature commitment to a directed
-sphere that a degenerate filler would violate. A hole's outstanding **dependencies**
-are read straight off its boundary trees — the set of `Tag::Hole` leaves still
-present — so a conditional with no remaining metavariables is, by definition,
-ready to commit.
+**Boundaries as paste trees, not diagrams.** The crux of the design: a hole's
+boundaries are stored as paste trees whose leaves may be *metavariables*, never
+as realised [[diagram|diagrams]]. Each hole owns a process-unique metavariable
+`HoleId` (rendered `?name`, after the generator it images), and a dependent hole
+refers to another by carrying that metavariable as a `Tag::Hole(id)` leaf in its
+boundary tree. Keeping boundaries unrealised is what lets a hole be filled by a
+*non-round* or even lower-dimensional diagram: there is no premature commitment
+to a directed sphere that a degenerate filler would violate. A hole's
+outstanding **dependencies** are read straight off its boundary trees — the set
+of `Tag::Hole` leaves still present — so a conditional with no remaining
+metavariables is, by definition, ready to commit.
 
 ## Filling — construction time and interactively
-
-Holes are resolved in two quite different settings.
 
 **At construction.** While a map is built clause by clause, three local
 inferences fire, none of them a global solver:
@@ -99,11 +91,12 @@ list open holes and let the author fill them one at a time:
   [[interactive-engine|rewrite engine]];
 - a hole on a $0$-cell is just the choice of one of the target's $0$-cells.
 
-Finalising a fill appends `x => <proof>` to the map's definition and
-re-evaluates the file. The new clause sits after the original `arr => ?`; by the
-idempotence $[\,x \Rightarrow ?,\ x \Rightarrow a\,] \equiv [\,x \Rightarrow a\,]$
-it commits $x$ with the hole gone. So the source file is always the durable
-record — there is no separate hole store.
+Finalising a fill splices `x => <proof>` into the map's definition and
+re-evaluates the file. An explicit `x => ?` clause has its `?` *replaced in
+place* by the proof; an implicit hole — forced by another clause, with no `?` of
+its own — is appended as a fresh clause, which commits $x$ by the idempotence
+$[\,x \Rightarrow ?,\ x \Rightarrow a\,] \equiv [\,x \Rightarrow a\,]$. Either
+way the source file is the durable record — there is no separate hole store.
 
 ## Implementation
 
@@ -123,12 +116,13 @@ or records a hole via `upsert_entry`, applying case-1 and collapse inference
 boundary faces through the same path. `commit_one` adds one entry to the real map
 and substitutes the filled metavariable into the remaining holes; `cascade` then
 commits every conditional whose `deps` have closed. `hole_map_image` implements
-the pointwise `<map> => ?`. A pending assignment that cannot be committed because
-a *dependency* failed is blamed via `blame_pending` (the fix in `a151779`). The
-evaluated map carries its leftover holes out as `EvalMap::holes`
-(`src/interpreter/types.rs`); `check_map_totality` counts a holed generator as
-*covered*, so `let total F :: D = [ arr => ? ]` is accepted (a hole is a
-deliberate placeholder, not an omission).
+the pointwise `<map> => ?`. A pending assignment whose commit fails during
+cascading is re-aimed at its own clause by `blame_pending`, not at the filler
+that closed its last face. The evaluated map carries its leftover holes out as
+`EvalMap::holes` (`src/interpreter/types.rs`); `check_map_totality` counts a
+holed generator as *covered*, so `let total F :: D = [ arr => ? ]` is accepted
+(a hole is a deliberate placeholder, not an omission). The one place holes are
+refused is `attach … along` — see [[partial-map]].
 
 Rendering is in `src/output/normalize.rs`: `render_hole_line`,
 `render_hole_boundary`, and `render_hole_constraints` turn a `MapHole` into its
@@ -149,7 +143,7 @@ the map definition — pinning onto an explicit `=> ?` when present
 - [[partial-map]] — holes live inside a partial map; `arr => ?` and `<map> => ?`
   are its surface.
 - [[core-partial-map]] — the `MapBuild` / `cascade` / `commit_one` machinery.
-- [[boundary]] — the $\partial^s_k$ the cellular-map law equates; a hole's
+- [[boundary]] — the $\partial^\pm_k$ the cellular-map law equates; a hole's
   boundary trees are these, deferred.
 - [[diagram]] — what a hole is ultimately filled *with* (possibly non-round).
 - [[interactive-session]] — the `holes` / `fill` / `done` workflow.

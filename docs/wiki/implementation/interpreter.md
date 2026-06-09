@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-05
+last-touched: 2026-06-09
 code: [src/interpreter/mod.rs, src/interpreter/eval.rs, src/interpreter/global_store.rs, src/interpreter/types.rs, src/interpreter/resolve.rs, src/interpreter/binding.rs, src/interpreter/include.rs, src/interpreter/load.rs, src/interpreter/diagram.rs, src/interpreter/partial_map.rs]
 ---
 
@@ -40,10 +40,9 @@ points are `interpret_program` (one `Program` against a `Context`) and
 | `EvalMap { map, domain, holes }` | `types.rs` | an evaluated [[partial-map|map]] and its unfilled [[hole|holes]] |
 | `InterpretedFile` / `LoadResult` | `load.rs` | the load pipeline's success/failure outcome |
 
-Note `mod.rs` keeps almost everything private: only `Context`, `InterpResult`,
-`interpret_program`, `GlobalStore`, `interpret_diagram`, and
-`InterpretedFile`/`LoadResult` escape the crate boundary. The
-binding/resolve/include machinery is `pub(super)`/`pub`-within-module glue.
+`mod.rs` keeps almost everything private: only these symbols (and the `load`
+module) escape the crate boundary. The binding/resolve/include machinery is
+`pub fn`s inside private modules — crate-internal glue.
 
 ## `GlobalStore` — the persistent state
 
@@ -57,12 +56,14 @@ binding/resolve/include machinery is `pub(super)`/`pub`-within-module glue.
   complex: Arc<Complex> }`: a type *is* a generator plus the whole [[core-complex|Complex]]
   accumulated inside its body.
 - `modules: IndexMap<ModuleId, Arc<Complex>>` — **insertion-ordered** so
-  dependencies precede dependents; `modules_iter` relies on this. A side table
+  dependencies precede dependents; `modules_iter` exposes that order. A side table
   `module_names: HashMap<String, ModuleId>` maps a file's short name (stem, via
   `module_short_name` (internal)) to its canonical path.
 
 `ModuleId` and `LocalId` are both just `String` (`src/aux/id.rs`); a `Tag` is
-`Tag::Global(GlobalId)` or `Tag::Local(String)`.
+`Tag::Global(GlobalId)`, `Tag::Local(String)`, or `Tag::Hole(HoleId)` — the last
+is a map-hole metavariable, for which `cell_data_for_tag` returns `None`: a
+hole's boundary lives on its `MapHole` record, not in the store.
 
 **Mutation is copy-on-write.** `Context::state` is an `Arc<GlobalStore>`; writes
 go through `state_mut` → `Arc::make_mut`, and module/type complexes are edited via
@@ -70,14 +71,17 @@ go through `state_mut` → `Arc::make_mut`, and module/type complexes are edited
 `Complex`. Sharing the store by `Arc` is what lets a dependency be interpreted
 once and then read cheaply by every importer (`Context::new_sharing_state`).
 
-`insert_global_cell` (a free fn, not a method) is the one place a fresh global
-generator is minted: allocate `GlobalId::fresh()`, build its classifier diagram,
-push generator + diagram into the given `&mut Complex`, return `(gid, dim)`. The
-caller must then call `set_cell` to finish registration — `register_generator`
-and the `Mode::Global` arm of `interpret_complex_generator` are the two callers
-that honour this contract. `register_proof_diagram` is the higher-level door:
-it extracts the input/output $\partial_{n}$ via `Diagram::boundary`, builds the
-`CellData`, and registers the finished proof term as a first-class generator.
+`insert_global_cell` (a free fn, not a method) is the one routine that mints a
+generator *together with its classifier diagram* into a complex: allocate
+`GlobalId::fresh()`, build the classifier, push generator + diagram into the given
+`&mut Complex`, return `(gid, dim)`. The caller must then call `set_cell` to
+finish registration — `register_generator` and the `Mode::Global` arm of
+`interpret_complex_generator` are the two callers that honour this contract.
+(Root cells, the type cells of `interpret_type_generator`, and `attach` images
+mint their `GlobalId`s separately.) `register_proof_diagram` is the higher-level
+door: it extracts the input/output boundaries at $\dim - 1$ via
+`Diagram::boundary`, builds the `CellData`, and registers the finished proof term
+as a first-class generator.
 
 ### The type lookup chain (non-obvious)
 
@@ -107,11 +111,11 @@ each prefix segment is looked up with `Complex::find_map`; its `MapDomain` must 
 `Module(id)` (an `include` registers exactly such a map under its alias), and the
 scope advances to `find_module_arc(id)`. A `MapDomain::Type` prefix, or a segment
 that names no map, is rejected (*"Domain of `…` is not a module"* / *"Partial map
-`…` not found"*). The final segment is resolved in the advanced scope by the type
-lookup chain (`type_id_of_named_diagram`). So a qualified name is resolved
-**relative to the alias maps in scope where it is written**, not against a global
-table — two modules each including a module named `Aux` resolve `…Aux.Ob` to their
-own copy (the [[module-system]] concept page covers the semantics).
+`…` not found"*). The final segment is resolved in the advanced scope by
+`type_id_of_named_diagram`. So a qualified name is resolved **relative to the
+alias maps in scope where it is written**, not against a global table — two
+modules each including a module named `Aux` resolve `…Aux.Ob` to their own copy
+(the [[module-system]] concept page covers the semantics).
 
 Two related entry points sit alongside it: `resolve_module_domain` resolves the
 single-segment name of a `:: Name` block (it rejects a dotted address) via
@@ -160,7 +164,10 @@ A `@Type` block may only introduce **0-dimensional** generators (objects);
 in @Type blocks are not supported"*. Higher cells live inside a type's `{ … }`
 body. Interpreting that body builds a `TypeScope { owner_type_id, working_complex }`
 (`types.rs`); after the body is consumed, `working_complex` is committed back to
-the store under `owner_type_id`.
+the store under `owner_type_id` — but not before `interpret_type_generator`
+plants an **identity self-map** named after the type (`MapDomain::Type`) inside
+it, which is what later lets `X.d` resolve in scopes built on `X`'s complex (a
+name collision with an inherited map is an error).
 
 ### Iteration combinators (`binding.rs`)
 
@@ -194,17 +201,23 @@ but they differ in what map:
 - `attach … along m` registers the supplied [[partial-map|partial map]] `m` and,
   for every generator of the attachment **not** already in `m`'s domain, mints a
   *fresh image generator* whose boundary is `m` applied to the source boundary
-  (`mapped_cell_data` → `extend_scope_with_attached_generators`). The map is grown
+  (`mapped_cell_data` → `extend_scope_with_attached_generators`) — a fresh
+  `GlobalId` in `Mode::Global`, a local cell in `Mode::Local`. The map is grown
   in lockstep (`insert_raw`) so later generators can refer to earlier images. A
-  dimension check rejects a mapped boundary of the wrong dimension.
+  dimension check rejects a mapped boundary of the wrong dimension, and an
+  `along` map may not contain holes (*"Holes (`?`) are not supported in `attach`
+  clauses"*).
 
 ### `for`-blocks expand textually
 
 `expand_body` (`eval.rs`) substitutes `<var>` in the **raw body text** for each
-index value, re-joins with commas, and re-parses via `parse_complex_instrs` /
-`parse_type_instrs` / `parse_local_instrs` (see [[language-parser]]). Errors from
-the expanded fragment are relocated to the `for`-block's own span by
-`relocate_errors`, so a diagnostic points at the loop, not at synthetic text.
+index value (`exclude` indices are subtracted first, `resolve_index_values`),
+re-joins with commas, and re-parses via `parse_complex_instrs` /
+`parse_type_instrs` / `parse_local_instrs` / `parse_pmap_clauses` — the last for
+`for` inside a map-extension block (`expand_pmap_for`, `partial_map.rs`); see
+[[language-parser]]. Errors from the expanded fragment are relocated to the
+`for`-block's own span by `relocate_errors`, so a diagnostic points at the loop,
+not at synthetic text.
 
 ## Pasting: juxtaposition is principal pasting (`diagram.rs`)
 
@@ -225,6 +238,21 @@ Juxtaposition is therefore **pasting, not composition**: `f g` is exactly `f #k 
 at $k = \min(\dim f, \dim g) - 1$, the codimension-1 boundary the two diagrams share.
 There is no separate composition operator — every binary operation here is a paste
 $\#_k$ along a shared $k$-boundary, with juxtaposition choosing $k$ implicitly.
+
+Two more component forms live here:
+
+- **`(run auto on d)`** (`DComponent::Run` → `interpret_run_auto`) evaluates `d`,
+  then loops `greedy_parallel_auto_step` ([[core-matching]]) up to
+  `AUTO_STEP_LIMIT` (1024) rounds, pasting each parallel rewrite step at the
+  diagram's top dimension into a single proof diagram — the [[rewriting]] trace
+  as one $(\!n{+}1)$-dimensional term. No applicable rule returns the input
+  unchanged; still-rewritable at the limit is an error.
+- **`assert`** (`interpret_assert` / `check_assert`) compares diagrams up to
+  `Diagram::isomorphic`, and maps **pointwise** over their shared domain's
+  generators — which must be the *same* `Arc<Complex>` by `Arc::ptr_eq`, else the
+  sides are *"incomparable"*. `interpret_anon_map_component` deliberately swaps
+  in the canonical store `Arc` for an address-only target so this pointer
+  identity holds for anonymous maps.
 
 ## Dotted diagram expressions (`diagram.rs`)
 
@@ -266,9 +294,12 @@ information is incomplete; the leftover holes ride out on `EvalMap::holes` into 
 type complex (`Complex::map_holes`). Resolution is the local inference (case-1,
 collapse, forced faces) and conditional `cascade` of [[core-partial-map]] at
 interpretation time, plus the interactive `fill` workflow ([[interactive-session]])
-afterward. So holes live on the map: there is no separate `solve` pass,
-`InterpResult` carries only `{ context, errors }`, and an `InterpretedFile` keeps
-no hole state of its own. See [[hole]] for the full model.
+afterward. Note the asymmetry in name lookup: a named map used in *map* position
+(`eval_partial_map_basic`) carries its stored holes — so `F [ … ]` extends a
+map-with-holes, i.e. fills — while in *diagram* position (`interpret_dcomponent`)
+the holes are dropped. There is no separate `solve` pass, `InterpResult` carries
+only `{ context, errors }`, and an `InterpretedFile` keeps no hole state of its
+own. See [[hole]] for the full model.
 
 ## Non-obvious invariants & gotchas
 
@@ -279,14 +310,19 @@ no hole state of its own. See [[hole]] for the full model.
   returns `(gid, dim)`, but does **not** touch the store's `cells` table. Forget
   the follow-up `set_cell` and the generator exists in the complex yet is invisible
   to `find_cell`/`cell_data_for_tag`.
-- **`cell_data_for_tag` searches cells *then* types** for a `Tag::Global`, and the
-  module's local cells for a `Tag::Local`. Types are reachable by tag too, because
-  a type is also a generator.
-- **`#[must_use]` on `InterpResult`** — it carries errors and holes that must be
-  propagated; dropping one silently loses diagnostics.
-- **Module order matters.** `modules` is an `IndexMap`; dependency-before-dependent
-  order is an invariant `modules_iter` and the load loop both rely on. A `HashMap`
-  here would break topological replay.
+- **`cell_data_for_tag` searches cells *then* types** for a `Tag::Global`, the
+  module's local cells for a `Tag::Local`, and returns `None` for a `Tag::Hole`.
+  Types are reachable by tag too, because a type is also a generator.
+- **`#[must_use]` on `InterpResult`** (and on `LoadResult`) — it carries errors
+  that must be propagated; dropping one silently loses diagnostics.
+- **Module order matters.** `modules` is an `IndexMap` in load order
+  (dependency-before-dependent); [[output]]'s `normalize` renders in that order
+  and `find_type_gid` returns the *first* match across it. A `HashMap` here would
+  make both nondeterministic.
+- **Map domains compare by pointer.** Map–map `assert` and `map => map` clauses
+  require `Arc::ptr_eq` on the domain `Arc<Complex>`s — structural equality is
+  never tried. The canonical-`Arc` swap in `interpret_anon_map_component` exists
+  solely to keep this honest.
 - **`assert_invariants` is debug-only.** It `debug_assert!`s `cells`/`cells_by_dim`
   consistency (every id in `cells_by_dim` is also in `cells`); module/type
   *presence* is checked separately by inline `debug_assert!`s in `modify_module` /
@@ -297,16 +333,17 @@ no hole state of its own. See [[hole]] for the full model.
 ## Mathematics
 
 This layer is the bridge from concrete syntax to the algebra the rest of the
-codebase computes with — most of its content is plumbing, but three genuine
+codebase computes with — most of its content is plumbing, but a few genuine
 mathematical relationships run through it.
 
-- **[[module-system]].** `@Type`/`@Local` blocks, `open`/`include`, and
+- **[[module-system]].** `@Type`/`@Local` blocks, `include`, and
   `attach … along` are the surface of alifib's module-and-type system. `include`
   realises the inclusion of one type's [[core-complex|Complex]] into another via an
   identity [[partial-map|map]]; `attach` realises a pushout-style extension along a
   given partial map (`extend_scope_with_attached_generators`). The `MapDomain::{Type,Module}`
-  distinction in `resolve.rs` is exactly the type-vs-module split of the system.
-  See the open question [[module-open-semantics]] for the `open`/`include` boundary.
+  distinction (`src/core/complex.rs`, consumed by `resolve.rs`) is exactly the
+  type-vs-module split of the system. See the open question
+  [[module-open-semantics]] for the unbuilt `open` form.
 - **[[diagram]].** Every generator's classifier and every `let` binding is a
   `Diagram`; a [[hole|hole's]] boundaries are deferred diagrams, kept as paste
   trees over metavariables until filled. Boundary reasoning is in terms of
@@ -315,6 +352,9 @@ mathematical relationships run through it.
   [[partial-map|`PartialMap`]] to diagram boundaries (`PartialMap::apply`). The map
   machinery itself — refinement, totality, holes, application — is documented in
   [[core-partial-map]]; this page only *invokes* it.
+- **[[rewriting]].** `(run auto on …)` turns the greedy parallel rewriting of
+  [[core-matching]] into a first-class proof diagram by pasting the steps at the
+  top dimension.
 
 Pretty-printing is a support relationship, not a realisation: `GlobalStore`
 implements `Display` by deferring to `normalize` in [[output]]

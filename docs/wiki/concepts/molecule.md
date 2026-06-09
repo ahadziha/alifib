@@ -1,106 +1,87 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-05
+last-touched: 2026-06-09
 ---
 
 # Molecule
 
-A **molecule** is a [[regular-directed-complex]] presented as a pasting of
-[[atom|atoms]] — the *well-formed shapes* of higher-categorical [[diagram|diagrams]].
-Where an [[atom]] $a$ is a single top-dimensional cell with its globular boundary,
-a molecule $U$ is everything you can build by gluing atoms together along matching
-$k$-[[boundary|boundaries]]. Molecules are the objects alifib computes with:
-[[rewriting]] matches a rule's input molecule inside a larger molecule and
-substitutes its output.
+A **molecule** is a well-formed pasting of [[atom|atoms]]: everything you can
+build from single cells by gluing along matching $k$-[[boundary|boundaries]]
+with $\#_k$. Molecules are the shapes of alifib's values — every [[diagram]] is
+a labelled molecule — and the objects [[rewriting]] computes with: a rule's
+input molecule is matched inside a larger one and its output substituted.
 
 ## Definition
 
-Following Hadzihasanovic (*Combinatorics of higher-categorical diagrams*, 2024),
-molecules are the subclass of regular directed complexes generated *inductively* by
-two clauses, closed under one operation:
+Molecules are the [[oriented-graded-poset|oriented graded posets]] generated
+inductively by three constructors (Hadzihasanovic, *Combinatorics of
+higher-categorical diagrams*, 2024, §3.3):
 
-1. **Atoms.** Every [[atom]] is a molecule. An atom of dimension $n$ has a single
-   top cell whose input boundary $\partial^-_{n-1}$ and output boundary
-   $\partial^+_{n-1}$ are themselves $(n-1)$-molecules — its globular data.
-   The point ($n=0$) is the base case: an atom with no boundary.
+- **(Point).** The point is a molecule.
+- **(Paste).** If $U, V$ are molecules, $k < \min(\dim U, \dim V)$, and the
+  output $k$-boundary of $U$ agrees with the input $k$-boundary of $V$,
+  $$ \partial^+_k U \;\cong\; \partial^-_k V, $$
+  then the pushout $U \#_k V$ of the two along that shared boundary is a
+  molecule. For $k \ge \min(\dim U, \dim V)$ the paste degenerates — one side
+  is absorbed (Lemma 3.3.7).
+- **(Atom).** If $U, V$ are *round* molecules of equal dimension with
+  $\partial U \cong \partial V$, then gluing them along that shared boundary
+  and adding one greatest element — input face $U$, output face $V$ — yields a
+  molecule. See [[atom]].
 
-2. **Pasting.** If $U$ and $V$ are molecules and the output $k$-boundary of $U$
-   *agrees* with the input $k$-boundary of $V$,
-   $$ \partial^+_k U \;=\; \partial^-_k V, $$
-   then their **paste** $U \#_k V$ is a molecule. Geometrically $U$ and $V$ are
-   glued along that shared $k$-dimensional face; the colimit (pushout) of the two
-   along the common boundary is again a regular directed complex, and the
-   inductive closure guarantees it is again a molecule.
-
-The matching condition in clause 2 is the heart of well-formedness: $\#_k$ is a
-*partial* operation, defined exactly when the boundaries are equal as oriented
-shapes (and, in the labelled setting, as labellings). It does **not** require the
-arguments to be round — roundness gates *cell construction*, not pasting (see the
-round bullet below, and correction in [[diagram]]). Not every regular directed
-complex arises this way — molecules are precisely the **pasting-decomposable**
-ones. A molecule is an [[atom]] iff it has a single top-dimensional cell (it is
-then *indecomposable* under $\#_k$ at the top dimension).
-
-Pasting builds a *larger* shape; it is **not composition**, which would reduce a
-diagram to a single cell — a higher-algebraic operation plain alifib types do not
-have. The surface juxtaposition `U V` is *principal pasting*, $U \#_k V$ at
+The boundary agreement in (Paste) is the whole of well-formedness: $\#_k$ is a
+*partial* operation, defined exactly when the boundaries agree as oriented
+shapes (and, in the labelled setting, as labellings). It does **not** require
+roundness — roundness gates (Atom) only. Pasting builds a *larger* shape; it is
+**not composition**, which would reduce a diagram to a single cell — a
+higher-algebraic operation plain alifib types do not have (see [[diagram]]).
+The surface juxtaposition `U V` is *principal pasting*, $U \#_k V$ at
 $k = \min(\dim U, \dim V) - 1$.
 
-Two derived notions recur:
+Derived notions:
 
-- A molecule is **round** when its input and output boundaries are spheres —
-  $\partial^-_{n-1}U$ and $\partial^+_{n-1}U$ share a boundary and together close
-  up. Roundness is a property of the *shape* alone (it ignores any labelling), and
-  it is the precondition for a molecule to be the input/output boundary of a *cell*
-  one dimension up — not a precondition for pasting. Every atom is round.
-- The **dimension** $\dim U$ is the largest dimension of any cell; the empty
-  molecule has dimension $-1$.
-
-## Why alifib needs it
-
-Molecules are the well-typed values of the language. A generator declares an atom;
-a `let`-binding names a molecule pasted from generators; a rewrite rule is a pair of
-parallel molecules. Because pasting is partial, the type system is really a
-*shape-checking* discipline: every $\#_k$ must verify a boundary agreement, and the
-recorded paste structure is what lets a molecule be re-derived from its atoms.
+- An **atom** is a molecule with a greatest element (3.3.9) — equivalently, one
+  whose final constructor was (Point) or (Atom), not a nontrivial (Paste)
+  (Lemma 3.3.10). A single top-*dimensional* cell is not enough: a whiskered
+  $2$-cell has one $2$-cell but two maximal cells, and is no atom.
+- A molecule is **round** when $\partial^- U$ and $\partial^+ U$ meet exactly
+  in their common boundary, so $\partial U$ is a directed sphere. A property of
+  the shape alone; precondition for (Atom), never for (Paste). Every atom is
+  round.
+- $\dim U$ is the largest dimension of any cell. Every molecule is a
+  [[regular-directed-complex]] (Lemma 3.3.12); the converse fails — two
+  disjoint points form an RDC but no molecule.
 
 ## Implementation
 
-A molecule is realised at runtime by the **`Diagram`** type
-(`src/core/diagram.rs`) — a labelled molecule. See [[core-diagram]]. The
-substrate is an [[oriented-graded-poset]] (`src/core/ogposet.rs`); the labelling
-names each cell with a generator, so a `Diagram` is a molecule *over* a
-[[core-complex|Complex]] of generators.
+A molecule is realised at runtime by **`Diagram`** (`src/core/diagram.rs`,
+[[core-diagram]]): an [[oriented-graded-poset]] shape, a label per cell, and a
+paste history re-deriving it from its atoms ([[core-paste-tree]]). The three
+constructors map one-to-one:
 
-The *shape* of a molecule (and so of every `Diagram` value) is a
-[[regular-directed-complex|regular directed complex]]. A **type**, assembled from
-generators whose boundaries the labelling identifies, is in general only a
-[[directed-complex]] — it need not be regular. (Canonical witness: a point with one
-arrow `a : pt -> pt`; the arrow's shape is the round 0-sphere with two distinct
-endpoints, but the labels send both to `pt`, realising a directed loop that is a
-fine directed complex yet not a regular CW complex. See [[diagram]].)
+- **(Point)/(Atom)** — `Diagram::cell(tag, &CellData)`: `CellData::Zero` for
+  the point, `CellData::Boundary { boundary_in, boundary_out }` for the
+  globular data of an $n$-cell. Roundness and parallelism are enforced here by
+  `Diagram::parallelism` *(internal)* — see [[atom]].
+- **(Paste)** — `Diagram::paste(k, u, v)`. The agreement
+  $\partial^+_k U = \partial^-_k V$ is checked by `Diagram::pastability`
+  *(internal)* — shape and labels, nothing else; no roundness. Its clamping of
+  `k` to `top_dim` mirrors Lemma 3.3.7's degenerate cases.
+- **Boundaries** $\partial^\pm_k$ — `Diagram::boundary` /
+  `Diagram::boundary_normal` ([[boundary]]).
+- **Roundness** — `Diagram::is_round` → `Ogposet::is_round`, shape only.
+  **Atomicity** — `Diagram::is_cell`: the top-dimensional input paste history
+  is a single `PasteTree::Leaf`, the operational reading of Lemma 3.3.10.
 
-- **Atoms** are minted by `Diagram::cell(tag, &CellData)`, where `CellData::Zero`
-  is the point and `CellData::Boundary { boundary_in, boundary_out }` carries an
-  [[atom]]'s globular input/output as two $(n-1)$-`Diagram`s.
-- **Pasting** $\#_k$ is `Diagram::paste(k, u, v)`. The boundary-agreement
-  precondition $\partial^+_k U = \partial^-_k V$ is checked by `Diagram::pastability`
-  (internal) before the pushout glues the two shapes; this is *all* `pastability`
-  enforces — it does **not** check roundness.
-- **Boundaries** $\partial^\pm_k$ are `Diagram::boundary` / `Diagram::boundary_normal`.
-- **Roundness** is `Diagram::is_round`, which delegates to `Ogposet::is_round`: it
-  inspects the bare shape and ignores labels. Roundness is enforced only by
-  `Diagram::parallelism` at cell construction, never by `paste`. Atomicity is
-  `Diagram::is_cell`, which tests that the top-dimensional input paste history is a
-  single `Leaf` (i.e. the diagram was minted as one cell, not assembled by $\#_k$)
-  — see [[core-diagram]].
-
-The full bridge — construction, pasting, boundary clamping, the three-arrays
-invariant — lives in [[core-diagram]]; the conceptual gloss of a `Diagram` as a
-labelled molecule is [[diagram]].
+Principal pasting `U V` is elaborated by `interpret_sequence_as_term`
+(`src/interpreter/diagram.rs`) at $k = \min(\dim U, \dim V) - 1$; an explicit
+`#n` goes through the same `Diagram::paste`. A molecule whose labels identify
+cells can realise a non-regular *type* — that distinction belongs to
+[[directed-complex]].
 
 ## Related
 
 [[atom]] · [[diagram]] · [[boundary]] · [[regular-directed-complex]] ·
-[[directed-complex]] · [[oriented-graded-poset]] · [[rewriting]]
+[[directed-complex]] · [[oriented-graded-poset]] · [[rewriting]] ·
+[[core-diagram]] · [[core-paste-tree]]

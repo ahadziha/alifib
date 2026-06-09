@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-05
+last-touched: 2026-06-09
 ---
 
 # String diagram
@@ -69,56 +69,56 @@ $\partial$-cascades, then quotient out cycles.
 ## Implementation
 
 The dual is computed structurally — no geometry, only the three constraint
-graphs — by [[analysis]], in `src/analysis/strdiag.rs`.
+graphs — by [[analysis]] in `src/analysis/strdiag.rs`; that page has the full
+data flow. The bridge:
 
-- **`StrDiag`** holds the dualised data: `num_wires`, `num_nodes`, per-vertex
-  `labels`/`tags`/`kinds`, and the three `DiGraph`s `height`, `width`, `depth`.
-  Vertices are packed wires-first (`0..num_wires`) then nodes
-  (`num_wires..num_wires+num_nodes`); all three graphs share this index space.
-  `VertexKind::{Wire, Node}` tags each stratum.
+- **`strdiag::StrDiag`** holds the dualised data: `num_wires`, `num_nodes`,
+  per-vertex `labels`/`tags`/`kinds` (`VertexKind::{Wire, Node}`), and the three
+  `DiGraph`s `height`, `width`, `depth` over one index space, wires first
+  (`0..num_wires`), then nodes.
+- **`StrDiag::from_diagram_at_dim`** is the table above made literal: nodes are
+  the `dim`-cells, wires the `(dim-1)`-cells. The **height** graph transcribes
+  `Ogposet::faces_of` — wire $\to$ node per input face, node $\to$ wire per
+  output face — so it is bipartite by construction (tests
+  `strdiag_single_arrow`, `strdiag_two_arrow_paste`: one arrow is 1 node +
+  2 wires; two pasted arrows share a middle wire). **Width** ($\dim \ge 2$)
+  draws $x \to y$ whenever the codim-2 output cascade of $x$ meets the input
+  cascade of $y$; **depth** ($\dim \ge 3$) is the analogous wires-only codim-3
+  relation.
+- The exclusion principle is **`strdiag::filtered_faces`** *(internal)*: keep a
+  face only when its opposite-sign cofaces are disjoint from the source set.
+  The acyclic resolution is **`strdiag::remove_cycles`** *(internal)*: an
+  iterative Tarjan SCC pass discarding every edge inside a non-trivial
+  component.
+- `from_diagram` defaults `dim` to the diagram's `top_dim()`; `from_named`
+  resolves a name in a [[core-complex]] (`find_diagram`, then `classifier`).
+  The proof view is the one explicit-dim caller: `WebRepl::get_proof_strdiag`
+  views the proof diagram at `top_dim() + 1`, where at step 0 the node set is
+  empty.
 
-- **`StrDiag::from_diagram_at_dim`** is the constructor and the literal encoding
-  of the table above. Nodes are the `dim`-cells, wires the `(dim-1)`-cells
-  (`shape.sizes()`). The **height** graph is built directly from
-  `shape.faces_of(Sign::Input/Output, dim, np)` — wire $\to$ node for input
-  faces, node $\to$ wire for output faces — so it is bipartite by construction
-  (tests `strdiag_single_arrow`, `strdiag_two_arrow_paste` pin this: one arrow is
-  1 node + 2 wires; two pasted arrows share a middle wire that is the output of
-  the first node and the input of the second). The **width** graph
-  ($\dim \ge 2$) draws an edge $x \to y$ whenever the codim-2 output cascade of
-  $x$ meets the input cascade of $y$; **depth** ($\dim \ge 3$) is the analogous
-  wires-only codim-3 relation.
+### Surfacing
 
-- The exclusion principle is **`strdiag::filtered_faces`** *(internal)*: for each
-  source cell it keeps a face only when that face's opposite-sign cofaces are
-  disjoint from the source set. The cycle-removal step is
-  **`strdiag::remove_cycles`** *(internal)*, an iterative Tarjan SCC pass that
-  discards every edge inside a non-trivial strongly-connected component — the
-  "chosen acyclic resolution" the math demands.
+`interactive::protocol::strdiag_to_json` serialises a `StrDiag` for the canvas
+renderer: `num_wires`, `num_nodes`, a `vertices` array (`index`, `kind`
+`"wire"|"node"`, `label`, `tag`), and the three graphs each as
+`{ "edges": [[u,v], …] }`. `WebRepl`'s `get_*_strdiag` family wraps the
+protocol builders:
 
-- `from_diagram` defaults `dim` to the diagram's `top_dim()`; `from_named` looks
-  a diagram up in a [[core-complex]] via `find_diagram` then `classifier`.
+- `get_strdiag` → `protocol::build_strdiag_response` — a named
+  diagram/classifier inside a type, with optional $\partial^\pm_k$
+  pre-extraction (`(boundary_dim, boundary_sign)`, `"input"` $\mapsto$
+  `Sign::Input`) to view a boundary one dimension down;
+- `get_map_image_strdiag` → `protocol::build_map_image_strdiag` — the image of
+  a domain generator under a [[partial-map|map]];
+- `get_session_strdiag` / `get_target_strdiag` →
+  `protocol::strdiag_json_from_diagram`;
+- `get_rewrite_preview_strdiag` → `protocol::step_output_strdiag_json` — the
+  `Sign::Output`-boundary of a rewrite step, the geometric "after" picture.
 
-### Interactive side channels
-
-The dual is surfaced to the web UI and MCP front-ends as JSON. The serialiser is
-`interactive::protocol::strdiag_to_json`: it emits `num_wires`, `num_nodes`, a
-`vertices` array (`index`, `kind` `"wire"|"node"`, `label`, `tag`), and the three
-graphs each as `{ "edges": [[u,v], …] }` (`protocol::strdiag_to_json::edges_json`
-*(internal)* flattens the `DiGraph` adjacency).
-
-- **`WebRepl::get_strdiag(type_name, item_name, boundary_dim, boundary_sign)`**
-  (`src/interactive/web.rs`) resolves a named diagram/classifier inside a type
-  and returns its dual; the optional `(boundary_dim, boundary_sign)` first
-  extracts a $\partial^\pm_k$ boundary (`"input"` $\mapsto$ `Sign::Input`) so a
-  caller can view a boundary one dimension down.
-- Session views `get_session_strdiag` / `get_target_strdiag` and rewrite previews
-  go through `protocol::strdiag_json_from_diagram` and
-  `protocol::step_output_strdiag_json`; the latter takes the
-  `Sign::Output`-boundary of a rewrite step, which is the geometric "after"
-  picture. `build_strdiag_response` and `build_map_image_strdiag` are the
-  store-level entry points behind the `/api/get_strdiag` route and the MCP
-  `get_strdiag` tool.
+The server's `/api/get_*_strdiag` routes and the MCP tools (`get_strdiag`,
+`get_session_strdiag`, `get_rewrite_preview_strdiag`) map 1:1 onto these
+methods — see [[web-backends]] for the transports and [[web-frontend]] for the
+renderer that positions and paints the graphs.
 
 ## Related
 

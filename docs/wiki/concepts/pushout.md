@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-05
+last-touched: 2026-06-09
 ---
 
 # Pushout
@@ -13,11 +13,11 @@ identifying, for each $a \in A$, its image $f(a)$ with its image $g(a)$. It is
 the universal such gluing: the colimit of the span.
 
 In alifib this is the engine of substitution. To rewrite, we match a copy of a
-rule's input $V$ inside a target diagram $U$, then **replace** that copy by the
-rule's body. The replacement is precisely a pushout: $V$ is the seam, $U$ is one
-arm, the rule cell $R$ is the other, and we glue $R$ onto $U$ along the matched
-$V$. This gluing builds a *larger* shape — it is the pasting/substitution that
-realises [[rewriting]], not a reduce-to-one-cell composition.
+rule's input $U$ inside a target diagram $D$, then **replace** that copy by the
+rule's body. The replacement is precisely a pushout: $U$ is the seam, $D$ is one
+arm, the rule cell $r$ is the other, and the step is $S = D +_U r$. This gluing
+builds a *larger* shape — it is the pasting/substitution that realises
+[[rewriting]], not a reduce-to-one-cell composition.
 
 ## Definition
 
@@ -43,25 +43,26 @@ injections, so $P$ is again a well-formed ogposet.
 
 For the gluing to be a sound diagram operation $A$ must sit inside both arms as
 the *same* shape — the seam is a sub-ogposet shared on the nose. Matching is what
-manufactures the left leg $f$: it exhibits a copy of $V$ as a literal subobject of
-$U$ (see [[rewriting]]).
+manufactures the left leg $f$: it exhibits a copy of the pattern $U$ as a literal
+subobject of the target $D$ (see [[rewriting]]).
 
 ### Multi-pushout: a genuine multi-way colimit
 
 The binary pushout is the case of **one** extension glued to a base. alifib also
-needs to fire several non-overlapping rule matches in a single parallel step, and
-that is not a sequence of binary pushouts — it is one colimit of a wide diagram:
-a base $B$ together with extensions $C_1, \dots, C_n$, each attached along its own
-seam $A_i$ via a span $A_i \xrightarrow{f_i} B$, $A_i \xrightarrow{g_i} C_i$.
+needs to fire several rule matches in a single parallel step, and that is not a
+sequence of binary pushouts — it is one colimit of a wide diagram: a base $B$
+together with extensions $C_1, \dots, C_n$, each attached along its own seam
+$A_i$ via a span $A_i \xrightarrow{f_i} B$, $A_i \xrightarrow{g_i} C_i$.
 
 $$ P \;=\; B \;+_{A_1} C_1 \;+_{A_2} C_2 \;\cdots\; +_{A_n} C_n . $$
 
-Because the $A_i$ pin disjoint regions of $B$ (the matches do not overlap), each
-extension contributes its fresh cells independently and the colimit is computed in
-one pass. The result carries one injection $\iota_B \colon B \to P$ and a family
-$\iota_{C_i} \colon C_i \to P$. The binary pushout is recovered as the $n = 1$
-singleton — and indeed alifib *defines* it that way, delegating to the multi-way
-construction rather than duplicating the gluing logic.
+The matches of a parallel family are disjoint on top-dimensional cells (their
+seams may still share lower boundary cells, which all live in $B$ anyway), so
+each extension contributes its fresh cells independently and the colimit is
+computed in one pass. The result carries one injection $\iota_B \colon B \to P$
+and a family $\iota_{C_i} \colon C_i \to P$. The binary pushout is recovered as
+the $n = 1$ singleton — and indeed alifib *defines* it that way, delegating to
+the multi-way construction rather than duplicating the gluing logic.
 
 The choice of which arm plays the role of "base" is a pragmatic one: taking the
 larger codomain as the base minimises the number of cells that must be freshly
@@ -90,11 +91,11 @@ Used by:
 
 - [[rewriting]] via `matching::construct_parallel_step` *(internal,
   `src/core/matching.rs`)*, the live rewrite path. It assembles one `Span` per
-  confirmed match — `into_base` the matched copy $\iota \colon V \to U$ of the
-  target, `into_ext` the rule's precomputed `pattern_to_rewrite` $\sigma \colon V
-  \to R$ — and calls `multi_pushout` for the whole family at once (a single
-  binary pushout when the family is a singleton), then merges labels from the
-  target and the rewrite diagrams over the tip.
+  confirmed match — `into_base` the matched copy $\iota \colon U \to D$ in the
+  target, `into_ext` the rule's precomputed `pattern_to_rewrite`
+  $j \colon U \to r$ — and calls `multi_pushout` for the whole family at once (a
+  single binary pushout when the family is a singleton), then merges labels from
+  the target and the rewrite diagrams over the tip.
 
 Matching glues via `multi_pushout` directly. The binary `pushout::pushout`
 wrapper is instead the gluing behind the basic diagram operations in
@@ -115,5 +116,5 @@ fresh-cell labels pulled back through each `inr` injection's inverse.
 - [[partial-map]] — the embeddings forming the span and the resulting injections.
 - [[rewriting]] — the operation that supplies the span and consumes the tip.
 - [[diagram]] — labelled molecules; pushout glues shapes, labels are merged after.
-- [[boundary]] — the seam $V$ is matched and glued along boundaries
+- [[boundary]] — the seam $U$ is matched and glued along boundaries
   $\partial^\pm_k$.

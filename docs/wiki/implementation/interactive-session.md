@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-05
+last-touched: 2026-06-09
 code: [src/interactive/session.rs, src/interactive/command.rs, src/interactive/fill.rs]
 ---
 
@@ -13,11 +13,9 @@ code: [src/interactive/session.rs, src/interactive/command.rs, src/interactive/f
 > `Session::apply`. *What a command means* lives here and nowhere else, so a new
 > command lands on all three front-ends at once and they cannot drift.
 
-This page documents the unification introduced when the CLI, web, and daemon
-REPLs were merged onto a single core (`865021a`…`d5e85fb`). The mathematics is
-still in [[interactive-engine]] (`RewriteEngine`); this layer is the session
-*orchestration* that wraps it, plus the interactive [[hole|hole]]-filling that
-reuses the same engine.
+The mathematics is in [[interactive-engine]] (`RewriteEngine`); this layer is the
+session *orchestration* that wraps it, plus the interactive [[hole|hole]]-filling
+that reuses the same engine.
 
 ## What each module owns
 
@@ -36,27 +34,29 @@ sessions: `engine: Option<RewriteEngine>` (a free `start`/`resume` rewrite) or
 idle pre-session direction; once a session starts the direction is fixed and
 `session_backward` reads it back off the active engine.
 
-Three constructors capture the only genuinely per-front-end concern — *how source
+The constructors capture the only genuinely per-front-end concern — *how source
 is loaded and re-evaluated* — as a `LoadStrategy`:
 
-- `from_disk(source_file)` — `LoadStrategy::Disk`; the CLI and daemon.
-- `from_virtual(source, modules, name)` — `LoadStrategy::Virtual(map)`; the web,
-  whose `include`s resolve against an in-memory `<Name>.ali → text` map.
-- `from_loaded(store, root_path, source, loader)` — wrap an already-loaded store
-  (the web loads first to surface structured diagnostics, then constructs around
-  the result).
+- `from_disk(source_file)` — `LoadStrategy::Disk`. The CLI REPL constructs once
+  at startup; the daemon (re)constructs on every `Load`/`Start`/`Resume` request.
+- `from_loaded(store, root_path, source, loader)` — wrap an already-loaded store.
+  The web loads first to surface structured diagnostics, then constructs around
+  the result with `LoadStrategy::Virtual` (its `include`s resolve against an
+  in-memory `<Name>.ali → text` map).
+- `from_virtual(source, modules, name)` — load-then-construct in one call;
+  currently **uncalled** (the web went through `from_loaded` instead).
 
 ### `apply` — the one dispatch
 
 `apply(&mut self, req: Request) -> Result<ResponseData, String>` is the whole
 command surface. `Ok` carries a `ResponseData` snapshot of the resulting state
-(with a canonical one-line `message` like `Applied idem` or `Filled ?x with …`);
-`Err` carries the user-facing error. It handles session lifecycle
+(with a canonical one-line `message` like `Applied idem` or `Chose x`); `Err`
+carries the user-facing error. It handles session lifecycle
 (`Start`/`Resume`/`Stop`/`Backward`), filling (`Holes`/`Fill`/`Done`),
 persistence (`Save`/`Store`), and every engine command (`Step`/`StepMulti`/
 `Auto`/`Random`/`Undo`/`Redo`/`Parallel`/`SetTarget`/`Show`/`Proof`/`History`/
 `ListRules`). It explicitly *refuses* the read-only queries (`Types`/`TypeInfo`/
-`Cell`/`Homology`) and the front-end-only commands (`Help`/`Load`/`Shutdown`) —
+`Cell`/`Homology`) and the front-end-only requests (`Help`/`Load`/`Shutdown`) —
 those are served by the adapters from the store, not by the session, because they
 need no session state.
 
@@ -66,14 +66,18 @@ active engine whether it is a free rewrite *or* a fill's rewrite — so the same
 those helpers special-case `zero_cell_mut` (a choice is a one-step session: `step`
 picks, `undo` reopens the candidates, `redo` re-picks).
 
+`Save` is the one command whose effect depends on the `LoadStrategy`: under
+`Disk` it writes the running source to `path` (default: the root file); under
+`Virtual` it hands the source back in `data.source` for the editor to write.
+
 ### Snapshots
 
 `snapshot` builds the `ResponseData` for the current state — the active engine's
 state, a 0-cell fill's synthetic state, or an empty response when idle — and
-`show`/`status` returns the loaded module's path when there is no session. A
-zero-step proof is still a proof: `proof_response`'s `stored_expr` renders the
-initial diagram when no rewrite has been applied, never `None` for an engine
-session.
+`show`/`status` returns the loaded module's path when there is no session (it
+never errors; idle is a valid state to inspect). A zero-step proof is still a
+proof: `proof_response`'s `stored_expr` renders the initial diagram when no
+rewrite has been applied, never `None` for an engine session.
 
 ## `Command` — the REPL language
 
@@ -110,20 +114,25 @@ $m$-diagram in `T` from `F(x.in)` to `F(x.out)`. For $m \ge 1$ that is a
 [[rewriting|rewrite]], driven by the ordinary `RewriteEngine`; for a $0$-cell it is
 the choice of one of `T`'s $0$-cells. A `FillSession` is therefore either
 `Rewrite(RewriteEngine)` or `ZeroCell(ZeroCellFill)`, and `FillSession::filler`
-yields the finished proof — the assembled rewrite proof, or the chosen $0$-cell.
+yields the finished proof — the assembled rewrite proof (only once
+`target_reached`), or the chosen $0$-cell.
 
 - `list_open_holes(store, root_module)` enumerates the *actual* holes
   (`image: None`) of every map of every type, in a deterministic `(type, map,
   dim, source-name)` order — the numbering `fill <n>` uses. `list_constraints`
   lists the equations a *conditional* pending assignment imposes (`F(x.side) =
-  a.side`). Both walk `visit_maps`, the single traversal that resolves each map's
+  a.side`; pinned by `constraint_from_pending_assignment` in `tests/fill.rs`).
+  Both walk `visit_maps`, the single traversal that resolves each map's
   domain/target once.
 - `start_fill(store, root, source_file, index, backward)` opens the fill for hole
   `index`, first checking via `blocking_holes` that the hole's dependency holes
-  are filled (else *"Must fill holes … first"*). A $0$-cell becomes a
-  `ZeroCellFill` over the type's $0$-cells; an $m$-cell realises the hole's
-  (now hole-free) boundary trees to concrete diagrams and opens a `RewriteEngine`
-  with them as initial/target (swapped under `backward`).
+  are filled (else *"Must fill holes … first"*; the check recurses through
+  conditional pending assignments). A $0$-cell becomes a `ZeroCellFill` over the
+  type's $0$-cells; an $m$-cell realises the hole's (now hole-free) boundary
+  trees to concrete diagrams and opens a `RewriteEngine` with them as
+  initial/target (swapped under `backward`). `fill_one_dim_hole_via_rewrite` and
+  `fill_zero_cell_then_dependent_becomes_available` (`tests/fill.rs`) pin the two
+  shapes end to end.
 - `edit_for_fill` / `finalize` splice the proof back into `F`'s definition. An
   explicit `source_name => ?` clause is **replaced in place**
   (`pins_a_dotted_explicit_hole_in_place`); an implicit hole, with no `?` of its
@@ -142,18 +151,28 @@ the *filler* so it is correct even for a degenerate one.
   running. `stop` abandons a fill or ends a rewrite — to the user, the same act
   (*"Session stopped"*).
 - **A fill is a rewrite to the command layer.** Because `engine_mut` reaches into
-  a `FillSession::Rewrite`, every session command works during a fill unchanged;
-  only `done` is fill-specific, and `store` is refused in a 0-cell fill (nothing
-  to store).
-- **`apply` owns the canonical messages.** *"Applied …"*, *"Filled …"*, *"Stored
-  …"*, *"Backward mode on"* are set here, so all three front-ends print the same
-  words. The renderers ([[interactive-repl]] `richtext`) only style them.
+  a `FillSession::Rewrite`, every session command works during a fill unchanged
+  (`web_zero_cell_fill_behaves_like_a_session`, `tests/web_fill.rs`); only `done`
+  is fill-specific, and `store` is refused in a 0-cell fill (nothing to store).
+  A 0-cell choice still shows up in `history` as the one-step transcript entry
+  `1. x [choice k]`, synthesised by `history_response`.
+- **Multi-`apply` requires parallel mode.** `engine_step` refuses
+  `apply <n> <n2>` unless the engine's parallel mode is on — the gate lives here,
+  not in the engine, whose `set_parallel` otherwise affects only `auto`.
+- **`apply` owns the canonical messages.** *"Applied …"*, *"Filled …"*, *"Chose
+  …"*, *"Stored …"*, *"Backward mode on"* are set here, so all three front-ends
+  print the same words. The renderers ([[interactive-repl]] `richtext`) only
+  style them.
 - **Read-only queries bypass `Session`.** `types`/`type`/`homology`/`cell` are
   served from the store by each adapter; `apply` returns *"Not a session command"*
   if one reaches it, by construction it never should.
 - **Filling re-evaluates, and may fail.** An inconsistent fill makes
   re-evaluation error; `finalize_fill` reports it and keeps the fill session so
-  the user can retry, rather than discarding work.
+  the user can retry, rather than discarding work. When the failure is a
+  cascade-commit — a filled face violating a pending assignment's boundary
+  constraint — the interpreter blames the *pending assignment*, not the innocent
+  filler clause (`blame_pending`, `src/interpreter/partial_map.rs`; see
+  [[core-partial-map]]).
 
 ## Mathematics
 

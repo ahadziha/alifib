@@ -1,8 +1,8 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-05
-code: [cli/src/main.rs]
+last-touched: 2026-06-09
+code: [cli/src/main.rs, cli/Cargo.toml]
 ---
 
 # cli — the `alifib` binary
@@ -42,7 +42,7 @@ subcommand keyword, then delegates everything interactive to the library.
 | `run_ast` / `run_print` *(internal)* | parse-only modes: dump `Program::to_string` or `language::print_program` |
 | `run_bench` *(internal)* | reload the file `n` times, print mean ms/reload |
 | `run_web_cmd` / `run_mcp_cmd` *(internal)* | construct an `ExampleSet` and start the web / MCP server |
-| `USAGE` *(internal)* | the one usage string, printed on `-h`/`--help` and parse failure |
+| `USAGE` *(internal)* | the one usage string: stdout on `-h`/`--help`, stderr when the input file is missing |
 
 ## Data flow
 
@@ -82,8 +82,11 @@ there is no separate hole-reporting pass.
 | `alifib web [<dir>] [--bind]` | HTTP server | `run_web_cmd` → [[interactive-daemon-web]] |
 | `alifib mcp [<dir>]` | MCP server | `run_mcp_cmd` → [[interactive-daemon-web]] |
 
-`-o`/`--output` redirects the batch modes' text to a file (default stdout);
-`-h`/`--help` prints `USAGE` and exits 0.
+`-o`/`--output` redirects the `Interpret`/`Ast`/`Print` text to a file (default
+stdout); `--bench` ignores it and always prints the mean to stdout. `-h`/`--help`
+prints `USAGE` and exits 0 (in the batch flag walk — `alifib repl --help` is the
+library parser's business). A missing input file makes `USAGE` the error message
+(stderr, exit 1); an unknown flag gets its own `Unknown option` message.
 
 ## Non-obvious invariants and gotchas
 
@@ -101,8 +104,11 @@ there is no separate hole-reporting pass.
 - **`--bench` loads once, then times `n` reloads.** `run_bench` does a first
   `InterpretedFile::load(...).into_result()?` (so a load error aborts before
   timing) and then reloads the file `n` more times, printing the mean ms/reload.
-  It does *not* special-case files with holes — unfilled holes elaborate fine and
+  The timed reloads discard their results (`let _ =`) — an error mid-benchmark
+  is silently timed, not reported. Files with unfilled holes elaborate fine and
   are timed like any other reload.
+- **Batch mode flags are last-one-wins.** `--ast`, `--print` and `--bench N`
+  each overwrite `mode`; `alifib f.ali --ast --print` pretty-prints.
 - **A single `Loader::default(vec![])` is built in `main`** (no extra search
   paths) and shared by every batch mode; the interactive modes build their own
   loaders downstream.

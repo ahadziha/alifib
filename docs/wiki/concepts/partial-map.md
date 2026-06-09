@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-05
+last-touched: 2026-06-09
 ---
 
 # Partial map
@@ -66,7 +66,7 @@ $\mathrm{dom}\,f$ whose $f$-image lands entirely inside $\mathrm{dom}\,g$,
 matching the usual partial-function composite. This makes complexes-and-partial-
 maps a category, and refinements compose as one expects.
 
-### `attach ... along`
+### Surface syntax
 
 The language surfaces partial maps through two faces:
 
@@ -87,8 +87,9 @@ records rather than commits. A map may carry holes and still be well-formed
 (even `total`, since a hole counts as covering its generator — `total_map_accepts_holes`);
 the open holes are then filled later, either by the local inferences that fire as
 the map is built, or interactively (`fill`). The variant `<map> => ?` holes a
-whole sub-map pointwise (`map_to_hole_holes_each_cell`). See [[hole]] for the full
-account.
+whole sub-map pointwise (`map_to_hole_holes_each_cell`). The one exception is
+`attach`: an `along` clause must be hole-free (`resolve_attach` rejects `?`
+outright). See [[hole]] for the full account.
 
 ## Implementation
 
@@ -113,7 +114,8 @@ and `interpret_pmap_def` evaluate the surface syntax. Construction runs through 
 `MapBuild` *(internal)* that carries the committed `PartialMap` alongside pending
 [[hole|holes]]; `assign_cell` *(internal)* commits a determined image or records a
 hole, forcing every undefined boundary face (`ensure_defined`) before the cell
-itself, and `cascade` commits each conditional whose dependencies have closed.
+itself, and `cascade` *(internal)* commits each conditional whose dependencies
+have closed.
 `check_map_totality` *(internal)* implements the `total` keyword, counting a holed
 generator as covered. The `attach ... along` statement is wired in
 `src/interpreter/include.rs::interpret_attach_instr`, which calls

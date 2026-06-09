@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-05
+last-touched: 2026-06-09
 code: [src/core/partial_map.rs, src/interpreter/partial_map.rs, src/core/map_hole.rs]
 ---
 
@@ -33,6 +33,7 @@ omitted. Keep the two apart: the core never infers, the interpreter never pastes
 | `EvalMap { map, domain, holes }` | `interpreter/types.rs` | an evaluated map, its domain `Arc<Complex>`, and any unfilled [[hole|holes]] |
 | `MapHole` | `core/map_hole.rs` | one pending assignment: pure hole or conditional, with boundary paste trees |
 | `interpret_partial_map`, `interpret_pmap_def` | interpreter | entry points: AST → `EvalMap` |
+| `interpret_def_pmap`, `interpret_def_pmap_module` | interpreter | `let [total] F :: D = …` bindings (type / module domain) |
 | `MapBuild` *(internal)* | interpreter | the incremental build state: committed `PartialMap` + pending `holes` |
 | `assign_cell`, `ensure_defined`, `commit`/`commit_one`, `cascade` *(internal)* | interpreter | the smart `lhs => rhs` extender and its hole machinery |
 | `check_map_totality` *(internal)* | interpreter | the `total` keyword; counts a holed generator as covered |
@@ -106,9 +107,11 @@ domain" — used in `interpret_assign`'s map–map case).
 
 ### From clause to entry — `MapBuild` and `assign_cell`
 
-A map extension is interpreted into a `MapBuild` — the committed core
-`PartialMap` paired with a `holes: Vec<MapHole>` of pending entries (see
-[[hole]]). Each clause `lhs => rhs` runs through `interpret_partial_map_clause`:
+A map extension — grammar `prefix? [ clause, … ]`: square brackets,
+comma-separated clauses, the optional prefix map before the bracket
+(`<PMapExt>` in `docs/GRAMMAR.md`) — is interpreted into a `MapBuild`: the
+committed core `PartialMap` paired with a `holes: Vec<MapHole>` of pending
+entries (see [[hole]]). Each clause `lhs => rhs` runs through `interpret_partial_map_clause`:
 a bare-`?` right-hand side is the pure-hole assignment (`assign_cell(.., None)`
 for a cell, `hole_map_image` for a whole map); otherwise both sides are evaluated
 and `interpret_assign` dispatches on `Diag`/`Map` (a whole map can be assigned
@@ -127,20 +130,23 @@ constant 0-cell via `extend_map_to_constant`). The diagram case lands in
    `ensure_defined` — assigned a hole, which `assign_cell` may itself resolve by
    collapse inference. A cell's faces are thus always committed or pending, never
    silently absent.
-5. **Commit, collapse, or hole.** If the cell is now fully determined with a known
-   image, `commit`. Else if `collapsed_boundary_image` finds a boundary that has
-   dropped below dimension $d-1$, the only possible image is that collapsed
-   diagram, so infer it. Otherwise `transport_cell_boundaries` (rewriting each
-   boundary leaf to its committed image's paste tree, or a `Tag::Hole`
-   metavariable) and `upsert_entry` a pending hole.
+5. **Commit, collapse, or hole.** With a known image and every face committed,
+   `commit`. With *no* image (a hole or forced face), `collapsed_boundary_image`
+   may find a boundary already mapped below dimension $d-1$ — then the only
+   possible image is that collapsed diagram, so infer it. Otherwise
+   `transport_cell_boundaries` (rewriting each boundary leaf to its committed
+   image's paste tree, or a `Tag::Hole` metavariable) and `upsert_entry` a
+   pending entry — conditional if the image is known, pure hole if not. (A
+   known-image cell with unmapped faces is *not* collapse-checked; any
+   incompatibility surfaces when the conditional commits.)
 
 `commit_one` hands the determined entry to the core `PartialMap::extend` (which
 re-checks the law), closes the matching pending entry, and **substitutes** its
 image's paste tree for that metavariable in every remaining hole's boundary trees;
 `cascade` then commits any conditional whose `MapHole::deps` have closed,
 repeating until none remain. A cascade-commit failure is re-blamed on the pending
-assignment, not the innocent face that closed last (`blame_pending`, the fix in
-`a151779`).
+assignment, not the innocent face that closed last (`blame_pending`, using the
+clause spans `MapBuild` stamps on each pending entry).
 
 So the user writes only the top cells; the interpreter fills in the boundary
 entries the cellular-map law demands, leaving holes where information is genuinely
@@ -170,6 +176,8 @@ handled in this module but in `interpreter/include.rs`
 - `resolve_attach` evaluates the optional `along [ … ]` block via
   `interpret_pmap_def`, producing the partial map `f` from the attachment type's
   complex (the domain) into the current scope. No `along` ⇒ the empty map.
+  Holes are rejected here — *"Holes (`?`) are not supported in `attach`
+  clauses"* — because the fabrication below needs every named image concrete.
 - `extend_scope_with_attached_generators` then walks the attachment's generators
   in dimension order; for each one **not** already in `f`'s domain it
   *fabricates* an image: `mapped_cell_data` runs `PartialMap::apply(f, ·)` on the
@@ -187,7 +195,9 @@ language-level pushout-flavoured operation, distinct from the ogposet pushout in
 ### Holes — pending assignments, not a solver
 
 A clause RHS may be a hole `?` (or a whole map may be holed pointwise,
-`<map> => ?`). A hole is a pending entry of the `MapBuild` — there is no separate
+`<map> => ?`); `?` is *only* a clause RHS, never a diagram component — see
+`<PMapClause>` vs `<DComponent>` in `docs/GRAMMAR.md`. A hole is a pending
+entry of the `MapBuild` — there is no separate
 constraint-collection-and-solve phase — carried out of interpretation on
 `EvalMap::holes` and stored on the map (`Complex::map_holes`).
 A hole's boundaries are kept as paste trees with `Tag::Hole` metavariable leaves,
@@ -227,11 +237,14 @@ EvalMap { map: PartialMap, domain: Arc<Complex>, holes: Vec<MapHole> }
   `extend`/`insert_raw`/`compose`. A map can be non-cellular and perfectly valid;
   it just forces `apply` down the pasting path. Don't read `cellular == false` as
   "ill-formed".
-- **`insert_raw` skips the law check on purpose.** Both call sites
-  (`extend_scope_with_attached_generators`, and the interpreter's incremental
-  construction) feed it images they *derived from the map*, so the boundary
-  match is already guaranteed. New callers must uphold that or the cellular-map
-  invariant rots silently.
+- **`insert_raw` skips the law check on purpose.** Its single call site,
+  `extend_scope_with_attached_generators`, feeds it images *derived from the
+  map* (`mapped_cell_data` applied the map to the source boundaries), so the
+  boundary match holds by construction. Likewise `of_entries` trusts the caller;
+  its one user is `identity_map`, whose images are the classifiers themselves.
+  The interpreter's incremental build, by contrast, commits only through
+  `PartialMap::extend` (`commit_one`) — there is no raw path there. New callers
+  of either must uphold the law or the cellular-map invariant rots silently.
 - **`remap_tag` panics off-domain.** The cellular path's `expect("tag in domain
   (verified by find_undefined)")` is load-bearing: `apply` *must* run
   `find_undefined` first. The panic message names the contract.
@@ -241,8 +254,7 @@ EvalMap { map: PartialMap, domain: Arc<Complex>, holes: Vec<MapHole> }
 - **`assign_cell` infers boundaries; `PartialMap::extend` still checks them.**
   The smartness is purely additive — it computes missing entries (or records them
   as [[hole|holes]]), then submits each committed entry to the same gate a
-  hand-written map would face. There is no "trust me" path into the core except
-  `insert_raw`.
+  hand-written map would face.
 - **A committed image never contains a metavariable.** `commit_one` `debug_assert!`s
   this: holes live only in *pending* boundary trees, and a hole is filled by
   substituting its filler before commit. If a `Tag::Hole` reaches `PartialMap`,
@@ -260,6 +272,12 @@ EvalMap { map: PartialMap, domain: Arc<Complex>, holes: Vec<MapHole> }
   `dimension_lowering_case1_is_sound`). The structural constraint on a cell is
   roundness of its boundaries, [[0002-round-boundaries]] — a *shape* property
   checked at cell construction, not at pasting and not by `extend`.
+- **Holes survive name lookup, not composition.** `eval_partial_map_basic`'s
+  `Name` arm carries the stored `Complex::map_holes` onto `EvalMap::holes` —
+  that is why `F [ … ]` *fills* a map-with-holes rather than extending only its
+  hole-free part (`prefix_extension_fills_holes`). The `Dot` arm returns
+  `holes: vec![]`: `PartialMap::compose` sees only committed entries, so a
+  composite silently forgets the pending ones.
 - **`total` counts a holed generator as covered.** `check_map_totality` treats a
   generator as covered if it is committed *or* has a pending entry, so
   `let total F :: D = [ x => ? ]` is well-formed (`total_map_accepts_holes`). The

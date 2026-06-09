@@ -1,8 +1,8 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-05
-code: [src/aux/mod.rs, src/aux/id.rs, src/aux/error.rs, src/aux/loader.rs, src/aux/bitset.rs, src/aux/intset.rs, src/aux/graph.rs, src/aux/path.rs]
+last-touched: 2026-06-09
+code: [src/aux/mod.rs, src/aux/id.rs, src/aux/error.rs, src/aux/loader.rs, src/aux/path.rs, src/aux/bitset.rs, src/aux/intset.rs, src/aux/graph.rs]
 ---
 
 # aux — the substrate everything else stands on
@@ -20,14 +20,15 @@ surface (`id`, `error`, `loader`, `path`) used across the [[interpreter]] and th
 identifier zoo (`pub use id::{GlobalId, HoleId, LocalId, ModuleId, Tag}` — where
 `HoleId` names a [[hole]]'s metavariable and `Tag::Hole(HoleId)` is its
 paste-tree leaf — `pub use error::Error`) and carries one stray helper,
-`dim_subscript`, that renders a dimension as Unicode subscript digits for
-boundary-slot display.
+`dim_subscript` (dimension → Unicode subscript digits), which currently has
+**no callers**: its boundary-slot renderers died with the old hole-inference
+pass, and being `pub` it draws no dead-code warning.
 
 ## What it owns
 
 | Module | Responsibility |
 |---|---|
-| `id.rs` | the three identifier kinds + `Tag`, the local/global union |
+| `id.rs` | the identifier kinds (`GlobalId`, `HoleId`, `LocalId`, `ModuleId`) + `Tag`, their union |
 | `error.rs` | `Error` (message + notes) and `report_load_file_error` |
 | `loader.rs` | `Loader` — read source, resolve `include <Name>` directives, return `LoadedFile` |
 | `path.rs` | canonicalisation and search-path dedup |
@@ -41,21 +42,35 @@ boundary-slot display.
   single `static AtomicUsize` via `GlobalId::fresh` (`Ordering::SeqCst`). Opaque;
   never construct directly. `Display` prints `#n`. This is the spine of the
   global store's cell identity.
+- **`HoleId(usize)`** (`id.rs`) — a metavariable: the unknown image of a domain
+  generator under a partial map with holes. Its own atomic counter
+  (`Ordering::Relaxed` — uniqueness is all that matters); `Display` prints `?n`.
+  Lives only inside `Tag::Hole`.
 - **`LocalId = String`**, **`ModuleId = String`** — type aliases. A `ModuleId` is
   *always* a canonical absolute path (`std::fs::canonicalize`), so two spellings
   of one file never become two modules.
-- **`Tag`** = `Local(LocalId)` | `Global(GlobalId)` — the identifier union that
-  threads through elaboration. `Local` tags are scoped to the enclosing type or
-  module complex; `Global` tags name finalised cells. Central to the
-  [[interpreter]] lookup chain. Its `Ord` is total and *segregated*: all `Local`
-  tags sort below all `Global` tags.
+- **`Tag`** = `Local(LocalId)` | `Global(GlobalId)` | `Hole(HoleId)` — the
+  identifier union that threads through elaboration. `Local` tags are scoped to
+  the enclosing type or module complex; `Global` tags name finalised cells;
+  `Hole` tags appear *only* inside the boundary paste trees of a
+  `core::map_hole::MapHole` — never as a key in a real map, a complex generator,
+  or a built diagram's labels. Central to the [[interpreter]] lookup chain. Its
+  `Ord` is total and *segregated by variant*: `Local < Global < Hole`, before
+  comparing payloads.
 - **`Error { message, notes }`** (`error.rs`) — a diagnostic accumulator;
   `with_note` chains. `report_load_file_error` is the only printer, fanning a
   `LoadFileError` out to stderr (and into `language::report_errors` for parse
   failures).
 - **`Loader`** (`loader.rs`) — search paths + a pluggable `read_file` closure
-  (`Arc<dyn Fn>`). `Loader::default` seeds cwd + `ALIFIB_PATH` + extras;
-  `with_virtual_files` swaps in an in-memory map for tests.
+  (`Arc<dyn Fn>`). Three constructors: `Loader::default` seeds cwd +
+  `ALIFIB_PATH` + extras; `default_with_root_source` overlays one in-memory root
+  source on a real filesystem (how `interactive::engine::reevaluate` re-checks an
+  edited buffer without writing it to disk — see [[interactive-engine]]);
+  `with_virtual_files` swaps in a pure in-memory map for tests (it starts with
+  *no* search paths — virtual includes resolve only via the parent-dir
+  prepending of `with_parent_dir`, with no canonicalisation). Besides `load`,
+  the parse-only `load_only_root` skips dependency resolution — the
+  `--ast`/`--print` path in [[cli]].
 - **`LoadedFile`**, **`ModuleResolutions`**, **`ResolvedModule`** — the loader's
   output: root program, source, the `(parent, module_name) → canonical_path`
   resolution map, and dependency modules in topological (leaves-first) order.
@@ -63,16 +78,16 @@ boundary-slot display.
   best-effort variant (falls back to the input string); `canonicalize_existing`
   is the strict variant (`Result`, no fallback); `normalize_search_paths`
   canonicalises a path list (best-effort) and dedups while preserving order. The
-  loader keys modules on the strict canonical path — the same value the engine
-  binds as `canonical_path` and uses as the [[interactive-repl|REPL]] store key
-  (`src/interactive/engine.rs` `load_file_context`).
+  loader keys modules on the strict canonical path — the same value
+  `engine::load_file_context` binds as `canonical_path` and uses as the store
+  key ([[interactive-engine]]).
 - **`BitSet`** *(internal)* — `Vec<u64>` words + cached `count`. Word-level
   `union` / `difference_inplace`; `reset` / `copy_from` reuse the allocation.
 - **`IntSet = Vec<usize>`** — not a struct, a contract: sorted and deduplicated.
   Free functions `insert`, `union`, `difference`, `is_disjoint`, `collect_sorted`
   all assume and preserve that invariant. `intersection` exists with the same
   signature but is `#[allow(dead_code)]` and has **no callers anywhere** (not even
-  tests) — see `source-drift.md`; do not treat it as live.
+  tests) — kept deliberately, see [[source-drift]]; do not treat it as live.
 - **`DiGraph`** *(internal)* — nodes `0..n`, both `successors` and `predecessors`
   stored as `IntSet`s so edges traverse either direction in O(degree).
 
@@ -143,9 +158,9 @@ path still on the recursion stack yields `LoadFileError::Cycle`.
 - **`GlobalId` is monotone and never reused.** A single global atomic counter,
   never reset. IDs are unique for the process lifetime, not per-store — two
   stores built in one run draw from the same well.
-- **`Tag`'s ordering segregates kinds.** `Local(_) < Global(_)` always, before
-  comparing payloads. Anything that sorts `Tag`s (canonical orderings, dedup)
-  inherits this; do not assume lexical order across the two arms.
+- **`Tag`'s ordering segregates kinds.** `Local(_) < Global(_) < Hole(_)`
+  always, before comparing payloads. Anything that sorts `Tag`s (canonical
+  orderings, dedup) inherits this; do not assume lexical order across arms.
 - **`ModuleId` must be canonical or modules duplicate.** `path::canonicalize`
   *falls back to the input string* on failure (for paths that may not exist);
   `canonicalize_existing` *errors* instead. The loader uses the strict variant
@@ -153,9 +168,11 @@ path still on the recursion stack yields `LoadFileError::Cycle`.
   into two. Picking the wrong one is the classic latent bug here.
 - **`BitSet::contains` is bounds-safe; `insert`/`remove` are not.** `contains`
   guards `w < self.bits.len()`; the mutators index directly. Size the universe
-  correctly via `new` / `reset` before inserting. `BitSet` exists *only* to give
-  `ogposet::traverse` pre-allocated scratch reused across iterations — see the
-  `scratch_in` / `scratch_out` pool in `src/core/ogposet.rs`.
+  correctly via `new` / `reset` before inserting. Its raison d'être is the
+  pre-allocated scratch pool reused across iterations in `ogposet::traverse`
+  (`scratch_in` / `scratch_out` in `src/core/ogposet.rs`); `reconstruct.rs` also
+  uses it for downset/image sets (`embedding_to_bitsets`) — the bitset.rs rustdoc
+  claiming traverse-exclusivity is stale.
 - **`IntSet` is a discipline, not a type.** The alias buys nothing the compiler
   enforces; every mutation must go through `intset::insert` or stay sorted by
   construction. The payoff is O(n+m) merges and binary-search membership on the
@@ -164,12 +181,13 @@ path still on the recursion stack yields `LoadFileError::Cycle`.
 - **`DiGraph::add_edge` is idempotent** (sorted insert dedups), and the dual
   adjacency means `add_edge(u,v)` writes to *both* `successors[u]` and
   `predecessors[v]`.
-- **Two topological-sort entry points, two callers.** `topological_sort` is plain
+- **Two topological-sort entry points, one caller.** `topological_sort` is plain
   Kahn (single order, `Err(())` on cycle). `try_topological_sorts` *enumerates*
   orders by backtracking, calling `f` on each until one returns `Some`, capped by
-  a `limit`. `src/core/reconstruct.rs` uses the enumerator with `limit = 10_000`
-  to find a topological order whose layering realises correctly, and falls back
-  to the single sort otherwise.
+  a `limit` (errs with `"cycle"` or `"exhausted"`). Both call sites are in
+  `src/core/reconstruct.rs`: the enumerator with `limit = 10_000` to find a
+  topological order whose layering realises correctly, falling back to the
+  single sort otherwise.
 
 ## Mathematics
 
@@ -194,7 +212,10 @@ mathematics itself.
 None of these structures *is* an OGP or a flow graph; each is the integer-set
 plumbing those constructions are expressed in. For the identifier and error
 plumbing's role in the elaboration pipeline, see [[interpreter]] and
-[[core-complex]] (where `Tag` keys the lookup chain).
+[[core-complex]] (where `Tag` keys the lookup chain — the names that label
+generating [[atom|atoms]]). The one genuinely semantic identifier is
+`Tag::Hole(HoleId)`: it *is* the metavariable of a [[hole]], representable as an
+ordinary paste-tree leaf precisely so the hole machinery needs no special cases.
 
 The `loader`/`path` half realises the file-system side of the
 [[module-system]]: `include <Name>` is the language's import form, and the

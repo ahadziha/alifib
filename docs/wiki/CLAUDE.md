@@ -8,8 +8,8 @@ browses in Obsidian, and directs.
 This is a **codebase-documentation wiki**, not a literature wiki. The primary
 source is the code: the `src/` library is the bulk, and the workspace binaries
 and wrappers (`cli/`, `web/{shared,server,wasm,mcp}`, `web/frontend`) are covered
-too — the whole codebase, not just the library. (`plugins/trs` is currently out
-of scope.) Papers in `docs/papers/` are *reference only* — you may cite them, but
+too — the whole codebase, not just the library. (`plugins/trs` was retired to the
+`attic` branch, 2026-06-04.) Papers in `docs/papers/` are *reference only* — you may cite them, but
 you never create a page per paper and never ingest them as sources.
 
 ## Layout
@@ -180,7 +180,7 @@ shows recent activity.
 ## Status of the wiki
 
 All content pages are `status: stable` — verified against current `src/` (and the
-`cli/` / `web/` crates) in the 2026-06-01 full verification pass — except
+`cli/` / `web/` crates) in the 2026-06-09 full audit/rewrite pass — except
 `open-questions/module-open-semantics`, which stays `draft` because its subject
 (`open` scoping) is genuinely unresolved. `stub` and `draft` remain valid statuses
 for new pages; promote to `stable` only after a page's code refs have actually been

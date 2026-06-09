@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-05
+last-touched: 2026-06-09
 ---
 
 # Flow graph
@@ -22,14 +22,15 @@ which gate's output flows into which gate's input.
 
 ## Definition
 
-Let $U$ be a [[regular-directed-complex|regular directed complex]] (an
-[[oriented-graded-poset]]) and fix $0 \le k < \dim U$. Write
-$\Delta^-_k(x)$ and $\Delta^+_k(x)$ for the input and output $k$-boundary of a
-cell $x$ — the $k$-dimensional cells of $\partial^-_k(\mathrm{cl}\,x)$ and
+Let $U$ be a [[molecule]] (a [[regular-directed-complex]]; the paper says
+*regular molecule*) and fix $0 \le k < \dim U$. Write $\Delta^-_k(x)$
+and $\Delta^+_k(x)$ for the input and output $k$-boundary of a cell $x$ — the
+$k$-dimensional cells of $\partial^-_k(\mathrm{cl}\,x)$ and
 $\partial^+_k(\mathrm{cl}\,x)$ respectively.
 
-The **$k$-flow graph** $F_k(U)$ (Definition 61, Hadzihasanovic–Kessler) is the
-directed graph whose
+The **$k$-flow graph** $F_k(U)$ (Hadzihasanovic & Kessler, *Higher-Dimensional
+Subdiagram Matching*, LICS 2023, Definition 61 — `docs/papers/2304.09216v1.pdf`)
+is the directed graph whose
 
 - **vertices** are all cells of $U$ of dimension strictly greater than $k$, and
 - **edges** are $x \to y$ exactly when
@@ -40,12 +41,12 @@ the *maximal* cells — those with no cofaces in either direction. For a pure
 molecule the top cells are exactly the maximal ones, so at the top level the two
 agree: $M_{n-1}(U) = F_{n-1}(U)$ when $\dim U = n$.
 
-In matching we work at $k = n-1$ for an $n$-dimensional [[diagram]]. Then the
-vertices are the $n$-cells (the atoms being rewritten) together with any maximal
-lower cells, and an edge $a \to b$ says: an output $(n{-}1)$-face of $a$ is an
-input $(n{-}1)$-face of $b$, i.e. $a$ must be composed *before* $b$ along that
-shared face. The flow graph is thus a directed picture of the **pasting order**
-$\#_{n-1}$ inside the diagram.
+In matching we work at $k = n-1$ for an $n$-dimensional [[diagram]]. The
+vertices are then exactly the $n$-cells — the atoms being rewritten — and an
+edge $a \to b$ says: an output $(n{-}1)$-face of $a$ is an input $(n{-}1)$-face
+of $b$, i.e. $a$ must be composed *before* $b$ along that shared face. The flow
+graph is thus a directed picture of the **pasting order** $\#_{n-1}$ inside the
+diagram.
 
 ### Matching as path-induced subgraph isomorphism
 
@@ -79,10 +80,11 @@ Realised in `src/core/flow.rs` and consumed by the matcher in
   `DiGraph` together with a `node_map: Vec<(dim, pos)>` recovering each vertex's
   original cell. Edge cases ($k \ge \dim U$, empty complex) yield an empty graph.
 - `flow::maximal_flow_graph` builds $M_k(U)$ the same way but iterates only over
-  `Ogposet::maximal(dim)`.
+  `Ogposet::maximal(dim)`. It is the cut [[reconstruction]] layers along.
 - `matching::TargetFlowData` *(internal)* caches the target's flow graph,
-  `node_map`, and the label slice once per diagram — building the flow graph is
-  the dominant per-step cost — so it is reused across every rule in a session.
+  `node_map`, and the label slice — building the flow graph is the dominant
+  per-step cost — so it is computed once per target diagram and reused across
+  every rule (rebuilt only when a step changes the diagram).
 - `matching::find_path_induced_matches` *(internal)* performs the labelled
   induced-subgraph search by backtracking with most-constrained-variable
   ordering; `backtrack_subgraph` enforces the edge-iff-edge biconditional in both
@@ -99,4 +101,5 @@ nothing — the flow graph recovers the composition order from the geometry.
 - [[boundary]] — $\partial^\pm_k$, the input/output faces the flow graph reads.
 - [[diagram]] — flow graphs are computed on the shape of a labelled diagram.
 - [[rewriting]] — matching is the entry point that drives flow-graph construction.
+- [[reconstruction]] — topological sorts of $M_k$ furnish candidate layerings.
 - [[partial-map]] — the geometric isomorphism that *confirms* a flow-graph candidate.

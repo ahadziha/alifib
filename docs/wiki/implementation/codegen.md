@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-05
+last-touched: 2026-06-09
 code: [src/codegen.rs]
 ---
 
@@ -13,10 +13,13 @@ code: [src/codegen.rs]
 > hides every internal AST type behind three structs and a clutch of free
 > functions.
 
-The only consumer in-tree is the `trs` plugin
-(`plugins/trs/src/{generate,encode}.rs`), which compiles term-rewriting systems
-into alifib type blocks. Nothing in the core library depends on `codegen`; it is
-a one-way bridge *out* of Rust *into* the language.
+There is currently **no consumer in-tree**: the sole consumer, the `trs`
+plugin (`ari2ali-rs`, which compiled term-rewriting systems into alifib type
+blocks), was retired to the `attic` branch with the rest of `plugins/trs`
+(commit `dd92312`, 2026-06-04). The module stays public (`pub mod codegen` in
+`src/lib.rs`) as the surface for out-of-tree plugins. Nothing in the core
+library depends on `codegen`; it is a one-way bridge *out* of Rust *into* the
+language.
 
 ## What it owns
 
@@ -90,8 +93,9 @@ Two independent emission paths converge on the same reprs:
 `Program::print_ali` is the *third* exit and the recommended one: it routes
 through `into_ast` and then `language::print_program` (`src/language/ast_print.rs`),
 the round-trip pretty-printer whose output is guaranteed to re-parse to an
-equivalent program. `to_ali` is the hand-rolled debug printer and carries no such
-guarantee.
+equivalent program (the printer's `for`-block lossiness — see
+[[language-parser]] — is moot here: `codegen` never emits `for`-blocks).
+`to_ali` is the hand-rolled debug printer and carries no such guarantee.
 
 ## Non-obvious invariants and gotchas
 
@@ -122,11 +126,12 @@ guarantee.
 - **Spans are synthetic.** Every node is wrapped by `syn`, so error spans on a
   generated program are meaningless. This is the deliberate cost of building
   ASTs out of band.
-- **No unit tests in the module.** Behavioural coverage lives downstream: the
-  `trs` plugin exercises `cell`, `cell_bd`, `obs`, `seq`, `seq_flat`, `par_seq`,
-  and `compose_or_single` while compiling rewriting systems
-  (`plugins/trs/src/generate.rs`, `plugins/trs/src/encode.rs`). When changing
-  emission, treat the plugin's golden output as the regression surface.
+- **Zero in-tree coverage.** The module has no unit tests, and since
+  `plugins/trs` moved to the `attic` branch it has no in-tree consumer either —
+  changes to emission are unguarded by CI. The retired plugin
+  (`plugins/trs/src/{generate,encode}.rs` on `attic`) exercises `cell`,
+  `cell_bd`, `obs`, `seq`, `seq_flat`, `par_seq`, and `compose_or_single`;
+  resurrect it (or add tests here) before changing emission.
 
 ## Mathematics
 

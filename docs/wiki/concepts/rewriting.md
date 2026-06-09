@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-05
+last-touched: 2026-06-09
 ---
 
 # Rewriting
@@ -14,21 +14,18 @@ the **input** pattern and whose output boundary $\partial^+_n r = V$ is the
 **output**. Rewriting an $n$-dimensional diagram $D$ means: find a copy of $U$
 inside $D$, carve it out, and paste $V$ in its place. The step itself is the
 $(n{+}1)$-cell that *witnesses* this replacement — directed rewriting records not
-just the result but the derivation.
-
-alifib is, in its own words, "an interpreter for directed higher-categorical
-rewriting": the whole machine exists to enumerate, validate, and compose these
-steps.
+just the result but the derivation. The whole of alifib exists to enumerate,
+validate, and compose these steps.
 
 ## Definition
 
 Fix a type — a [[directed-complex]] of generators (the shapes it presents are
 [[regular-directed-complex|regular]], but a type need not be) — and let $D$ be a
 diagram with $\dim D = n$. A rule $r$ of dimension $n+1$ has input
-$U = \partial^-_n r$ and
-output $V = \partial^+_n r$. A **match** of $r$ in $D$ is an embedding
-$\iota : U \hookrightarrow D$ — an isomorphism onto a sub-diagram of $D$ that
-respects orientation *and labels*. Two obligations must be met:
+$U = \partial^-_n r$ and output $V = \partial^+_n r$. A **match** of $r$ in $D$
+is an embedding $\iota : U \hookrightarrow D$ — an isomorphism onto a
+sub-diagram of $D$ that respects orientation *and labels*. Two obligations must
+be met:
 
 1. **Shape.** The image of $\iota$ must be a closed, well-oriented sub-poset of
    $D$ isomorphic to $U$ as an [[oriented-graded-poset]].
@@ -56,9 +53,10 @@ $$ S \;=\; D +_U r, $$
 
 the pushout of $\iota$ and $j$ over the shared input $U$. Its output boundary
 $\partial^+_n S$ is the rewritten diagram — $D$ with $U$ replaced by $V$ — and $S$
-itself is the $(n{+}1)$-dimensional cell recording the rewrite. Several
-non-overlapping matches can be glued at once via an iterated pushout, giving a
-single **parallel** step that applies them simultaneously.
+itself is the $(n{+}1)$-dimensional cell recording the rewrite. Several matches
+that are disjoint on top cells can be glued at once, as one multi-way [[pushout]]
+(a single colimit, not a sequence of binary gluings), giving a **parallel** step
+that applies them simultaneously.
 
 The pushout yields a bare oriented graded poset with labels but *no* compositional
 history. To turn it back into a usable diagram — one that knows how it pastes
@@ -78,16 +76,17 @@ The mathematics above is realised by [[core-matching]] and driven by
 [[interactive-engine]].
 
 - **Match = prune + check.** [[core-matching]] computes the target's
-  $(n{-}1)$-[[flow-graph]] once per diagram (`matching::TargetFlowData`,
-  `core::flow::flow_graph`), enumerates label-preserving induced subgraph
-  embeddings (`matching::find_path_induced_matches` (internal)), then confirms each
-  survivor with the closure isomorphism (`matching::check_match_isomorphism`
-  (internal)). A precomputed `matching::RulePattern` holds the normalised input
-  $U$ and its embedding $j$ into $r$.
+  $(n{-}1)$-[[flow-graph]] once per diagram (`matching::TargetFlowData`
+  (internal), `core::flow::flow_graph`), enumerates label-preserving induced
+  subgraph embeddings (`matching::find_path_induced_matches` (internal)), then
+  confirms each survivor with the closure isomorphism
+  (`matching::check_match_isomorphism` (internal)). A precomputed
+  `matching::RulePattern` holds the normalised input $U$ and its embedding $j$
+  into $r$.
 - **Glue via [[pushout]].** Confirmed matches are turned into a step by
   `matching::construct_parallel_step` (internal), which calls
-  `core::pushout::multi_pushout` to form $D +_U r$ (or the iterated colimit for a
-  parallel family) and then merges labels from $D$ and the rules.
+  `core::pushout::multi_pushout` to form $D +_U r$ (or the multi-way colimit for
+  a parallel family) and then merges labels from $D$ and the rules.
 - **Recover history via [[reconstruction]].** The glued shape is handed to
   `core::reconstruct::reconstruct` to recover a paste tree; in dimensions $\le 3$
   the fast path `matching::assemble_low_dim_step` (internal) skips re-realisation
@@ -95,8 +94,10 @@ The mathematics above is realised by [[core-matching]] and driven by
 - **Driven by [[interactive-engine]].** `RewriteEngine` holds the session state
   and exposes `RewriteEngine::step` / `step_multi`; it enumerates candidates with
   `matching::for_each_rule_candidate` and confirms via
-  `matching::confirm_candidate`, with parallel auto-stepping through
-  `matching::greedy_parallel_auto_step`.
+  `matching::confirm_candidate`. Parallel auto-stepping is *greedy*
+  (`matching::greedy_parallel_auto_step`); the exhaustive family enumerator
+  `matching::find_compatible_families` is deliberately retained off the hot path
+  — see [[core-matching]].
 
 Behavioural evidence: `idem_whole_match` (two matches of `id id` in `id id id`),
 `idem_chain_reaches_rhs` (two steps normalise to the target), `assoc_dim2_matches`

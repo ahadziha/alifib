@@ -482,3 +482,43 @@ clean: every impl page carries `## Mathematics`, every concept page
 content pages `last-touched: 2026-06-05`; `module-open-semantics` stays `draft`.
 No source touched (the one `src/`-side note — `aux::intset::intersection` still
 dead — was already on record in `source-drift.md`).
+
+## [2026-06-09] doc | Full audit/rewrite pass — every page verified and rewritten
+
+Parallel-agent batch over all 39 content pages: every claim, symbol, grammar
+production, and cited test re-verified against current `src/`, `cli/`, `web/`;
+pages rewritten to the templates (history narration cut, bridges strengthened,
+named-test evidence added). All pages `stable`, dated today; only
+[[module-open-semantics]] stays `draft` by design. Lint clean: zero dangling
+wiki-links.
+
+Highlights of what was actually wrong:
+
+- **Atom definition error (book 3.3.9)** on [[molecule]]/[[atom]]/[[diagram]]:
+  "one top-dimensional cell" → *greatest element* (whisker counterexample).
+  [[directed-complex]]'s definition rewritten — a non-regular directed complex is
+  *not* an oriented graded poset (the loop's cover would need both signs); it is a
+  presentation by regular shapes + identifying attachments.
+- **[[core-complex]]** missed the maps-with-holes `add_map(name, domain, map,
+  holes)` / `MapEntry` redesign; `find_map` returns only the hole-free part.
+- **[[homology]]** claimed the daemon serves `homology` — it refuses it; and the
+  Lens5 example matrix was wrong (SNF is diag(1,5)).
+- **[[flow-graph]]**: $F_{n-1}$'s vertices are exactly the $n$-cells (the old
+  text described $M_k$). Citation pinned to HK LICS 2023, Def. 61.
+- **[[pushout]]** notation un-clashed with [[rewriting]] ($U$ = seam everywhere);
+  multi-pushout is one colimit, not an iterated pushout.
+- **[[hole]]**: explicit `?` fills are pinned in place, not appended.
+- **[[language-parser]]**: block bodies are not brace-delimited; two new
+  gotchas (`print_program` loses for-block bodies; `let total x = <diagram>`
+  silently drops `total`). [[codegen]] has no in-tree consumer since
+  `plugins/trs` moved to `attic` (dd92312).
+- **[[interactive-daemon-web]]**: `Cell` needs an engine; the web load path
+  bypasses `Session::from_virtual`; `save` is asymmetric by `LoadStrategy`.
+  [[web-backends]] now documents the ninth MCP tool `resume_session` (692486c);
+  [[web-frontend]] the boundary-selector reset (6a638d1).
+- **[[interpreter]]**: `Tag::Hole` third variant, `(run auto on d)`, assert
+  semantics and the `Arc::ptr_eq` domain-identity invariant documented.
+
+Source-side rot found during the pass (13 stale doc-comments, 4 newly dead
+symbols, GRAMMAR.md divergences, one test gap) is recorded as the third pass in
+[[source-drift]] — recorded, not fixed, per the standing direction.

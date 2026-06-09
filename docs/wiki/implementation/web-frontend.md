@@ -1,8 +1,8 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-05
-code: [web/frontend/src/app.js, web/frontend/src/ali-lang.js, web/frontend/index.html]
+last-touched: 2026-06-09
+code: [web/frontend/src/app.js, web/frontend/src/ali-lang.js, web/frontend/index.html, web/frontend/package.json]
 ---
 
 # web-frontend — the browser GUI
@@ -33,7 +33,7 @@ REPL — are documented in [[interactive-daemon-web]] / [[interactive-repl]]).
 |---|---|
 | **Backend abstraction** (`WasmBackend`, `HttpBackend`, `createBackend`, `backendConfig`) | one async method surface (`load_source`, `parse_command`, `run_command`, `start_session`, `get_*_strdiag`, …) over two transports; selected at boot |
 | **Editor & tabs** (`makeEditorState`, `createTab`, `switchTab`, `renderTabBar`) | CodeMirror state per tab, dirty tracking, untitled-naming, the `+` tab |
-| **Evaluate** (`evaluateSource`) | reset → collect `include` modules → `load_source` → build the type accordion, populate the Type selector, cache thin/face tags |
+| **Evaluate** (`evaluateSource`) | reset → collect `include` modules → `load_source` (active tab's name as `source_name`) → build the type accordion, populate the Type selector, cache thin/face tags |
 | **Session lifecycle** (`startSession`, `startSessionFromRepl`, `startResumeFromRepl`, `enterSession`, `resetSession`) | drive `Empty→Loaded→Active` from the setup form or a REPL `start`/`resume` action |
 | **REPL** (`handleCommand`, `runAction`, `renderResult`) | classify a typed line via the backend's shared `parse_command`, then either drive a UI *action* or forward a ready *request* to `run_command`; history with `↑`/`↓` |
 | **Transcript rendering** (`renderSegments`, `ROLE_CLASS`, `formatError`, `renderDiagnostic`, `appendReplEntry`) | style the backend's shared **RichText** (`rendered` field) and structured diagnostics into REPL HTML — no command-specific renderers live here |
@@ -101,7 +101,9 @@ and three directed acyclic edge sets over those indices.
 
 The canvas is interactive: clicking near a vertex starts a drag whose
 displacement propagates along the height graph with BFS distance-decay (`DECAY =
-0.5`); the surrounding wheel/space handlers pan and zoom.
+0.5`), then a two-pass topological clamp (forward and reverse over `hTopo`/`wTopo`)
+keeps every height/width DAG edge a hard barrier. Ctrl/⌘-wheel (or the Appearance
+slider) zooms about the cursor; dragging empty canvas pans while zoomed past 1×.
 
 ## Editor: the alifib CodeMirror mode
 
@@ -110,7 +112,9 @@ full grammar. It recognises nested `(* … *)` comments (depth counter),
 `@`-decorations (`@Type` vs other `@…`), `<Name>` interpolations, the
 `Name <<= …` type-head form (lookahead for `<<=`), `#N` pastes, the arrow family
 (`<<=`/`->`/`=>`/`::`/`#`/`=`), `?` holes, and the two keyword sets
-(`KEYWORDS_CONTROL`, `KEYWORDS_OTHER`). `aliExtensions(dark)` bundles the language
+(`KEYWORDS_CONTROL`, `KEYWORDS_OTHER`). Like the Rust lexer, it lets identifiers
+start with a digit (`2Morphism`) — only an all-digit token is a number.
+`aliExtensions(dark)` bundles the language
 with a dark or light `HighlightStyle`; the editor swaps it through a CodeMirror
 `Compartment` on theme toggle.
 
@@ -150,10 +154,11 @@ keeps proportions across window resizes and persists nothing.
   `renderSegments`/`ROLE_CLASS`, the web half of the one renderer the CLI also
   uses. After a state-changing request (`STATE_REQS`: step/undo/show/store/…)
   it refreshes the diagram pane via `updateVisInfo`/`showSessionDiagram`.
-- **Evaluate fully resets first.** `evaluateSource` calls `repl.reset()` and
-  `resetSession()` before loading, then rebuilds the accordion and Type selector
-  from scratch — there is no incremental reload. Include modules are gathered
-  client-side by `collectIncludeModules` and passed alongside the source.
+- **Evaluate fully resets first.** `evaluateSource` calls `repl.reset()` before
+  loading and `resetSession()` once the result is in, then rebuilds the accordion
+  and Type selector from scratch — there is no incremental reload. Include
+  modules are gathered client-side by `collectIncludeModules` and passed
+  alongside the source.
 - **Proof view fetches a second render tree.** `toggleProofView` flips
   `set_proof_view` on the backend and `showSessionDiagram` then pulls
   `get_proof_strdiag` (carrying an `output_boundary_map`) instead of the per-step
@@ -161,24 +166,34 @@ keeps proportions across window resizes and persists nothing.
 - **Layout is recomputed, never cached across diagrams.** `currentLayout` is
   replaced on each `showSessionDiagram`/`selectItem`; dragging mutates only the
   abstract positions of the live layout.
+- **The boundary selector is persistent DOM state — reset it on every selection
+  switch.** `sel-boundary` (and the sign radios) survive across accordion clicks,
+  and `refreshInfobox` reads them on entry. Both paths into a map image — the
+  map branch of `selectItem` and the `sel-map-gen` change handler — must force
+  `selBoundary.value = 'main'` and disable the sign controls; a leaked non-main
+  value used to coerce a boundary request, skip the dropdown repopulation, and
+  wedge further selections (fixed in commit `6a638d1`; there are no frontend
+  tests to pin it).
 - **The examples manifest is built at deploy time, not by the frontend.** The
   dropdown is populated from `GET examples/index.json`. Under `alifib web` that
   file comes from `ExampleSet::index_json` ([[web-backends]]); for the static
-  WASM site it is generated by `scripts/build_examples_manifest.py`, which the
-  GitHub Pages workflow (`.github/workflows/deploy.yml`) runs to mirror
-  `examples/` into `dist/examples/` with a sorted `{display_name: relpath}`
-  manifest. Recursive example names are the relative path minus `.ali` (e.g.
-  `TRS/Aux`), and every path segment must be a valid identifier
-  (`[A-Za-z_][A-Za-z0-9_]*`) — the script enforces exactly the rules
-  `web/shared`'s `ExampleSet` does, so local preview and deploy agree.
+  WASM site it is generated by `scripts/build_examples_manifest.py`, which both
+  `just web-wasm` (local preview, into `web/frontend/examples/`) and the GitHub
+  Pages workflow (`.github/workflows/deploy.yml`, into `dist/examples/`) run to
+  mirror `examples/` with a sorted `{display_name: relpath}` manifest. Example
+  names are the relative path minus `.ali` (e.g. `TRS/Aux`), and every path
+  segment must be a valid identifier (`[A-Za-z_][A-Za-z0-9_]*`) — the script
+  enforces exactly the rules `web/shared`'s `ExampleSet` does, so local preview
+  and deploy agree.
 - **Client-side `include` resolution mirrors the interpreter's precedence.**
   `collectIncludeModules` chases `include <Name>` transitively and
   `resolveIncludeKey` picks the example key by the same own-dir / same-named-subdir
   / fallback order the loader uses ([[aux]]): for a parent `Dir/Foo`, an
   `include Aux` is tried as `Dir/Aux`, then `Dir/Foo/Aux`, then bare `Aux`. The
-  gathered `<Name>.ali → contents` map is handed to `load_source` so the backend's
-  virtual loader resolves the includes without any filesystem access; open editor
-  tabs override fetched examples for the same name.
+  gathered map is keyed by qualified relative path (`TRS/Aux.ali`, per
+  `web/EXAMPLES.md`) and handed to `load_source` so the backend's virtual loader
+  resolves the includes without any filesystem access; open editor tabs are
+  checked first and override fetched examples for the same name.
 
 ## Mathematics
 

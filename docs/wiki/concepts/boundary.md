@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-05
+last-touched: 2026-06-09
 ---
 
 # Boundary
@@ -22,9 +22,12 @@ has, for every $k$ and every sign $\alpha \in \{-,+\}$, a **$k$-boundary**
 $\partial^\alpha_k U$.
 
 Following Hadzihasanovic, the boundary is built by *downward closure from the
-extremal cells*. Start from the $\alpha$-extremal cells in dimension $k$ — those
-not in the $\alpha$-input of any $k$-cell. Then descend: at each lower dimension
-$j < k$ take the faces (of either sign) of cells already chosen, together with the
+extremal cells* (Kessler 2025, Def. 2.1.21, `docs/papers/Kessler - 2025 -
+Computational Aspects of Rewriting in Higher-Dimensional Diagrams.pdf`). Start
+from the $\alpha$-extremal $k$-cells — those that are a $(-\alpha)$-face of no
+$(k{+}1)$-cell: input-extremal cells are the output face of nothing, output-extremal
+cells the input face of nothing. Then descend: at each lower dimension $j < k$
+take the faces (of either sign) of cells already chosen, together with the
 maximal $j$-cells. The result is a sub-complex of dimension $\le k$, the
 $(\alpha, k)$-boundary, equipped with its inclusion into $U$.
 
@@ -105,7 +108,7 @@ Boundaries live in `src/core/diagram.rs` — see [[core-diagram]].
 
 The `Sign` enum is `Input`/`Output`, mapped to the ogposet's input/output sign
 by `Sign::as_ogposet_sign`. Roundness is `Diagram::is_round`, delegating to
-`ogposet::is_round` (the directed-sphere disjointness condition). It is enforced
+`Ogposet::is_round` (the directed-sphere disjointness condition). It is enforced
 at **cell construction**: `Diagram::parallelism` *(internal)* rejects a non-round
 input or output boundary before building the cell. `Diagram::paste`'s gate
 (`pastability`) checks only that $\partial^+_k U = \partial^-_k V$ in shape and
@@ -126,8 +129,3 @@ A generator's declared boundary is stored directly on its `CellData::Boundary
 [[diagram]] · [[molecule]] · [[oriented-graded-poset]] ·
 [[regular-directed-complex]] · [[directed-complex]] · [[rewriting]] · [[output]] ·
 [[atom]]
-
-## Notation
-
-House style: $\partial^-_k$ (input), $\partial^+_k$ (output); $\#_k$ for pasting
-along the $k$-boundary. See [[CLAUDE]].
