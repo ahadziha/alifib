@@ -50,6 +50,15 @@ wiki:
     cd docs/quartz && bun install --frozen-lockfile && bun run quartz build -d ../wiki
 
 # Serve the wiki locally with hot-reload on http://localhost:8080.
+# Frees ports 8080/3001 first, so a server orphaned by a previous run (closed
+# terminal, hard kill) never blocks the new one — the usual "page won't load".
 wiki-dev:
-    cd docs/quartz && bun install --frozen-lockfile
-    cd docs/quartz && trap 'kill 0' EXIT INT TERM; bun run quartz build -d ../wiki --serve
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for port in 8080 3001; do
+        pids=$(lsof -ti tcp:$port 2>/dev/null || true)
+        [ -n "$pids" ] && kill -9 $pids 2>/dev/null || true
+    done
+    cd docs/quartz
+    bun install --frozen-lockfile
+    exec bun run quartz build -d ../wiki --serve
