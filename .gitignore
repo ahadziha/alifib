@@ -43,3 +43,8 @@ docs/papers/
 
 # Local development notes
 dev/
+
+# Quartz wiki build artefacts (built locally with `just wiki` / `just wiki-dev`)
+docs/quartz/node_modules/
+docs/quartz/public/
+docs/quartz/.quartz-cache/

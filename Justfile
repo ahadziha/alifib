@@ -43,3 +43,12 @@ web-wasm:
 # WASM-backed build end-to-end.  Run `just web-wasm` first.
 web-static port="8000":
     cd web/frontend && python3 -m http.server {{port}}
+
+# ── Wiki (Quartz) ───────────────────────────────────────────────────────────
+# Build the wiki to docs/quartz/public/.  Run once to produce static HTML.
+wiki:
+    cd docs/quartz && bun install --frozen-lockfile && bun run quartz build -d ../wiki
+
+# Serve the wiki locally with hot-reload on http://localhost:8080.
+wiki-dev:
+    cd docs/quartz && bun install --frozen-lockfile && bun run quartz build -d ../wiki --serve
