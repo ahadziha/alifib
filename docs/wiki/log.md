@@ -522,3 +522,27 @@ Highlights of what was actually wrong:
 Source-side rot found during the pass (13 stale doc-comments, 4 newly dead
 symbols, GRAMMAR.md divergences, one test gap) is recorded as the third pass in
 [[source-drift]] — recorded, not fixed, per the standing direction.
+
+## [2026-06-10] doc | Diagrams are colimits, not RDCs — reframed around Prop 5.3.15; new open question
+
+Audit against the book (3.2–3.3, 5.3) prompted by the question whether the code
+implements [[regular-directed-complex]] at all. Findings folded into the wiki:
+
+- **[[regular-directed-complex]]**: corrected the framing — alifib does not
+  represent RDCs; a value is a pasting diagram, a strict functor
+  $\mathsf{Mol}/U \to X$ (5.3.13/5.3.16), an arbitrary colimit whose labelling
+  may identify cells. Only the *shape* is an RDC, and shape regularity matters
+  because Proposition 5.3.15 makes the `(shape, labels)` encoding faithful
+  exactly on regular shapes. Implementation section now points at the two
+  construction gates (`Diagram::parallelism`, `Diagram::pastability`) and no
+  longer claims regularity holds "by construction" unconditionally.
+- **[[diagram]]**: added the functor/colimit definition and the 5.3.15 licence
+  for storing only the combinatorial diagram $\ell(d)$.
+- **New [[atom-gluing-sign-invariant]]** (draft): the book's (Atom) requires
+  $\varphi$ restricting to $\varphi^\pm$; `parallelism` checks only positional
+  equality of `Sign::Both` canonical boundaries. Sound for generators of
+  dimension $\le 3$ (proved via the phase-separated traversal); open for
+  dimension $\ge 4$. Verified sound elsewhere: `Ogposet::is_round` ⟺
+  Definition 3.2.5 on globular inputs (molecules are globular, 3.3.8);
+  `pastability` ⟺ (Paste) incl. the Lemma 3.3.7 clamping; `build_cell_shape`
+  ⟺ 3.2.1's $\Delta^\mp\top := U_n, V_n$.

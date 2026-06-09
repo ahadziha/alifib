@@ -18,10 +18,10 @@ Mathematical and language ideas alifib realises.
 |------|---------|--------|
 | [[molecule]] | Hadzihasanovic's molecules: the diagrams alifib computes with | stable |
 | [[atom]] | The indecomposable building blocks (generators) of molecules | stable |
-| [[regular-directed-complex]] | The regular shapes of values — atoms and molecules; the strict case of a directed complex | stable |
+| [[regular-directed-complex]] | The regular shape of a value — values themselves are colimits, not RDCs; Prop 5.3.15 makes the `(shape, labels)` encoding faithful | stable |
 | [[directed-complex]] | The shape of a *type*: a directed cell complex, not necessarily regular (the labelling may identify cells) | stable |
 | [[oriented-graded-poset]] | Faces with input/output orientation; the substrate of a diagram | stable |
-| [[diagram]] | A labelled molecule; pasting, top dimension, boundaries | stable |
+| [[diagram]] | A labelled molecule — a pasting diagram (functor out of $\mathsf{Mol}/U$) stored as its combinatorial labelling; pasting, boundaries | stable |
 | [[boundary]] | Input/output boundaries $\partial^\pm_k$ and how they're computed | stable |
 | [[partial-map]] | Refinement / total maps between complexes; `attach … along` | stable |
 | [[rewriting]] | Rewrite steps: matching a rule's input and substituting | stable |
@@ -72,3 +72,4 @@ the `cli/` and `web/` crates are the binaries and deployment wrappers around it.
 | Page | Question | Status |
 |------|----------|--------|
 | [[module-open-semantics]] | What exactly does `open` bring into scope vs `include`? | draft |
+| [[atom-gluing-sign-invariant]] | Does `parallelism`'s positional boundary check enforce (Atom)'s sign-restriction $\varphi^\pm$? | draft |

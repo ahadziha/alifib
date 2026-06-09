@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-09
+last-touched: 2026-06-10
 ---
 
 # Diagram
@@ -13,13 +13,25 @@ the tag of the generator ([[atom]]) it instantiates. (A let-binding names a
 a molecule is a *shape*, a diagram is that shape *decorated*. It is the runtime
 value alifib computes with.
 
-The *shape* of a diagram is always a [[regular-directed-complex|regular directed
-complex]] (the shape of a [[molecule]]). A **type**, by contrast, is assembled by
-identifying the boundaries of many such cells through labelling, and the realised
-object need only be a [[directed-complex]] — not necessarily regular (the loop
-`a : pt -> pt` is the canonical witness; see [[directed-complex]]). Labels can
-collapse a regular shape into a non-regular type, while every individual diagram
-value keeps a regular shape.
+A diagram is **not** itself an RDC, and alifib is not "an interpreter for
+RDCs". In the book's terms (Hadzihasanovic 2024, 5.3.13–5.3.16), a diagram of
+shape $U$ in a strict $\omega$-category $X$ is a strict functor
+$d : \mathsf{Mol}/U \to X$ — a *pasting diagram* when $U$ is a molecule. As an
+object of $X$ it is an arbitrary colimit of atoms, free to identify cells (the
+loop `a : pt -> pt` labels both endpoints of an arrow with the same point);
+the glued object is generally not regular, often not even an oriented graded
+poset. Only the shape $U$ is an RDC. alifib never stores the functor: it
+stores the *combinatorial diagram* $\ell(d) : U \to X$ of 5.3.14 — the
+labelling. **Proposition 5.3.15** says $\ell(d)$ determines $d$ uniquely
+*because* the shape is regular; on a non-regular shape the `(shape, labels)`
+encoding would be ambiguous. The shape's regularity is thus not what alifib
+is "about" — it is what makes the value representation faithful.
+
+A **type** is the same phenomenon writ large: assembled by identifying the
+boundaries of many cells through labelling, the realised object need only be a
+[[directed-complex]] — not necessarily regular (see [[directed-complex]]).
+Labels collapse regular shapes into non-regular colimits at both levels; what
+every diagram value keeps regular is its shape.
 
 ## Definition
 
