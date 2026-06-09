@@ -51,6 +51,5 @@ wiki:
 
 # Serve the wiki locally with hot-reload on http://localhost:8080.
 wiki-dev:
-    -lsof -ti :8080 2>/dev/null | xargs kill -9 2>/dev/null
-    -lsof -ti :3001 2>/dev/null | xargs kill -9 2>/dev/null
-    cd docs/quartz && bun install --frozen-lockfile && bun run quartz build -d ../wiki --serve
+    cd docs/quartz && bun install --frozen-lockfile
+    cd docs/quartz && trap 'kill 0' EXIT INT TERM; bun run quartz build -d ../wiki --serve
