@@ -183,8 +183,8 @@ running back through Ross Street to the founding days of higher category theory.
 The computational side — the data structures, and the algorithm at the language's
 core that decides when one diagram sits inside another — was developed with Diana
 Kessler. The higher-categorical semantics, including a model of
-(∞, n)-categories carried by directed complexes (and equivalent, where it has been
-checked, to the established models), is joint work with Clémence Chanavat. The
+(∞, n)-categories carried by directed complexes, is joint work with Clémence
+Chanavat. The
 intuition that structures from higher category theory belong on the *syntactic*
 side of computation is one alifib inherits from the polygraphic rewriting
 tradition.

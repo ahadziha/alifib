@@ -2441,6 +2441,8 @@ async function selectItem(typeName, item) {
 
   if (item.kind === 'map') {
     currentItemDim = 0;
+    selBoundary.value = 'main';
+    setSignControlsEnabled(false);
     boundaryControls.hidden = true;
     await refreshInfobox();
     return;
@@ -2586,6 +2588,8 @@ async function refreshInfobox() {
       selMapGen.addEventListener('change', async () => {
         currentMapGen = selMapGen.value || null;
         currentItemDim = 0;
+        selBoundary.value = 'main';
+        setSignControlsEnabled(false);
         boundaryControls.hidden = true;
         await refreshInfobox();
       });

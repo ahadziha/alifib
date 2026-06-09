@@ -67,6 +67,7 @@ fn tools_list_advertises_expected_surface() {
     for expected in [
         "load_source",
         "start_session",
+        "resume_session",
         "run_command",
         "get_types",
         "get_strdiag",

@@ -176,8 +176,22 @@ fn tool_descriptors() -> Vec<Value> {
             },
         }),
         json!({
+            "name": "resume_session",
+            "description": "Reopen a stored proof diagram as a live session, decomposing it back into its steps. `proof` (and optional `target`) may be a name from the loaded source or an inline expression. Set backward:true to resume in backward-rewriting mode. Requires a prior load_source.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "type_name": { "type": "string" },
+                    "proof":     { "type": "string", "description": "Stored proof diagram name or inline expression." },
+                    "target":    { "type": "string" },
+                    "backward":  { "type": "boolean", "default": false },
+                },
+                "required": ["type_name", "proof"],
+            },
+        }),
+        json!({
             "name": "run_command",
-            "description": "Send a daemon-protocol command. The arguments object IS the command — set `command` to one of: step, random, auto, undo, undo_to, show, list_rules, history, store, types, type, cell, homology, and supply that command's fields alongside (e.g. `{command:'step', choice:0}`). Alternatively pass `{command_json: '<raw>'}` to forward an arbitrary JSON body.",
+            "description": "Send a daemon-protocol command. The arguments object IS the command — set `command` to one of: step, step_multi, random, auto, undo, undo_to, redo, redo_to, show, proof, list_rules, history, store, save, types, type, cell, homology, parallel, set_target, backward, holes, fill, done, stop — and supply that command's fields alongside (e.g. `{command:'step', choice:0}`). The hole-filling workflow lives here: `{command:'holes'}` lists open `?` holes, `{command:'fill', index:0}` opens a fill session for one, then `{command:'done'}` splices the result back into the map. (start/resume/load are NOT valid here — use the load_source / start_session / resume_session tools instead.) Alternatively pass `{command_json: '<raw>'}` to forward an arbitrary JSON body.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -186,6 +200,7 @@ fn tool_descriptors() -> Vec<Value> {
                     "choice":       { "type": "integer" },
                     "max_steps":    { "type": "integer" },
                     "step":         { "type": "integer" },
+                    "index":        { "type": "integer", "description": "Hole index for `fill` (0-based, as listed by `holes`)." },
                     "name":         { "type": "string" },
                     "path":         { "type": "string" },
                 },
@@ -322,6 +337,25 @@ fn dispatch(
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
             Ok(repl.start_session(type_name, initial, target, backward))
+        }
+        "resume_session" => {
+            let type_name = args
+                .get("type_name")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| "resume_session: missing 'type_name'".to_string())?;
+            let proof = args
+                .get("proof")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| "resume_session: missing 'proof'".to_string())?;
+            let target = args
+                .get("target")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let backward = args
+                .get("backward")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            Ok(repl.resume_session(type_name, proof, target, backward))
         }
         "run_command" => {
             // command_json wins if both are given — explicit raw form.
