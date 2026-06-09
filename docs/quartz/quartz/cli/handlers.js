@@ -475,6 +475,11 @@ export async function handleBuild(argv) {
       "**/*.tsx",
       "**/*.scss",
       "package.json",
+      // Without this the glob pulls in ~3900 node_modules/**/*.ts files; chokidar
+      // then saturates the single-threaded event loop watching them for several
+      // seconds after `listen`, during which the server accepts connections but
+      // never answers — the page hangs/blank until it settles.
+      "!**/node_modules/**",
     ])
     chokidar
       .watch(paths, { ignoreInitial: true })
