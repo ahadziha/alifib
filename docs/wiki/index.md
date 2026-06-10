@@ -16,13 +16,13 @@ Mathematical and language ideas alifib realises.
 
 | Page | Summary | Status |
 |------|---------|--------|
-| [[molecule]] | Hadzihasanovic's molecules: the diagrams alifib computes with | stable |
-| [[atom]] | The indecomposable building blocks (generators) of molecules | stable |
+| [[molecule]] | The grammar of well-formed shapes — (Point)/(Paste)/(Atom), and the theorems each derivation earns | stable |
+| [[atom]] | A molecule with a greatest element; the rewrite construction $U \Rightarrow V$ step by step | stable |
 | [[regular-directed-complex]] | The regular shape of a value — values themselves are colimits, not RDCs; Prop 5.3.15 makes the `(shape, labels)` encoding faithful | stable |
 | [[directed-complex]] | The shape of a *type*: a directed cell complex, not necessarily regular (the labelling may identify cells) | stable |
 | [[oriented-graded-poset]] | Faces with input/output orientation; the substrate of a diagram | stable |
 | [[diagram]] | A labelled molecule — a pasting diagram (functor out of $\mathsf{Mol}/U$) stored as its combinatorial labelling; pasting, boundaries | stable |
-| [[boundary]] | Input/output boundaries $\partial^\pm_k$ and how they're computed | stable |
+| [[boundary]] | $\partial^\pm_k$ as seed-and-close; globularity as a theorem about molecules; roundness and what the code checks instead | stable |
 | [[partial-map]] | Refinement / total maps between complexes; `attach … along` | stable |
 | [[rewriting]] | Rewrite steps: matching a rule's input and substituting | stable |
 | [[pushout]] | The colimit gluing a rule cell onto the target along the matched input | stable |

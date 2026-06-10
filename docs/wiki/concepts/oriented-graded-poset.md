@@ -1,110 +1,121 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-09
+last-touched: 2026-06-10
 ---
 
 # Oriented graded poset
 
-An **oriented graded poset** (*ogposet*) is the bare combinatorial shape beneath
-every alifib value: a finite set of faces stratified by dimension, where each
-covering step between dimensions carries an orientation — a $\pm$ sign splitting
-a cell's faces into **input** ($-$) and **output** ($+$). It is the substrate
-beneath a [[directed-complex]], and in particular beneath the
-[[regular-directed-complex|regular]] ones — the shapes in which every
-[[molecule]] lives. Strip the labels off a [[diagram]] and what remains is its
-ogposet; the [[boundary|boundaries]] $\partial^\pm_k$ are nothing but this
-orientation read off the face structure. The ogposet is genuinely the *bare*
-layer — shape, no labels, no regularity: a [[regular-directed-complex]] is an
-ogposet all of whose cells are regular, while a general [[directed-complex]] —
-what a *type* assembles to once labels identify cells — need not be regular at
-all (see [[diagram]]).
+Start with the encoding problem. A pasting diagram — points, arrows between
+points, 2-cells between parallel paths of arrows, and so on upwards — has to
+be handed to a computer somehow. The insight alifib inherits from
+Hadzihasanovic (*Combinatorics of higher-categorical diagrams*, 2024; the
+running citation for every concept page) is that a diagram's shape is
+captured by two pieces of data:
 
-## Definition
+1. **which cells are faces of which** — a poset, graded by dimension, where
+   $x < y$ means "$x$ appears somewhere in the boundary of $y$"; and
+2. **which side each face is on** — every covering relation $x \lessdot y$
+   (a face one dimension down) is labelled $-$ (*input*: $y$ consumes $x$) or
+   $+$ (*output*: $y$ produces $x$).
 
-Following Hadzihasanovic, an ogposet $G$ consists of (`docs/interp/interp.pdf`
-§3.1 *Oriented Graded Posets*):
+That is the whole definition. An **orientation** on a graded poset is an
+edge-labelling of its Hasse diagram with values in $\{+,-\}$ (2.1.1); an
+**oriented graded poset** — *ogposet* from here on — is a graded poset with
+an orientation (2.1.3). Each covering edge carries *exactly one* sign; this
+small clause does real work later (see [[directed-complex]] for what breaks
+when a face would need both signs).
 
-- a **dimension** $\dim G \in \mathbb{Z}_{\ge -1}$, with $-1$ the empty ogposet;
-- for each $0 \le d \le \dim G$ a finite set of **cells** $G_d$;
-- **face maps** $\partial^-_d, \partial^+_d : G_d \to \mathcal{P}(G_{d-1})$
-  assigning to each $d$-cell its input and output $(d{-}1)$-faces;
-- dually, **coface maps** recording, for each cell, the higher cells in whose
-  boundary it appears.
+A worked example. The 2-cell $\alpha : f \Rightarrow g \#_0 h$ — "rewrite the
+arrow $f$ into the path $g$ then $h$" — has as its shape:
 
-The graded structure is a poset whose order is the transitive closure of "is a
-face of"; the *orientation* is the extra datum that each covering relation is
-tagged $-$ or $+$. Three derived notions do the real work.
+- dimension 0: three cells $x, y, m$ (the endpoints and the midpoint of the
+  output path);
+- dimension 1: three cells $f, g, h$, with $f: x \to y$ recorded as
+  $\Delta^- f = \{x\}$, $\Delta^+ f = \{y\}$, and similarly $g: x \to m$,
+  $h: m \to y$;
+- dimension 2: one cell $\alpha$ with $\Delta^- \alpha = \{f\}$ (it consumes
+  $f$) and $\Delta^+ \alpha = \{g, h\}$ (it produces $g$ and $h$).
 
-**Extremality.** A $k$-cell is **input-extremal** when it has no output coface —
-no $(k{+}1)$-cell has it among its output faces, so nothing *produces* it;
-**output-extremal** when it has no input coface — nothing *consumes* it. These
-are the cells lying on the input / output frontier of the shape. **Maximal**
-cells have no coface at all.
+Nothing else. The geometry — that $g$ and $h$ join end-to-end, that the two
+sides of $\alpha$ share endpoints — is all *derivable* from the signed face
+data. That derivation is what the rest of this wiki's concept pages are
+about.
 
-**Boundary.** $\partial^s_k G$ for $s \in \{-,+\}$ is the sub-ogposet on the
-downward closure of the $s$-extremal $k$-cells together with the maximal cells of
-dimension $< k$. It is again an ogposet of dimension $\le k$, and comes with an
-embedding back into $G$ — the full account is [[boundary]].
+## The derived vocabulary
 
-**Roundness.** $G$ is **round** when it is *pure* (every below-top cell has a
-coface) and, at every dimension, the interior touched by the input boundary is
-disjoint from that touched by the output boundary. Roundness is a property of
-the *bare shape* — orientation alone, no labels — and is the precondition for
-$G$ to bound a single **cell**, not for pasting; see [[boundary]] for the full
-story.
+Three notions defined directly from the signs do most of the work downstream.
 
-Two ogposets are *isomorphic* exactly when they share a canonical form; the
-canonical form is obtained by an input-first **traversal** that walks the
-orientation deterministically. This is what makes shape equality decidable, and
-underwrites both [[partial-map|embeddings]] and [[rewriting|matching]].
+**Extremality.** Read the orientation as a flow: a $(k{+}1)$-cell consumes
+its input faces and produces its output faces. A $k$-cell that *no* higher
+cell produces (it has no output coface) lies on the **input frontier** of the
+shape — it must be supplied from outside. Dually, a cell no higher cell
+consumes lies on the **output frontier**. These extremal cells are the seeds
+from which [[boundary|boundaries]] are computed. In the example: $f$ is
+input-extremal (nothing outputs it), $g$ and $h$ are output-extremal.
 
-### The sign
+**Maximality and purity.** A cell with no cofaces at all is **maximal**. A
+shape is **pure** when every maximal cell has top dimension — no stray
+lower-dimensional cell left dangling outside everything's boundary. Purity is
+a cheap necessary condition for the *roundness* property that gates cell
+construction ([[boundary]]).
 
-The orientation is carried by a three-valued tag. $\mathsf{Input}$ ($\partial^-$)
-and $\mathsf{Output}$ ($\partial^+$) are the two genuine polarities; a third
-value $\mathsf{Both}$ is a convenience meaning "either side", used when a query
-ranges over the whole boundary (e.g. forming the downward closure of a cell, or
-the shared boundary of an $n$-cell whose two poles are pasted). $\mathsf{Both}$
-is not a third orientation — it is the union $\partial^- \cup \partial^+$.
+**Canonical form.** Two ogposets are isomorphic exactly when a deterministic
+*input-first traversal* — walk the shape from its input frontier, in an order
+fixed by the face structure — relabels them identically. This makes shape
+equality decidable by computing canonical forms and comparing tables, which
+is how alifib decides every "do these boundaries agree?" question.
+
+An ogposet by itself is **unconstrained** — almost no ogposet is the shape of
+a meaningful diagram (the book opens §3.3 with examples that are not). The
+tower above this page exists to carve out the meaningful ones: a
+[[molecule]] is an ogposet built by an explicit grammar of pastings; an
+[[atom]] is an indecomposable molecule; a [[regular-directed-complex]] is an
+ogposet locally made of atoms. The ogposet is the substrate they all refine.
 
 ## Implementation
 
-Realised by `Ogposet` and `Sign` in `src/core/ogposet.rs` — see [[core-ogposet]].
+`Ogposet` in `src/core/ogposet.rs` — see [[core-ogposet]] — is the definition
+above stored as adjacency tables:
 
-- `Ogposet` stores the four adjacency tables `faces_in` / `faces_out` /
-  `cofaces_in` / `cofaces_out`, each indexed `[dim][cell]`, plus `dim`
-  ($-1$ = empty) and a `normal` flag for canonical ordering. `Ogposet::empty`
-  and `Ogposet::point` are the base shapes.
-- `Sign` *(internal `pub(crate)` enum)* is the orientation: variants `Input`,
-  `Output`, `Both` — exactly the $\partial^-$ / $\partial^+$ / union split above.
-  `Ogposet::faces_of` and `cofaces_of` dispatch on it.
-- **Extremality** is `Ogposet::extremal(sign, k)` *(internal)*, defined by
-  *missing cofaces* — an `Input`-extremal cell has no output coface, an
-  `Output`-extremal one has no input coface. **Maximality** (`Ogposet::maximal`)
-  is no coface at all; **purity** (`is_pure`) is every below-top cell having a
-  coface. **Roundness** is the public `Ogposet::is_round` (built on `is_pure` and
-  `build_layer`); it reads the bare shape, never labels.
-- **Boundary extraction** $\partial^s_k$ is `ogposet::boundary` *(internal)*,
-  returning the faithful sub-ogposet and its `Embedding`; its normalised cousin
-  is `boundary_traverse`. The latter's `Both` branch is special: it returns the
-  full boundary *sphere* of an $n$-cell (via `build_stack_cell_n`), ignoring $k$
-  entirely — used when forming a cell from two parallel diagrams.
-- **Canonical form / isomorphism**: `normalisation` and `find_isomorphism`,
-  both driven by the general `traverse`. Shape equality is decided by comparing
-  canonical forms; the result is recomputed on every call (no memoisation).
-- The membership-only paths `closure` and `signed_k_boundary_of_cell` answer
-  "is this cell in the downward closure?" / "what is $\partial^\alpha_k(x)$ of one
-  cell?" without building a sub-ogposet.
+- Four tables `faces_in`, `faces_out`, `cofaces_in`, `cofaces_out`, each
+  indexed `[dim][cell]`: the sets $\Delta^- y$, $\Delta^+ y$ and their duals
+  $\nabla^- x$, $\nabla^+ x$ (which higher cells have $x$ as an input/output
+  face). Storing cofaces too makes extremality a constant-time lookup.
+- `dim: isize`, with $-1$ for the empty shape; `Ogposet::empty` and
+  `Ogposet::point` are the base cases.
+- A `normal` flag recording whether the cells are already in canonical
+  traversal order.
 
-Note: this is the *shape only*. Labels and paste history live one layer up in
-`Diagram` (`src/core/diagram.rs`, see [[core-diagram]]), which holds the shape as
-an `Arc<Ogposet>`. Beware a sign subtlety — the [[diagram]] layer has its **own**
-two-valued `diagram::Sign` (`Input` / `Output`, no `Both`), since a diagram
-operation always acts on exactly one boundary; it converts to the three-valued
-ogposet `Sign` via `as_ogposet_sign`. The `Both` variant is internal to the
-shape layer.
+The sign is `ogposet::Sign` *(internal)*: `Input`, `Output`, and a third
+variant `Both` that is **not** a third orientation but a query convenience —
+"union over both signs" — used e.g. when collecting a whole boundary sphere.
+One layer up, `diagram::Sign` is two-valued (`Input`/`Output`, converting via
+`as_ogposet_sign`), because an operation on a [[diagram]] always addresses
+one side.
+
+The derived vocabulary maps one-to-one:
+
+- **Extremality** — `Ogposet::extremal(sign, k)` *(internal)*: input-extremal
+  = empty `cofaces_out` row, output-extremal = empty `cofaces_in` row.
+  **Maximality** — `Ogposet::maximal`; **purity** — `Ogposet::is_pure`
+  *(internal)*.
+- **Canonical form** — `ogposet::traverse` *(internal)* is the input-first
+  traversal; `ogposet::normalisation` applies it to a whole shape;
+  `ogposet::find_isomorphism` decides isomorphism by comparing the resulting
+  tables (recomputed per call; nothing is memoised).
+- **Boundary extraction** — `ogposet::boundary` and `boundary_traverse`
+  *(both internal)*; the full account, including what the `Both` branch of
+  `boundary_traverse` is for, is in [[boundary]] and [[atom]].
+
+Everything here is shape only. Labels — which generator each cell
+instantiates — and the pasting history live one layer up in `Diagram`
+(`src/core/diagram.rs`, [[core-diagram]]), which holds its shape as an
+`Arc<Ogposet>`.
 
 ## Related
 
-[[directed-complex]] · [[regular-directed-complex]] · [[molecule]] · [[diagram]] · [[boundary]] · [[atom]] · [[partial-map]]
+[[boundary]] — the $\partial^\pm_k$ operators read off the orientation ·
+[[molecule]] — the constructively well-formed ogposets · [[atom]] ·
+[[regular-directed-complex]] · [[directed-complex]] · [[diagram]] ·
+[[partial-map]]

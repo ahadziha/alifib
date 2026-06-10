@@ -1,131 +1,136 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-09
+last-touched: 2026-06-10
 ---
 
 # Boundary
 
-Every [[diagram]] has a *frontier*. A pasting diagram of top dimension $n$ runs
-**from** an input shape **to** an output shape: these are its boundaries. More
-finely, for each $k \le n$ there is an input boundary $\partial^-_k$ and an output
-boundary $\partial^+_k$ — the $k$-skeleton you reach by following faces *against*
-the orientation (input) or *with* it (output). Boundaries are the joints along
-which diagrams compose ($\#_k$ glues $\partial^+_k U$ to $\partial^-_k V$) and the
-silhouettes a rule's input must match during [[rewriting]].
+A pasting diagram of dimension $n$ runs **from** something **to** something:
+a path of arrows runs from its first point to its last; a sheet of 2-cells
+runs from one composite path to another. The "from" and "to" are its
+boundaries, and more finely there is one pair per dimension: the **input
+$k$-boundary** $\partial^-_k U$ and **output $k$-boundary** $\partial^+_k U$,
+the $k$-dimensional shapes you would see entering and leaving if you
+flattened $U$ down to dimension $k$. Boundaries are the joints along which
+diagrams paste ($\#_k$ glues $\partial^+_k U$ to $\partial^-_k V$) and the
+data compared whenever alifib asks "do these two diagrams meet?"
 
-## Definition
+## How a boundary is computed
 
-Work inside a [[regular-directed-complex]] — an [[oriented-graded-poset]] whose
-faces carry an input/output orientation. A diagram $U$ of dimension $n = \dim U$
-has, for every $k$ and every sign $\alpha \in \{-,+\}$, a **$k$-boundary**
-$\partial^\alpha_k U$.
+The definition is an algorithm, and it is worth internalising because the
+code is a transcription of it. To compute $\partial^\alpha_k U$:
 
-Following Hadzihasanovic, the boundary is built by *downward closure from the
-extremal cells* (Kessler 2025, Def. 2.1.21, `docs/papers/Kessler - 2025 -
-Computational Aspects of Rewriting in Higher-Dimensional Diagrams.pdf`). Start
-from the $\alpha$-extremal $k$-cells — those that are a $(-\alpha)$-face of no
-$(k{+}1)$-cell: input-extremal cells are the output face of nothing, output-extremal
-cells the input face of nothing. Then descend: at each lower dimension $j < k$
-take the faces (of either sign) of cells already chosen, together with the
-maximal $j$-cells. The result is a sub-complex of dimension $\le k$, the
-$(\alpha, k)$-boundary, equipped with its inclusion into $U$.
+1. **Seed** with the $\alpha$-extremal $k$-cells
+   ([[oriented-graded-poset|extremality]]): for $\alpha = -$, the $k$-cells
+   that no higher cell *produces* — the ones the diagram needs handed to it;
+   for $\alpha = +$, the ones nothing *consumes*.
+2. **Close downward**: add every face (of either sign) of everything chosen,
+   recursively.
+3. **Adopt strays**: add the maximal cells of dimension $< k$, with their
+   closures — parts of the diagram too low-dimensional to be seen by the
+   extremality scan but still on the frontier.
 
+The result is a closed sub-shape of dimension $\le k$ together with its
+inclusion into $U$. Three conventions make it total: for $k \ge \dim U$ the
+boundary is all of $U$; the empty diagram ($\dim = -1$) bounds nothing; and
+the everyday *input/output* of an $n$-diagram means the codimension-one case
+$\operatorname{in} U = \partial^-_{n-1} U$,
+$\operatorname{out} U = \partial^+_{n-1} U$.
+
+In the running example $\alpha : f \Rightarrow g \#_0 h$: the input
+1-boundary seeds at $f$ and closes to $\{x, y, f\}$; the output 1-boundary
+seeds at $\{g, h\}$ and closes to $\{x, m, y, g, h\}$. Both are
+1-dimensional diagrams from $x$ to $y$, as they should be.
+
+## Globularity — a theorem, not an axiom
+
+For diagrams to behave like cells of a higher category, boundaries must
+nest: the boundary of a boundary is the lower boundary,
 $$
-\partial^-_k U \ \xhookrightarrow{}\ U \ \xhookleftarrow{}\ \partial^+_k U .
+\partial^\alpha_j(\partial^\beta_k U) = \partial^\alpha_j U \qquad (j < k).
 $$
+On an *arbitrary* [[oriented-graded-poset]] this can fail — the seed-and-close
+procedure above is defined regardless, and nothing forces coherence. The
+book's Lemma 3.3.8 proves it holds for every [[molecule]]: globularity is a
+*reward* for building shapes with the molecule constructors, not a property
+of the substrate. This matters below, because the code's roundness check
+silently assumes it.
 
-Three clamps make this total and well-behaved:
+## Roundness
 
-- **Saturation.** If $k \ge n$ the boundary is all of $U$: a diagram is its own
-  top boundary. So $\partial^\pm_n U = U$.
-- **The empty diagram.** Dimension is allowed to be $-1$ (no cells); its boundary
-  is empty.
-- **0-cells have no proper boundary.** A point is its own boundary at every $k$;
-  there is no $\partial_{-1}$. This is why the *input/output* of an $n$-diagram
-  is taken at $k = n-1$, and undefined ($n = 0$) for a point.
-
-**Input and output.** The everyday boundary — what a $1$-cell's two endpoints
-are, what a $2$-cell's left and right composite paths are — is the codimension-one
-boundary:
+A molecule can be the *input or output of a single higher cell* only if its
+boundary closes up into a directed sphere — input hemisphere and output
+hemisphere meeting exactly along their common rim. The book's definition
+(3.2.5): $U$ is **round** if it is globular and, for every $n < \dim U$,
 $$
-\operatorname{in} U = \partial^-_{n-1} U,
-\qquad
-\operatorname{out} U = \partial^+_{n-1} U,
-\qquad n = \dim U \ge 1 .
+\partial^-_n U \,\cap\, \partial^+_n U \;=\; \partial_{n-1} U .
 $$
+The two hemispheres at each level intersect in nothing more than the level
+below. A path is round (two endpoint hemispheres meeting in nothing); the
+2-diagram $g \#_0 h$ is round; but $O^2 \#_0 O^2$ — two 2-cells side by side
+on a shared middle vertex — is not (the book's Example 3.2.10), which is why
+roundness gates *cell construction* and not *pasting*: pastings do not in
+general preserve it, the rewrite construction does (3.2.9).
 
-**Globularity.** Boundaries nest: lower boundaries of $U$ agree with the
-boundaries of its boundaries,
-$$
-\partial^\alpha_j \, \partial^\beta_k U \ = \ \partial^\alpha_j U
-\qquad (j < k),
-$$
-the globular identities that make a diagram a coherent shape rather than a loose
-heap of cells.
+Two consequences worth knowing: round implies pure (3.2.6), and the
+boundaries of a round shape are round (3.2.7) — roundness propagates down,
+which is what makes the recursive definition of [[atom|atoms]] bottom out.
 
-### Roundness
-
-A diagram is **round** when its input and output boundaries are *disjoint* in
-every dimension below the top — they share no cell except where forced — so that
-together they close up into a directed sphere. Concretely (after the trivial
-cases $\dim \le 0$ and a single top cell) one accumulates the input and output
-layers dimension by dimension and checks they stay disjoint at each level.
-
-Roundness is a property of the **shape**, not of the labelling: it is read off
-the bare [[oriented-graded-poset]], ignoring which generators sit on the cells.
-And it is the precondition for a diagram to be the **input or output boundary of
-a cell** — the gate of cell construction, where the two boundary diagrams must be
-round and parallel before they can bound a single $(n{+}1)$-cell (see
-[[0002-round-boundaries]]). It is *not* a precondition for **pasting**: $\#_k$
-glues along a *shared* $k$-boundary and asks only that
-$\partial^+_k U = \partial^-_k V$, never re-checking roundness of its arguments.
-The round shapes are the [[regular-directed-complex|regular]] ones; the labelling
-that bounds a cell may still identify cells, so the [[directed-complex|type]] it
-builds need not itself be regular.
+**What the code checks instead.** `Ogposet::is_round` does not test the
+equation above. It tests purity, then walks dimension by dimension checking
+the *interiors* of the input and output boundaries are disjoint at every
+level. For a *globular* shape these are equivalent: globularity gives
+$\partial^\alpha_n U = \operatorname{int} \partial^\alpha_n U \sqcup
+\partial_{n-1} U$, so the intersection equals $\partial_{n-1}U$ exactly when
+the interiors are disjoint. The code never checks globularity — every shape
+it feeds to `is_round` is a molecule, and molecules are globular by Lemma
+3.3.8. On a non-molecule ogposet, `is_round` may answer wrongly; it is
+correct precisely on the domain the construction discipline guarantees it is
+called on. The same caveat covers its fast path: "pure with a single top
+cell ⟹ round" is Corollary 3.3.11 (every atom is round), a fact about
+molecules, not ogposets.
 
 ## Implementation
 
-Boundaries live in `src/core/diagram.rs` — see [[core-diagram]].
+The shape-level algorithms are in `src/core/ogposet.rs`
+([[core-ogposet]]); the diagram-level wrappers in `src/core/diagram.rs`
+([[core-diagram]]).
 
-- `Diagram::boundary(sign, k, d)` returns the raw $(\alpha, k)$-boundary as a new
-  diagram. It computes the effective dimension `k.min(d.shape.dim)` (clamping the
-  saturation case and forcing $0$ for the empty diagram), defers the combinatorics
-  to `ogposet::boundary` *(internal)*, pulls back the labels along the inclusion
-  embedding, and trims the paste history to match.
-- `Diagram::boundary_normal(sign, k, d)` is the same, but the underlying shape is
-  re-traversed into canonical form via `ogposet::boundary_traverse` *(internal)*
-  — use it when the boundary's cell ordering must be deterministic.
-- `boundary_history(histories, sign, k)` *(internal)* clamps the recorded pasting
-  history to the boundary dimension. The test
-  `boundary_normal_clamps_history_to_top_dim` pins the subtle invariant: asking
-  for the $5$-boundary of a point still yields a one-level diagram, never five
-  manufactured history levels. Shape, labels, and history lengths must always
-  agree.
-- `Diagram::boundary_correspondence(sign, k, parent, boundary_diag)`
-  *(internal, `pub(crate)`)* recovers how an independently-computed boundary sits
-  inside its parent, by finding the isomorphism to the freshly-extracted boundary.
+- The seed-and-close algorithm is `ogposet::boundary` *(internal)*,
+  literally steps 1–3: `extremal` for the seeds, a downward face walk, and
+  the `maximal` adoption of strays. It returns the sub-ogposet plus its
+  `Embedding` into the parent.
+- `ogposet::boundary_traverse` *(internal)* returns the same boundary in
+  canonical traversal order — use when the answer's cell ordering must be
+  deterministic, e.g. for comparing boundaries by table equality. Its
+  `Sign::Both` branch is special: it assembles the *whole boundary sphere*
+  of a prospective cell (both hemispheres, input-first), the comparison
+  object of [[atom]] construction.
+- `Diagram::boundary(sign, k, d)` / `Diagram::boundary_normal` wrap these:
+  clamp `k`, pull labels back along the embedding, trim the paste history
+  (`boundary_history`, pinned by the test
+  `boundary_normal_clamps_history_to_top_dim`).
+  `Diagram::boundary_correspondence` *(internal)* re-locates an
+  independently-computed boundary inside its parent.
+- **Roundness** is `Ogposet::is_round`: `is_pure`, the single-top-cell fast
+  path, then the layer walk (`build_layer` *(internal)*) accumulating input
+  and output interiors level by level and testing disjointness — the
+  globularity-conditional equivalent of Definition 3.2.5 explained above.
+  `Diagram::is_round` delegates to it; labels are never consulted.
+- Roundness is enforced in exactly one place: `Diagram::parallelism`
+  *(internal)*, the gate of cell construction ([[atom]],
+  [[0002-round-boundaries]]). Pasting's gate `Diagram::pastability` checks
+  only $\partial^+_k U = \partial^-_k V$ in shape and labels.
 
-The `Sign` enum is `Input`/`Output`, mapped to the ogposet's input/output sign
-by `Sign::as_ogposet_sign`. Roundness is `Diagram::is_round`, delegating to
-`Ogposet::is_round` (the directed-sphere disjointness condition). It is enforced
-at **cell construction**: `Diagram::parallelism` *(internal)* rejects a non-round
-input or output boundary before building the cell. `Diagram::paste`'s gate
-(`pastability`) checks only that $\partial^+_k U = \partial^-_k V$ in shape and
-labels — it does *not* re-check roundness of its arguments.
-
-The codimension-one input/output reading is mirrored in [[output]]:
-`normalize::cell_from_diagram` *(internal)* takes `k = top_dim() - 1` (via
-`checked_sub(1)`, returning an empty cell for a $0$-cell) and calls
-`Diagram::boundary(Sign::Input, k, …)` / `Diagram::boundary(Sign::Output, k, …)`
-to render a generator's input and output faces.
-
-A generator's declared boundary is stored directly on its `CellData::Boundary
-{ boundary_in, boundary_out }`, or
-`CellData::Zero` for a point — see [[core-diagram]] and [[core-complex]].
+The codimension-one reading is mirrored where generators are rendered:
+`normalize::cell_from_diagram` *(internal)* takes `k = top_dim() - 1` and
+extracts both sides — see [[output]].
 
 ## Related
 
-[[diagram]] · [[molecule]] · [[oriented-graded-poset]] ·
-[[regular-directed-complex]] · [[directed-complex]] · [[rewriting]] · [[output]] ·
-[[atom]]
+[[oriented-graded-poset]] — where the signs live · [[molecule]] — whose
+globularity (3.3.8) the roundness check assumes · [[atom]] — what roundness
+gates · [[diagram]] · [[regular-directed-complex]] · [[directed-complex]] ·
+[[rewriting]] · [[output]] · [[0002-round-boundaries]] ·
+[[atom-gluing-sign-invariant]]

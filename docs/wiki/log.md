@@ -546,3 +546,35 @@ implements [[regular-directed-complex]] at all. Findings folded into the wiki:
   Definition 3.2.5 on globular inputs (molecules are globular, 3.3.8);
   `pastability` ⟺ (Paste) incl. the Lemma 3.3.7 clamping; `build_cell_shape`
   ⟺ 3.2.1's $\Delta^\mp\top := U_n, V_n$.
+
+## [2026-06-10] doc | Tutorial rewrite of the concept cluster — code↔theory correspondence told plainly
+
+Complete rewrite of seven concept pages in tutorial voice, per direction: readable
+by someone who knows neither the code nor the book completely. Each page now
+teaches the book's definition (with item numbers), walks an example, and states
+directly what the code checks, what it assumes, and what is open.
+
+- [[oriented-graded-poset]] — starts from the encoding problem; orientation as
+  Hasse-edge labelling (2.1.1); worked example $\alpha : f \Rightarrow g \#_0 h$;
+  extremality/purity/canonical form as the derived vocabulary.
+- [[boundary]] — $\partial^\pm_k$ as a three-step seed-and-close algorithm;
+  **globularity presented as a theorem about molecules (3.3.8), not an axiom**;
+  roundness per 3.2.5 vs the disjoint-interiors check `is_round` actually runs,
+  equivalent only on globular shapes.
+- [[molecule]] — the three constructors as a grammar; paste history as the
+  derivation certificate; the theorems each derivation earns and where the code
+  silently relies on each.
+- [[atom]] — the rewrite construction (3.2.1) in three explicit steps mapped
+  line-by-line onto `parallelism` → `pushout` → `build_cell_shape`; the
+  sign-restriction caveat surfaced inline.
+- [[regular-directed-complex]] — leads with the correction: alifib does not
+  represent RDCs; values are functors/colimits (5.3.13–5.3.16); Prop 5.3.15 as
+  the licence for `(shape, labels)`; honest status of the by-construction
+  invariant.
+- [[diagram]] — "what does `let d = ...` name?"; functor vs combinatorial
+  diagram $\ell(d)$; pasting/principal pasting/atoms-as-cells retained.
+- [[directed-complex]] — the loop walk-through showing the realised type is not
+  an ogposet (one Hasse edge, two signs); types as presentations.
+
+Index rows updated for molecule, atom, boundary. No factual changes beyond the
+2026-06-10 reframing pass; this is exposition.
