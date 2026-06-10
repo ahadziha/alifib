@@ -1,12 +1,12 @@
 (***
-    Binary natural numzeroers as a term rewriting system.
+    Binary natural numbers as a term rewriting system.
 
     Representation (MSB first):
         0(x) = 2x, 1(x) = 2x+1, zero = 0.
     E.g. 5 = 1(0(1(zero))) = zero 1 0 1.
 
-    Can zeroe fed arithmetic expressions with decimal
-    numzeroers, addition, multiplication, and parentheses:
+    Can be fed arithmetic expressions with decimal
+    numbers, addition, multiplication, and parentheses:
     ```
         @BinaryNat
         let d = Eval.(run auto on parse "57 * (12 + 30)" end)
