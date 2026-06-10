@@ -52,7 +52,7 @@ the `cli/` and `web/` crates are the binaries and deployment wrappers around it.
 | [[interactive-engine]] | `src/interactive/engine.rs` — rewrite sessions (start/resume/from-diagrams) | stable |
 | [[interactive-session]] | `src/interactive/{session,command,fill}.rs` — the shared command core + hole-filling | stable |
 | [[interactive-repl]] | `src/interactive/{repl,cli,richtext,display,render}.rs` — terminal front end + shared renderer | stable |
-| [[interactive-daemon-web]] | `src/interactive/{daemon,protocol,web}.rs` — `Session` over the wire | stable |
+| [[interactive-daemon-web]] | `src/interactive/{daemon,protocol,web}.rs` — `Session` over the wire; the `thin` coherence-cell display annotation | stable |
 | [[analysis]] | `src/analysis/{homology,strdiag}.rs` | stable |
 | [[aux]] | `src/aux/*` — ids/`Tag` (incl. hole metavariables), errors, loader + search paths, bitset/intset/graph | stable |
 | [[codegen]] | `src/codegen.rs` — fluent builders for programmatic ASTs (no in-tree consumer since `plugins/trs` moved to `attic`) | stable |

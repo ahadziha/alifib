@@ -589,3 +589,24 @@ named gates, restricted domains stated, open questions get pages with inbound
 links from dependents); the book promoted to citable-by-numbered-item primary
 source (verified, never from memory); concept-page template reshaped to the
 tutorial form; lint extended to catch tier conflation and tutorial regressions.
+
+## [2026-06-10] doc | The `thin` annotation documented in interactive-daemon-web
+
+New coverage gap closed: the `thin` cell annotation (as used throughout
+`examples/TRS.ali` / `examples/TRS/Aux.ali`, `index thin = [ … ]`) had only a
+one-line aside in [[core-complex]]. Added a full *The `thin` annotation* section
+to [[interactive-daemon-web]] — the canonical home, since the whole mechanism
+lives in `web.rs`. Pipeline documented as four steps: seed
+(`compute_thin_tags`, reading `Complex::find_index("thin")`, resolving
+generators and let-bound diagrams), propagate along attach-maps
+(`propagate_thin_through_maps`, via a domain generator's map `image`),
+accumulate + emit (`type_summaries_json`'s running `known_thin`, `thin_tags` as
+global-id integers via `protocol::tag_to_json`, served by `WebRepl::get_types`),
+and render (`web/frontend/src/app.js`: `recomputeFullyThin`, `drawWire`, the
+node loop; fully-thin = thin + all faces thin; the per-cell thin-toggle is
+session-only). **Claim tier pinned: display-only, no semantic force** — the
+rewriting engine never reads the index; `thin` is a magic string `web.rs`
+privileges, not a grammar keyword (verified: `find_index("thin")` and the
+literal `"thin"` occur only in `web.rs` + `app.js`). Added a matching gotcha
+bullet, and a cross-link from [[string-diagram]] (Surfacing + Related). No
+source touched.

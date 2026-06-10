@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-09
+last-touched: 2026-06-10
 code: [src/interactive/daemon.rs, src/interactive/protocol.rs, src/interactive/web.rs]
 ---
 
@@ -161,6 +161,70 @@ HTTP/WASM/MCP crates own the transport and call its methods.
    `active_engine_mut`. `get_types` re-serves the load-time type summary for the
    frontend accordion.
 
+## The `thin` annotation — greying out coherence cells
+
+A type built for rewriting is mostly *scaffolding*: identities, unitors,
+associators, the naturality squares that let a node slide past a wire. Drawn at
+full strength these swamp the handful of cells that are the actual rewrite
+rules. The **`thin` annotation** is the author's way of saying "these cells are
+coherence, not content," so the [[string-diagram]] canvas can mute them. It is
+read **only** here, in `web.rs`, and consumed **only** by the renderer — the
+matching/pushout/step machinery ([[core-matching]], [[interactive-engine]])
+never looks at it. So thinness carries **no semantic force**: it does not mark a
+cell invertible, does not change what rewrites or how, and is *not* the
+categorical notion of a thin/degenerate cell. It is display metadata, nothing
+more — the most load-bearing fact about it.
+
+The annotation is an ordinary **index** — the `index Name = [ … ]` string-list
+templating construct ([[language-parser]]) — that happens to be named exactly
+`thin`. That name is a magic string `web.rs` privileges; the lexer and parser
+give it no special status, and nothing checks that the listed cells *are*
+coherence. In `examples/TRS/Aux.ali` a `Wire` ends with `index thin = [ Idem ]`
+(its idempotent $\mathsf{Idem} : \mathrm{id}\,\mathrm{id} \to \mathrm{id}$); a
+node lists its unit coherences, `index thin = [ DomId, CodId ]`; the larger
+algebras in `examples/TRS.ali` list their unitors, associators, and `*_Nat`
+naturality cells.
+
+The pipeline is three steps in `web.rs` plus one in the frontend:
+
+1. **Seed — `compute_thin_tags`.** For one type complex, read
+   `Complex::find_index("thin")` and resolve each listed name to a
+   [[core-complex|`Tag`]]: a generator via `find_generator`, or a let-bound
+   [[diagram]] via `find_diagram` then its `top_label`. So `thin` may name
+   either a raw generator or a `let`-bound cell.
+2. **Propagate — `propagate_thin_through_maps`.** Thinness flows along
+   [[partial-map|attach-maps]]. For every map in the complex, resolve its domain
+   complex; for each domain generator already known thin, take its image under
+   the map (`image`); if that image is a single cell, mark the cell's
+   `top_label` thin. This is why `Unit`'s attached `Aux.Wire` drags the wire's
+   `Idem` onto `Unit` without `Unit` re-declaring it.
+3. **Accumulate and emit — `type_summaries_json`.** The builder walks every
+   `(module, type)` pair in `GlobalStore::normalize` order, carrying a running
+   `known_thin: HashSet<Tag>`. Per type it seeds with `compute_thin_tags`,
+   extends `known_thin`, then propagates against that running set — so an
+   attached type's thin cells reach a host only once they have themselves been
+   visited and seeded (propagation reads the set as it stands, in iteration
+   order). Each type's JSON carries a `thin_tags` array: its own seeds plus the
+   freshly propagated images, each a **bare integer** — the global id, via
+   `protocol::tag_to_json` (local/hole tags serialise to `null`). The same
+   payload gives every generator a `tag` and its `face_tags`: the
+   $\partial^-$/$\partial^+$ top-dimension boundary labels, via `face_tags_json`.
+   `type_summaries_json` is served by `WebRepl::get_types` and bundled into the
+   load reply, so the frontend has it the moment a file loads.
+4. **Render — frontend ([[web-frontend]], `web/frontend/src/app.js`).** On load,
+   `app.js` fills `thinTags` from every type's `thin_tags` and `tagFaces` from
+   the generators' `face_tags`, then `recomputeFullyThin` derives a second set:
+   a tag is **fully thin** iff it is thin *and* every face in `tagFaces` is thin
+   too — coherence all the way down. The canvas reads both. A thin **wire**
+   (`drawWire`) is stroked in the muted `thin` colour instead of `wire`; a thin
+   **node** collapses from a full node disc (`NODE_R`) to a wire-sized dot
+   (`WIRE_R`), filled with the `thin` colour when fully thin and the `wire`
+   colour otherwise; thin **labels** are muted to match. The accordion adds a
+   per-cell **thin-toggle** that edits `thinTags` live and re-renders — so the
+   `index thin` list is only the *initial* thin set; a reader may promote or
+   demote any cell in the GUI, and that override is session-only (never written
+   back to source).
+
 ## Non-obvious invariants and gotchas
 
 - **`Session::apply` is the single shared command surface.** Both the daemon and
@@ -198,6 +262,11 @@ HTTP/WASM/MCP crates own the transport and call its methods.
   `None`. `load_source_with_modules` sets `session = None` *before* allocating
   the new store, because in WASM peak linear-memory pages are never returned —
   the two stores must not coexist.
+- **The `thin` index is display-only and a magic string.** `compute_thin_tags`
+  reads an index named literally `thin`, propagates it along attach-maps
+  (`propagate_thin_through_maps`), and emits each type's `thin_tags` purely so
+  the canvas can grey coherence cells. The rewriting engine never reads it; the
+  grammar gives the name no status. See *The `thin` annotation* above.
 
 ## Mathematics
 

@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-09
+last-touched: 2026-06-10
 ---
 
 # String diagram
@@ -120,6 +120,13 @@ The server's `/api/get_*_strdiag` routes and the MCP tools (`get_strdiag`,
 methods — see [[web-backends]] for the transports and [[web-frontend]] for the
 renderer that positions and paints the graphs.
 
+Cells the author marks **thin** — an `index thin = [ … ]` list naming the
+coherence scaffolding (identities, unitors, associators, naturality squares) —
+are muted and shrunk on this canvas so the genuine rewrites stand out: a thin
+node collapses to a wire-sized dot, thin wires and labels grey out. This is a
+display annotation with no semantic force; its seeding, map-propagation, and
+wire format live in [[interactive-daemon-web]].
+
 ## Related
 
 - [[diagram]], [[molecule]] — the primal objects this dualises.
@@ -127,3 +134,5 @@ renderer that positions and paints the graphs.
   the three constraint graphs are read from.
 - [[flow-graph]] — the height order is the diagram's directed flow.
 - [[analysis]] — the implementing module.
+- [[interactive-daemon-web]] — the `thin` display annotation that mutes
+  coherence cells in this presentation.
