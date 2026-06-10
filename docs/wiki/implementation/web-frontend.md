@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-09
+last-touched: 2026-06-10
 code: [web/frontend/src/app.js, web/frontend/src/ali-lang.js, web/frontend/index.html, web/frontend/package.json]
 ---
 
@@ -174,6 +174,17 @@ keeps proportions across window resizes and persists nothing.
   value used to coerce a boundary request, skip the dropdown repopulation, and
   wedge further selections (fixed in commit `6a638d1`; there are no frontend
   tests to pin it).
+- **`store`/`done` write to the *evaluated* tab, not the active one.** Code
+  generation targets the tab whose name the REPL last loaded
+  (`lastEvaluatedTabName`, recorded by `evaluateSource` on a successful
+  `load_source`), found by `resolveEvaluatedTab` and switched to with `switchTab`
+  before the editor write — so changing tabs mid-session no longer misdirects an
+  appended `let` clause. If that tab was closed or renamed the editor write is
+  declined with an error (`finishFill` for `done`, the `store` branch of
+  `renderResult` for `store`); the backend still holds the definition in memory
+  either way. The residual hazard is reusing the evaluated name on a fresh tab —
+  the match is by name, not tab identity. Added in commit `c66b078`; no frontend
+  tests pin it.
 - **The examples manifest is built at deploy time, not by the frontend.** The
   dropdown is populated from `GET examples/index.json`. Under `alifib web` that
   file comes from `ExampleSet::index_json` ([[web-backends]]); for the static

@@ -610,3 +610,16 @@ privileges, not a grammar keyword (verified: `find_index("thin")` and the
 literal `"thin"` occur only in `web.rs` + `app.js`). Added a matching gotcha
 bullet, and a cross-link from [[string-diagram]] (Surfacing + Related). No
 source touched.
+
+## [2026-06-10] refactor | Merged `main` (6a638d1..c66b078); web-frontend tab-targeting gotcha
+
+Merged `origin/main` into `wiki`. Two commits since the last sync, neither
+touching `docs/wiki/`: `857e4ec` (comment typo in `examples/BinaryNat.ali`, no
+wiki impact) and `c66b078` (`store`/`done` now write to the *evaluated* tab, not
+the active one). Re-verified the freshly-written [[interactive-daemon-web]]
+`thin` section against the merged `app.js` — `recomputeFullyThin`, `drawWire`,
+`thinTags`, the node loop are all untouched, so its citations still hold. Added
+a [[web-frontend]] gotcha for the new tab-targeting behaviour
+(`lastEvaluatedTabName`/`resolveEvaluatedTab`, switch-or-decline in `finishFill`
+and the `store` branch of `renderResult`), paralleling the existing
+boundary-selector gotcha. No source touched.
