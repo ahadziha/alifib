@@ -1,0 +1,138 @@
+(***
+    Asynchronous message passing, with schedule-invariant traces.
+
+    Two parties at either end of a word; the cells between them
+    are messages in flight. Sends append a message, receives
+    consume the oldest one — a FIFO channel for free, since
+    messages on a word cannot overtake each other.
+
+    The point of the example: a trace is a 2-diagram, and a
+    2-diagram does not record the order of causally independent
+    events. Two schedules that differ only by commuting
+    independent steps build the *same* trace — see `eager` and
+    `alternating` below, which elaborate to equal diagrams.
+    What the trace does record is exactly the causal order:
+    rendered as a string diagram it is a message sequence chart.
+
+    Try, in the REPL (`alifib repl examples/Channel.ali`):
+
+        start Channel 'S2 R0' 'S0 R2'   (* schedule it yourself *)
+        resume Channel eager 'S0 R2'    (* replay a stored trace *)
+        start Deadlock 'A B' 'A_done B_done'
+***)
+
+@Type
+
+(***
+    A sender posts two messages; a receiver consumes them.
+***)
+Channel <<= {
+    pt,
+
+    (* Sender with 2, 1, 0 messages left to send *)
+    S2: pt -> pt,
+    S1: pt -> pt,
+    S0: pt -> pt,
+
+    (* A message in flight *)
+    m: pt -> pt,
+
+    (* Receiver having consumed 0, 1, 2 messages *)
+    R0: pt -> pt,
+    R1: pt -> pt,
+    R2: pt -> pt,
+
+    (* Sending appends a message to the channel *)
+    send1: S2 -> S1 m,
+    send2: S1 -> S0 m,
+
+    (* Receiving consumes the message nearest the receiver,
+       which is the oldest one *)
+    recv1: m R0 -> R1,
+    recv2: m R1 -> R2
+},
+
+(***
+    A handshake that can refuse to start.
+
+    A waits for a greeting, then replies and is done. B makes an
+    internal choice: speak first (and the handshake completes),
+    or wait for A to speak first (and nobody ever speaks). The
+    choice is the only conflict in the system — every other pair
+    of available rewrites is independent.
+***)
+Deadlock <<= {
+    pt,
+
+    (* A: waits for a reply, then sends and is done *)
+    A: pt -> pt,
+    A1: pt -> pt,
+    A_done: pt -> pt,
+
+    (* B: either speaks first, or stubbornly waits *)
+    B: pt -> pt,
+    B1: pt -> pt,
+    B_stubborn: pt -> pt,
+    B_done: pt -> pt,
+
+    (* Messages: m travels A -> B, n travels B -> A *)
+    m: pt -> pt,
+    n: pt -> pt,
+
+    (* A: receive n, send m, done *)
+    A_recv: A n -> A1,
+    A_send: A1 -> A_done m,
+
+    (* B, branch 1: send n, then receive m *)
+    B_speak: B -> n B1,
+    B_recv: m B1 -> B_done,
+
+    (* B, branch 2: wait for m first.
+       After B_wait nothing can ever fire again: A waits for n,
+       B_stubborn waits for m, and neither message exists.
+       The engine reports the deadlock as `no rewrites available`. *)
+    B_wait: B -> B_stubborn,
+    B_stubborn_recv: m B_stubborn -> B_done
+}
+
+(***
+    Two schedules of the same protocol run, written as explicit
+    trace diagrams, one rewrite step per line.
+
+    They differ only in the order of `send2` and `recv1` — events
+    at opposite ends of the channel, causally independent — and
+    so they are equal *as diagrams*: a session started with
+    `start Channel eager alternating` reports its target reached
+    at step 0. The interleaving lives only in the layering; the
+    trace itself is the partial order of events.
+***)
+@Channel
+(* send, send, receive, receive *)
+let eager =
+    (send1 R0)
+    (send2 m R0)
+    (S0 m recv1)
+    (S0 recv2),
+
+(* send, receive, send, receive *)
+let alternating =
+    (send1 R0)
+    (S1 recv1)
+    (send2 R1)
+    (S0 recv2)
+
+(***
+    The two runs of the handshake: the completed session, and the
+    one-step trace that ends in the stuck state. Replay them with
+    `resume Deadlock handshake 'A_done B_done'` and
+    `resume Deadlock refusal 'A_done B_done'`.
+***)
+@Deadlock
+let handshake =
+    (A B_speak)
+    (A_recv B1)
+    (A_send B1)
+    (A_done B_recv),
+
+let refusal =
+    A B_wait
