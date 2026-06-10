@@ -169,6 +169,22 @@ const editorTabs = {
 let tabIdCounter = 0;
 let untitledCounter = 0;
 
+// The source-file name the REPL last loaded (the tab name we passed to
+// `load_source`).  Code generation (`store`, `done`) targets *this* file, not
+// whichever tab happens to be active — so switching tabs mid-session can no
+// longer misdirect a write.  We match by name, mirroring the REPL's own notion
+// of the source: see `resolveEvaluatedTab`.
+let lastEvaluatedTabName = null;
+
+// The open tab whose name matches the REPL's loaded source, or null if none
+// still carries that name (it was closed, or renamed after evaluation).  The
+// one residual hazard is reusing the name on a fresh tab — reckless enough to
+// punish with a misdirected write.
+function resolveEvaluatedTab() {
+  if (lastEvaluatedTabName == null) return null;
+  return editorTabs.tabs.find(t => t.name === lastEvaluatedTabName) || null;
+}
+
 function activeTab() {
   return editorTabs.tabs.find(t => t.id === editorTabs.activeTabId) || null;
 }
@@ -1024,6 +1040,10 @@ async function evaluateSource(silent = false) {
     return;
   }
 
+  // The load succeeded: this tab's name is now the REPL's source file, and the
+  // target any subsequent `store`/`done` must write back to.
+  lastEvaluatedTabName = tabName;
+
   const types = result.types || [];
 
   thinTags.clear();
@@ -1459,6 +1479,14 @@ async function zeroCellCmd(command) {
 // re-evaluate.
 async function finishFill() {
   if (!repl) return;
+  // Write the clause back to the file that was evaluated, not the active tab.
+  const target = resolveEvaluatedTab();
+  if (!target) {
+    appendReplEntry('done', formatError(
+      `cannot finalise: the source tab '${lastEvaluatedTabName}' is no longer open (it was closed or renamed)`));
+    return;
+  }
+  if (target.id !== editorTabs.activeTabId) switchTab(target.id);
   const before = getEditorText();
   const result = await parseReplResponse(repl.run_command('{"command":"done"}'));
   if (result.status === 'error') {
@@ -1570,8 +1598,17 @@ async function renderResult(raw, reqCmd, result) {
   } else if (sessionActive && STATE_REQS.has(reqCmd)) {
     await updateVisInfo(result.data);
   }
-  // `store` appends its definition to the editor and refreshes the accordion.
+  // `store` appends its definition to the file that was evaluated (switching to
+  // its tab if needed), then refreshes the accordion.  The backend already holds
+  // the definition in memory; if its tab is gone we just decline the editor write.
   if (reqCmd === 'store' && result.data && result.data.stored) {
+    const target = resolveEvaluatedTab();
+    if (!target) {
+      appendReplEntry(raw, formatError(
+        `stored, but not written to source: the tab '${lastEvaluatedTabName}' is no longer open (it was closed or renamed)`));
+      return;
+    }
+    if (target.id !== editorTabs.activeTabId) switchTab(target.id);
     const s = result.data.stored;
     const code = `\n\n@${s.type_name}\nlet ${s.def_name} = ${s.expr}`;
     const doc = view.state.doc;
