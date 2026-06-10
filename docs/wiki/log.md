@@ -578,3 +578,14 @@ directly what the code checks, what it assumes, and what is open.
 
 Index rows updated for molecule, atom, boundary. No factual changes beyond the
 2026-06-10 reframing pass; this is exposition.
+
+## [2026-06-10] doc | Wiki schema updated — tutorial voice and claim-tier rules codified in CLAUDE.md
+
+Saved the session's working rules into `docs/wiki/CLAUDE.md`: a *Voice* section
+(tutorial register: open with the page's question, work an example, tell
+definitions as algorithms, correct tempting misreadings head-on); a *Claim
+status* section (every claim is theorem / construction discipline / open —
+named gates, restricted domains stated, open questions get pages with inbound
+links from dependents); the book promoted to citable-by-numbered-item primary
+source (verified, never from memory); concept-page template reshaped to the
+tutorial form; lint extended to catch tier conflation and tutorial regressions.

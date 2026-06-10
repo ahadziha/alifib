@@ -3,14 +3,21 @@
 This folder is the **alifib wiki**: an LLM-maintained, interlinked knowledge base
 documenting the alifib codebase and the mathematics it implements. You (the LLM)
 own this layer entirely — you write and maintain every page; the human reads,
-browses in Obsidian, and directs.
+browses in Obsidian, and directs. The wiki's job is to **teach the
+correspondence** between the theory and the code — plainly, directly, in
+tutorial voice (see *Voice* below).
 
 This is a **codebase-documentation wiki**, not a literature wiki. The primary
 source is the code: the `src/` library is the bulk, and the workspace binaries
 and wrappers (`cli/`, `web/{shared,server,wasm,mcp}`, `web/frontend`) are covered
 too — the whole codebase, not just the library. (`plugins/trs` was retired to the
-`attic` branch, 2026-06-04.) Papers in `docs/papers/` are *reference only* — you may cite them, but
-you never create a page per paper and never ingest them as sources.
+`attic` branch, 2026-06-04.) Papers in `docs/papers/` are *reference only* — no
+page per paper, never ingested wholesale — but Hadzihasanovic 2024
+(*Combinatorics of higher-categorical diagrams*, `docs/papers/Hadzihasanovic -
+2024 - Combinatorics of higher-categorical diagrams.pdf`) is the mathematical
+primary source: concept pages cite it by **numbered item** (2.1.1, 3.3.2,
+5.3.15), verified against the text — `pdftotext` the PDF and check; never cite
+an item number from memory.
 
 ## Layout
 
@@ -42,6 +49,71 @@ alifib is mathematics realised as code. The value of this wiki is the
 If you add a concept, wire it to its code. If you document a module, wire it to
 its math. A concept with no implementation link or an implementation with no
 math link is a lint failure.
+
+The bridge is more than links. A concept page's `## Implementation` section
+must state **plainly what the code checks, what it assumes, and what is open**
+— not merely list symbols. "The gate is `Diagram::parallelism`; roundness is
+checked here and nowhere else; the sign-restriction is inherited from
+traversal order and unproven above dimension 3" is a bridge. A bullet list of
+function names is not.
+
+## Voice: tutorial, not encyclopedia
+
+Pages are read by someone who does not completely understand the code, does
+not completely understand the book, but is intelligent enough to gain
+something real from a clear explanation. Write for that reader. (Direction of
+2026-06-10; the concept cluster from that pass is the register reference.)
+
+- **Open with the question the page answers.** "How do you hand a pasting
+  diagram to a computer?" beats a definition dropped from orbit. Give the
+  plain answer first, then refine it.
+- **Work a concrete example.** The 2-cell $\alpha : f \Rightarrow g \#_0 h$,
+  the loop `a : pt -> pt`, the whiskered 2-cell that is *not* an atom —
+  small, reusable across pages, computed out in full at least once.
+- **Tell definitions as algorithms where possible.** If the book's definition
+  can be told as steps the code transcribes (boundary = seed at extremal
+  cells, close downward, adopt strays), tell it that way — the
+  Implementation section then reads as a transcription, not a leap.
+- **Explain jargon at first use**; complete sentences; plain words in the
+  connective tissue, notation in the mathematics.
+- **Correct the tempting misreading head-on.** When the natural summary is
+  wrong ("alifib represents RDCs", "one top-dimensional cell = atom"), say
+  so explicitly and explain why — often the most valuable sentences on the
+  page.
+
+## Claim status: theorem, discipline, or open
+
+Every mathematical claim about the system sits in exactly one of three tiers.
+Never blur them — conflation is how this wiki once said "molecules are RDCs
+by construction, so the interpreter never needs a global regularity check"
+while the (Atom) gate's soundness was in fact unproven.
+
+1. **Theorem.** Proved in the book; cited by numbered item, verified against
+   the text.
+2. **Construction discipline.** True of the running system because every code
+   path that could mint the object goes through a gate — not because anything
+   checks it. Name the gates (`Diagram::parallelism`, `Diagram::pastability`)
+   and write "maintained by construction, never checked", not "guaranteed".
+   When a predicate is correct only on a restricted domain (e.g.
+   `Ogposet::is_round` is the book's 3.2.5 only on *globular* shapes), state
+   the domain and why every actual call site lies inside it (molecules are
+   globular, 3.3.8).
+3. **Open.** Believed, partially proved, or plausible. Gets its own
+   `open-questions/` page stating exactly what is proved and what is not
+   (model: [[atom-gluing-sign-invariant]] — sound for generators of dimension
+   $\le 3$, open above), with an inbound link from **every** page whose
+   claims lean on it.
+
+Two corollaries. *Unverified content stays out*: a taxonomy or example you
+could not actually construct or check against book and code does not go on a
+page, however plausible — a failed search for a witness is itself a finding,
+recorded in the open question, not asserted as fact. And *get the object of
+study right*: alifib's values are pasting diagrams — strict functors
+$\mathsf{Mol}/U \to X$ (5.3.13/5.3.16) stored as their labellings $\ell(d)$,
+arbitrary colimits, **not** RDCs; only shapes are regular, and Proposition
+5.3.15 (the labelling determines the functor exactly when the shape is
+regular) is why shape-regularity matters at all. A framing that misstates
+what the system represents is an error even when each local fact is true.
 
 ## Page conventions
 
@@ -111,15 +183,20 @@ subject demands, but keep the bridge section.
 ## Mathematics — links to the concepts this realises (the bridge).
 ```
 
-**Concept page** (math-first — describe the idea, then point at code):
+**Concept page** (a tutorial: teach the idea, then map it onto the code):
 
 ```
 # <Concept>
-Lead paragraph: the definition in prose + house notation.
-## Definition — the precise mathematical account; cite a paper in docs/papers/
-   inline if the definition comes from one (no page per paper).
-## Implementation — links to impl page(s) and concrete symbols (the bridge).
-## Related — sibling concepts.
+Lead: the question this page answers, and the plain answer in prose + house
+notation. If there is a tempting misreading, correct it here, explicitly.
+## <Definition / How it works> — the precise account, told as an algorithm
+   or through a worked example where possible; book citations by numbered
+   item. Section titles may be bespoke ("The rewrite construction, step by
+   step") — the skeleton is not a straitjacket.
+## Implementation — the bridge: impl pages and concrete symbols, stating
+   plainly what the code checks, what it assumes from construction
+   discipline, and what is open (the three tiers of Claim status).
+## Related — sibling concepts, each with a phrase saying why it is related.
 ```
 
 ## Workflows
@@ -159,7 +236,11 @@ page.
 `## Implementation` link (or vice versa); code refs that no longer resolve;
 `status: stub` pages that are overdue; orphan pages with no inbound wiki-links;
 modules in `src/` with no `implementation/` page yet; concepts mentioned across
-pages but lacking their own page.
+pages but lacking their own page. Also lint the **claim tiers**: "by
+construction" or "guaranteed" with no named gate; book citations without item
+numbers; an open question asserted as fact, or a page leaning on one without
+linking it; and tutorial regressions — a concept page that defines without a
+motivating question or worked example.
 
 ## index.md and log.md
 
@@ -180,8 +261,11 @@ shows recent activity.
 ## Status of the wiki
 
 All content pages are `status: stable` — verified against current `src/` (and the
-`cli/` / `web/` crates) in the 2026-06-09 full audit/rewrite pass — except
-`open-questions/module-open-semantics`, which stays `draft` because its subject
-(`open` scoping) is genuinely unresolved. `stub` and `draft` remain valid statuses
-for new pages; promote to `stable` only after a page's code refs have actually been
+`cli/` / `web/` crates) in the 2026-06-09 full audit/rewrite pass — except the
+`open-questions/` pages `module-open-semantics` and `atom-gluing-sign-invariant`,
+which stay `draft` because their subjects are genuinely unresolved. The concept
+cluster was rewritten in tutorial voice on 2026-06-10 (the register reference for
+*Voice* above), in the same pass that corrected the wiki's framing of what alifib
+represents (see *Claim status*). `stub` and `draft` remain valid statuses for new
+pages; promote to `stable` only after a page's code refs have actually been
 re-verified, not merely written.
