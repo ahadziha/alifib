@@ -668,3 +668,13 @@ unwritable and unneeded), *forced by the carrier being $I$*, **not** delegated t
 `Sort`'s unitors/`discard` (those are separate sort-level structure). The earlier
 wording mislabelled `discard` (the sort-level counit) as filling the SCFA's
 $\varepsilon$ role. No source touched.
+
+## [2026-06-10] doc | trs-encoding: readability pass (paragraph splitting)
+
+Content-preserving formatting only: broke the three wall-of-text paragraphs into
+shorter ones at their natural seams — the Fox-theorem opener (motivation |
+theorem statement), the "comonoid laws deliberately absent" block (claim |
+why-no-laws | the closed-terms wager), the Frobenius gloss (definition | the
+adjectives + spider normal form | why the unit needs it + the name | the missing
+$\eta$/$\varepsilon$), and the unit-module intro (motivation | the module). No
+prose reworded, no claims changed.

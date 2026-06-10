@@ -63,7 +63,9 @@ sequence (`#_1` along the shared `nat` wire), bottoming out at the nullary
 
 A bare symmetric monoidal category is *linear*: a wire is a resource, used
 exactly once. Terms are not linear — $\mathrm{add}(x,x)$ uses $x$ twice and a
-projection drops a variable. **Fox's theorem** (T. Fox, *Coalgebras and
+projection drops a variable.
+
+**Fox's theorem** (T. Fox, *Coalgebras and
 Cartesian categories*, Communications in Algebra 4, 1976) says exactly what
 upgrades a symmetric monoidal category to a **cartesian** one (where $\otimes$
 is the categorical product and the unit is terminal): every object must carry a
@@ -99,22 +101,26 @@ copy/discard *towards the leaves*:
 **The comonoid laws are deliberately absent.** `Sort` declares the comonoid
 *generators* and their *naturality*, but **not** coassociativity,
 cocommutativity (`copy #1 swap ⟶ copy`), or the counit law
-(`copy #1 (discard ‖ wire) ⟶ wire`). This is by design, not an omission. alifib
-mints a cell only for a *move it needs*; the comonoid laws are equalities that
-hold on the nose in the intended semantics (sets and functions: $\Delta$ is the
-diagonal, $\varepsilon$ the unique map to a point), not computational steps. And
-since the language has no [[0001-no-identities|identity cells]] and no equational
-quotient, an equality that is not a step is simply not represented. The wager —
-that on *closed* terms the naturality cells suffice to drive every copy/discard
-down to the constants without ever needing to reassociate or commute them on a
-bare wire — is the substance of the convergence claim below, and is
+(`copy #1 (discard ‖ wire) ⟶ wire`). This is by design, not an omission.
+
+alifib mints a cell only for a *move it needs*; the comonoid laws are equalities
+that hold on the nose in the intended semantics (sets and functions: $\Delta$ is
+the diagonal, $\varepsilon$ the unique map to a point), not computational steps.
+And since the language has no [[0001-no-identities|identity cells]] and no
+equational quotient, an equality that is not a step is simply not represented.
+
+The wager — that on *closed* terms the naturality cells suffice to drive every
+copy/discard down to the constants without ever needing to reassociate or commute
+them on a bare wire — is the substance of the convergence claim below, and is
 [[trs-convergence|not yet proved]].
 
 ## The unit, unitors, and the Frobenius bookkeeping
 
 Arities change under rewriting — copying a node turns one output into two,
 discarding turns a term into nothing — so the encoding needs an algebra of
-"empty" wires to absorb the slack. That is the **`Unit`** module: a wire `pt -> pt` that *is* the **monoidal unit
+"empty" wires to absorb the slack.
+
+That is the **`Unit`** module: a wire `pt -> pt` that *is* the **monoidal unit
 object** $I$ (the empty context — constants are maps out of it, `discard` the map
 into it), carrying a (special, commutative) Frobenius structure `merge`/`split` with
 its laws `Assoc`/`Coassoc`/`LFrobenius`/`RFrobenius`/`Split_Merge`, where
@@ -126,6 +132,7 @@ $\mu : A\otimes A \to A$) and a comonoid (`split`, $\delta : A \to A\otimes A$),
 the two halves interlocked by the **Frobenius law**: sliding a split through a
 merge lands in the same place whichever side you do it — `LFrobenius`/`RFrobenius`
 are its two zig-zags, both equal to $\delta\circ\mu$ (the diagram `merge split`).
+
 **Commutative** adds that `merge` ignores the order of its inputs; **special**
 (separable) adds that split-then-merge is trivial,
 `Split_Merge : split merge ⟶ id` ($\mu\circ\delta = \mathrm{id}$). Special kills
@@ -134,16 +141,20 @@ of merges and splits collapses to one canonical *spider* fixed solely by its
 input/output count — a tangle of unit wires carries no information beyond *which
 endpoints are joined*. (The classical backdrop: commutative Frobenius algebras
 are exactly 2-dimensional TQFTs, surfaces classified by genus and boundary;
-"special" forces genus $0$.) That connectivity-only bookkeeping is exactly what
-lets the unit soak up the arity shifts `copy` and `discard` create. This is also
-why the module is called `Unit` and why it has the shape it does: its carrier is
-the unit object itself, and the unit object is *canonically* a special
-commutative Frobenius algebra — `merge`/`split` are just the unitor iso
-$I\otimes I\cong I$ rendered as two directed cells. The algebra's own unit $\eta$
-and counit $\varepsilon$ would be maps $I\to I$, i.e. identities, so an
-identity-free language cannot write them and never needs to: their absence is
-*forced by the carrier being $I$*, not an omission. (`Sort`'s `lunit`/`runit` and
-`discard` are separate, sort-level structure, not stand-ins for $\eta$/$\varepsilon$.)
+"special" forces genus $0$.)
+
+That connectivity-only bookkeeping is exactly what lets the unit soak up the
+arity shifts `copy` and `discard` create. This is also why the module is called
+`Unit` and why it has the shape it does: its carrier is the unit object itself,
+and the unit object is *canonically* a special commutative Frobenius algebra —
+`merge`/`split` are just the unitor iso $I\otimes I\cong I$ rendered as two
+directed cells.
+
+The algebra's own unit $\eta$ and counit $\varepsilon$ would be maps $I\to I$,
+i.e. identities, so an identity-free language cannot write them and never needs
+to: their absence is *forced by the carrier being $I$*, not an omission. (`Sort`'s
+`lunit`/`runit` and `discard` are separate, sort-level structure, not stand-ins
+for $\eta$/$\varepsilon$.)
 
 `Sort` then adds **unitors** `lunit`/`runit` (and inverses) letting a
 unit wire be introduced beside or absorbed into a sort wire. The unitors are
