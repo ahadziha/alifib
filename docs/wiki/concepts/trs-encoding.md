@@ -118,7 +118,28 @@ discarding turns a term into nothing — so the encoding needs an algebra of
 pt` carrying a (special, commutative) Frobenius structure `merge`/`split` with
 its laws `Assoc`/`Coassoc`/`LFrobenius`/`RFrobenius`/`Split_Merge`, where
 `discard` lands and where a binary `Discard_Nat` merges two discarded units back
-into one. `Sort` then adds **unitors** `lunit`/`runit` (and inverses) letting a
+into one.
+
+A **Frobenius algebra** is a single object that is at once a monoid (`merge`,
+$\mu : A\otimes A \to A$) and a comonoid (`split`, $\delta : A \to A\otimes A$),
+the two halves interlocked by the **Frobenius law**: sliding a split through a
+merge lands in the same place whichever side you do it — `LFrobenius`/`RFrobenius`
+are its two zig-zags, both equal to $\delta\circ\mu$ (the diagram `merge split`).
+**Commutative** adds that `merge` ignores the order of its inputs; **special**
+(separable) adds that split-then-merge is trivial,
+`Split_Merge : split merge ⟶ id` ($\mu\circ\delta = \mathrm{id}$). Special kills
+handles, so the normal-form theorem is maximally tight: every connected network
+of merges and splits collapses to one canonical *spider* fixed solely by its
+input/output count — a tangle of unit wires carries no information beyond *which
+endpoints are joined*. (The classical backdrop: commutative Frobenius algebras
+are exactly 2-dimensional TQFTs, surfaces classified by genus and boundary;
+"special" forces genus $0$.) That connectivity-only bookkeeping is exactly what
+lets the unit soak up the arity shifts `copy` and `discard` create. Note `Unit`
+declares only this $\mu$/$\delta$ core and its laws — there is no separate unit
+$\eta$ or counit $\varepsilon$ cell; those roles, where the encoding needs them,
+fall to `Sort`'s unitors and `discard`.
+
+`Sort` then adds **unitors** `lunit`/`runit` (and inverses) letting a
 unit wire be introduced beside or absorbed into a sort wire. The unitors are
 given in *both directions* as separate cells — that is how an isomorphism is
 presented when there are no identities to express its inverse, not a

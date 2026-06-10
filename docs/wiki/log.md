@@ -643,3 +643,15 @@ claim — **believed but unproved**: states why it can't mean $R\cup E$ terminat
 (adequacy, $E$-convergence, transfer), and that only empirical evidence
 (`BinaryNat` arithmetic computes) exists. `index.md` rows added under Concepts
 and Open questions. No source touched.
+
+## [2026-06-10] doc | trs-encoding: glossed "special commutative Frobenius"
+
+Unpacked the bare phrase "(special, commutative) Frobenius" in [[trs-encoding]]'s
+unit/unitors section into a one-paragraph gloss: monoid (`merge` $\mu$) +
+comonoid (`split` $\delta$) interlocked by the Frobenius law
+(`LFrobenius`/`RFrobenius` = $\delta\circ\mu$), commutative, and special
+(`Split_Merge` = $\mu\circ\delta=\mathrm{id}$, killing handles → spider
+normal form, connectivity-only bookkeeping; aside on the 2D-TQFT backdrop). Kept
+the honest caveat that `Unit` declares no separate unit $\eta$/counit
+$\varepsilon$ — those roles fall to `Sort`'s unitors and `discard`. No source
+touched.
