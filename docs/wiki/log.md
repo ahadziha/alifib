@@ -655,3 +655,16 @@ normal form, connectivity-only bookkeeping; aside on the 2D-TQFT backdrop). Kept
 the honest caveat that `Unit` declares no separate unit $\eta$/counit
 $\varepsilon$ — those roles fall to `Sort`'s unitors and `discard`. No source
 touched.
+
+## [2026-06-10] doc | trs-encoding: corrected why `Unit` has no η/ε, named the unit object
+
+Sharpened the unit section after a clarifying question. Stated plainly that
+`Unit.wire` *is* the monoidal unit object $I$ (constants map out of it, `discard`
+into it), so the name "Unit" and the SCFA structure are the same fact: the unit
+object is canonically a special commutative Frobenius algebra, with `merge`/`split`
+the unitor iso $I\otimes I\cong I$ made directed. Corrected the previous caveat —
+the missing unit $\eta$/counit $\varepsilon$ are maps $I\to I$ (identities, hence
+unwritable and unneeded), *forced by the carrier being $I$*, **not** delegated to
+`Sort`'s unitors/`discard` (those are separate sort-level structure). The earlier
+wording mislabelled `discard` (the sort-level counit) as filling the SCFA's
+$\varepsilon$ role. No source touched.

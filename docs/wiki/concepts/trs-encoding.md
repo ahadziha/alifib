@@ -114,8 +114,9 @@ bare wire — is the substance of the convergence claim below, and is
 
 Arities change under rewriting — copying a node turns one output into two,
 discarding turns a term into nothing — so the encoding needs an algebra of
-"empty" wires to absorb the slack. That is the **`Unit`** module: a wire `pt ->
-pt` carrying a (special, commutative) Frobenius structure `merge`/`split` with
+"empty" wires to absorb the slack. That is the **`Unit`** module: a wire `pt -> pt` that *is* the **monoidal unit
+object** $I$ (the empty context — constants are maps out of it, `discard` the map
+into it), carrying a (special, commutative) Frobenius structure `merge`/`split` with
 its laws `Assoc`/`Coassoc`/`LFrobenius`/`RFrobenius`/`Split_Merge`, where
 `discard` lands and where a binary `Discard_Nat` merges two discarded units back
 into one.
@@ -134,10 +135,15 @@ input/output count — a tangle of unit wires carries no information beyond *whi
 endpoints are joined*. (The classical backdrop: commutative Frobenius algebras
 are exactly 2-dimensional TQFTs, surfaces classified by genus and boundary;
 "special" forces genus $0$.) That connectivity-only bookkeeping is exactly what
-lets the unit soak up the arity shifts `copy` and `discard` create. Note `Unit`
-declares only this $\mu$/$\delta$ core and its laws — there is no separate unit
-$\eta$ or counit $\varepsilon$ cell; those roles, where the encoding needs them,
-fall to `Sort`'s unitors and `discard`.
+lets the unit soak up the arity shifts `copy` and `discard` create. This is also
+why the module is called `Unit` and why it has the shape it does: its carrier is
+the unit object itself, and the unit object is *canonically* a special
+commutative Frobenius algebra — `merge`/`split` are just the unitor iso
+$I\otimes I\cong I$ rendered as two directed cells. The algebra's own unit $\eta$
+and counit $\varepsilon$ would be maps $I\to I$, i.e. identities, so an
+identity-free language cannot write them and never needs to: their absence is
+*forced by the carrier being $I$*, not an omission. (`Sort`'s `lunit`/`runit` and
+`discard` are separate, sort-level structure, not stand-ins for $\eta$/$\varepsilon$.)
 
 `Sort` then adds **unitors** `lunit`/`runit` (and inverses) letting a
 unit wire be introduced beside or absorbed into a sort wire. The unitors are
