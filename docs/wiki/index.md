@@ -32,6 +32,7 @@ Mathematical and language ideas alifib realises.
 | [[homology]] | Integer cellular homology of a type (directed complex) via Smith Normal Form, with surfaced torsion witnesses | stable |
 | [[string-diagram]] | The Poincaré-dual presentation; node/wire/region layout | stable |
 | [[module-system]] | The language's types, modules, `include`, `attach` (`open` is aspirational) | stable |
+| [[trs-encoding]] | Term rewriting as cartesian string-diagram rewriting (Fox's theorem): sorts get copy/discard, operations are nodes, rules are 3-cells; `examples/TRS.ali` is the shared structural layer | draft |
 
 ## Implementation
 
@@ -73,3 +74,4 @@ the `cli/` and `web/` crates are the binaries and deployment wrappers around it.
 |------|----------|--------|
 | [[module-open-semantics]] | What exactly does `open` bring into scope vs `include`? | draft |
 | [[atom-gluing-sign-invariant]] | Does `parallelism`'s positional boundary check enforce (Atom)'s sign-restriction $\varphi^\pm$? | draft |
+| [[trs-convergence]] | Does the [[trs-encoding]] preserve confluence/termination/convergence on closed terms? | draft |

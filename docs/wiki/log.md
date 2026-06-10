@@ -623,3 +623,23 @@ a [[web-frontend]] gotcha for the new tab-targeting behaviour
 (`lastEvaluatedTabName`/`resolveEvaluatedTab`, switch-or-decline in `finishFill`
 and the `store` branch of `renderResult`), paralleling the existing
 boundary-selector gotcha. No source touched.
+
+## [2026-06-10] doc | The TRS encoding (concept) + its convergence open question
+
+New concept page [[trs-encoding]] documenting how `examples/TRS.ali` encodes
+term rewriting systems: terms as 2-dimensional [[string-diagram]]s (sort wires +
+operation nodes), rules as 3-cells, and the cartesian structure via **Fox's
+theorem** (1976) — `Sort` gets `copy`/`discard` ($\Delta$/$\varepsilon$) and each
+operation a `*_Nat` naturality suite. Pins three things from a working session
+with the author: (1) `TRS.ali` is the shared structural layer $E$, *not* a TRS —
+the misreading corrected up top; a concrete theory (`examples/BinaryNat.ali`)
+layers its rules $R$ on via `include`/`attach`. (2) The bare comonoid laws
+(coassoc/cocommutativity/counit) on `Sort` are **deliberately absent** — alifib
+mints cells only for moves, not on-the-nose equalities. (3) `thin` reconfirmed
+display-only here too. New open-questions page [[trs-convergence]] holds the
+header comment's "preserves confluence/termination/convergence on closed terms"
+claim — **believed but unproved**: states why it can't mean $R\cup E$ terminates
+(unitor iso pairs are 2-cycles, no identities), the three proof obligations
+(adequacy, $E$-convergence, transfer), and that only empirical evidence
+(`BinaryNat` arithmetic computes) exists. `index.md` rows added under Concepts
+and Open questions. No source touched.
