@@ -18,12 +18,16 @@
 //! Each tool maps 1:1 to a `WebRepl` method.  Successful calls return a
 //! single text content block whose body is the same JSON envelope the HTTP
 //! API returns; an envelope with `"status":"error"` is forwarded with
-//! `isError: true` so MCP clients can branch on it without parsing.
+//! `isError: true` so MCP clients can branch on it without parsing.  Envelopes
+//! are *trimmed* for the wire by [`project_envelope`] — the `rendered`
+//! transcript and the heavy boundary-label payloads are dropped unless the call
+//! passes `render:true` / `detail:true`.
 //!
-//! `load_source` auto-seeds the configured examples directory as virtual
-//! `<Name>.ali` modules, so `include` resolves without the agent having to
-//! ship example contents itself.  `list_examples` exposes the same set for
-//! discovery.
+//! `load_source` (and `load_example`) auto-seed the configured examples
+//! directory as virtual `<Name>.ali` modules, so `include` resolves without the
+//! agent having to ship example contents itself.  `list_examples` exposes the
+//! same set for discovery, and `save_file` writes the running source back to
+//! disk — the MCP analog of the browser editor's save.
 
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
@@ -31,7 +35,7 @@ use std::io::{BufRead, Write};
 use alifib::interactive::web::WebRepl;
 use alifib_web_shared::ExampleSet;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 const PROTOCOL_VERSION: &str = "2024-11-05";
 const SERVER_NAME: &str = "alifib-mcp";
@@ -52,6 +56,7 @@ pub fn serve<R: BufRead, W: Write>(
     examples: ExampleSet,
 ) -> Result<(), String> {
     let mut repl = WebRepl::new();
+    let mut last_loaded_path: Option<String> = None;
 
     for line in reader.lines() {
         let line = line.map_err(|e| format!("read error: {}", e))?;
@@ -84,6 +89,7 @@ pub fn serve<R: BufRead, W: Write>(
                 msg.params.unwrap_or(Value::Null),
                 &mut repl,
                 &examples,
+                &mut last_loaded_path,
             ),
             Some("ping") => json!({"jsonrpc":"2.0","id":id,"result":{}}),
             Some(other) => error_response(id, -32601, &format!("method not found: {other}")),
@@ -143,11 +149,21 @@ fn tools_list_response(id: Value) -> Value {
     })
 }
 
+/// `render` / `detail` schema fragments — advertised on the read-heavy tools so
+/// agents can opt back into the full envelope.  Responses are trimmed by default.
+fn render_prop() -> Value {
+    json!({ "type": "boolean", "default": false, "description": "Keep the human-readable `rendered` transcript in the response (stripped by default)." })
+}
+
+fn detail_prop() -> Value {
+    json!({ "type": "boolean", "default": false, "description": "Keep heavy payloads — boundary label strings, tags, cells_by_dim, rewrite diagrams (trimmed by default)." })
+}
+
 fn tool_descriptors() -> Vec<Value> {
     vec![
         json!({
             "name": "load_source",
-            "description": "Parse and interpret alifib (.ali) source. Modules from the configured examples directory are auto-seeded so `include <Name>` works without shipping content. Returns a JSON envelope with the type list (or diagnostics on parse/type error).",
+            "description": "Parse and interpret alifib (.ali) source. Modules from the configured examples directory are auto-seeded so `include <Name>` works without shipping content. Returns a JSON envelope with the type list (or diagnostics on parse/type error); the list is trimmed by default — pass detail:true for boundary labels, render:true for the rendered transcript. `path` records where save_file should write; `source_name` sets the virtual root filename (so `include` self-references resolve).",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -157,13 +173,45 @@ fn tool_descriptors() -> Vec<Value> {
                         "additionalProperties": { "type": "string" },
                         "description": "Optional extra <Name>.ali → contents overrides. Merged on top of the auto-seeded examples directory.",
                     },
+                    "source_name": { "type": "string", "description": "Virtual root filename (<Name> → <Name>.ali); defaults to source.ali." },
+                    "path":        { "type": "string", "description": "Disk path remembered as save_file's default target." },
+                    "render": render_prop(),
+                    "detail": detail_prop(),
                 },
                 "required": ["source"],
             },
         }),
         json!({
+            "name": "load_example",
+            "description": "Load a bundled example by name (as listed by list_examples). Seeds all examples as virtual modules, loads the named one, and records its on-disk path as save_file's default target. Response is trimmed by default — detail:true / render:true restore the full envelope. Errors list the available names if no match.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name":    { "type": "string", "description": "Example name (without .ali)." },
+                    "modules": {
+                        "type": "object",
+                        "additionalProperties": { "type": "string" },
+                        "description": "Optional extra <Name>.ali → contents overrides.",
+                    },
+                    "render": render_prop(),
+                    "detail": detail_prop(),
+                },
+                "required": ["name"],
+            },
+        }),
+        json!({
+            "name": "save_file",
+            "description": "Write the current running source to disk (the MCP analog of the browser's save). `path` defaults to the last load_source/load_example path; errors if neither is set. Uses the path as given (absolute, or relative to the server's CWD).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "description": "Target path. Defaults to the last loaded path." },
+                },
+            },
+        }),
+        json!({
             "name": "start_session",
-            "description": "Begin a rewrite session on the named type. The initial diagram (and optional target) may be a name from the loaded source or an inline expression. Set backward:true for backward rewriting (match output boundaries, advance via input). Requires a prior load_source.",
+            "description": "Begin a rewrite session on the named type. The initial diagram (and optional target) may be a name from the loaded source or an inline expression. Set backward:true for backward rewriting (match output boundaries, advance via input). Requires a prior load_source. Responses are trimmed by default — detail:true / render:true restore the full envelope.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -171,13 +219,15 @@ fn tool_descriptors() -> Vec<Value> {
                     "initial":           { "type": "string" },
                     "target":            { "type": "string" },
                     "backward":          { "type": "boolean", "default": false },
+                    "render": render_prop(),
+                    "detail": detail_prop(),
                 },
                 "required": ["type_name", "initial"],
             },
         }),
         json!({
             "name": "resume_session",
-            "description": "Reopen a stored proof diagram as a live session, decomposing it back into its steps. `proof` (and optional `target`) may be a name from the loaded source or an inline expression. Set backward:true to resume in backward-rewriting mode. Requires a prior load_source.",
+            "description": "Reopen a stored proof diagram as a live session, decomposing it back into its steps. `proof` (and optional `target`) may be a name from the loaded source or an inline expression. Set backward:true to resume in backward-rewriting mode. Requires a prior load_source. Responses are trimmed by default — detail:true / render:true restore the full envelope.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -185,13 +235,15 @@ fn tool_descriptors() -> Vec<Value> {
                     "proof":     { "type": "string", "description": "Stored proof diagram name or inline expression." },
                     "target":    { "type": "string" },
                     "backward":  { "type": "boolean", "default": false },
+                    "render": render_prop(),
+                    "detail": detail_prop(),
                 },
                 "required": ["type_name", "proof"],
             },
         }),
         json!({
             "name": "run_command",
-            "description": "Send a daemon-protocol command. The arguments object IS the command — set `command` to one of: step, step_multi, random, auto, undo, undo_to, redo, redo_to, show, proof, list_rules, history, store, save, types, type, cell, homology, parallel, set_target, backward, holes, fill, done, stop — and supply that command's fields alongside (e.g. `{command:'step', choice:0}`). The hole-filling workflow lives here: `{command:'holes'}` lists open `?` holes, `{command:'fill', index:0}` opens a fill session for one, then `{command:'done'}` splices the result back into the map. (start/resume/load are NOT valid here — use the load_source / start_session / resume_session tools instead.) Alternatively pass `{command_json: '<raw>'}` to forward an arbitrary JSON body.",
+            "description": "Send a daemon-protocol command. The arguments object IS the command — set `command` to one of: step, step_multi, random, auto, undo, undo_to, redo, redo_to, show, proof, list_rules, history, store, save, types, type, cell, homology, parallel, set_target, backward, holes, fill, done, stop — and supply that command's fields alongside (e.g. `{command:'step', choice:0}`). The hole-filling workflow lives here: `{command:'holes'}` lists open `?` holes, `{command:'fill', index:0}` opens a fill session for one, then `{command:'done'}` splices the result back into the map. (start/resume/load are NOT valid here — use the load_source / start_session / resume_session tools instead.) Alternatively pass `{command_json: '<raw>'}` to forward an arbitrary JSON body. Responses are trimmed by default — detail:true / render:true restore the full envelope.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -203,13 +255,21 @@ fn tool_descriptors() -> Vec<Value> {
                     "index":        { "type": "integer", "description": "Hole index for `fill` (0-based, as listed by `holes`)." },
                     "name":         { "type": "string" },
                     "path":         { "type": "string" },
+                    "render": render_prop(),
+                    "detail": detail_prop(),
                 },
             },
         }),
         json!({
             "name": "get_types",
-            "description": "Return the type list with generators, diagrams and maps. Requires a prior load_source.",
-            "inputSchema": { "type": "object", "properties": {} },
+            "description": "Return the type list with generators, diagrams and maps. Trimmed to structural names/dims/map-holes by default — pass detail:true for boundary labels. Requires a prior load_source.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "render": render_prop(),
+                    "detail": detail_prop(),
+                },
+            },
         }),
         json!({
             "name": "get_strdiag",
@@ -228,6 +288,16 @@ fn tool_descriptors() -> Vec<Value> {
         json!({
             "name": "get_session_strdiag",
             "description": "String-diagram data for the current diagram in the active session.",
+            "inputSchema": { "type": "object", "properties": {} },
+        }),
+        json!({
+            "name": "get_target_strdiag",
+            "description": "String-diagram data for the active session's target diagram, if one is set.",
+            "inputSchema": { "type": "object", "properties": {} },
+        }),
+        json!({
+            "name": "get_proof_strdiag",
+            "description": "String-diagram data for the proof diagram of the active session (the accumulated rewrite witness).",
             "inputSchema": { "type": "object", "properties": {} },
         }),
         json!({
@@ -254,24 +324,111 @@ fn tools_call_response(
     params: Value,
     repl: &mut WebRepl,
     examples: &ExampleSet,
+    last_loaded_path: &mut Option<String>,
 ) -> Value {
     let Some(name) = params.get("name").and_then(|v| v.as_str()) else {
         return error_response(id, -32602, "tools/call: missing 'name'");
     };
     let name = name.to_string();
     let args = params.get("arguments").cloned().unwrap_or(json!({}));
+    let render = args.get("render").and_then(|v| v.as_bool()).unwrap_or(false);
+    let detail = args.get("detail").and_then(|v| v.as_bool()).unwrap_or(false);
 
-    let body = dispatch(&name, args, repl, examples);
+    let body = dispatch(&name, args, repl, examples, last_loaded_path);
     let body_text = match body {
         Ok(s) => s,
         Err(msg) => return tool_text_result(id, &error_envelope(&msg), true),
     };
+    let body_text = project_envelope(&body_text, render, detail);
 
     let is_error = serde_json::from_str::<Value>(&body_text)
         .ok()
         .and_then(|v| v.get("status").and_then(|s| s.as_str()).map(|s| s == "error"))
         .unwrap_or(false);
     tool_text_result(id, &body_text, is_error)
+}
+
+/// Trim a successful tool envelope for the wire.  `render` keeps the top-level
+/// `rendered` transcript; `detail` keeps the heavy boundary-label payloads.
+/// Both default off — the LLM asks for the bloat only when it needs it.  Total:
+/// any parse hiccup returns the original string untouched.
+fn project_envelope(body: &str, render: bool, detail: bool) -> String {
+    let Ok(Value::Object(mut obj)) = serde_json::from_str::<Value>(body) else {
+        return body.to_string();
+    };
+    if !render {
+        obj.remove("rendered");
+    }
+    if !detail {
+        if let Some(types) = obj.get_mut("types").and_then(|v| v.as_array_mut()) {
+            trim_types(types);
+        }
+        if let Some(data) = obj.get_mut("data").and_then(|v| v.as_object_mut()) {
+            if let Some(types) = data.get_mut("types").and_then(|v| v.as_array_mut()) {
+                trim_types(types);
+            }
+            if let Some(rewrites) = data.get_mut("rewrites").and_then(|v| v.as_array_mut()) {
+                for r in rewrites.iter_mut() {
+                    *r = trim_rewrite(r);
+                }
+            }
+            for key in ["current", "initial", "target"] {
+                if let Some(d) = data.get_mut(key).and_then(|v| v.as_object_mut()) {
+                    d.remove("cells_by_dim");
+                }
+            }
+        }
+    }
+    Value::Object(obj).to_string()
+}
+
+/// Strip each type object down to its structural skeleton — names, dims and map
+/// holes — dropping the big `input`/`output` label strings, tags and thin_tags.
+fn trim_types(types: &mut [Value]) {
+    for t in types.iter_mut() {
+        let Some(obj) = t.as_object() else { continue };
+        let pick = |key: &str| obj.get(key).cloned().unwrap_or(Value::Null);
+        let generators = pick("generators")
+            .as_array()
+            .map(|gs| gs.iter().map(|g| json!({ "name": g.get("name"), "dim": g.get("dim") })).collect())
+            .unwrap_or_default();
+        let diagrams = pick("diagrams")
+            .as_array()
+            .map(|ds| ds.iter().map(|d| json!({ "name": d.get("name") })).collect())
+            .unwrap_or_default();
+        let maps = pick("maps")
+            .as_array()
+            .map(|ms| {
+                ms.iter()
+                    .map(|m| json!({ "name": m.get("name"), "domain": m.get("domain"), "holes": m.get("holes") }))
+                    .collect()
+            })
+            .unwrap_or_default();
+        *t = json!({
+            "name": pick("name"),
+            "module": pick("module"),
+            "generators": Value::Array(generators),
+            "diagrams": Value::Array(diagrams),
+            "maps": Value::Array(maps),
+        });
+    }
+}
+
+/// Keep a rewrite's index and match metadata; drop the input/output diagrams.
+/// `family` survives only when it is a non-empty array.
+fn trim_rewrite(r: &Value) -> Value {
+    let mut out = Map::new();
+    for key in ["index", "rule_name", "match_positions", "match_display"] {
+        if let Some(v) = r.get(key) {
+            out.insert(key.to_string(), v.clone());
+        }
+    }
+    if let Some(family) = r.get("family").and_then(|v| v.as_array())
+        && !family.is_empty()
+    {
+        out.insert("family".to_string(), Value::Array(family.clone()));
+    }
+    Value::Object(out)
 }
 
 fn tool_text_result(id: Value, text: &str, is_error: bool) -> Value {
@@ -289,11 +446,40 @@ fn error_envelope(message: &str) -> String {
     json!({ "status": "error", "message": message }).to_string()
 }
 
+/// Auto-seed every example as a `<Name>.ali` virtual module, merge any caller
+/// overrides, and load `source` under `source_name`.  Shared by `load_source`
+/// and `load_example` — the two differ only in where `source` comes from.
+fn seed_and_load(
+    repl: &mut WebRepl,
+    examples: &ExampleSet,
+    source: &str,
+    extra: Option<&Map<String, Value>>,
+    source_name: Option<&str>,
+) -> String {
+    let mut modules: HashMap<String, String> = HashMap::new();
+    // Scan failures (duplicate stems, IO) are non-fatal here — surface them
+    // through list_examples instead.
+    if let Ok(entries) = examples.scan() {
+        for e in entries {
+            modules.insert(format!("{}.ali", e.name), e.content);
+        }
+    }
+    if let Some(extra) = extra {
+        for (k, v) in extra {
+            if let Some(s) = v.as_str() {
+                modules.insert(k.clone(), s.to_string());
+            }
+        }
+    }
+    repl.load_source_with_modules(source, modules, source_name)
+}
+
 fn dispatch(
     name: &str,
     args: Value,
     repl: &mut WebRepl,
     examples: &ExampleSet,
+    last_loaded_path: &mut Option<String>,
 ) -> Result<String, String> {
     match name {
         "load_source" => {
@@ -301,23 +487,54 @@ fn dispatch(
                 .get("source")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| "load_source: missing 'source'".to_string())?;
-            let mut modules: HashMap<String, String> = HashMap::new();
-            // Auto-seed the examples dir.  Scan failures (duplicate stems, IO)
-            // are non-fatal here — surface them through list_examples instead.
-            if let Ok(entries) = examples.scan() {
-                for e in entries {
-                    modules.insert(format!("{}.ali", e.name), e.content);
-                }
-            }
-            if let Some(extra) = args.get("modules").and_then(|v| v.as_object()) {
-                for (k, v) in extra {
-                    if let Some(s) = v.as_str() {
-                        modules.insert(k.clone(), s.to_string());
-                    }
-                }
-            }
+            let extra = args.get("modules").and_then(|v| v.as_object());
             let source_name = args.get("source_name").and_then(|v| v.as_str());
-            Ok(repl.load_source_with_modules(source, modules, source_name))
+            if let Some(path) = args.get("path").and_then(|v| v.as_str()) {
+                *last_loaded_path = Some(path.to_string());
+            }
+            Ok(seed_and_load(repl, examples, source, extra, source_name))
+        }
+        "load_example" => {
+            let name = args
+                .get("name")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| "load_example: missing 'name'".to_string())?;
+            let entries = examples.scan().map_err(|e| format!("{:?}", e))?;
+            let Some(entry) = entries.iter().find(|e| e.name == name) else {
+                let available: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+                return Ok(error_envelope(&format!(
+                    "no example named '{}'; available: {}",
+                    name,
+                    available.join(", ")
+                )));
+            };
+            let extra = args.get("modules").and_then(|v| v.as_object());
+            *last_loaded_path =
+                Some(examples.dir().join(&entry.path).to_string_lossy().into_owned());
+            Ok(seed_and_load(repl, examples, &entry.content, extra, Some(name)))
+        }
+        "save_file" => {
+            let path = args
+                .get("path")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .or_else(|| last_loaded_path.clone())
+                .ok_or_else(|| {
+                    "save_file: no 'path' given and no prior load to default to".to_string()
+                })?;
+            let env: Value = serde_json::from_str(&repl.run_command(r#"{"command":"save"}"#))
+                .map_err(|e| format!("save: malformed engine response: {e}"))?;
+            let Some(source) = env.pointer("/data/source").and_then(|v| v.as_str()) else {
+                return Ok(error_envelope("save: no running source to write"));
+            };
+            match std::fs::write(&path, source) {
+                Ok(()) => Ok(json!({
+                    "status": "ok",
+                    "data": { "saved": path, "bytes": source.len() },
+                })
+                .to_string()),
+                Err(e) => Ok(error_envelope(&format!("cannot write '{}': {}", path, e))),
+            }
         }
         "start_session" => {
             let type_name = args
@@ -396,6 +613,8 @@ fn dispatch(
             Ok(repl.get_strdiag(type_name, item_name, boundary_dim, boundary_sign))
         }
         "get_session_strdiag" => Ok(repl.get_session_strdiag()),
+        "get_target_strdiag" => Ok(repl.get_target_strdiag()),
+        "get_proof_strdiag" => Ok(repl.get_proof_strdiag()),
         "get_rewrite_preview_strdiag" => {
             let choice = args
                 .get("choice")
