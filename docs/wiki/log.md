@@ -694,3 +694,19 @@ Verified all three against current code this session: ran `Ob` + the three
 confirmed, and the **7-cell total** confirms extension/inclusion *share* `Ob`'s
 cells while attachment mints fresh ones. Added cross-link from [[module-system]];
 `status: draft` (freshly authored, awaiting human review). index.md row added.
+
+## [2026-06-11] doc | language-parser: "Local definitions (`let`)" subsection
+
+Closed a gap surfaced by a "what does `let` do?" question — the wiki only
+mentioned `let` in passing (two lines in [[module-system]], a `total`-dropping
+gotcha here), never explaining the construct. Added a `### Local definitions
+(`let`)` subsection under *The grammar*, alongside *Generators* / *Diagrams* /
+*Partial maps*. Verified against current code: `build_let_or_def` (`parser.rs`)
+branches the two forms on the `::`-vs-`=` separator; the diagram form
+(`interpret_let_diag`) becomes a module generator at `@Type` top level
+(`insert_module_diagram_binding`); the map form's domain resolves as module
+(`interpret_def_pmap_module`) in `@Type` and as type (`interpret_def_pmap`) in
+complex/`@Local` bodies. Cross-links [[diagram]] / [[partial-map]] / [[hole]] /
+[[module-system]]; references the existing `total`-drop gotcha rather than
+restating it. `last-touched` bumped; page stays `stable`, summary unchanged so
+no index.md edit.

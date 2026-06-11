@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-09
+last-touched: 2026-06-11
 code: [src/language/mod.rs, src/language/lexer.rs, src/language/token.rs, src/language/parser.rs, src/language/ast.rs, src/language/ast_fmt.rs, src/language/ast_print.rs, src/language/error.rs]
 ---
 
@@ -66,6 +66,32 @@ All three also admit `let`/`let total … ::` bindings (`build_let_or_def`),
 A generator is `NameWithBoundary <<= Complex` (`Token::LArrow`, lexed from
 `<<=`). `NameWithBoundary` is a name with an optional `: input -> output`
 [[boundary]] (`build_name_with_boundary`, `build_boundary`).
+
+### Local definitions (`let`)
+
+`let` binds a name in the enclosing block — to a [[diagram]] or to a
+[[partial-map]] — and one production handles both (`build_let_or_def`). After
+the optional `total` and the name, a single `choice` picks the form by its
+separator:
+
+- **`let x = <Diagram>`** binds `x` to a diagram (`LetDiag`). The interpreter
+  evaluates the diagram in the current scope (`interpret_let_diag`,
+  `src/interpreter/diagram.rs`) and binds the result. At the *top* of a `@Type`
+  block that binding **is a module generator** (`insert_module_diagram_binding`,
+  `eval.rs::interpret_type_inst`) — see [[module-system]]; inside a complex or
+  `@Local` body it merely names a reusable diagram in that scope.
+- **`let [total] F :: <Address> = <PartialMapDef>`** binds `F` to a partial map
+  whose **domain is named explicitly** by the `::` address (`DefPartialMap`).
+  The right-hand side is a `PartialMapDef` — a map expression or a bracketed
+  *extension* of `lhs => rhs` clauses (the only place a `?` [[hole]] is legal,
+  see *Partial maps* below). `total` asserts the map is total. The domain
+  resolves by block: a `@Type` block reads it as a *module*
+  (`interpret_def_pmap_module`), while a complex or `@Local` body reads it as a
+  *type* (`interpret_def_pmap`) — the type-vs-module split of [[module-system]].
+
+The explicit `::` domain is what selects the map form; bare `= <Diagram>` is the
+diagram form. The optional `total` is recorded only on the map arm — a stray
+`total` on the diagram form is silently dropped (see *Gotchas*).
 
 ### Diagrams (`build_diagram`)
 
