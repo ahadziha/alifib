@@ -44,40 +44,40 @@ fn build_frontend(frontend: &Path) -> Result<(), String> {
     pm.run(frontend, &["run", "build"])
 }
 
-/// A JavaScript package manager.  Bun is preferred — it's what we build the
-/// frontend with — with npm kept as a fallback for machines without bun.
-enum PackageManager {
-    Bun(PathBuf),
-    Npm(PathBuf),
+/// A JavaScript package manager: which tool it is, and where its binary lives.
+/// Bun is preferred — it's what we build the frontend with — with npm kept as
+/// a fallback for machines without bun.
+struct PackageManager {
+    kind: Kind,
+    bin: PathBuf,
 }
 
-use PackageManager::{Bun, Npm};
+enum Kind {
+    Bun,
+    Npm,
+}
+
+use Kind::{Bun, Npm};
 
 impl PackageManager {
     fn find() -> Result<Self, String> {
         // bun installs to ~/.bun/bin; nvm's npm isn't on PATH for the
         // non-login shell cargo spawns — so each tool gets a known fallback.
-        if let Some(bun) = which("bun").or_else(|| home_bin(".bun/bin/bun")) {
-            return Ok(Bun(bun));
+        if let Some(bin) = which("bun").or_else(|| home_bin(".bun/bin/bun")) {
+            return Ok(Self { kind: Bun, bin });
         }
-        if let Some(npm) = which("npm").or_else(find_nvm_npm) {
-            return Ok(Npm(npm));
+        if let Some(bin) = which("npm").or_else(find_nvm_npm) {
+            return Ok(Self { kind: Npm, bin });
         }
         Err("no `bun` or `npm` found on PATH (nor under ~/.bun or ~/.nvm)".to_string())
     }
 
-    fn bin(&self) -> &Path {
-        match self {
-            Bun(p) | Npm(p) => p,
-        }
-    }
-
     /// Install dependencies reproducibly from the committed lockfile.
     fn install(&self, frontend: &Path) -> Result<(), String> {
-        match self {
+        match self.kind {
             // bun's frozen install is its own up-to-date check (~20ms when the
             // tree is in sync); plain `install` bootstraps a missing lockfile.
-            Bun(_) => {
+            Bun => {
                 let args: &[&str] = if frontend.join("bun.lock").exists() {
                     &["install", "--frozen-lockfile"]
                 } else {
@@ -87,7 +87,7 @@ impl PackageManager {
             }
             // `npm ci` is reproducible but slow, so gate it on a drift check —
             // editing frontend sources shouldn't trigger a reinstall.
-            Npm(_) => {
+            Npm => {
                 if !needs_install(frontend) {
                     return Ok(());
                 }
@@ -105,7 +105,7 @@ impl PackageManager {
     /// to `node`, so its directory must be visible (bun is self-contained, but
     /// prepending is harmless).
     fn run(&self, frontend: &Path, args: &[&str]) -> Result<(), String> {
-        let bin = self.bin();
+        let bin = &self.bin;
         let mut cmd = Command::new(bin);
         if let Some(dir) = bin.parent() {
             let existing = std::env::var_os("PATH").unwrap_or_default();
