@@ -1,0 +1,90 @@
+(***
+    Dining philosophers around a table — the circular topology.
+
+    A 1-dimensional word is an interval, so the ring cannot live
+    in the word's geometry: there is no cyclic adjacency to wrap
+    a rule around. Instead the ring lives in the *typing*. Each
+    fork is its own sort, the philosophers sit at fixed positions,
+    and forks drift freely past everything else; fork f<i> is
+    shared by philosopher <i> (as left fork) and philosopher
+    <i-1> (as right fork) simply because only those two have
+    take-rules mentioning it. Adjacency by type, not by position:
+
+        philosopher 1 :  f1 | f2
+        philosopher 2 :  f2 | f3
+        philosopher 3 :  f3 | f1     -- the circular wait is back.
+
+    Unlike the row (Philosophers.ali), the ring deadlocks: if all
+    three grab their left fork, every fork is held and nothing —
+    not even a drift — can fire. `trace_search` finds the two
+    terminal states (all-left and all-right) by exhaustive search
+    of the state graph, and computes the basin from which success
+    is no longer reachable.
+
+    The drift cells are *structural*: they make the state graph
+    cyclic (a fork can wander forever), so the schedule space is
+    infinite and the schedule/trace counting of the interval
+    benchmarks does not apply. Counting traces here means
+    rewriting modulo the drift cells — the same open metatheory
+    as the TRS encoding's structural layer (trs-convergence).
+
+    Or reach the deadlock by hand, in three moves:
+
+        alifib repl examples/PhilosophersRing.ali
+        start PhilosophersRing 'f1 p1 f2 p2 f3 p3'
+
+    and apply the three take_left rewrites.
+***)
+
+@Type
+PhilosophersRing <<= {
+    pt,
+
+    (* Three forks, each its own sort *)
+    index forks = [ f1, f2, f3 ],
+    for f in forks {
+        <f>: pt -> pt
+    },
+
+    (* Three philosophers: thinking, holding left/right, eating, fed *)
+    index cells = [ p, hL, hR, eat, done ],
+    for i in [ 1, 2, 3 ] {
+        for c in cells {
+            <c><i>: pt -> pt
+        }
+    },
+
+    (* The ring wiring: philosopher i takes f<i> then f<i+1>,
+       indices mod 3 — the only place the circle exists *)
+    take_left1: f1 p1 -> hL1,
+    then_right1: hL1 f2 -> eat1,
+    take_right1: p1 f2 -> hR1,
+    then_left1: f1 hR1 -> eat1,
+    release1: eat1 -> f1 done1 f2,
+
+    take_left2: f2 p2 -> hL2,
+    then_right2: hL2 f3 -> eat2,
+    take_right2: p2 f3 -> hR2,
+    then_left2: f2 hR2 -> eat2,
+    release2: eat2 -> f2 done2 f3,
+
+    take_left3: f3 p3 -> hL3,
+    then_right3: hL3 f1 -> eat3,
+    take_right3: p3 f1 -> hR3,
+    then_left3: f3 hR3 -> eat3,
+    release3: eat3 -> f3 done3 f1,
+
+    (* Structural mobility: free forks drift past philosophers in
+       any state, and past each other, in both directions *)
+    for f in forks {
+        for i in [ 1, 2, 3 ] {
+            for c in cells {
+                <f>_right_<c><i>: <f> <c><i> -> <c><i> <f>,
+                <f>_left_<c><i>: <c><i> <f> -> <f> <c><i>
+            }
+        },
+        for g in forks bar [ <f> ] {
+            <f>_past_<g>: <f> <g> -> <g> <f>
+        }
+    }
+}
