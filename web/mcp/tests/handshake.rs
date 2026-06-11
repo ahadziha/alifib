@@ -66,12 +66,16 @@ fn tools_list_advertises_expected_surface() {
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     for expected in [
         "load_source",
+        "load_example",
+        "save_file",
         "start_session",
         "resume_session",
         "run_command",
         "get_types",
         "get_strdiag",
         "get_session_strdiag",
+        "get_target_strdiag",
+        "get_proof_strdiag",
         "get_rewrite_preview_strdiag",
         "list_examples",
     ] {
@@ -208,6 +212,175 @@ fn unknown_method_returns_jsonrpc_error() {
         examples,
     );
     assert_eq!(responses[0]["error"]["code"], -32601);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Parse a tool-call response's text body back into a JSON envelope.
+fn body(response: &Value) -> Value {
+    let text = response["result"]["content"][0]["text"].as_str().unwrap();
+    serde_json::from_str(text).unwrap()
+}
+
+#[test]
+fn rendered_stripped_by_default_kept_with_render_flag() {
+    let dir = std::env::temp_dir().join(format!("alifib-mcp-render-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let examples = ExampleSet::new(&dir);
+
+    let source = "@Type\nFoo <<= { pt }";
+    let load = json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
+        "name":"load_source","arguments":{"source": source}
+    }});
+    // `run_command {command:"types"}` carries a `rendered` transcript.
+    let responses = drive(
+        vec![
+            load.clone(),
+            json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{
+                "name":"run_command","arguments":{"command":"types"}
+            }}),
+            load,
+            json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{
+                "name":"run_command","arguments":{"command":"types","render": true}
+            }}),
+        ],
+        examples,
+    );
+
+    let stripped = body(&responses[1]);
+    assert_eq!(stripped["status"], "ok");
+    assert!(stripped.get("rendered").is_none(), "rendered must be stripped by default");
+
+    let kept = body(&responses[3]);
+    assert!(kept.get("rendered").is_some(), "render:true must keep rendered");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn detail_flag_governs_boundary_payload() {
+    let dir = std::env::temp_dir().join(format!("alifib-mcp-detail-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let examples = ExampleSet::new(&dir);
+
+    let source = "@Type\nFoo <<= { pt }";
+    let responses = drive(
+        vec![
+            json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
+                "name":"load_source","arguments":{"source": source}
+            }}),
+            json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{
+                "name":"load_source","arguments":{"source": source, "detail": true}
+            }}),
+        ],
+        examples,
+    );
+
+    let first_gen = |env: &Value| env["types"][0]["generators"][0].clone();
+
+    let trimmed = body(&responses[0]);
+    let g = first_gen(&trimmed);
+    assert!(g.get("name").is_some(), "trimmed generator keeps name");
+    assert!(g.get("input").is_none(), "trimmed generator drops input label");
+    assert!(g.get("face_tags").is_none(), "trimmed generator drops face_tags");
+    assert!(trimmed["types"][0].get("thin_tags").is_none(), "trimmed type drops thin_tags");
+
+    let full = body(&responses[1]);
+    assert!(first_gen(&full).get("input").is_some(), "detail:true keeps input label");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn load_example_loads_by_name() {
+    let dir = std::env::temp_dir().join(format!("alifib-mcp-loadex-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("Theory.ali"), "@Type\nTheory <<= { pt }").unwrap();
+    let examples = ExampleSet::new(&dir);
+
+    let responses = drive(
+        vec![json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
+            "name":"load_example","arguments":{"name":"Theory"}
+        }})],
+        examples,
+    );
+    let env = body(&responses[0]);
+    assert_eq!(env["status"], "ok");
+    let names: Vec<&str> = env["types"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
+    assert!(names.contains(&"Theory"));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn load_example_unknown_lists_available() {
+    let dir = std::env::temp_dir().join(format!("alifib-mcp-loadex-bad-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("Theory.ali"), "@Type\nTheory <<= { pt }").unwrap();
+    let examples = ExampleSet::new(&dir);
+
+    let responses = drive(
+        vec![json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
+            "name":"load_example","arguments":{"name":"Nope"}
+        }})],
+        examples,
+    );
+    assert_eq!(responses[0]["result"]["isError"], true);
+    let env = body(&responses[0]);
+    assert_eq!(env["status"], "error");
+    assert!(env["message"].as_str().unwrap().contains("Theory"));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn save_file_writes_running_source() {
+    let dir = std::env::temp_dir().join(format!("alifib-mcp-save-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let examples = ExampleSet::new(&dir);
+    let out = dir.join("out.ali");
+
+    let source = "@Type\nFoo <<= { pt }";
+    let responses = drive(
+        vec![
+            json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
+                "name":"load_source","arguments":{"source": source}
+            }}),
+            json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{
+                "name":"save_file","arguments":{"path": out.to_string_lossy()}
+            }}),
+        ],
+        examples,
+    );
+
+    let env = body(&responses[1]);
+    assert_eq!(env["status"], "ok");
+    assert_eq!(env["data"]["saved"], out.to_string_lossy().as_ref());
+    assert!(out.exists(), "save_file must create the file");
+    assert_eq!(std::fs::read_to_string(&out).unwrap(), source);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn save_file_without_path_or_prior_load_errors() {
+    let dir = std::env::temp_dir().join(format!("alifib-mcp-save-noarg-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let examples = ExampleSet::new(&dir);
+
+    let responses = drive(
+        vec![json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
+            "name":"save_file","arguments":{}
+        }})],
+        examples,
+    );
+    assert_eq!(responses[0]["result"]["isError"], true);
+    assert_eq!(body(&responses[0])["status"], "error");
 
     let _ = std::fs::remove_dir_all(&dir);
 }
