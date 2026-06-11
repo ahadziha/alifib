@@ -21,6 +21,12 @@ exactly the two canonical ways one [[directed-complex]] embeds in another:
 - **attachment** (`attach … along`) — a *gluing*, a [[pushout]] that freely
   adjoins the un-identified cells of one complex along a [[partial-map]].
 
+A third surface form, orthogonal to both, is **extension**: the parent address
+of an inline type body, `X <<= Y { … }`, which clones `Y`'s complex as `X`'s
+starting scope (flat names, inherited maps, no recorded inclusion). It is plain
+inheritance, not an embedding. [[extension-inclusion-attachment]] compares all
+three axis by axis.
+
 A third axis, orthogonal to both, is **naming**: how a source name reaches
 across module boundaries, by *qualified names* (dotted addresses walked through
 the maps in scope) and *scoped include resolution* (the file search behind a
@@ -213,6 +219,7 @@ Realised by [[interpreter]]; parsed by [[language-parser]].
 
 ## Related
 
-[[partial-map]] · [[pushout]] · [[core-complex]] · [[diagram]] · [[atom]] ·
-[[directed-complex]] · [[regular-directed-complex]] · [[module-open-semantics]] ·
-[[interpreter]] · [[language-parser]] · [[aux]]
+[[extension-inclusion-attachment]] · [[partial-map]] · [[pushout]] ·
+[[core-complex]] · [[diagram]] · [[atom]] · [[directed-complex]] ·
+[[regular-directed-complex]] · [[module-open-semantics]] · [[interpreter]] ·
+[[language-parser]] · [[aux]]

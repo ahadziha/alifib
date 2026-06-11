@@ -678,3 +678,19 @@ why-no-laws | the closed-terms wager), the Frobenius gloss (definition | the
 adjectives + spider normal form | why the unit needs it + the name | the missing
 $\eta$/$\varepsilon$), and the unit-module intro (motivation | the module). No
 prose reworded, no claims changed.
+
+## [2026-06-11] doc | extension-inclusion-attachment: new concept page
+
+New `concepts/extension-inclusion-attachment.md` comparing the three ways to
+build a type on another complex: extension (`X <<= Y { … }`, the parent address
+of a `Complex::Block`), inclusion (`include Y`), attachment (`attach B :: Y along
+F`). Closes a real gap — the **extension form was unnamed anywhere in the wiki**;
+[[module-system]] covered only `include`/`attach`. Compared on three axes:
+flat-vs-prefixed names, shared-vs-fresh cell identity, and which map is recorded.
+Worked example is `tests/fixtures/Magma.ali` (`Ob` → magma), pinned by
+`magma_interpretation`; extension form pinned by the `golden_*` snapshots.
+Verified all three against current code this session: ran `Ob` + the three
+`Magma*` variants through the interpreter — flat `ob` vs prefixed `Ob.ob`
+confirmed, and the **7-cell total** confirms extension/inclusion *share* `Ob`'s
+cells while attachment mints fresh ones. Added cross-link from [[module-system]];
+`status: draft` (freshly authored, awaiting human review). index.md row added.
