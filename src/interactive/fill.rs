@@ -13,7 +13,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
-use crate::aux::{GlobalId, HoleId, Tag};
+use crate::aux::{GlobalId, Tag};
 use crate::core::complex::{Complex, MapDomain};
 use crate::core::diagram::{CellData, Diagram, Sign};
 use crate::core::map_hole::MapHole;
@@ -38,7 +38,6 @@ pub struct HoleRef {
     pub domain_name: String,
     pub source: Tag,
     pub source_name: String,
-    pub meta: HoleId,
     pub dim: usize,
     /// Pre-rendered boundary, `?name : in → out` (or `?name` for a 0-cell).
     pub boundary: String,
@@ -231,7 +230,6 @@ pub fn list_open_holes(store: &GlobalStore, root_module: &str) -> Vec<HoleRef> {
                 domain_name: m.domain_name.clone(),
                 source: h.source.clone(),
                 source_name,
-                meta: h.meta,
                 dim: h.dim,
                 boundary: render_hole_boundary(h, m.holes, m.target, m.domain),
             });
@@ -347,21 +345,21 @@ fn blocking_holes(store: &GlobalStore, list: &[HoleRef], href: &HoleRef) -> Vec<
     let Some(holes) = tc.map_holes(&href.map_name) else { return vec![]; };
     let Some(hole) = holes.iter().find(|h| h.source == href.source) else { return vec![]; };
 
-    let index_by_meta: HashMap<HoleId, usize> = list.iter()
+    let index_by_source: HashMap<Tag, usize> = list.iter()
         .filter(|r| r.type_gid == href.type_gid && r.map_name == href.map_name)
-        .map(|r| (r.meta, r.index))
+        .map(|r| (r.source.clone(), r.index))
         .collect();
 
     let mut result = BTreeSet::new();
     let mut seen = HashSet::new();
-    let mut stack: Vec<HoleId> = hole.deps().into_iter().collect();
-    while let Some(meta) = stack.pop() {
-        if !seen.insert(meta) {
+    let mut stack: Vec<Tag> = hole.deps().into_iter().collect();
+    while let Some(source) = stack.pop() {
+        if !seen.insert(source.clone()) {
             continue;
         }
-        match holes.iter().find(|h| h.meta == meta) {
+        match holes.iter().find(|h| h.source == source) {
             Some(h) if h.image.is_none() => {
-                if let Some(&i) = index_by_meta.get(&meta) {
+                if let Some(&i) = index_by_source.get(&source) {
                     result.insert(i);
                 }
             }

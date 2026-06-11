@@ -4,7 +4,7 @@ use super::types::{
     Context, EvalMap, InterpResult, Step, Term,
     fail, get_cell_data, make_error, make_error_from_core, sorted_generators,
 };
-use crate::aux::{self, HoleId, LocalId, Tag};
+use crate::aux::{self, LocalId, Tag};
 use crate::core::{
     complex::{Complex, MapDomain},
     diagram::{CellData, Diagram, Sign as DiagramSign},
@@ -29,10 +29,10 @@ struct MapBuild {
     /// failure can be blamed on the assignment truly responsible rather than on
     /// whichever innocent filler happened to close its last boundary face.
     current_span: Span,
-    /// Source span of each pending entry, keyed by its metavariable.  Pending
+    /// Source span of each pending entry, keyed by its source generator.  Pending
     /// entries carried in from a prefix map have no span here (they were written
     /// elsewhere), and so fall back to the current clause's span.
-    hole_spans: HashMap<HoleId, Span>,
+    hole_spans: HashMap<Tag, Span>,
     /// Set when committing a *pending* assignment fails during cascading: the
     /// span of that pending assignment, used to re-aim the resulting error.
     blame_span: Option<Span>,
@@ -169,10 +169,8 @@ fn upsert_entry(
         }
         h.boundary = boundary;
     } else {
-        let meta = HoleId::fresh();
-        build.hole_spans.insert(meta, build.current_span);
+        build.hole_spans.insert(tag.clone(), build.current_span);
         build.holes.push(MapHole {
-            meta,
             source: tag,
             dim,
             image,
@@ -236,8 +234,8 @@ fn commit_one(
     build.map = PartialMap::extend(map, tag.clone(), dim, cell_data, actual_image.clone())?;
 
     let Some(i) = build.entry_index(&tag) else { return Ok(()); };
-    let meta = build.holes.remove(i).meta;
-    build.hole_spans.remove(&meta);
+    build.holes.remove(i);
+    build.hole_spans.remove(&tag);
     let n = actual_image.top_dim();
     let img_tree = actual_image
         .tree(DiagramSign::Input, n)
@@ -245,7 +243,7 @@ fn commit_one(
         .clone();
     let subst = |leaf: &Tag| -> Option<PasteTree> {
         match leaf {
-            Tag::Hole(id) if *id == meta => Some(img_tree.clone()),
+            Tag::Hole(source) if **source == tag => Some(img_tree.clone()),
             _ => None,
         }
     };
@@ -265,12 +263,12 @@ fn cascade(build: &mut MapBuild, context: &Context, domain: &Complex) -> Result<
             .holes
             .iter()
             .find(|h| h.image.is_some() && h.deps().is_empty())
-            .map(|h| (h.source.clone(), h.dim, h.image.clone().unwrap(), h.meta));
-        let Some((source, dim, image, meta)) = ready else { return Ok(()); };
+            .map(|h| (h.source.clone(), h.dim, h.image.clone().unwrap()));
+        let Some((source, dim, image)) = ready else { return Ok(()); };
         let cell_data = get_cell_data(context, domain, &source)
             .ok_or_else(|| aux::Error::new("Cannot find cell data for conditional assignment"))?;
         if let Err(e) = commit_one(build, source.clone(), dim, cell_data, image) {
-            return Err(blame_pending(build, domain, &source, meta, e));
+            return Err(blame_pending(build, domain, &source, e));
         }
     }
 }
@@ -287,10 +285,9 @@ fn blame_pending(
     build: &mut MapBuild,
     domain: &Complex,
     source: &Tag,
-    meta: HoleId,
     e: aux::Error,
 ) -> aux::Error {
-    if let Some(span) = build.hole_spans.get(&meta) {
+    if let Some(span) = build.hole_spans.get(source) {
         build.blame_span = Some(*span);
     }
     let name = domain
@@ -351,8 +348,8 @@ fn transport_leaf(
             .ok_or_else(|| aux::Error::new("map image has no paste tree"))?
             .clone();
         Ok(Some(img_tree))
-    } else if let Some(i) = build.entry_index(tag) {
-        Ok(Some(PasteTree::Leaf(Tag::Hole(build.holes[i].meta))))
+    } else if build.entry_index(tag).is_some() {
+        Ok(Some(PasteTree::Leaf(Tag::Hole(Box::new(tag.clone())))))
     } else {
         let name = domain
             .find_generator_by_tag(tag)
