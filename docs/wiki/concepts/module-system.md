@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-09
+last-touched: 2026-06-11
 ---
 
 # Module system
@@ -53,6 +53,33 @@ $0$-dimensional generators** (objects). Every higher cell $\dim \ge 1$ must be
 declared inside a type body, where it has an ambient complex to be a cell *of*.
 This is the syntactic shadow of the fact that an $n$-cell is meaningless without
 its $(n{-}1)$-boundary already present.
+
+### Local definitions across the two scales
+
+Within any block, a `let` binds a name into the *enclosing* complex — its
+[[core-complex|namespace]] of diagrams and maps. `let x = d` adds the
+[[diagram]] $d$ under the name $x$; `let [total] F :: M = …` adds a
+[[partial-map]] $F$ with declared domain $M$. (The surface forms and the
+`::`-versus-`=` split that selects between them live in [[language-parser]].)
+What such a binding *means* is fixed by **which complex encloses it** — and that
+is exactly the two scales:
+
+- At the **top of a `@Type` block** the enclosing complex is the *module*. So a
+  let-bound diagram is itself a **module generator** — one of the names the
+  module exports — and the declared domain $M$ of a map is resolved as a
+  *module*. (`@Type` top level is the only place module-to-module maps are
+  minted, the witnessing inclusions of the previous section among them.) This is
+  what "a module's generators are the types and let-bound diagrams declared at
+  top level" meant above.
+- Inside a **type body or an `@Local` block** the enclosing complex is some
+  type's $\mathcal{C}_T$. The same `let` now adds a *local* diagram or map to
+  that type's ambient universe, and the declared domain $M$ of a map is resolved
+  as a *type*. Nothing is exported; the binding lives and dies with the type.
+
+So the construct is uniform — *add a named diagram or map to the current
+complex* — and the type/module split is not a second feature of `let` but a
+reading-off of where it is written, through the very same
+`MapDomain::{Type,Module}` that distinguishes the two scales everywhere else.
 
 ### Inclusion
 
@@ -193,11 +220,17 @@ Realised by [[interpreter]]; parsed by [[language-parser]].
   missing map is rejected. The final segment is resolved by
   `type_id_of_named_diagram` in the advanced scope.
 
-- **Module-domain maps.** In a `@Type` block, `let F :: M = […]` resolves `M`
-  as a *module*: `interpret_def_pmap_module` → `resolve_module_domain` →
-  `GlobalStore::resolve_module_by_name` (single-segment short name →
-  `(path, Arc<Complex>)`). In complex and `@Local` bodies the same syntax
-  resolves a *type* domain (`interpret_def_pmap`).
+- **Local definitions (`let`).** A let-bound diagram is evaluated in scope by
+  `interpret_let_diag` (`src/interpreter/diagram.rs`) and then *inserted* by a
+  level-specific binder (all in `src/interpreter/eval.rs`):
+  `insert_module_diagram_binding` at `@Type` top level — *this* is what makes it
+  a module generator — `insert_complex_diagram_binding` in a complex body, and
+  `insert_type_diagram_binding` in an `@Local` block. For the map form,
+  `let F :: M = […]` resolves `M` as a *module* in a `@Type` block
+  (`interpret_def_pmap_module` → `resolve_module_domain` →
+  `GlobalStore::resolve_module_by_name`, single-segment short name →
+  `(path, Arc<Complex>)`) and as a *type* in complex and `@Local` bodies
+  (`interpret_def_pmap`).
 
 - **Scoped include resolution** is owned by [[aux]] (`Loader::with_parent_dir`,
   `find_file`, `resolve_recursive`); the interpreter consumes the resulting

@@ -710,3 +710,20 @@ complex/`@Local` bodies. Cross-links [[diagram]] / [[partial-map]] / [[hole]] /
 [[module-system]]; references the existing `total`-drop gotcha rather than
 restating it. `last-touched` bumped; page stays `stable`, summary unchanged so
 no index.md edit.
+
+## [2026-06-11] doc | module-system: develop the semantics of `let`
+
+Follow-up to the parser-page `let` subsection: the *semantic* consequences
+belong on the concept page, not the impl page. Added `### Local definitions
+across the two scales` to [[module-system]], framing the type/module split as a
+consequence of **which complex encloses the `let`** — at `@Type` top level the
+enclosing complex is the module (so a let-diagram is a module generator, map
+domains resolve as modules); in a type body / `@Local` block it is a type's
+$\mathcal{C}_T$ (local binding, type-domain maps). Verified the three binders
+against `eval.rs`: `insert_module_diagram_binding` / `insert_complex_diagram_binding`
+/ `insert_type_diagram_binding`, and `interpret_def_pmap_module` vs
+`interpret_def_pmap`. Generalised the old "Module-domain maps" impl bullet into
+a "Local definitions (`let`)" bullet covering the diagram-binding path too.
+Surface mechanics stay in [[language-parser]] (cross-linked, not duplicated):
+impl page says *what*, concept page says *why*. index.md summary updated;
+`last-touched` bumped; page stays `stable`.
