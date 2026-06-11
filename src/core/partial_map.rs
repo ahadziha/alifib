@@ -177,31 +177,6 @@ impl PartialMap {
             apply_tree(f, root_tree)
         }
     }
-    /// Compose partial maps: `g` after `f` (`g ∘ f`).
-    ///
-    /// The result is defined on the subset of `f`'s domain where `f`'s image
-    /// lies entirely within `g`'s domain.  Entries outside that intersection
-    /// are silently dropped.
-    pub fn compose(g: &PartialMap, f: &PartialMap) -> PartialMap {
-        let mut table = HashMap::with_capacity(f.table.len());
-        let mut by_dim: HashMap<usize, Vec<Tag>> = HashMap::new();
-        let mut cellular = true;
-
-        for (dim, tags) in f.domain_by_dim() {
-            for tag in tags {
-                let Some(f_entry) = f.table.get(&tag) else { continue };
-                let Ok(image_gf) = PartialMap::apply(g, &f_entry.image) else { continue };
-                cellular = cellular && image_gf.is_cell() && image_gf.dim() == dim as isize;
-                table.insert(tag.clone(), Entry {
-                    cell_data: f_entry.cell_data.clone(),
-                    image: image_gf,
-                });
-                by_dim.entry(dim).or_default().push(tag);
-            }
-        }
-
-        PartialMap { table, by_dim, cellular }
-    }
 }
 
 

@@ -1,0 +1,37 @@
+(* Hole propagation through map composition `F.G`.
+
+   `GG` maps the 2-cell `x : f g -> m` of `DG` to `X`, but leaves the face `g`
+   unmapped: so in `GG`, `g` is a pure hole and `x` is a conditional (its image
+   `X` is known, but a boundary face is still open).  Composing the total map
+   `Big` after `GG` must propagate both: `?g` stays a pure hole, and `?x` stays
+   a conditional carrying the image `Big(X)`. *)
+
+@Type
+
+DG <<= {
+  o0, o1, o2,
+  f : o0 -> o1,
+  g : o1 -> o2,
+  m : o0 -> o2,
+  x : f g -> m
+},
+
+DF <<= {
+  p0, p1, p2,
+  F : p0 -> p1,
+  G2 : p1 -> p2,
+  M : p0 -> p2,
+  X : F G2 -> M,
+  let GG :: DG = [ x => X, f => F, m => M ]
+},
+
+T <<= {
+  attach Big :: DF,
+
+  (* Pure hole and conditional both survive composition. *)
+  let H :: DG = Big.GG,
+
+  (* Filling the conditional's dependency `g` cascades `x` to a commit, so the
+     composite becomes total. *)
+  let Hfilled :: DG = Big.GG [ g => Big.G2 ]
+}

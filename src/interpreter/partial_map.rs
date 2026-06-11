@@ -39,6 +39,17 @@ struct MapBuild {
 }
 
 impl MapBuild {
+    /// A build seeded with `map` and `holes`, with no clause spans yet recorded.
+    fn new(map: PartialMap, holes: Vec<MapHole>) -> MapBuild {
+        MapBuild {
+            map,
+            holes,
+            current_span: Span::synthetic(),
+            hole_spans: HashMap::new(),
+            blame_span: None,
+        }
+    }
+
     /// Position of the pending entry for `tag`, if any.
     fn entry_index(&self, tag: &Tag) -> Option<usize> {
         self.holes.iter().position(|h| &h.source == tag)
@@ -429,10 +440,16 @@ fn eval_partial_map(ctx: &PartialMapCtx<'_>, partial_map: &ast::PartialMap, span
             // Dot traversal: the new lookup scope is the base map's domain.
             let (rest_opt, rest_result) =
                 interpret_partial_map(&base_result.context, &base_map.domain, ctx.domain, rest);
-            let combined = base_result.merge(rest_result);
+            let mut combined = base_result.merge(rest_result);
             let Some(rest_map) = rest_opt else { return (None, combined); };
-            let composed = PartialMap::compose(&base_map.map, &rest_map.map);
-            (Some(EvalMap { map: composed, domain: rest_map.domain, holes: vec![] }), combined)
+            // `base.rest` denotes `base ∘ rest` on `rest`'s domain.
+            match compose_with_holes(&combined.context, &base_map, &rest_map) {
+                Ok(composed) => (Some(composed), combined),
+                Err(e) => {
+                    combined.add_error(make_error_from_core(span, e));
+                    (None, combined)
+                }
+            }
         }
     }
 }
@@ -623,13 +640,7 @@ fn interpret_partial_map_ext(ctx: &PartialMapCtx<'_>, ext: &PartialMapExt) -> St
     };
 
     let domain = Arc::clone(&initial.domain);
-    let init_build = MapBuild {
-        map: initial.map,
-        holes: initial.holes,
-        current_span: Span::synthetic(),
-        hole_spans: HashMap::new(),
-        blame_span: None,
-    };
+    let init_build = MapBuild::new(initial.map, initial.holes);
     let clauses_ctx = PartialMapCtx { context: &prefix_result.context, domain: &domain, ..*ctx };
     let (build_opt, clause_result) = eval_pmap_clauses(&clauses_ctx, init_build, &ext.clauses);
     let Some(build) = build_opt else {
@@ -825,6 +836,111 @@ fn collapsed_boundary_image(map: &PartialMap, cell_data: &CellData, dim: usize) 
         }
     }
     None
+}
+
+
+// ---- Composition with hole propagation ----
+
+/// How a map covers the cells of a diagram: committed everywhere, pending on
+/// some cell, or undefined on some cell.
+enum Cover {
+    AllCommitted,
+    SomePending,
+    Undefined,
+}
+
+/// Classify `f`'s coverage of every cell of `diagram`.  `Undefined` wins over
+/// `SomePending` (a single unreachable cell makes the whole image unreachable).
+fn cover_of(f: &EvalMap, diagram: &Diagram) -> Cover {
+    let mut pending = false;
+    for label in diagram.all_labels() {
+        if f.map.is_defined_at(label) {
+            continue;
+        } else if f.holes.iter().any(|h| &h.source == label) {
+            pending = true;
+        } else {
+            return Cover::Undefined;
+        }
+    }
+    if pending { Cover::SomePending } else { Cover::AllCommitted }
+}
+
+/// True if some boundary face of `cell_data` is neither committed nor pending in
+/// the build — i.e. undefined in the composite.  A hole or conditional cannot
+/// sit on such a face, so its cell must be undefined too.
+fn has_undefined_face(build: &MapBuild, cell_data: &CellData) -> bool {
+    boundary_dependencies(cell_data, &build.map)
+        .iter()
+        .any(|(tag, _)| build.entry_index(tag).is_none())
+}
+
+/// Compose `f` after `g` (`f ∘ g`), propagating pending assignments.
+///
+/// The committed core is exactly what the hole-free composition computed; on top
+/// of it, holes and conditionals propagate, processing `dom(g)` in ascending
+/// dimension so a cell's faces are settled before the cell itself.  For each
+/// generator `x` of `g`'s domain, with `img` the image `g` pins for `x`
+/// (committed, or a conditional's known image):
+/// - `g` undefined at `x` → undefined.
+/// - `f` committed on every cell of `img` → assign `x ↦ f(img)`: this commits if
+///   all of `x`'s faces are committed, else records a conditional.
+/// - `f` undefined on some cell of `img` → undefined (the image is unreachable).
+/// - `f` only pending on some cell of `img`, or `g` a pure hole at `x` → a pure
+///   hole — unless a face of `x` is itself undefined, which forces `x` undefined.
+pub(crate) fn compose_with_holes(
+    context: &Context,
+    f: &EvalMap,
+    g: &EvalMap,
+) -> Result<EvalMap, aux::Error> {
+    let domain = &*g.domain;
+    let mut build = MapBuild::new(PartialMap::empty(), Vec::new());
+    for (_, _, x) in sorted_generators(domain) {
+        compose_generator(&mut build, context, domain, f, g, &x)?;
+    }
+    Ok(EvalMap { map: build.map, domain: Arc::clone(&g.domain), holes: build.holes })
+}
+
+/// Classify one generator `x` of `g`'s domain and assign it into the composite.
+fn compose_generator(
+    build: &mut MapBuild,
+    context: &Context,
+    domain: &Complex,
+    f: &EvalMap,
+    g: &EvalMap,
+    x: &Tag,
+) -> Result<(), aux::Error> {
+    // The image `g` pins for `x`: its committed image, a conditional's known
+    // image, `None` for a pure hole, or absent — leaving `x` undefined.
+    let g_image = if g.map.is_defined_at(x) {
+        Some(g.map.image(x)?.clone())
+    } else {
+        match g.holes.iter().find(|h| &h.source == x) {
+            Some(h) => h.image.clone(),
+            None => return Ok(()),
+        }
+    };
+
+    let cell_data = get_cell_data(context, domain, x)
+        .ok_or_else(|| aux::Error::new("Cannot find cell data for generator"))?;
+
+    // The image to hand `assign_cell`: `Some(f(img))` when it is concrete, else
+    // `None` (pure hole).  An unreachable image leaves `x` undefined.
+    let image = match &g_image {
+        Some(img) => match cover_of(f, img) {
+            Cover::Undefined => return Ok(()),
+            Cover::AllCommitted => Some(PartialMap::apply(&f.map, img)?),
+            // `f(img)` is not concrete, so `x` is a pure hole.  Its faces all map
+            // into `img`, which `f` covers without gaps, so none is undefined.
+            Cover::SomePending => None,
+        },
+        // `g` is a pure hole at `x`: nothing vouches for `x`'s faces, so an
+        // undefined one forces `x` undefined (a cell cannot rest on a missing face).
+        None if has_undefined_face(build, &cell_data) => return Ok(()),
+        None => None,
+    };
+
+    let x_diag = Diagram::cell(x.clone(), &cell_data)?;
+    assign_cell(build, context, domain, &x_diag, image.as_ref())
 }
 
 

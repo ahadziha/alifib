@@ -455,3 +455,49 @@ fn virtual_loader_subdirectory_resolution() {
     assert!(norm.modules.iter().any(|m| m.types.iter().any(|t| t.name == "BType")));
 }
 
+/// The rendered unfilled holes of map `map_name` in type `type_name`.
+fn map_holes(norm: &Store, type_name: &str, map_name: &str) -> Vec<String> {
+    norm.modules[0].types.iter()
+        .find(|t| t.name == type_name).unwrap_or_else(|| panic!("type {}", type_name))
+        .maps.iter()
+        .find(|m| m.name == map_name).unwrap_or_else(|| panic!("map {}", map_name))
+        .holes.clone()
+}
+
+/// Holes in the *inner* map propagate through composition `F.G`: a pure hole in
+/// `G` stays a pure hole, a conditional in `G` (known image, open face) stays a
+/// conditional once `F` covers its image, and filling the conditional's
+/// dependency cascades it to a commit — making the composite total.
+#[test]
+fn composition_propagates_inner_map_holes() {
+    let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("ComposeHole.ali"))
+        .ok()
+        .expect("ComposeHole.ali should interpret without errors");
+    let norm = file.state.normalize();
+
+    // `?g` survives as a pure hole; `?x` as a conditional whose boundary still
+    // references the open face — both with boundaries mapped through `Big`.
+    assert_eq!(map_holes(&norm, "T", "H"), vec![
+        "?g : Big.p1 -> Big.p2".to_string(),
+        "?x : (Big.F #0 ?g) -> Big.M".to_string(),
+    ]);
+
+    // Filling `g` closes the conditional `x`, which commits to `Big(X)`.
+    assert_eq!(map_holes(&norm, "T", "Hfilled"), Vec::<String>::new());
+}
+
+/// Holes in the *outer* map propagate too: `F.G` with `G` total but `F` holed
+/// at a cell in `G`'s image carries that hole, pulled back along `G` —
+/// exercising the `SomePending` coverage arm.
+#[test]
+fn composition_propagates_outer_map_holes() {
+    let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("ComposeOuterHole.ali"))
+        .ok()
+        .expect("ComposeOuterHole.ali should interpret without errors");
+    let norm = file.state.normalize();
+
+    // `F` itself is holed at `r`; the composite `F.G` inherits it at `e`
+    // (`G(e) = r`), with the boundary mapped through the composite.
+    assert_eq!(map_holes(&norm, "T", "F"), vec!["?r : u -> v".to_string()]);
+    assert_eq!(map_holes(&norm, "T", "H"), vec!["?e : u -> v".to_string()]);
+}
