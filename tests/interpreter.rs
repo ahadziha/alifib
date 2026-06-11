@@ -501,3 +501,25 @@ fn composition_propagates_outer_map_holes() {
     assert_eq!(map_holes(&norm, "T", "F"), vec!["?r : u -> v".to_string()]);
     assert_eq!(map_holes(&norm, "T", "H"), vec!["?e : u -> v".to_string()]);
 }
+
+/// A *conditional* in the outer map propagates as a conditional, not a forgotten
+/// image: `F.G` with `G` total and `F` conditional at `G(px)` carries `px` with
+/// its known image, so filling the dependency cascades it to a commit.
+#[test]
+fn composition_propagates_outer_map_conditionals() {
+    let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("ComposeOuterConditional.ali"))
+        .ok()
+        .expect("ComposeOuterConditional.ali should interpret without errors");
+    let norm = file.state.normalize();
+
+    // `?p2` is a pure hole; `?px` is a conditional carrying image `rx`, its
+    // boundary referencing the open face `?p2`.
+    assert_eq!(map_holes(&norm, "T", "H"), vec![
+        "?p2 : c1 -> c2".to_string(),
+        "?px : (r1 #0 ?p2) -> rm".to_string(),
+    ]);
+
+    // Filling `p2` closes `px`'s dependency; because `px` kept its image, it
+    // cascades to a commit and the composite is total.
+    assert_eq!(map_holes(&norm, "T", "Hfill"), Vec::<String>::new());
+}

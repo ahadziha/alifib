@@ -841,28 +841,47 @@ fn collapsed_boundary_image(map: &PartialMap, cell_data: &CellData, dim: usize) 
 
 // ---- Composition with hole propagation ----
 
-/// How a map covers the cells of a diagram: committed everywhere, pending on
-/// some cell, or undefined on some cell.
-enum Cover {
-    AllCommitted,
-    SomePending,
+/// The outcome of applying a map to a diagram, drawing on both its committed and
+/// its conditional (known-image) assignments.
+enum Reach {
+    /// Every leaf resolves to a known image; this is the map applied, a concrete
+    /// diagram.
+    Image(Diagram),
+    /// Some leaf is a pure hole — its image is unknown, so the result is not
+    /// concrete (we stop here rather than carry metavariables into an image).
+    Hole,
+    /// Some leaf is outside the domain, so no image can ever be formed.
     Undefined,
 }
 
-/// Classify `f`'s coverage of every cell of `diagram`.  `Undefined` wins over
-/// `SomePending` (a single unreachable cell makes the whole image unreachable).
-fn cover_of(f: &EvalMap, diagram: &Diagram) -> Cover {
-    let mut pending = false;
-    for label in diagram.all_labels() {
-        if f.map.is_defined_at(label) {
-            continue;
-        } else if f.holes.iter().any(|h| &h.source == label) {
-            pending = true;
-        } else {
-            return Cover::Undefined;
+/// Apply `f` to the diagram with paste tree `tree`, resolving each leaf to its
+/// committed image *or* a conditional's known image — both concrete.  Looks only
+/// at the leaves (the cells the result is pasted from); a conditional leaf's own
+/// open boundary faces resurface separately as the composite cell's pending
+/// faces.  `Undefined` dominates `Hole` (an unreachable leaf sinks the whole
+/// image).
+fn image_under(f: &EvalMap, tree: &PasteTree) -> Result<Reach, aux::Error> {
+    match tree {
+        PasteTree::Leaf(tag) => {
+            if let Ok(image) = f.map.image(tag) {
+                Ok(Reach::Image(image.clone()))
+            } else if let Some(h) = f.holes.iter().find(|h| &h.source == tag) {
+                Ok(match &h.image {
+                    Some(a) => Reach::Image(a.clone()),
+                    None => Reach::Hole,
+                })
+            } else {
+                Ok(Reach::Undefined)
+            }
+        }
+        PasteTree::Node { dim, left, right } => {
+            match (image_under(f, left)?, image_under(f, right)?) {
+                (Reach::Undefined, _) | (_, Reach::Undefined) => Ok(Reach::Undefined),
+                (Reach::Hole, _) | (_, Reach::Hole) => Ok(Reach::Hole),
+                (Reach::Image(a), Reach::Image(b)) => Ok(Reach::Image(Diagram::paste(*dim, &a, &b)?)),
+            }
         }
     }
-    if pending { Cover::SomePending } else { Cover::AllCommitted }
 }
 
 /// True if some boundary face of `cell_data` is neither committed nor pending in
@@ -882,11 +901,13 @@ fn has_undefined_face(build: &MapBuild, cell_data: &CellData) -> bool {
 /// generator `x` of `g`'s domain, with `img` the image `g` pins for `x`
 /// (committed, or a conditional's known image):
 /// - `g` undefined at `x` → undefined.
-/// - `f` committed on every cell of `img` → assign `x ↦ f(img)`: this commits if
-///   all of `x`'s faces are committed, else records a conditional.
-/// - `f` undefined on some cell of `img` → undefined (the image is unreachable).
-/// - `f` only pending on some cell of `img`, or `g` a pure hole at `x` → a pure
-///   hole — unless a face of `x` is itself undefined, which forces `x` undefined.
+/// - `f`'s image of `img` is known — every leaf committed or a conditional whose
+///   image is known → assign `x ↦ f(img)`: this commits if all of `x`'s faces are
+///   committed, else records a conditional (so `f`'s conditionals propagate as
+///   conditionals, not as forgotten images).
+/// - `f` undefined on a leaf of `img` → undefined (the image is unreachable).
+/// - `f` has a pure hole on a leaf of `img`, or `g` is a pure hole at `x` → a
+///   pure hole — unless a face of `x` is undefined, which forces `x` undefined.
 pub(crate) fn compose_with_holes(
     context: &Context,
     f: &EvalMap,
@@ -926,13 +947,18 @@ fn compose_generator(
     // The image to hand `assign_cell`: `Some(f(img))` when it is concrete, else
     // `None` (pure hole).  An unreachable image leaves `x` undefined.
     let image = match &g_image {
-        Some(img) => match cover_of(f, img) {
-            Cover::Undefined => return Ok(()),
-            Cover::AllCommitted => Some(PartialMap::apply(&f.map, img)?),
-            // `f(img)` is not concrete, so `x` is a pure hole.  Its faces all map
-            // into `img`, which `f` covers without gaps, so none is undefined.
-            Cover::SomePending => None,
-        },
+        Some(img) => {
+            let tree = img.tree(DiagramSign::Input, img.top_dim())
+                .ok_or_else(|| aux::Error::new("composite image has no paste tree"))?;
+            match image_under(f, tree)? {
+                Reach::Image(fimg) => Some(fimg),
+                // A pure hole on a leaf: image unknown.  Every leaf is at least
+                // defined-or-holed, so (by the cellular condition) no face of `x`
+                // is undefined — the pure hole is safe to record.
+                Reach::Hole => None,
+                Reach::Undefined => return Ok(()),
+            }
+        }
         // `g` is a pure hole at `x`: nothing vouches for `x`'s faces, so an
         // undefined one forces `x` undefined (a cell cannot rest on a missing face).
         None if has_undefined_face(build, &cell_data) => return Ok(()),

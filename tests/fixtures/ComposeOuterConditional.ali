@@ -1,0 +1,42 @@
+(* A *conditional* in the outer map propagates as a conditional through `F.G`.
+
+   `G : DG -> DF` is total.  `F : DF -> T` maps the 2-cell `qx => rx` but leaves
+   its boundary face `q2` open, so `F` is conditional at `qx` (image `rx` known,
+   `q2` a pure hole).  Since `G(px) = qx`, the composite `F.G` must carry `px` as
+   a conditional with image `rx` — not as a forgotten pure hole.  Filling the
+   dependency `p2` (whose `G`-image `q2` is `F`'s open face) then cascades `px` to
+   a commit, making the composite total. *)
+
+@Type
+
+DG <<= {
+  a0, a1, a2,
+  p1 : a0 -> a1,
+  p2 : a1 -> a2,
+  pm : a0 -> a2,
+  px : p1 p2 -> pm
+},
+
+DF <<= {
+  b0, b1, b2,
+  q1 : b0 -> b1,
+  q2 : b1 -> b2,
+  qm : b0 -> b2,
+  qx : q1 q2 -> qm,
+  let G :: DG = [ a0=>b0, a1=>b1, a2=>b2, p1=>q1, p2=>q2, pm=>qm, px=>qx ]
+},
+
+T <<= {
+  c0, c1, c2,
+  r1 : c0 -> c1,
+  r2 : c1 -> c2,
+  rm : c0 -> c2,
+  rx : r1 r2 -> rm,
+  let F :: DF = [ qx => rx, q1 => r1, qm => rm ],
+
+  (* `?px` propagates as a conditional (image `rx`), alongside the pure hole `?p2`. *)
+  let H :: DG = F.G,
+
+  (* Filling `p2` closes `px`'s dependency; it cascades to a commit. *)
+  let Hfill :: DG = F.G [ p2 => r2 ]
+}
