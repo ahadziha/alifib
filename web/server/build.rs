@@ -1,9 +1,10 @@
 //! Builds the frontend bundle (`web/frontend/dist/app.js`) that `lib.rs`
-//! `include_str!`s.  Runs `npm install` (if `node_modules` is missing) and
-//! `npm run build` before the Rust crate is compiled.
+//! `include_str!`s.  Installs dependencies and runs the `build` script with
+//! whichever package manager is available — bun first (our default), npm as a
+//! fallback — before the Rust crate is compiled.
 //!
-//! When Node.js is unavailable, or the build fails, we emit a cargo warning
-//! and leave a stub `dist/app.js` so the crate still compiles — useful for
+//! When neither is available, or the build fails, we emit a cargo warning and
+//! leave a stub `dist/app.js` so the crate still compiles — useful for
 //! `cargo test --workspace` on machines without a frontend toolchain.
 
 use std::path::{Path, PathBuf};
@@ -19,39 +20,112 @@ fn main() {
 
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed={}", frontend.join("package.json").display());
-    let lockfile = frontend.join("package-lock.json");
-    if lockfile.exists() {
-        println!("cargo:rerun-if-changed={}", lockfile.display());
+    for lock in ["bun.lock", "package-lock.json"] {
+        let path = frontend.join(lock);
+        if path.exists() {
+            println!("cargo:rerun-if-changed={}", path.display());
+        }
     }
     rerun_dir(&frontend.join("src"));
 
-    if let Err(err) = build_frontend(&frontend, lockfile.exists()) {
+    if let Err(err) = build_frontend(&frontend) {
         println!(
             "cargo:warning=alifib-web-server: frontend bundle not built ({}); \
-             serving a stub — install Node.js and rebuild for the real GUI",
+             serving a stub — install bun (or Node.js) and rebuild for the real GUI",
             err
         );
         ensure_stub(&frontend.join("dist").join("app.js"));
     }
 }
 
-fn build_frontend(frontend: &Path, has_lockfile: bool) -> Result<(), String> {
-    let npm = find_npm()?;
+fn build_frontend(frontend: &Path) -> Result<(), String> {
+    let pm = PackageManager::find()?;
+    pm.install(frontend)?;
+    pm.run(frontend, &["run", "build"])
+}
 
-    if needs_install(frontend) {
-        // Prefer `npm ci` when a lockfile is committed — reproducible and
-        // refuses to mutate package.json.  Fall back to `npm install` for the
-        // bootstrap case where the lockfile is being generated.
-        let install_args: &[&str] = if has_lockfile { &["ci"] } else { &["install"] };
-        run(
-            npm_command(&npm).args(install_args).current_dir(frontend),
-            &format!("npm {}", install_args.join(" ")),
-        )?;
+/// A JavaScript package manager.  Bun is preferred — it's what we build the
+/// frontend with — with npm kept as a fallback for machines without bun.
+enum PackageManager {
+    Bun(PathBuf),
+    Npm(PathBuf),
+}
+
+use PackageManager::{Bun, Npm};
+
+impl PackageManager {
+    fn find() -> Result<Self, String> {
+        // bun installs to ~/.bun/bin; nvm's npm isn't on PATH for the
+        // non-login shell cargo spawns — so each tool gets a known fallback.
+        if let Some(bun) = which("bun").or_else(|| home_bin(".bun/bin/bun")) {
+            return Ok(Bun(bun));
+        }
+        if let Some(npm) = which("npm").or_else(find_nvm_npm) {
+            return Ok(Npm(npm));
+        }
+        Err("no `bun` or `npm` found on PATH (nor under ~/.bun or ~/.nvm)".to_string())
     }
-    run(
-        npm_command(&npm).args(["run", "build"]).current_dir(frontend),
-        "npm run build",
-    )
+
+    fn bin(&self) -> &Path {
+        match self {
+            Bun(p) | Npm(p) => p,
+        }
+    }
+
+    /// Install dependencies reproducibly from the committed lockfile.
+    fn install(&self, frontend: &Path) -> Result<(), String> {
+        match self {
+            // bun's frozen install is its own up-to-date check (~20ms when the
+            // tree is in sync); plain `install` bootstraps a missing lockfile.
+            Bun(_) => {
+                let args: &[&str] = if frontend.join("bun.lock").exists() {
+                    &["install", "--frozen-lockfile"]
+                } else {
+                    &["install"]
+                };
+                self.run(frontend, args)
+            }
+            // `npm ci` is reproducible but slow, so gate it on a drift check —
+            // editing frontend sources shouldn't trigger a reinstall.
+            Npm(_) => {
+                if !needs_install(frontend) {
+                    return Ok(());
+                }
+                let args: &[&str] = if frontend.join("package-lock.json").exists() {
+                    &["ci"]
+                } else {
+                    &["install"]
+                };
+                self.run(frontend, args)
+            }
+        }
+    }
+
+    /// Run the tool with the tool's bin dir prepended to PATH — npm shells out
+    /// to `node`, so its directory must be visible (bun is self-contained, but
+    /// prepending is harmless).
+    fn run(&self, frontend: &Path, args: &[&str]) -> Result<(), String> {
+        let bin = self.bin();
+        let mut cmd = Command::new(bin);
+        if let Some(dir) = bin.parent() {
+            let existing = std::env::var_os("PATH").unwrap_or_default();
+            let mut paths = vec![dir.to_path_buf()];
+            paths.extend(std::env::split_paths(&existing));
+            if let Ok(joined) = std::env::join_paths(paths) {
+                cmd.env("PATH", joined);
+            }
+        }
+        cmd.args(args).current_dir(frontend);
+
+        let label = format!("{} {}", bin.display(), args.join(" "));
+        let status = cmd
+            .status()
+            .map_err(|e| format!("failed to spawn {}: {}", label, e))?;
+        if !status.success() {
+            return Err(format!("{} failed with status {}", label, status));
+        }
+        Ok(())
+    }
 }
 
 /// True when `node_modules` is missing, or when `package-lock.json` is newer
@@ -85,7 +159,7 @@ fn ensure_stub(path: &Path) {
         return;
     }
     let stub = b"// alifib frontend bundle missing.  \
-                 Install Node.js and rebuild `alifib-web-server` to produce the real bundle.\n";
+                 Install bun (or Node.js) and rebuild `alifib-web-server` to produce the real bundle.\n";
     if let Err(e) = std::fs::write(path, stub) {
         println!("cargo:warning=could not write stub {}: {}", path.display(), e);
     }
@@ -106,62 +180,27 @@ fn rerun_dir(dir: &Path) {
     }
 }
 
-fn find_npm() -> Result<PathBuf, String> {
-    if let Ok(path) = which("npm") {
-        return Ok(path);
-    }
-    // nvm installs aren't on PATH for non-login shells (like the one cargo
-    // spawns), so fall back to the highest-versioned ~/.nvm install.
-    if let Some(home) = std::env::var_os("HOME") {
-        let nvm = PathBuf::from(home).join(".nvm/versions/node");
-        if let Ok(entries) = std::fs::read_dir(&nvm) {
-            let mut versions: Vec<_> = entries
-                .flatten()
-                .map(|e| e.path())
-                .filter(|p| p.join("bin/npm").is_file())
-                .collect();
-            versions.sort();
-            if let Some(latest) = versions.last() {
-                return Ok(latest.join("bin/npm"));
-            }
-        }
-    }
-    Err("`npm` not found on PATH or under ~/.nvm/versions/node".to_string())
+fn which(cmd: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|dir| dir.join(cmd))
+        .find(|candidate| candidate.is_file())
 }
 
-fn which(cmd: &str) -> Result<PathBuf, ()> {
-    let path = std::env::var_os("PATH").ok_or(())?;
-    for dir in std::env::split_paths(&path) {
-        let candidate = dir.join(cmd);
-        if candidate.is_file() {
-            return Ok(candidate);
-        }
-    }
-    Err(())
+fn home_bin(rel: &str) -> Option<PathBuf> {
+    let candidate = PathBuf::from(std::env::var_os("HOME")?).join(rel);
+    candidate.is_file().then_some(candidate)
 }
 
-/// `npm` shells out to `node`, so its directory must be on PATH.  When npm is
-/// found via nvm (rather than PATH), the cargo-spawned environment doesn't
-/// have node visible — prepend the bin dir so the child can find it.
-fn npm_command(npm: &Path) -> Command {
-    let mut cmd = Command::new(npm);
-    if let Some(bin_dir) = npm.parent() {
-        let existing = std::env::var_os("PATH").unwrap_or_default();
-        let mut paths = vec![bin_dir.to_path_buf()];
-        paths.extend(std::env::split_paths(&existing));
-        if let Ok(joined) = std::env::join_paths(paths) {
-            cmd.env("PATH", joined);
-        }
-    }
-    cmd
-}
-
-fn run(cmd: &mut Command, label: &str) -> Result<(), String> {
-    let status = cmd
-        .status()
-        .map_err(|e| format!("failed to spawn {}: {}", label, e))?;
-    if !status.success() {
-        return Err(format!("{} failed with status {}", label, status));
-    }
-    Ok(())
+/// The highest-versioned npm under `~/.nvm/versions/node`, if any.
+fn find_nvm_npm() -> Option<PathBuf> {
+    let nvm = PathBuf::from(std::env::var_os("HOME")?).join(".nvm/versions/node");
+    let mut versions: Vec<_> = std::fs::read_dir(&nvm)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.join("bin/npm").is_file())
+        .collect();
+    versions.sort();
+    versions.pop().map(|v| v.join("bin/npm"))
 }
