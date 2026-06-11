@@ -1,0 +1,12 @@
+(* A map with a hole defined *inline in a type body* (`T <<= { … let H … }`),
+   rather than in a separate `@T` block.  Filling its hole must locate and edit
+   the inline definition. *)
+
+@Type
+
+D <<= { x },
+
+T <<= {
+  z,
+  let H :: D = [ x => ? ]
+}

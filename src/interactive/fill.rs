@@ -19,7 +19,7 @@ use crate::core::diagram::{CellData, Diagram, Sign};
 use crate::core::map_hole::MapHole;
 use crate::core::paste_tree::realise_tree;
 use crate::interpreter::GlobalStore;
-use crate::language::ast::{self, Block, LocalInst, PMapEntry, PartialMapDef, Spanned};
+use crate::language::ast::{self, Block, ComplexInstr, Generator, LocalInst, PMapEntry, PartialMapDef, Spanned, TypeInst};
 use crate::output::normalize::{domain_complex, render_hole_boundary, render_hole_constraints};
 
 use super::engine::{reevaluate, RewriteEngine};
@@ -494,22 +494,52 @@ fn lhs_generator_name(d: &ast::Diagram) -> Option<String> {
     }
 }
 
-/// Locate the `value` of map `map_name` defined in the `@type_name` block.
+/// Locate the `value` of map `map_name` belonging to type `type_name`, wherever
+/// it is written: in a separate `@type_name` block (`LocalInst`), inline in the
+/// type's body `type_name <<= { … let map_name … }` (`ComplexInstr`), or — when
+/// `type_name` is empty — at the top level of a `@Type` block (`TypeInst`).
 fn find_map_def<'a>(program: &'a ast::Program, type_name: &str, map_name: &str) -> Option<&'a Spanned<PartialMapDef>> {
     for block in &program.blocks {
-        let Block::LocalBlock { complex, body } = &block.inner else { continue; };
-        if !complex_matches(complex, type_name) {
-            continue;
-        }
-        for inst in body {
-            if let LocalInst::DefPartialMap(dp) = &inst.inner {
-                if dp.name.inner == map_name {
-                    return Some(&dp.value);
+        match &block.inner {
+            // `@type_name  let map_name :: … = …`
+            Block::LocalBlock { complex, body } if complex_matches(complex, type_name) => {
+                for inst in body {
+                    if let LocalInst::DefPartialMap(dp) = &inst.inner {
+                        if dp.name.inner == map_name { return Some(&dp.value); }
+                    }
                 }
             }
+            Block::TypeBlock(insts) => {
+                for inst in insts {
+                    match &inst.inner {
+                        // A module-level map, outside any type body.
+                        TypeInst::DefPartialMap(dp)
+                            if type_name.is_empty() && dp.name.inner == map_name =>
+                        {
+                            return Some(&dp.value);
+                        }
+                        // `type_name <<= { … let map_name … }`
+                        TypeInst::Generator(g) if generator_name(g) == type_name => {
+                            let ast::Complex::Block { body, .. } = &g.complex.inner else { continue };
+                            for ci in body {
+                                if let ComplexInstr::DefPartialMap(dp) = &ci.inner {
+                                    if dp.name.inner == map_name { return Some(&dp.value); }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
         }
     }
     None
+}
+
+/// The name a type generator (`Name <<= { … }`) introduces.
+fn generator_name(g: &Generator) -> &str {
+    &g.name.inner.name.inner
 }
 
 /// Whether a block's `@…` address names `type_name`.
@@ -546,6 +576,25 @@ mod edit_tests {
         let out = edit_map_definition(src, "X", "H", "a", "z").unwrap();
         assert!(out.contains("Sub => ?"), "the explicit hole stays: {out}");
         assert!(out.contains("a => z"), "the implicit fill is appended: {out}");
+    }
+
+    /// A map defined inline in a type body (`X <<= { … let H … }`), not a separate
+    /// `@X` block, is located and edited in place.
+    #[test]
+    fn pins_hole_in_complex_body_map() {
+        let src = "@Type\n\nX <<= {\n  a, z,\n  let H :: D = [ a => z, x => ? ]\n}\n";
+        let out = edit_map_definition(src, "X", "H", "x", "z").unwrap();
+        assert!(out.contains("x => z"), "the hole is filled in place: {out}");
+        assert!(!out.contains("=> ?"), "no `?` left: {out}");
+    }
+
+    /// A bare partial-map body in a type body (`let H :: D = Base`, no brackets)
+    /// gets a fresh `[ … ]` extension appended.
+    #[test]
+    fn brackets_bare_partial_map_in_complex_body() {
+        let src = "@Type\n\nX <<= {\n  a, z,\n  let H :: D = Base\n}\n";
+        let out = edit_map_definition(src, "X", "H", "x", "z").unwrap();
+        assert!(out.contains("Base [ x => z ]"), "extension appended: {out}");
     }
 }
 
