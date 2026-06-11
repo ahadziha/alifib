@@ -1,0 +1,57 @@
+(***
+    Dining philosophers in a row.
+
+    Any number of philosophers sit in a line with a fork between
+    each pair and one at each end; a philosopher needs both
+    adjacent forks to eat. The type below is independent of the
+    number of philosophers: the instance is the initial word,
+
+        f p f         (one philosopher)
+        f p f p f     (two philosophers)
+        f p f p f p f (three philosophers, and so on)
+
+    Each philosopher independently chooses which fork to pick up
+    first, and neighbours race for the fork they share — every
+    such race is a genuine conflict, so the system branches into
+    many distinct causal stories. Unlike the circular table,
+    the row cannot produce a cycle of philosophers each holding
+    the fork the next one wants, so no causal story gets stuck:
+    every maximal trace ends with everyone fed,
+
+        f done f done ... done f
+
+    That is a safety property over all traces at once, and
+    `trace_search` (cargo run -p alifib --release --example
+    trace_search) verifies it by exhausting the schedule space.
+
+    Or play a single schedule by hand:
+
+        alifib repl examples/Philosophers.ali
+        start Philosophers 'f p f p f' 'f done f done f'
+***)
+
+@Type
+Philosophers <<= {
+    pt,
+
+    (* A fork on the table *)
+    f: pt -> pt,
+
+    (* A philosopher: thinking, holding one fork, eating, fed *)
+    p: pt -> pt,
+    hasL: pt -> pt,
+    hasR: pt -> pt,
+    eat: pt -> pt,
+    done: pt -> pt,
+
+    (* Pick up either adjacent fork first... *)
+    take_left: f p -> hasL,
+    take_right: p f -> hasR,
+
+    (* ...then the other one *)
+    then_right: hasL f -> eat,
+    then_left: f hasR -> eat,
+
+    (* Eat, and put both forks back *)
+    release: eat -> f done f
+}

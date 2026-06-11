@@ -1,0 +1,48 @@
+(***
+    Two trains, one track — a protocol that cannot succeed.
+
+    A corridor of free segments `s` with a train at each end:
+    `w` travels right, `e` travels left, each claiming the next
+    segment as it advances. Equivalently: two transactions
+    acquiring a chain of locks in opposite orders — the classic
+    lock-ordering violation, with the corridor length as the
+    parameter. The instance is the initial word,
+
+        w s s s s e   (a corridor of four segments)
+
+    The trains advance independently until one segment remains
+    between them; the race for that last segment is the only
+    conflict in the system, and its position is decided by the
+    schedule. Whoever wins, the next state is `w e` somewhere in
+    the corridor: a head-on meeting, no rule applies, deadlock.
+
+    The numbers are exact: a corridor of m segments has 2^m
+    schedules (each segment is claimed by w or by e, and any
+    interleaving of the two advances realises some claim split),
+    but only m+1 traces — one causal story per meeting point.
+    `trace_search` (cargo run -p alifib --release --example
+    trace_search) walks the schedules, collapses them with the
+    engine's own equality, and finds every meeting point; no
+    single deadlock is planted anywhere.
+
+    Or drive a train by hand:
+
+        alifib repl examples/Corridor.ali
+        start Corridor 'w s s s s e'
+***)
+
+@Type
+Corridor <<= {
+    pt,
+
+    (* A free track segment *)
+    s: pt -> pt,
+
+    (* The eastbound and westbound trains *)
+    w: pt -> pt,
+    e: pt -> pt,
+
+    (* Each train claims the segment ahead of it *)
+    advance_w: w s -> s w,
+    advance_e: s e -> e s
+}
