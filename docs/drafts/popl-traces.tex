@@ -1,0 +1,174 @@
+% Draft section: concurrency demonstration (schedules vs traces).
+%
+% Standalone fragment for the POPL paper. Citation keys are placeholders;
+% \cref targets refer to sections of the eventual paper. Every number is
+% measured: reproduce with `cargo run -p alifib --release --example
+% trace_search` against examples/{Philosophers,Corridor,PhilosophersRing}.ali
+% (commits 56cd92c, 9b1ffa6).
+
+\section{Traces, not schedules}
+\label{section:traces}
+
+The purpose of this section is to put the trace objects of
+\cref{section:transparency} to work on a problem they were not designed
+for: the analysis of concurrent systems. alifib has no concurrency
+features---no processes, no channels, no independence relation, and no
+notion of commutation. I will argue that it needs none of them. The
+structure that concurrency theory works hardest to recover is already
+present in the geometry of the engine's values, and the standard
+apparatus---trace equivalence, partial-order reduction, deadlock
+detection---falls out of its ordinary notion of equality.
+
+\paragraph{Schedules and traces.}
+Consider the simplest possible concurrent system: a word $a\,b$, a rule
+$r_a : a \to x$, and a rule $r_b : b \to y$. The two redexes are
+disjoint; neither needs the other. A \emph{schedule} is a run as it is
+actually performed: a sequence of choices, $r_a$ then $r_b$, or $r_b$
+then $r_a$. This is what nearly every model of computation calls an
+execution, and the order is part of the data even when it is
+meaningless. A \emph{trace}\footnote{The word is overloaded. Mazurkiewicz
+traces are equivalence classes of sequences; the traces of this paper
+are diagrams, and their relation to the former is precisely the point of
+this section.} is the diagram that the run assembles: a $2$-cell
+labelled $r_a$ and a $2$-cell labelled $r_b$, sitting side by side,
+because that is where the redexes are. There is no slot in this object
+that could record which cell was applied first. Both schedules build the
+same diagram, and the engine agrees: started on one and aimed at the
+other, it reports the target reached before a single step is taken. In
+general, a schedule is a total order on the events of a run; the trace
+records exactly the causal one.
+
+\paragraph{Mazurkiewicz equivalence, definitionally.}
+The classical remedy for the spurious total order is due to
+\textcite{mazurkiewicz_1977}: fix an independence relation on actions,
+and quotient sequences by the congruence that commutes independent
+neighbours. The remedy presupposes the disease. One must first commit to
+sequences, then specify---as additional data, subject to side
+conditions---which reorderings are harmless. Here the situation is
+inverted. The trace is the only object the engine ever builds; the
+interleavings are merely its \emph{layerings}, recoverable when wanted
+and never primitive. The slogan: \emph{the trace does not forget the
+interleaving; it never recorded it.} Independence, too, is not declared
+but read off: two available rewrites commute just when their matches are
+disjoint subdiagrams, and where they overlap---two philosophers reaching
+for one fork---the traces genuinely branch. What an event structure
+posits as axioms, the diagram exhibits as geometry.
+
+\paragraph{Two benchmarks.}
+I test this on the two standard topologies of the folklore. The first is
+\emph{dining philosophers in a row}: forks and philosophers alternate
+along a word, every philosopher chooses which adjacent fork to take
+first, and neighbours race for the fork they share. Five rules suffice,
+and---a pleasing consequence of data being words---the type does not
+mention the number of philosophers at all: the instance is the initial
+word $f\,p\,f\,p\,\cdots\,f$. The second is a \emph{corridor}: a single
+track of $m$ free segments claimed from opposite ends by two trains, or
+equivalently two transactions acquiring a chain of locks in opposite
+orders. The corridor is doomed by design; whoever wins the race for the
+last segment, the next state is a head-on meeting at which no rule
+applies. Its combinatorics are exact: $2^m$ schedules (each segment goes
+to one train or the other), but only $m+1$ traces---one causal story per
+meeting point.
+
+\paragraph{The search.}
+A driver of some two hundred lines explores these systems through the
+same session interface a human uses. It enumerates the reachable states
+by breadth-first search, deduplicating by the engine's isomorphism;
+counts schedules exactly, by path-counting over the resulting acyclic
+graph; and classifies runs into trace classes by walking every schedule
+with step and undo, collapsing the assembled proof diagrams under that
+same isomorphism. Notice what the driver does \emph{not} contain: no
+independence relation, no commutation check, no persistent sets. The
+entire quotient is one call to the equality of values. The measurements:
+
+\begin{center}
+\begin{tabular}{l r r r l}
+\toprule
+system & states & schedules (exact) & traces & verdict \\
+\midrule
+philosophers, $N=4$ & $377$ & $119{,}328$ & $128$ & deadlock-free \\
+philosophers, $N=5$ & $1{,}597$ & $30{,}700{,}608$ & $\geq 220$ & deadlock-free \\
+corridor, $m=10$ & $66$ & $1{,}024$ & $11$ & $11$ deadlocks \\
+corridor, $m=40$ & $861$ & $2^{40} \approx 1.1 \times 10^{12}$ & --- & $41$ deadlocks \\
+round table, $N=3$ & $1{,}574$ & $\infty$ (cyclic) & --- & $2$ deadlocks \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+At $N=4$ every one of the $119{,}328$ schedules is walked, and they
+collapse to $128$ certificates: a quotient of roughly $930$, measured
+rather than asserted. As a sanity check, the corridor at $m=10$ yields
+eleven classes whose schedule counts are $252, 210, 210, 120, 120, 45,
+45, 10, 10, 1, 1$---precisely the tenth row of Pascal's triangle. The
+brute-force walk recomputes the closed form, which is some evidence that
+it is walking what we think it is walking. Each deadlock arrives as a
+certificate, an ordinary diagram one can replay step by step; at $m=4$,
+in full:
+\[
+  (w\, s\, s\, s\, \mathit{adv}_e)
+  \mathbin{\#_1} (w\, s\, s\, \mathit{adv}_e\, s)
+  \mathbin{\#_1} (\mathit{adv}_w\, s\, e\, s\, s)
+  \mathbin{\#_1} (s\, \mathit{adv}_w\, e\, s\, s).
+\]
+The two trains advance, meet, and stop; the diagram \emph{is} the
+space--time picture of the collision.
+
+\paragraph{Exhaustive verdicts.}
+Walking schedules is exponential, and past $150{,}000$ of them the
+driver merely samples---whence the lower bound at $N=5$. But the
+verification claims never rest on sampling. The reachable state graph is
+finite whatever the schedule count, and a terminal state of the graph is
+terminal for every run that reaches it; so the verdict column of the
+table is exhaustive even at $2^{40}$, where all $41$ meeting points are
+found without any pretence of walking a trillion schedules. Safety over
+all interleavings is a statement about a small graph.
+
+\paragraph{The round table.}
+The reader will have noticed that the philosophers above sit in a row,
+and the classical deadlock needs a circle. The obstruction is real: the
+values of alifib in dimension one are molecules, molecules are
+intervals, and a cyclic word is simply not a value. The circle cannot
+live in the geometry of the word. It can, however, live in the
+\emph{typing}. Give each fork its own sort, fix the philosophers in
+place, and let free forks drift past everything by structural mobility
+rules; then fork $f_i$ is shared by philosophers $i$ and $i-1$ because
+only their take-rules mention it, and the wait-for cycle returns at
+$N=3$ with indices read modulo $3$. The search finds what it should:
+$1{,}574$ reachable states; exactly two terminal ones, all-left and
+all-right---the two circular waits, discovered, not planted; and the
+basin from which success is unreachable is exactly those two states, so
+the folklore theorem---the round table deadlocks just when every
+philosopher grabs in the same direction, and recovery is possible from
+anywhere else---is verified mechanically. The encoding is not free of
+charge. The drift rules are \emph{structural}: they make the state
+graph cyclic, the schedule space infinite, and the trace count a
+question about rewriting \emph{modulo} the structural cells---the same
+obligation that the term-rewriting encoding of \cref{section:trs} faces
+for its own structural layer, and open for the same reason. I prefer to
+state the frontier than to hide it: where the free theory ends is
+exactly where the modulo-theory must begin.
+
+\paragraph{What this does and does not show.}
+At this point a reader from model checking may protest that these are
+classroom benchmarks; that SPIN visits more states per second than this
+engine will visit in its lifetime \parencite{holzmann_2003}; and that
+partial-order reduction is thirty years of hard-won
+engineering \parencite{godefroid_1996, flanagan_godefroid_2005}, not a
+table with five rows. So much is true. But the claim here is not speed,
+and it is not scale. The claim is that the object those algorithms
+labour to construct---a canonical representative of each commutation
+class---is, in this setting, the only object that exists, and that
+``two runs are equivalent'' is decided by the same isomorphism that
+decides every other equality of values. Persistent sets and sleep sets
+are answers to a question that this syntax does not ask.
+\textcite{pratt_1991} and \textcite{vanglabbeek_2006} argued long ago
+that concurrency is inherently higher-dimensional; what their
+higher-dimensional automata lacked was not insight but an executable
+syntax with a matching engine. And on the Petri-net side the
+correspondence is older still: the trace diagram of a run is its causal
+process in the sense of \textcite{goltz_reisig_1983}, computed here by
+running the net rather than defined over it---one wire-swap short, as
+above, of the symmetric monoidal semantics of
+\textcite{meseguer_montanari_1990}. The sum of it is this: the partial
+order was never the quotient of the total ones. It was the datum all
+along.
