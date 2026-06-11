@@ -727,3 +727,35 @@ a "Local definitions (`let`)" bullet covering the diagram-binding path too.
 Surface mechanics stay in [[language-parser]] (cross-linked, not duplicated):
 impl page says *what*, concept page says *why*. index.md summary updated;
 `last-touched` bumped; page stays `stable`.
+
+## [2026-06-11] lint | verified all draft pages against current src
+
+Acted on a "verify any draft pages" request. Five pages carried `status: draft`:
+the concept pages [[extension-inclusion-attachment]] and [[trs-encoding]] (draft
+because their code refs were unverified, not because the subject was open) and
+the three `open-questions/` pages [[trs-convergence]],
+[[atom-gluing-sign-invariant]], [[module-open-semantics]]. Fanned out one
+verifier per page, each re-reading the live source.
+
+Result: **every code claim on all five pages confirmed against current code** —
+zero stale refs. Verified, among others: the exact collision error string
+`"Type name '{name}' collides with an inherited map of the same name"`
+(`eval.rs`); `qualify_name` join `"{prefix}.{name}"`; the AST split
+`Complex::Block { address: Some/None }` with `ComplexInstr::Include/AttachStmt`;
+the `"Unexpected module domain in attach"` rejection (`include.rs`); the `Magma`
+fixture and `magma_interpretation` cell-for-cell; the `TRS.ali` Frobenius/comonoid
+cells (`Split_Merge: split merge -> id`, the deliberate absence of the comonoid
+laws) and `BinaryNat` operations/rules/numeral; `thin` as display-only
+(`Complex::find_index("thin")`, `compute_thin_tags` in `web.rs`, never read by the
+matcher); `parallelism` being a bare-`fn` whole-boundary check with no hemisphere
+restriction; `build_stack_cell_n` phase-separation; `diagram.rs` holding exactly
+one test (`boundary_normal_clamps_history_to_top_dim`); and the lexer keyword set
+in `ident_or_nat_or_kw` with no `open` token.
+
+Action: promoted the two concept pages `draft` → `stable` (refs now re-verified,
+per the promotion rule). The three open-questions stay `draft` — their subjects
+are genuinely unresolved, which is the terminal-correct status for an open
+question, not a verification gap — `last-touched` bumped to record the re-check.
+index.md rows for the two promoted pages updated; CLAUDE.md *Status of the wiki*
+paragraph corrected to list all three remaining draft open-questions (it had
+omitted `trs-convergence`) and note the promotion.

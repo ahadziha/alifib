@@ -1,7 +1,7 @@
 ---
 kind: question
 status: draft
-last-touched: 2026-06-10
+last-touched: 2026-06-11
 code: [examples/TRS.ali, examples/BinaryNat.ali]
 ---
 

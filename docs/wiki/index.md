@@ -32,8 +32,8 @@ Mathematical and language ideas alifib realises.
 | [[homology]] | Integer cellular homology of a type (directed complex) via Smith Normal Form, with surfaced torsion witnesses | stable |
 | [[string-diagram]] | The Poincaré-dual presentation; node/wire/region layout | stable |
 | [[module-system]] | The language's types, modules, `let` definitions, `include`, `attach` (`open` is aspirational) | stable |
-| [[extension-inclusion-attachment]] | Three ways to build a type on another — `Y { … }` inherits, `include` embeds (shared), `attach` glues (fresh); compared axis by axis | draft |
-| [[trs-encoding]] | Term rewriting as cartesian string-diagram rewriting (Fox's theorem): sorts get copy/discard, operations are nodes, rules are 3-cells; `examples/TRS.ali` is the shared structural layer | draft |
+| [[extension-inclusion-attachment]] | Three ways to build a type on another — `Y { … }` inherits, `include` embeds (shared), `attach` glues (fresh); compared axis by axis | stable |
+| [[trs-encoding]] | Term rewriting as cartesian string-diagram rewriting (Fox's theorem): sorts get copy/discard, operations are nodes, rules are 3-cells; `examples/TRS.ali` is the shared structural layer | stable |
 
 ## Implementation
 

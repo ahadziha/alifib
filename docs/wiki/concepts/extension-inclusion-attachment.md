@@ -1,6 +1,6 @@
 ---
 kind: concept
-status: draft
+status: stable
 last-touched: 2026-06-11
 ---
 

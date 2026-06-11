@@ -1,7 +1,7 @@
 ---
 kind: question
 status: draft
-last-touched: 2026-06-10
+last-touched: 2026-06-11
 code: [src/core/diagram.rs, src/core/ogposet.rs]
 ---
 

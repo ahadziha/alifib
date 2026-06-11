@@ -1,7 +1,7 @@
 ---
 kind: concept
-status: draft
-last-touched: 2026-06-10
+status: stable
+last-touched: 2026-06-11
 ---
 
 # Encoding term rewriting systems

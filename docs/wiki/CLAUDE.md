@@ -261,8 +261,10 @@ shows recent activity.
 ## Status of the wiki
 
 All content pages are `status: stable` — verified against current `src/` (and the
-`cli/` / `web/` crates) in the 2026-06-09 full audit/rewrite pass — except the
-`open-questions/` pages `module-open-semantics` and `atom-gluing-sign-invariant`,
+`cli/` / `web/` crates) in the 2026-06-09 full audit/rewrite pass, the concept
+pages [[extension-inclusion-attachment]] and [[trs-encoding]] re-verified and
+promoted on 2026-06-11 — except the three `open-questions/` pages
+`module-open-semantics`, `atom-gluing-sign-invariant`, and `trs-convergence`,
 which stay `draft` because their subjects are genuinely unresolved. The concept
 cluster was rewritten in tutorial voice on 2026-06-10 (the register reference for
 *Voice* above), in the same pass that corrected the wiki's framing of what alifib
