@@ -22,8 +22,8 @@
     is no longer reachable.
 
     The drift cells are *structural*: they make the state graph
-    cyclic (a fork can wander forever), so the schedule space is
-    infinite and the schedule/trace counting of the interval
+    cyclic (a fork can wander forever), so the interleaving space is
+    infinite and the interleaving/trace counting of the interval
     benchmarks does not apply. Counting traces here means
     rewriting modulo the drift cells — the same open metatheory
     as the TRS encoding's structural layer (trs-convergence).

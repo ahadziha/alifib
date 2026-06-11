@@ -22,9 +22,9 @@
 
     That is a safety property over all traces at once, and
     `trace_search` (cargo run -p alifib --release --example
-    trace_search) verifies it by exhausting the schedule space.
+    trace_search) verifies it by exhausting the interleaving space.
 
-    Or play a single schedule by hand:
+    Or play a single interleaving by hand:
 
         alifib repl examples/Philosophers.ali
         start Philosophers 'f p f p f' 'f done f done f'

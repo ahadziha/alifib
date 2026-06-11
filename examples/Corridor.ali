@@ -13,15 +13,15 @@
     The trains advance independently until one segment remains
     between them; the race for that last segment is the only
     conflict in the system, and its position is decided by the
-    schedule. Whoever wins, the next state is `w e` somewhere in
+    interleaving. Whoever wins, the next state is `w e` somewhere in
     the corridor: a head-on meeting, no rule applies, deadlock.
 
     The numbers are exact: a corridor of m segments has 2^m
-    schedules (each segment is claimed by w or by e, and any
+    interleavings (each segment is claimed by w or by e, and any
     interleaving of the two advances realises some claim split),
     but only m+1 traces — one causal story per meeting point.
     `trace_search` (cargo run -p alifib --release --example
-    trace_search) walks the schedules, collapses them with the
+    trace_search) walks the interleavings, collapses them with the
     engine's own equality, and finds every meeting point; no
     single deadlock is planted anywhere.
 

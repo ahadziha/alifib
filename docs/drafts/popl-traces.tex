@@ -1,4 +1,4 @@
-% Draft section: concurrency demonstration (schedules vs traces).
+% Draft section: concurrency demonstration (interleavings vs traces).
 %
 % Standalone fragment for the POPL paper. Citation keys are placeholders;
 % \cref targets refer to sections of the eventual paper. Every number is
@@ -6,7 +6,7 @@
 % trace_search` against examples/{Philosophers,Corridor,PhilosophersRing}.ali
 % (commits 56cd92c, 9b1ffa6).
 
-\section{Traces, not schedules}
+\section{Traces, not interleavings}
 \label{section:traces}
 
 The purpose of this section is to put the trace objects of
@@ -19,23 +19,27 @@ present in the geometry of the engine's values, and the standard
 apparatus---trace equivalence, partial-order reduction, deadlock
 detection---falls out of its ordinary notion of equality.
 
-\paragraph{Schedules and traces.}
+\paragraph{Interleavings and traces.}
 Consider the simplest possible concurrent system: a word $a\,b$, a rule
 $r_a : a \to x$, and a rule $r_b : b \to y$. The two redexes are
-disjoint; neither needs the other. A \emph{schedule} is a run as it is
-actually performed: a sequence of choices, $r_a$ then $r_b$, or $r_b$
-then $r_a$. This is what nearly every model of computation calls an
-execution, and the order is part of the data even when it is
-meaningless. A \emph{trace}\footnote{The word is overloaded. Mazurkiewicz
-traces are equivalence classes of sequences; the traces of this paper
-are diagrams, and their relation to the former is precisely the point of
-this section.} is the diagram that the run assembles: a $2$-cell
+disjoint; neither needs the other. An \emph{interleaving} is a run as it
+is actually performed: a sequence of choices, $r_a$ then $r_b$, or $r_b$
+then $r_a$---what the database literature calls a \emph{schedule} or
+\emph{history} \parencite{papadimitriou_1979}, and what nearly every
+model of computation simply calls an execution. The order is part of the
+data even when it is meaningless. A \emph{trace}\footnote{The word is
+overloaded in both directions: the traces of
+\textcite{mazurkiewicz_1977} are equivalence classes of sequences, while
+the traces of CSP \parencite{hoare_1985} are the sequences themselves.
+The traces of this paper are diagrams, and their relation to the former
+is precisely the point of this section.} is the diagram that the run
+assembles: a $2$-cell
 labelled $r_a$ and a $2$-cell labelled $r_b$, sitting side by side,
 because that is where the redexes are. There is no slot in this object
-that could record which cell was applied first. Both schedules build the
+that could record which cell was applied first. Both interleavings build the
 same diagram, and the engine agrees: started on one and aimed at the
 other, it reports the target reached before a single step is taken. In
-general, a schedule is a total order on the events of a run; the trace
+general, an interleaving is a total order on the events of a run; the trace
 records exactly the causal one.
 
 \paragraph{Mazurkiewicz equivalence, definitionally.}
@@ -66,7 +70,7 @@ track of $m$ free segments claimed from opposite ends by two trains, or
 equivalently two transactions acquiring a chain of locks in opposite
 orders. The corridor is doomed by design; whoever wins the race for the
 last segment, the next state is a head-on meeting at which no rule
-applies. Its combinatorics are exact: $2^m$ schedules (each segment goes
+applies. Its combinatorics are exact: $2^m$ interleavings (each segment goes
 to one train or the other), but only $m+1$ traces---one causal story per
 meeting point.
 
@@ -74,8 +78,8 @@ meeting point.
 A driver of some two hundred lines explores these systems through the
 same session interface a human uses. It enumerates the reachable states
 by breadth-first search, deduplicating by the engine's isomorphism;
-counts schedules exactly, by path-counting over the resulting acyclic
-graph; and classifies runs into trace classes by walking every schedule
+counts interleavings exactly, by path-counting over the resulting acyclic
+graph; and classifies runs into trace classes by walking every interleaving
 with step and undo, collapsing the assembled proof diagrams under that
 same isomorphism. Notice what the driver does \emph{not} contain: no
 independence relation, no commutation check, no persistent sets. The
@@ -84,7 +88,7 @@ entire quotient is one call to the equality of values. The measurements:
 \begin{center}
 \begin{tabular}{l r r r l}
 \toprule
-system & states & schedules (exact) & traces & verdict \\
+system & states & interleavings (exact) & traces & verdict \\
 \midrule
 philosophers, $N=4$ & $377$ & $119{,}328$ & $128$ & deadlock-free \\
 philosophers, $N=5$ & $1{,}597$ & $30{,}700{,}608$ & $\geq 220$ & deadlock-free \\
@@ -95,10 +99,10 @@ round table, $N=3$ & $1{,}574$ & $\infty$ (cyclic) & --- & $2$ deadlocks \\
 \end{tabular}
 \end{center}
 
-At $N=4$ every one of the $119{,}328$ schedules is walked, and they
+At $N=4$ every one of the $119{,}328$ interleavings is walked, and they
 collapse to $128$ certificates: a quotient of roughly $930$, measured
 rather than asserted. As a sanity check, the corridor at $m=10$ yields
-eleven classes whose schedule counts are $252, 210, 210, 120, 120, 45,
+eleven classes whose interleaving counts are $252, 210, 210, 120, 120, 45,
 45, 10, 10, 1, 1$---precisely the tenth row of Pascal's triangle. The
 brute-force walk recomputes the closed form, which is some evidence that
 it is walking what we think it is walking. Each deadlock arrives as a
@@ -114,13 +118,13 @@ The two trains advance, meet, and stop; the diagram \emph{is} the
 space--time picture of the collision.
 
 \paragraph{Exhaustive verdicts.}
-Walking schedules is exponential, and past $150{,}000$ of them the
+Walking interleavings is exponential, and past $150{,}000$ of them the
 driver merely samples---whence the lower bound at $N=5$. But the
 verification claims never rest on sampling. The reachable state graph is
-finite whatever the schedule count, and a terminal state of the graph is
+finite whatever the interleaving count, and a terminal state of the graph is
 terminal for every run that reaches it; so the verdict column of the
 table is exhaustive even at $2^{40}$, where all $41$ meeting points are
-found without any pretence of walking a trillion schedules. Safety over
+found without any pretence of walking a trillion interleavings. Safety over
 all interleavings is a statement about a small graph.
 
 \paragraph{The round table.}
@@ -141,7 +145,7 @@ the folklore theorem---the round table deadlocks just when every
 philosopher grabs in the same direction, and recovery is possible from
 anywhere else---is verified mechanically. The encoding is not free of
 charge. The drift rules are \emph{structural}: they make the state
-graph cyclic, the schedule space infinite, and the trace count a
+graph cyclic, the interleaving space infinite, and the trace count a
 question about rewriting \emph{modulo} the structural cells---the same
 obligation that the term-rewriting encoding of \cref{section:trs} faces
 for its own structural layer, and open for the same reason. I prefer to

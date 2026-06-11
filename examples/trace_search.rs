@@ -1,10 +1,10 @@
-//! Exhaustive schedule-space analysis of the concurrency benchmarks
+//! Exhaustive interleaving-space analysis of the concurrency benchmarks
 //! (`Philosophers.ali`, `Corridor.ali`).
 //!
-//! A *schedule* is a maximal run of the rewrite engine — a sequence of
-//! `step` choices until no rewrite applies. A *trace* is the proof
+//! An *interleaving* is a maximal run of the rewrite engine — a sequence
+//! of `step` choices until no rewrite applies. A *trace* is the proof
 //! diagram such a run assembles, which records only the causal order of
-//! events: schedules that differ by commuting independent steps build
+//! events: interleavings that differ by commuting independent steps build
 //! the same diagram. This driver measures the gap between the two —
 //! the quotient that partial-order reduction computes by hand — using
 //! nothing but the engine's session API and its ordinary diagram
@@ -12,18 +12,18 @@
 //!
 //! Per benchmark it reports:
 //!  - the reachable states (BFS, deduplicated by `Diagram::isomorphic`);
-//!  - the exact number of schedules (path counting over the state DAG —
+//!  - the exact number of interleavings (path counting over the state DAG —
 //!    the systems are terminating, so the graph is acyclic);
 //!  - the verdict of every terminal state — success or deadlock. This
-//!    is exhaustive over all schedules whatever their number, since the
+//!    is exhaustive over all interleavings whatever their number, since the
 //!    state graph covers them;
-//!  - the distinct traces: by walking *every* schedule and collapsing
+//!  - the distinct traces: by walking *every* interleaving and collapsing
 //!    the assembled proofs under `Diagram::isomorphic` when the count
-//!    permits, by classifying random schedules the same way otherwise
+//!    permits, by classifying random interleavings the same way otherwise
 //!    (reported as a lower bound).
 //!
 //! Run with: cargo run -p alifib --release --example trace_search
-//! (about three minutes; the full walk of the 119,328 schedules of
+//! (about three minutes; the full walk of the 119,328 interleavings of
 //! four philosophers dominates).
 
 use std::collections::HashMap;
@@ -35,7 +35,7 @@ use alifib::interpreter::GlobalStore;
 use alifib::output::render_diagram;
 use alifib::{Complex, Diagram};
 
-/// Walk every schedule when there are at most this many; sample beyond.
+/// Walk every interleaving when there are at most this many; sample beyond.
 const FULL_WALK_BOUND: u128 = 150_000;
 const SAMPLES: usize = 2_000;
 
@@ -141,7 +141,7 @@ impl Ctx {
 /// (canonical for these 1-dimensional words) and the keying is checked:
 /// a label collision must be an isomorphism. Successor lists keep
 /// duplicates — two distinct choices reaching the same state are two
-/// distinct schedule steps.
+/// distinct interleaving steps.
 fn state_graph(ctx: &Ctx, init: &Diagram) -> (Vec<(String, Diagram)>, HashMap<String, Vec<String>>) {
     let mut states: Vec<(String, Diagram)> = Vec::new();
     let mut index: HashMap<String, usize> = HashMap::new();
@@ -178,8 +178,8 @@ fn state_graph(ctx: &Ctx, init: &Diagram) -> (Vec<(String, Diagram)>, HashMap<St
     (states, succs)
 }
 
-/// Exact schedule count: maximal paths through the (acyclic) state graph.
-fn count_schedules(label: &str, succs: &HashMap<String, Vec<String>>, memo: &mut HashMap<String, u128>) -> u128 {
+/// Exact interleaving count: maximal paths through the (acyclic) state graph.
+fn count_interleavings(label: &str, succs: &HashMap<String, Vec<String>>, memo: &mut HashMap<String, u128>) -> u128 {
     if let Some(&n) = memo.get(label) {
         return n;
     }
@@ -187,19 +187,19 @@ fn count_schedules(label: &str, succs: &HashMap<String, Vec<String>>, memo: &mut
     let n = if out.is_empty() {
         1
     } else {
-        out.iter().map(|s| count_schedules(s, succs, memo)).sum()
+        out.iter().map(|s| count_interleavings(s, succs, memo)).sum()
     };
     memo.insert(label.to_owned(), n);
     n
 }
 
 /// One causal story: a proof diagram up to isomorphism, with the
-/// schedules observed building it and the final state they reach.
+/// interleavings observed building it and the final state they reach.
 struct TraceClass {
     proof: Diagram,
     final_label: String,
     success: bool,
-    schedules: u128,
+    interleavings: u128,
 }
 
 fn classify(
@@ -210,20 +210,20 @@ fn classify(
 ) {
     let proof = engine.assemble_proof().expect("maximal run should assemble");
     match classes.iter_mut().find(|c| Diagram::isomorphic(&c.proof, &proof)) {
-        Some(c) => c.schedules += 1,
+        Some(c) => c.interleavings += 1,
         None => {
             let final_label = ctx.label(engine.current_diagram());
             classes.push(TraceClass {
                 success: is_success(&final_label, engine.current_diagram()),
                 final_label,
                 proof,
-                schedules: 1,
+                interleavings: 1,
             })
         }
     }
 }
 
-/// Walk every schedule by depth-first search with step/undo, collapsing
+/// Walk every interleaving by depth-first search with step/undo, collapsing
 /// completed runs into trace classes as they finish.
 fn walk_all(
     ctx: &Ctx,
@@ -243,7 +243,7 @@ fn walk_all(
     }
 }
 
-/// Classify `SAMPLES` uniformly random schedules instead of all of them.
+/// Classify `SAMPLES` uniformly random interleavings instead of all of them.
 fn sample(
     ctx: &Ctx,
     init: &Diagram,
@@ -258,7 +258,7 @@ fn sample(
 }
 
 /// Is the state graph acyclic? Iterative three-colour DFS. Acyclicity
-/// is what makes schedule counting and exhaustive trace walks possible;
+/// is what makes interleaving counting and exhaustive trace walks possible;
 /// structural cells (the ring's fork drift) break it.
 fn is_acyclic(start: &str, succs: &HashMap<String, Vec<String>>) -> bool {
     #[derive(Clone, Copy, PartialEq)]
@@ -364,13 +364,13 @@ fn run(bench: &Bench) {
     let (states, succs) = state_graph(&ctx, &init);
     println!("   states:    {}", thousands(states.len() as u128));
 
-    // Terminal-state verdicts cover every schedule, however many.
+    // Terminal-state verdicts cover every interleaving, however many.
     let terminal: Vec<&(String, Diagram)> =
         states.iter().filter(|(l, _)| succs[l].is_empty()).collect();
     let stuck: Vec<&&(String, Diagram)> =
         terminal.iter().filter(|(l, d)| !is_success(l, d)).collect();
     println!(
-        "   terminal:  {} state(s) — {} success, {} deadlock  (exhaustive over all schedules)",
+        "   terminal:  {} state(s) — {} success, {} deadlock  (exhaustive over all interleavings)",
         terminal.len(),
         terminal.len() - stuck.len(),
         stuck.len()
@@ -390,12 +390,12 @@ fn run(bench: &Bench) {
         );
     }
 
-    // Schedule counting and trace classification need a finite schedule
+    // Schedule counting and trace classification need a finite interleaving
     // space, i.e. an acyclic state graph. Structural cells (the ring's
     // fork drift) make it cyclic: counting traces then means rewriting
     // modulo the structural layer, which the engine does not yet do.
     if !is_acyclic(&states[0].0, &succs) {
-        println!("   schedules: infinite — the drift cells make the state graph cyclic;");
+        println!("   interleavings: infinite — the drift cells make the state graph cyclic;");
         println!("              trace counting here means rewriting modulo the structural");
         println!("              layer (see the trs-convergence open question)");
         println!();
@@ -403,8 +403,8 @@ fn run(bench: &Bench) {
     }
 
     let mut memo = HashMap::new();
-    let total = count_schedules(&states[0].0, &succs, &mut memo);
-    println!("   schedules: {} (exact)", thousands(total));
+    let total = count_interleavings(&states[0].0, &succs, &mut memo);
+    println!("   interleavings: {} (exact)", thousands(total));
 
     let mut classes = Vec::new();
     let walked_all = total <= FULL_WALK_BOUND;
@@ -413,12 +413,12 @@ fn run(bench: &Bench) {
     } else {
         sample(&ctx, &init, is_success.as_ref(), &mut classes);
     }
-    classes.sort_by(|a, b| b.schedules.cmp(&a.schedules));
+    classes.sort_by(|a, b| b.interleavings.cmp(&a.interleavings));
 
     let (count_word, qualifier) = if walked_all {
-        ("schedules", "every schedule walked".to_owned())
+        ("interleavings", "every interleaving walked".to_owned())
     } else {
-        ("samples", format!("lower bound from {SAMPLES} random schedules"))
+        ("samples", format!("lower bound from {SAMPLES} random interleavings"))
     };
     let at_least = if walked_all { "" } else { ">= " };
     println!("   traces:    {at_least}{}  ({qualifier})", classes.len());
@@ -426,7 +426,7 @@ fn run(bench: &Bench) {
         let verdict = if c.success { "success" } else { "DEADLOCK" };
         println!(
             "     {:>10} {count_word} -> {}  [{}]",
-            thousands(c.schedules),
+            thousands(c.interleavings),
             c.final_label,
             verdict
         );

@@ -1,5 +1,5 @@
 (***
-    Asynchronous message passing, with schedule-invariant traces.
+    Asynchronous message passing, with interleaving-invariant traces.
 
     Two parties at either end of a word; the cells between them
     are messages in flight. Sends append a message, receives
@@ -8,7 +8,7 @@
 
     The point of the example: a trace is a 2-diagram, and a
     2-diagram does not record the order of causally independent
-    events. Two schedules that differ only by commuting
+    events. Two interleavings that differ only by commuting
     independent steps build the *same* trace — see `eager` and
     `alternating` below, which elaborate to equal diagrams.
     What the trace does record is exactly the causal order:
@@ -96,7 +96,7 @@ Deadlock <<= {
 }
 
 (***
-    Two schedules of the same protocol run, written as explicit
+    Two interleavings of the same protocol run, written as explicit
     trace diagrams, one rewrite step per line.
 
     They differ only in the order of `send2` and `recv1` — events
