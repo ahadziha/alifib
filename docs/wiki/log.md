@@ -759,3 +759,18 @@ question, not a verification gap — `last-touched` bumped to record the re-chec
 index.md rows for the two promoted pages updated; CLAUDE.md *Status of the wiki*
 paragraph corrected to list all three remaining draft open-questions (it had
 omitted `trs-convergence`) and note the promotion.
+
+## [2026-06-11] doc | partial-map: rewrote the lead in tutorial voice
+
+The `partial-map` concept page opened with a definition dropped from orbit (the
+$f : U \rightharpoonup V$ assignment), tucking motivation into trailing clauses —
+a pre-2026-06-10 register that the tutorial-voice pass had missed. Rewrote the
+lead to open with the question it answers: diagrams are the values, so what is a
+map *for* and why *partial*? Foregrounded the maps-vs-diagrams contrast as three
+things only a map can do — **apply** (`PartialMap::apply`, refine/translate a
+diagram into another complex), **compose** ($g \circ f$), **glue** (`attach …
+along`) — verified against `src/core/partial_map.rs`, `interpreter/diagram.rs`
+(`execute`), and `interpreter/include.rs` (`mapped_cell_data`). Corrected the
+tempting misread head-on: rewriting is matching + [[pushout]], **not** map
+application (the only `PartialMap::apply` in the rewrite path, `protocol.rs:938`,
+is visualization). `last-touched` bumped; status stays `stable`.

@@ -1,20 +1,43 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-09
+last-touched: 2026-06-11
 ---
 
 # Partial map
 
-A **partial map** $f : U \rightharpoonup V$ assigns, to each generating cell of a
-source [[diagram]] $U$, an image [[diagram]] in a target $V$ — but only on a
-*subset* of $U$'s generators. It is the language's notion of a structure-
+Diagrams are the values alifib computes with — a [[diagram]] is a shape pasted
+from cells, a finished thing. So what is a *map* for, and why is it allowed to be
+*partial*?
+
+A **partial map** $f : U \rightharpoonup V$ is what a diagram cannot be: a
+*transformation between* diagrams, a way of saying "each cell of the source $U$
+*is* this piece of the target $V$". It is alifib's notion of a structure-
 preserving morphism between [[directed-complex|complexes]] (a type is a
 [[directed-complex]], not necessarily regular; its [[atom|atoms]] and
-[[molecule|molecules]] are the [[regular-directed-complex|regular]] shapes): a
-way to say "this generator of $U$ *is* that piece of $V$". Where the assignment
-is defined on every generator it is **total**; the partial case is what makes
-incremental construction and refinement possible.
+[[molecule|molecules]] are the [[regular-directed-complex|regular]] shapes it
+maps). The reason to have maps *as well as* diagrams is that a map *does* things
+a diagram cannot:
+
+- **Apply it** (`PartialMap::apply`): push a whole diagram through $f$, replacing
+  each cell by its image and re-pasting the results. A diagram just sits there; a
+  map turns one diagram into another — this is how a construction in one complex
+  is *refined* or *translated* into another. (Rewriting is a *separate* mechanism
+  — matching plus [[pushout]], see [[rewriting]] — not map application.)
+- **Compose two**, $g \circ f$: chain transformations into one. Diagrams have no
+  such operation; they *paste* along a shared boundary ($\#_k$), which builds a
+  bigger diagram, not a composite morphism.
+- **Glue with one**: `attach T :: S along [ … ]` uses a map to identify cells of
+  a fresh copy of $S$ with diagrams already present in the host complex, welding
+  two complexes along shared structure.
+
+**Why _partial_?** Because you seldom know the whole transformation at once. You
+commit the images you have decided on and leave the rest as [[hole|holes]], to be
+filled in later — by the inferences that fire as the map grows, or interactively.
+*Totality is the finished state, not the starting one*; the `total` keyword is how
+you assert you have reached it. Partiality is also forced from above: composition
+is intrinsically partial, since $g \circ f$ can only be defined where $f$'s image
+lands inside $g$'s domain.
 
 The defining discipline is **boundary compatibility**. A map is not free to send
 cells anywhere: if $a$ is in the domain, then so is every cell of its
