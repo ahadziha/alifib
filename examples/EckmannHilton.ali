@@ -35,10 +35,34 @@ EckmannHilton <<= {
         2mor => b ]
 }
 
+(*
+    Eckmann-Hilton via the Frobenius structure on Pt.id.
+
+    Pt.2id is a genuine idempotent, not a strict identity, so the swap
+    cannot route through strict interchange-with-identities. Instead we
+    expand 2id into split #1 merge, slide a and b into the parallel region
+    split #1 (a #0 b) #1 merge using the unit-(co)naturality cells, and let
+    strict #0/#1 interchange re-extract the two scalars in the other order
+    at the merge. (inv is dir with a and b swapped.)
+*)
 @EckmannHilton
 let total Commutativity :: Equation = [
 	lhs => a b,
     rhs => b a,
-    dir => ?,
-    inv => ?
+    dir => (a #1 B.SrcId.inv)
+        #2 (a #1 Pt.Split_Merge.inv #1 b)
+        #2 (A.RUnit_Inv_Nat.dir #1 Pt.merge #1 b)
+        #2 (Pt.split #1 (a #0 Pt.id) #1 B.LUnit_Nat.inv)
+        #2 (B.LUnit_Inv_Nat.inv #1 (a #0 Pt.id) #1 Pt.merge)
+        #2 (b #1 Pt.split #1 A.RUnit_Nat.dir)
+        #2 (b #1 Pt.Split_Merge.dir #1 a)
+        #2 (b #1 A.SrcId.dir),
+    inv => (b #1 A.SrcId.inv)
+        #2 (b #1 Pt.Split_Merge.inv #1 a)
+        #2 (B.RUnit_Inv_Nat.dir #1 Pt.merge #1 a)
+        #2 (Pt.split #1 (b #0 Pt.id) #1 A.LUnit_Nat.inv)
+        #2 (A.LUnit_Inv_Nat.inv #1 (b #0 Pt.id) #1 Pt.merge)
+        #2 (a #1 Pt.split #1 B.RUnit_Nat.dir)
+        #2 (a #1 Pt.Split_Merge.dir #1 b)
+        #2 (a #1 B.SrcId.dir)
 ]
