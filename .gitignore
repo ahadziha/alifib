@@ -3,8 +3,10 @@
 debug
 target
 
-# Local editor/tool settings
-.claude/
+# Local editor/tool settings — but keep checked-in agent context (CLAUDE.md, notes/)
+.claude/*
+!.claude/CLAUDE.md
+!.claude/notes/
 /package-lock.json
 .codex
 
