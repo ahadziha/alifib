@@ -4,7 +4,7 @@ use super::types::{
     Context, EvalMap, InterpResult, Step, Term,
     fail, get_cell_data, make_error, make_error_from_core, sorted_generators,
 };
-use crate::aux::{self, HoleId, LocalId, Tag};
+use crate::aux::{self, LocalId, Tag};
 use crate::core::{
     complex::{Complex, MapDomain},
     diagram::{CellData, Diagram, Sign as DiagramSign},
@@ -29,16 +29,27 @@ struct MapBuild {
     /// failure can be blamed on the assignment truly responsible rather than on
     /// whichever innocent filler happened to close its last boundary face.
     current_span: Span,
-    /// Source span of each pending entry, keyed by its metavariable.  Pending
+    /// Source span of each pending entry, keyed by its source generator.  Pending
     /// entries carried in from a prefix map have no span here (they were written
     /// elsewhere), and so fall back to the current clause's span.
-    hole_spans: HashMap<HoleId, Span>,
+    hole_spans: HashMap<Tag, Span>,
     /// Set when committing a *pending* assignment fails during cascading: the
     /// span of that pending assignment, used to re-aim the resulting error.
     blame_span: Option<Span>,
 }
 
 impl MapBuild {
+    /// A build seeded with `map` and `holes`, with no clause spans yet recorded.
+    fn new(map: PartialMap, holes: Vec<MapHole>) -> MapBuild {
+        MapBuild {
+            map,
+            holes,
+            current_span: Span::synthetic(),
+            hole_spans: HashMap::new(),
+            blame_span: None,
+        }
+    }
+
     /// Position of the pending entry for `tag`, if any.
     fn entry_index(&self, tag: &Tag) -> Option<usize> {
         self.holes.iter().position(|h| &h.source == tag)
@@ -169,10 +180,8 @@ fn upsert_entry(
         }
         h.boundary = boundary;
     } else {
-        let meta = HoleId::fresh();
-        build.hole_spans.insert(meta, build.current_span);
+        build.hole_spans.insert(tag.clone(), build.current_span);
         build.holes.push(MapHole {
-            meta,
             source: tag,
             dim,
             image,
@@ -236,8 +245,8 @@ fn commit_one(
     build.map = PartialMap::extend(map, tag.clone(), dim, cell_data, actual_image.clone())?;
 
     let Some(i) = build.entry_index(&tag) else { return Ok(()); };
-    let meta = build.holes.remove(i).meta;
-    build.hole_spans.remove(&meta);
+    build.holes.remove(i);
+    build.hole_spans.remove(&tag);
     let n = actual_image.top_dim();
     let img_tree = actual_image
         .tree(DiagramSign::Input, n)
@@ -245,7 +254,7 @@ fn commit_one(
         .clone();
     let subst = |leaf: &Tag| -> Option<PasteTree> {
         match leaf {
-            Tag::Hole(id) if *id == meta => Some(img_tree.clone()),
+            Tag::Hole(source) if **source == tag => Some(img_tree.clone()),
             _ => None,
         }
     };
@@ -265,12 +274,12 @@ fn cascade(build: &mut MapBuild, context: &Context, domain: &Complex) -> Result<
             .holes
             .iter()
             .find(|h| h.image.is_some() && h.deps().is_empty())
-            .map(|h| (h.source.clone(), h.dim, h.image.clone().unwrap(), h.meta));
-        let Some((source, dim, image, meta)) = ready else { return Ok(()); };
+            .map(|h| (h.source.clone(), h.dim, h.image.clone().unwrap()));
+        let Some((source, dim, image)) = ready else { return Ok(()); };
         let cell_data = get_cell_data(context, domain, &source)
             .ok_or_else(|| aux::Error::new("Cannot find cell data for conditional assignment"))?;
         if let Err(e) = commit_one(build, source.clone(), dim, cell_data, image) {
-            return Err(blame_pending(build, domain, &source, meta, e));
+            return Err(blame_pending(build, domain, &source, e));
         }
     }
 }
@@ -287,10 +296,9 @@ fn blame_pending(
     build: &mut MapBuild,
     domain: &Complex,
     source: &Tag,
-    meta: HoleId,
     e: aux::Error,
 ) -> aux::Error {
-    if let Some(span) = build.hole_spans.get(&meta) {
+    if let Some(span) = build.hole_spans.get(source) {
         build.blame_span = Some(*span);
     }
     let name = domain
@@ -351,8 +359,8 @@ fn transport_leaf(
             .ok_or_else(|| aux::Error::new("map image has no paste tree"))?
             .clone();
         Ok(Some(img_tree))
-    } else if let Some(i) = build.entry_index(tag) {
-        Ok(Some(PasteTree::Leaf(Tag::Hole(build.holes[i].meta))))
+    } else if build.entry_index(tag).is_some() {
+        Ok(Some(PasteTree::Leaf(Tag::Hole(Box::new(tag.clone())))))
     } else {
         let name = domain
             .find_generator_by_tag(tag)
@@ -432,10 +440,16 @@ fn eval_partial_map(ctx: &PartialMapCtx<'_>, partial_map: &ast::PartialMap, span
             // Dot traversal: the new lookup scope is the base map's domain.
             let (rest_opt, rest_result) =
                 interpret_partial_map(&base_result.context, &base_map.domain, ctx.domain, rest);
-            let combined = base_result.merge(rest_result);
+            let mut combined = base_result.merge(rest_result);
             let Some(rest_map) = rest_opt else { return (None, combined); };
-            let composed = PartialMap::compose(&base_map.map, &rest_map.map);
-            (Some(EvalMap { map: composed, domain: rest_map.domain, holes: vec![] }), combined)
+            // `base.rest` denotes `base ∘ rest` on `rest`'s domain.
+            match compose_with_holes(&combined.context, &base_map, &rest_map) {
+                Ok(composed) => (Some(composed), combined),
+                Err(e) => {
+                    combined.add_error(make_error_from_core(span, e));
+                    (None, combined)
+                }
+            }
         }
     }
 }
@@ -626,13 +640,7 @@ fn interpret_partial_map_ext(ctx: &PartialMapCtx<'_>, ext: &PartialMapExt) -> St
     };
 
     let domain = Arc::clone(&initial.domain);
-    let init_build = MapBuild {
-        map: initial.map,
-        holes: initial.holes,
-        current_span: Span::synthetic(),
-        hole_spans: HashMap::new(),
-        blame_span: None,
-    };
+    let init_build = MapBuild::new(initial.map, initial.holes);
     let clauses_ctx = PartialMapCtx { context: &prefix_result.context, domain: &domain, ..*ctx };
     let (build_opt, clause_result) = eval_pmap_clauses(&clauses_ctx, init_build, &ext.clauses);
     let Some(build) = build_opt else {
@@ -828,6 +836,137 @@ fn collapsed_boundary_image(map: &PartialMap, cell_data: &CellData, dim: usize) 
         }
     }
     None
+}
+
+
+// ---- Composition with hole propagation ----
+
+/// The outcome of applying a map to a diagram, drawing on both its committed and
+/// its conditional (known-image) assignments.
+enum Reach {
+    /// Every leaf resolves to a known image; this is the map applied, a concrete
+    /// diagram.
+    Image(Diagram),
+    /// Some leaf is a pure hole — its image is unknown, so the result is not
+    /// concrete (we stop here rather than carry metavariables into an image).
+    Hole,
+    /// Some leaf is outside the domain, so no image can ever be formed.
+    Undefined,
+}
+
+/// Apply `f` to the diagram with paste tree `tree`, resolving each leaf to its
+/// committed image *or* a conditional's known image — both concrete.  Looks only
+/// at the leaves (the cells the result is pasted from); a conditional leaf's own
+/// open boundary faces resurface separately as the composite cell's pending
+/// faces.  `Undefined` dominates `Hole` (an unreachable leaf sinks the whole
+/// image).
+fn image_under(f: &EvalMap, tree: &PasteTree) -> Result<Reach, aux::Error> {
+    match tree {
+        PasteTree::Leaf(tag) => {
+            if let Ok(image) = f.map.image(tag) {
+                Ok(Reach::Image(image.clone()))
+            } else if let Some(h) = f.holes.iter().find(|h| &h.source == tag) {
+                Ok(match &h.image {
+                    Some(a) => Reach::Image(a.clone()),
+                    None => Reach::Hole,
+                })
+            } else {
+                Ok(Reach::Undefined)
+            }
+        }
+        PasteTree::Node { dim, left, right } => {
+            match (image_under(f, left)?, image_under(f, right)?) {
+                (Reach::Undefined, _) | (_, Reach::Undefined) => Ok(Reach::Undefined),
+                (Reach::Hole, _) | (_, Reach::Hole) => Ok(Reach::Hole),
+                (Reach::Image(a), Reach::Image(b)) => Ok(Reach::Image(Diagram::paste(*dim, &a, &b)?)),
+            }
+        }
+    }
+}
+
+/// True if some boundary face of `cell_data` is neither committed nor pending in
+/// the build — i.e. undefined in the composite.  A hole or conditional cannot
+/// sit on such a face, so its cell must be undefined too.
+fn has_undefined_face(build: &MapBuild, cell_data: &CellData) -> bool {
+    boundary_dependencies(cell_data, &build.map)
+        .iter()
+        .any(|(tag, _)| build.entry_index(tag).is_none())
+}
+
+/// Compose `f` after `g` (`f ∘ g`), propagating pending assignments.
+///
+/// The committed core is exactly what the hole-free composition computed; on top
+/// of it, holes and conditionals propagate, processing `dom(g)` in ascending
+/// dimension so a cell's faces are settled before the cell itself.  For each
+/// generator `x` of `g`'s domain, with `img` the image `g` pins for `x`
+/// (committed, or a conditional's known image):
+/// - `g` undefined at `x` → undefined.
+/// - `f`'s image of `img` is known — every leaf committed or a conditional whose
+///   image is known → assign `x ↦ f(img)`: this commits if all of `x`'s faces are
+///   committed, else records a conditional (so `f`'s conditionals propagate as
+///   conditionals, not as forgotten images).
+/// - `f` undefined on a leaf of `img` → undefined (the image is unreachable).
+/// - `f` has a pure hole on a leaf of `img`, or `g` is a pure hole at `x` → a
+///   pure hole — unless a face of `x` is undefined, which forces `x` undefined.
+pub(crate) fn compose_with_holes(
+    context: &Context,
+    f: &EvalMap,
+    g: &EvalMap,
+) -> Result<EvalMap, aux::Error> {
+    let domain = &*g.domain;
+    let mut build = MapBuild::new(PartialMap::empty(), Vec::new());
+    for (_, _, x) in sorted_generators(domain) {
+        compose_generator(&mut build, context, domain, f, g, &x)?;
+    }
+    Ok(EvalMap { map: build.map, domain: Arc::clone(&g.domain), holes: build.holes })
+}
+
+/// Classify one generator `x` of `g`'s domain and assign it into the composite.
+fn compose_generator(
+    build: &mut MapBuild,
+    context: &Context,
+    domain: &Complex,
+    f: &EvalMap,
+    g: &EvalMap,
+    x: &Tag,
+) -> Result<(), aux::Error> {
+    // The image `g` pins for `x`: its committed image, a conditional's known
+    // image, `None` for a pure hole, or absent — leaving `x` undefined.
+    let g_image = if g.map.is_defined_at(x) {
+        Some(g.map.image(x)?.clone())
+    } else {
+        match g.holes.iter().find(|h| &h.source == x) {
+            Some(h) => h.image.clone(),
+            None => return Ok(()),
+        }
+    };
+
+    let cell_data = get_cell_data(context, domain, x)
+        .ok_or_else(|| aux::Error::new("Cannot find cell data for generator"))?;
+
+    // The image to hand `assign_cell`: `Some(f(img))` when it is concrete, else
+    // `None` (pure hole).  An unreachable image leaves `x` undefined.
+    let image = match &g_image {
+        Some(img) => {
+            let tree = img.tree(DiagramSign::Input, img.top_dim())
+                .ok_or_else(|| aux::Error::new("composite image has no paste tree"))?;
+            match image_under(f, tree)? {
+                Reach::Image(fimg) => Some(fimg),
+                // A pure hole on a leaf: image unknown.  Every leaf is at least
+                // defined-or-holed, so (by the cellular condition) no face of `x`
+                // is undefined — the pure hole is safe to record.
+                Reach::Hole => None,
+                Reach::Undefined => return Ok(()),
+            }
+        }
+        // `g` is a pure hole at `x`: nothing vouches for `x`'s faces, so an
+        // undefined one forces `x` undefined (a cell cannot rest on a missing face).
+        None if has_undefined_face(build, &cell_data) => return Ok(()),
+        None => None,
+    };
+
+    let x_diag = Diagram::cell(x.clone(), &cell_data)?;
+    assign_cell(build, context, domain, &x_diag, image.as_ref())
 }
 
 

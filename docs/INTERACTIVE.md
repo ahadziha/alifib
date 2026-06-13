@@ -131,7 +131,10 @@ its input; `<target>` is the goal you intend to reach, supplied separately.
 ### Filling holes
 
 A partial map clause `gen => ?` leaves a generator's image open — a *hole*. A map
-may carry holes and still be well-formed; you close them interactively.
+may carry holes and still be well-formed; you close them interactively. Holes can
+also be *inherited*: a map written as a composition `F.G`, or as an extension of
+another map, carries the still-open images of the maps it is built from (a
+generator left a hole by `G`, or one whose image `F` cannot yet determine).
 
 `holes` lists every open hole in the module's maps, numbered, each shown as
 `?name : in → out` (or just `?name` for a 0-cell), followed by any *constraints*
@@ -149,10 +152,13 @@ imposed by conditional pending assignments (the equations `F(x.side) = a.side`).
 A hole whose image depends on other unfilled holes cannot be filled until those
 are; the REPL reports which to fill first.
 
-`done` finalises the fill: it appends `x => <proof>` to the map's definition and
-re-evaluates the file, so the hole is gone and the source is the durable record.
-An inconsistent fill is rejected at re-evaluation and the session is kept so you
-can retry.
+`done` finalises the fill: it splices `x => <proof>` into the map's definition —
+replacing an explicit `x => ?` in place, or appending a clause (opening a
+`[ … ]` extension on a bracket-less map such as `= F.G`) — and locates that
+definition wherever it is written, whether in a separate `@T` block or inline in
+the type body (`T <<= { … let H … }`). It then re-evaluates the file, so the hole
+is gone and the source is the durable record. An inconsistent fill is rejected at
+re-evaluation and the session is kept so you can retry.
 
 ---
 

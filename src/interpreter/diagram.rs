@@ -170,7 +170,7 @@ fn decompose(
 /// maps preserve boundaries, applying them *after* the boundary (to the small
 /// boundary diagram) agrees with the eager reading while touching far fewer
 /// cells.  A pure map chain is composed once, from the innermost map outward.
-fn execute(decomp: Option<Decomp>, mut result: InterpResult) -> (Option<Term>, InterpResult) {
+fn execute(decomp: Option<Decomp>, mut result: InterpResult, span: Span) -> (Option<Term>, InterpResult) {
     match decomp {
         None => (None, result),
         Some(Decomp::Diagram { maps, diagram, diagram_span, bds }) => {
@@ -203,14 +203,19 @@ fn execute(decomp: Option<Decomp>, mut result: InterpResult) -> (Option<Term>, I
             (Some(Term::Diag(current)), result)
         }
         Some(Decomp::Map { maps }) => {
+            // Compose from the innermost map outward, propagating holes.
             let mut inner_to_outer = maps.into_iter().rev();
-            let innermost = inner_to_outer.next().expect("Map decomp is non-empty");
-            let domain = innermost.domain;
-            let mut composed = innermost.map;
+            let mut acc = inner_to_outer.next().expect("Map decomp is non-empty");
             for m in inner_to_outer {
-                composed = PartialMap::compose(&m.map, &composed);
+                match super::partial_map::compose_with_holes(&result.context, &m, &acc) {
+                    Ok(composed) => acc = composed,
+                    Err(error) => {
+                        result.add_error(make_error_from_core(span, error));
+                        return (None, result);
+                    }
+                }
             }
-            (Some(Term::Map(EvalMap { map: composed, domain, holes: vec![] })), result)
+            (Some(Term::Map(acc)), result)
         }
     }
 }
@@ -254,7 +259,7 @@ pub fn interpret_dexpr(
         }
         DExpr::Dot { .. } => {
             let (decomp, result) = decompose(context, scope, d_expr);
-            execute(decomp, result)
+            execute(decomp, result, d_expr.span)
         }
     }
 }
