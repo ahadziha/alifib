@@ -177,6 +177,77 @@ impl PartialMap {
             apply_tree(f, root_tree)
         }
     }
+
+    /// Compose two committed maps: `g ∘ f`, on the generators of `f`.
+    ///
+    /// The ordinary partial-function composite — an entry `a ↦ f(a)` of `f` is
+    /// kept as `a ↦ g(f(a))` exactly when `f(a)` lies wholly in `g`'s domain
+    /// (`apply(g, ·)` succeeds); entries whose image escapes are dropped, so the
+    /// result is again partial. `cellular` is recomputed from the composed images.
+    ///
+    /// This is the **hole-less** composite over committed entries only — it knows
+    /// nothing of pending [`crate::core::map_hole::MapHole`]s, and is kept here so
+    /// `core` is a self-contained map algebra for callers that use these data
+    /// structures independently of the interpreter (it may therefore have no
+    /// in-crate call site). alifib's own dotted `F.G` form needs holes to
+    /// *propagate*, which is a re-elaboration that needs the global store for
+    /// cell-data lookup; that hole-aware version is the interpreter's
+    /// `compose_with_holes`, not this.
+    pub fn compose(g: &PartialMap, f: &PartialMap) -> PartialMap {
+        let mut table = HashMap::with_capacity(f.table.len());
+        let mut by_dim: HashMap<usize, Vec<Tag>> = HashMap::new();
+        let mut cellular = true;
+
+        for (dim, tags) in f.domain_by_dim() {
+            for tag in tags {
+                let Some(f_entry) = f.table.get(&tag) else { continue };
+                let Ok(image_gf) = PartialMap::apply(g, &f_entry.image) else { continue };
+                cellular = cellular && image_gf.is_cell() && image_gf.dim() == dim as isize;
+                table.insert(tag.clone(), Entry {
+                    cell_data: f_entry.cell_data.clone(),
+                    image: image_gf,
+                });
+                by_dim.entry(dim).or_default().push(tag);
+            }
+        }
+
+        PartialMap { table, by_dim, cellular }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A map of 0-cells `src ↦ tgt`, the simplest standalone `PartialMap`.
+    fn zero_cell_map(pairs: &[(&str, &str)]) -> PartialMap {
+        let entries = pairs
+            .iter()
+            .map(|(src, tgt)| {
+                let image = Diagram::cell(Tag::Local((*tgt).into()), &CellData::Zero).unwrap();
+                (Tag::Local((*src).into()), 0usize, CellData::Zero, image)
+            })
+            .collect();
+        PartialMap::of_entries(entries, true)
+    }
+
+    #[test]
+    fn compose_chains_committed_images() {
+        let f = zero_cell_map(&[("a", "b")]); // a ↦ b
+        let g = zero_cell_map(&[("b", "c")]); // b ↦ c
+        let gf = PartialMap::compose(&g, &f); // a ↦ c
+        let got = gf.image(&Tag::Local("a".into())).unwrap();
+        let want = Diagram::cell(Tag::Local("c".into()), &CellData::Zero).unwrap();
+        assert!(Diagram::equal(got, &want));
+    }
+
+    #[test]
+    fn compose_drops_entry_whose_image_escapes_domain() {
+        let f = zero_cell_map(&[("a", "b")]); // a ↦ b
+        let g = zero_cell_map(&[("x", "c")]); // g undefined at b
+        let gf = PartialMap::compose(&g, &f);
+        assert!(!gf.is_defined_at(&Tag::Local("a".into())));
+    }
 }
 
 
