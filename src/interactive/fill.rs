@@ -3,10 +3,13 @@
 //! A hole on an *m*-cell `x` of a map `F : D → T` is a request to build `F(x)`:
 //! an *m*-diagram in `T` from `F(x.in)` to `F(x.out)`.  For `m ≥ 1` that is a
 //! rewrite, driven by the existing [`RewriteEngine`]; for a 0-cell it is the
-//! choice of one of `T`'s 0-cells.  Finalising (`done`) appends `x => <proof>` to
-//! `F`'s source definition and re-evaluates the file — the new clause, sitting
-//! after the original `x => ?`, commits `x` to the proof (by the idempotence of
-//! `[x => ?, x => a] ≡ [x => a]`) with the hole gone.
+//! choice of one of `T`'s 0-cells.  Finalising (`done`) splices `x => <proof>`
+//! into `F`'s source definition and re-evaluates the file.  An explicit
+//! `x => ?` clause is *replaced in place*; an implicit hole — forced by another
+//! clause, with no `?` of its own — is *appended* as a new clause, committing
+//! `x` by the idempotence of `[x => ?, x => a] ≡ [x => a]`.  The definition is
+//! located wherever it sits (`find_map_def`): a `@Type` block, a `let` inline
+//! in a type body, or a module-level definition.
 //!
 //! This module is front-end-agnostic: the CLI and web REPLs both drive it.
 
