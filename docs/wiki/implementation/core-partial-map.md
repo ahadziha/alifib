@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-09
+last-touched: 2026-06-13
 code: [src/core/partial_map.rs, src/interpreter/partial_map.rs, src/core/map_hole.rs]
 ---
 
@@ -9,10 +9,12 @@ code: [src/core/partial_map.rs, src/interpreter/partial_map.rs, src/core/map_hol
 
 > A `PartialMap` is a partial function on *generators* that lifts, by pasting, to
 > a total function on the [[diagram|diagrams]] they build. The core module is the
-> bare data structure and its three operations — extend, apply, compose. The
-> interpreter module is the language above it: it turns `let total`, `attach …
-> along`, anonymous maps, and `for`-blocks of clauses into a `PartialMap`, and it
-> fabricates the missing entries that `attach` needs.
+> bare data structure and its three operations — extend, apply, and a *hole-less*
+> compose — so it stands alone as a map algebra. The interpreter module is the
+> language above it: it turns `let total`, `attach … along`, anonymous maps, and
+> `for`-blocks of clauses into a `PartialMap`, fabricates the missing entries that
+> `attach` needs, and owns the *hole-aware* composition (`compose_with_holes`)
+> behind the dotted `F.G` form.
 
 Two files, two altitudes. `src/core/partial_map.rs` knows nothing about syntax,
 scopes, or types — it is a `HashMap<Tag, (CellData, Diagram)>` with a cellular-map
@@ -27,7 +29,8 @@ omitted. Keep the two apart: the core never infers, the interpreter never pastes
 |---|---|---|
 | `PartialMap` | core | `table: Tag→(CellData, Diagram)`, `by_dim` index, `cellular` flag |
 | `PartialMap::{empty, of_entries}` | core | constructors |
-| `PartialMap::{extend, apply, compose}` | core | the three structural operations |
+| `PartialMap::{extend, apply, compose}` | core | the structural operations; `compose` is the *hole-less* committed composite |
+| `compose_with_holes` | interpreter | *hole-aware* composition for the dotted `F.G` form |
 | `PartialMap::{insert_raw, is_defined_at, image, cell_data}` | core | low-level access |
 | `Entry` *(internal)* | core | one row: a generator's `CellData` plus its image `Diagram` |
 | `EvalMap { map, domain, holes }` | `interpreter/types.rs` | an evaluated map, its domain `Arc<Complex>`, and any unfilled [[hole|holes]] |
@@ -91,13 +94,30 @@ domain of definition"*. Then two paths:
   directly, and recompose interior nodes with `Diagram::paste`. This genuinely
   rebuilds the image diagram from its pieces.
 
-### `compose` — `g ∘ f`
+### Two composes — `compose` (core, hole-less) and `compose_with_holes` (interpreter)
 
-`PartialMap::compose(g, f)` is *lossy by design*: it keeps an entry of `f` only
-when `apply(g, f.image)` succeeds — i.e. when `f`'s image lies wholly in `g`'s
-domain. Entries outside that intersection are silently dropped (so the result is
-still partial). It recomputes `cellular` from the composed images. This is what
-backs the dot-access `base.rest` form in the interpreter.
+The core `PartialMap::compose(g, f)` is the plain partial-function composite over
+**committed** entries: it keeps `a ↦ g(f(a))` exactly when `f(a)` lies wholly in
+`g`'s domain (`apply(g, ·)` succeeds), dropping the rest, and recomputes
+`cellular`. It is pure core — no store, no holes — so `core` is a self-contained
+map algebra for callers using these structures independently of the interpreter
+(`compose_chains_committed_images`, `compose_drops_entry_whose_image_escapes_domain`).
+It may have no in-crate caller; that is deliberate, not rot.
+
+alifib's own dotted `F.G`, though, needs holes to **propagate** — and that is a
+re-elaboration, not a HashMap composite. So the hole-aware version lives in
+`src/interpreter/partial_map.rs` as `compose_with_holes(context, f, g)`
+(computing $f \circ g$, domain $= g$'s), backing the dot-access `base.rest`
+form. It rebuilds the composite through the same `MapBuild`/`assign_cell` path,
+walking $g$'s domain in ascending dimension (`compose_generator`): for each
+generator it resolves $g$'s image, then maps that image's leaves under $f$
+(`image_under`, returning `Reach::{Image, Hole, Undefined}`). A fully-resolved
+image is assigned (committing or recording a conditional); a pure hole on any
+leaf stays a pure hole; an undefined leaf drops the generator. So holes and
+conditionals **propagate** rather than being silently forgotten —
+`composition_propagates_inner_map_holes`,
+`composition_propagates_outer_map_holes`,
+`composition_propagates_outer_map_conditionals` (`tests/interpreter.rs`).
 
 ## What the interpreter adds
 
@@ -142,7 +162,7 @@ constant 0-cell via `extend_map_to_constant`). The diagram case lands in
 
 `commit_one` hands the determined entry to the core `PartialMap::extend` (which
 re-checks the law), closes the matching pending entry, and **substitutes** its
-image's paste tree for that metavariable in every remaining hole's boundary trees;
+image's paste tree for that source's `Tag::Hole` leaf in every remaining hole's boundary trees;
 `cascade` then commits any conditional whose `MapHole::deps` have closed,
 repeating until none remain. A cascade-commit failure is re-blamed on the pending
 assignment, not the innocent face that closed last (`blame_pending`, using the
@@ -216,7 +236,7 @@ AST (Spanned<ast::PartialMap> | PartialMapDef)
         │  interpret_partial_map / interpret_pmap_def
         ▼
 eval_partial_map ──Basic──▶ name lookup (scope.find_map) | anon map | paren
-        │  └─Dot──▶ PartialMap::compose(base, rest)
+        │  └─Dot──▶ compose_with_holes(base, rest)   (interpreter; propagates holes)
         ▼  Ext block:
 initial_eval_map (prefix? → empty | reinterpreted map)
         │
@@ -248,9 +268,12 @@ EvalMap { map: PartialMap, domain: Arc<Complex>, holes: Vec<MapHole> }
 - **`remap_tag` panics off-domain.** The cellular path's `expect("tag in domain
   (verified by find_undefined)")` is load-bearing: `apply` *must* run
   `find_undefined` first. The panic message names the contract.
-- **`compose` drops, never errors.** `g ∘ f` is defined only where `f`'s image
-  lands in `g`'s domain; the rest vanishes silently. Surprising if you expect a
-  total composite — by design for the dot-access form.
+- **Two composes — pick by whether holes matter.** Core `compose` is the
+  hole-less committed composite (pure, store-free, standalone). The interpreter's
+  `compose_with_holes` backs the dotted `F.G`: same drop-where-the-image-escapes
+  rule, but it carries pending holes and conditionals through, so a composite of
+  maps-with-holes is itself a map-with-holes. Reach for the core one only when you
+  genuinely have committed maps and no interpreter context.
 - **`assign_cell` infers boundaries; `PartialMap::extend` still checks them.**
   The smartness is purely additive — it computes missing entries (or records them
   as [[hole|holes]]), then submits each committed entry to the same gate a
@@ -272,12 +295,13 @@ EvalMap { map: PartialMap, domain: Arc<Complex>, holes: Vec<MapHole> }
   `dimension_lowering_case1_is_sound`). The structural constraint on a cell is
   roundness of its boundaries, [[0002-round-boundaries]] — a *shape* property
   checked at cell construction, not at pasting and not by `extend`.
-- **Holes survive name lookup, not composition.** `eval_partial_map_basic`'s
+- **Holes survive both name lookup and composition.** `eval_partial_map_basic`'s
   `Name` arm carries the stored `Complex::map_holes` onto `EvalMap::holes` —
   that is why `F [ … ]` *fills* a map-with-holes rather than extending only its
-  hole-free part (`prefix_extension_fills_holes`). The `Dot` arm returns
-  `holes: vec![]`: `PartialMap::compose` sees only committed entries, so a
-  composite silently forgets the pending ones.
+  hole-free part (`prefix_extension_fills_holes`). The `Dot` arm goes through
+  `compose_with_holes`, which propagates the inner map's holes and conditionals
+  into the composite (`composition_propagates_inner_map_holes` and siblings) — a
+  composite no longer forgets pending entries.
 - **`total` counts a holed generator as covered.** `check_map_totality` treats a
   generator as covered if it is committed *or* has a pending entry, so
   `let total F :: D = [ x => ? ]` is well-formed (`total_map_accepts_holes`). The
@@ -292,7 +316,9 @@ not necessarily regular; the [[diagram|diagrams]]/shapes it maps are the
 those diagrams, subject to the cellular-map [[boundary]] law
 $f(\partial^\pm_k a) = \partial^\pm_k f(a)$. `apply`
 is the lift; `extend` is the law; `compose` is the (partial) composition that
-makes complexes-and-maps a category. The interpreter's `attach … along` is the
+makes complexes-and-maps a category — at the committed, hole-less level in core,
+and hole-aware (for the dotted `F.G`) as the interpreter's `compose_with_holes`.
+The interpreter's `attach … along` is the
 language surface: a refinement of one complex onto another, gluing along the named
 map. For the matching/pushout maps used in [[rewriting]] — a different, ogposet-level
 notion of map — see [[core-matching]]; for the cells being mapped, [[core-diagram]];

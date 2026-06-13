@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-09
+last-touched: 2026-06-13
 ---
 
 # Partial map
@@ -61,10 +61,29 @@ with the same $\#_k$ operations. (When every image is a single generator, this
 collapses to a relabelling — no re-pasting needed.) Applying $f$ to a composite
 fails exactly when some leaf lies outside $\mathrm{dom}\,f$.
 
-**Composition.** Partial maps compose: $g \circ f$ is defined on the part of
-$\mathrm{dom}\,f$ whose $f$-image lands entirely inside $\mathrm{dom}\,g$,
-matching the usual partial-function composite. This makes complexes-and-partial-
-maps a category, and refinements compose as one expects.
+**Composition.** Partial maps compose — `F.G` in the surface, computed by
+`compose_with_holes` — and composition **carries holes through**. The composite
+is defined on the part of the inner domain whose image lands in the outer
+domain; on top of that committed core, the inner map's pure holes propagate as
+pure holes and inner/outer conditionals as conditionals (with image $F(\mathrm{img})$),
+processing the inner domain in ascending dimension so a cell's faces settle
+first. So a hole on a *composite* is still fillable, and filling its dependency
+still cascades to a commit (`composition_propagates_inner_map_holes`,
+`composition_propagates_outer_map_holes`,
+`composition_propagates_outer_map_conditionals`).
+
+**What a map is, categorically.** A partial map does not live in the presheaf
+category. It is a morphism in the **Kleisli category of the composite "pasting
+diagrams" + "maybe" monad**: each generator (atom) of $U$ is sent to a *pasting
+diagram* in $V$, or to nothing (the maybe-`Nothing` — genuine partiality, where
+the generator is *undefined*; a [[hole]], by contrast, is a present-but-pending
+image, not `Nothing`). The semantic reading of a *total* such map is a **strict
+functor** $\mathsf{Mol}/U \to \mathsf{Mol}/V$ between the two types' "stricter"
+$\omega$-categories of [[molecule|molecules]] (`chanavat-2025-stricter`). A map
+is therefore **translational** — it relabels and recomposes a diagram of one
+type into a diagram of another *at once*, via `apply`; it is *not* computed by
+rewriting (the older "cograph / map-as-simulation" picture is a superseded
+design, the seed of a future module-complex feature, not how maps work).
 
 ### Surface syntax
 
@@ -106,8 +125,11 @@ Realised by [[core-partial-map]]. The data structure and its laws live in
 - action on composites is `PartialMap::apply`, walking the diagram's
   `PasteTree` via `partial_map::apply_tree` *(internal)*; the relabelling fast
   path fires when the `cellular` flag holds (`partial_map::remap_tag`);
-- composition is `PartialMap::compose`, dropping entries whose image escapes
-  $g$'s domain exactly as the partial composite demands.
+- composition comes in two layers: the core `PartialMap::compose` is the
+  *hole-less* committed composite (a self-contained map algebra, usable without
+  the interpreter); the dotted `F.G` form uses the interpreter's *hole-aware*
+  `interpreter::partial_map::compose_with_holes`, which propagates holes and
+  conditionals (see *Composition* above).
 
 The language front-end is `src/interpreter/partial_map.rs`: `interpret_partial_map`
 and `interpret_pmap_def` evaluate the surface syntax. Construction runs through a

@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-09
+last-touched: 2026-06-13
 code: [src/interactive/session.rs, src/interactive/command.rs, src/interactive/fill.rs]
 ---
 
@@ -133,12 +133,19 @@ yields the finished proof — the assembled rewrite proof (only once
   initial/target (swapped under `backward`). `fill_one_dim_hole_via_rewrite` and
   `fill_zero_cell_then_dependent_becomes_available` (`tests/fill.rs`) pin the two
   shapes end to end.
-- `edit_for_fill` / `finalize` splice the proof back into `F`'s definition. An
-  explicit `source_name => ?` clause is **replaced in place**
-  (`pins_a_dotted_explicit_hole_in_place`); an implicit hole, with no `?` of its
-  own, is **appended** as a new clause (`appends_when_no_matching_explicit_hole`),
-  committing the cell by the idempotence of `[x => ?, x => a]`. Re-evaluating the
-  edited source is what actually fills the hole — the file is the durable record.
+- `edit_for_fill` / `finalize` splice the proof back into `F`'s definition.
+  `find_map_def` locates that definition wherever it sits — a `@Type` block, a
+  `let` *inline in a type body* (`Type <<= { … let F … }`), or a module-level
+  definition (`fill_hole_in_complex_body_map` pins the inline-body case
+  end-to-end; `pins_hole_in_complex_body_map`). An explicit `source_name => ?`
+  clause is **replaced in place** (`pins_a_dotted_explicit_hole_in_place`); an
+  implicit hole, with no `?` of its own, is **appended** as a new clause
+  (`appends_when_no_matching_explicit_hole`), committing the cell by the
+  idempotence of `[x => ?, x => a]`, and cascading any conditional it unblocks
+  (`fill_appends_bracket_and_cascades_conditional`). A bare (unbracketed) map in
+  a type body is **wrapped in brackets** before the clause is appended
+  (`brackets_bare_partial_map_in_complex_body`). Re-evaluating the edited source
+  is what actually fills the hole — the file is the durable record.
 
 `Session::begin_fill`/`finalize_fill` wire these into `apply`; `filled_report`
 produces the shared `Filled ?x with … : in → out` message, the boundary read off

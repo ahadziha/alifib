@@ -727,3 +727,59 @@ a "Local definitions (`let`)" bullet covering the diagram-binding path too.
 Surface mechanics stay in [[language-parser]] (cross-linked, not duplicated):
 impl page says *what*, concept page says *why*. index.md summary updated;
 `last-touched` bumped; page stays `stable`.
+
+## [2026-06-13] refactor | maps-with-holes composition + HoleId drop (merge of main)
+
+Updated pages after merging `main`'s maps-with-holes commits (`9cd2b92`..`a6f385f`)
+into `wiki`. Two code changes drove it: (1) `HoleId` was deleted — holes are now
+identified by their **source generator**, `Tag::Hole(Box<Tag>)`; (2) core
+`PartialMap::compose` was deleted in favour of the interpreter's hole-aware
+`compose_with_holes`, so holes and conditionals **propagate through** `F.G`.
+Fixes: [[aux]] (dead `HoleId`/`HOLE_COUNTER` refs → `Tag::Hole(Box<Tag>)`);
+[[hole]] (identity = source generator; `MapHole` has no `meta`; new "Through
+composition" note; inline-body-map filling via `find_map_def`); [[partial-map]]
+and [[core-partial-map]] (composition section rewritten — holes propagate, not
+dropped; `compose` is no longer a core op; the "holes survive name lookup, not
+composition" gotcha inverted); [[interpreter]] (`Tag::Hole(Box<Tag>)`; the pure
+map chain is composed via `compose_with_holes`); [[interactive-session]]
+(`find_map_def` locates `@Type`/inline/module-level defs; bare maps bracketed).
+New tests pinned: `composition_propagates_{inner_map_holes,outer_map_holes,
+outer_map_conditionals}`, `fill_hole_in_complex_body_map`,
+`fill_appends_bracket_and_cascades_conditional`, `pins_hole_in_complex_body_map`,
+`brackets_bare_partial_map_in_complex_body`. index.md row for [[core-partial-map]]
+updated; `source-drift` note appended (items 3a/3b). All touched pages stay
+`stable`, `last-touched` bumped to 2026-06-13.
+
+## [2026-06-13] doc | conceptual enrichment from dev background notes
+
+Folded in three refinements from the project's background notes (the maths/lineage
+that the code alone doesn't convey). [[partial-map]]: added the precise categorical
+home — a map is a morphism in the **Kleisli category of the pasting-diagrams +
+maybe monad** (a hole ≠ the maybe-`Nothing`); a *total* map's semantics is a
+**strict functor** $\mathsf{Mol}/U \to \mathsf{Mol}/V$; maps are **translational**,
+not computed by rewriting (the cograph/simulation picture is superseded).
+[[module-system]]: added "Three layers: modules, types, cells" — a global cell is
+a *pure name*; the same directed-complex gadget appears at two levels by what its
+generators mean. [[0001-no-identities]]: added the deeper "units are semantics; the
+unit-less layer is more fundamental; non-termination is a symptom" rationale, with
+the TRS encoding as a laxified cartesian monoidal category directing would-be
+equivalences. Speculative higher-module-complex / profunctor picture kept to a
+single hedged sentence per the claim-tier discipline. Pages stay `stable`.
+
+## [2026-06-13] refactor | restored a hole-less `PartialMap::compose` to core
+
+Follow-up to the entry above. The merge had *deleted* the core `compose`
+(its only caller switched to `compose_with_holes`), leaving `core` without a
+composition operation. Restored `PartialMap::compose(g, f)` — the hole-less
+partial-function composite over committed entries (pure, store-free) — so `core`
+is a self-contained map algebra for consumers using the data structures
+independently of the interpreter. Documented with a retention rationale (it may
+have no in-crate caller, by design) and pinned by two new core unit tests
+(`compose_chains_committed_images`, `compose_drops_entry_whose_image_escapes_domain`).
+The interpreter's `compose_with_holes` remains the *hole-aware* composite behind
+the dotted `F.G`. Wiki updated to describe the **two composes** (core hole-less /
+interpreter hole-aware): [[core-partial-map]] ("Two composes" section + table +
+gotcha + Mathematics), [[partial-map]] (two-layer Implementation bullet), and the
+[[core-partial-map]] index row. The 2026-06-13 `source-drift` note's "compose
+replaced by compose_with_holes" remains true of the merge; this entry records the
+restoration on top.

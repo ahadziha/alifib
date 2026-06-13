@@ -47,7 +47,7 @@ the `cli/` and `web/` crates are the binaries and deployment wrappers around it.
 | [[core-ogposet]] | `src/core/ogposet.rs` — `Ogposet` shape, `Sign`, signed face/coface tables | stable |
 | [[core-matching]] | `src/core/{matching,embeddings,pushout,flow,reconstruct}.rs` | stable |
 | [[core-paste-tree]] | `src/core/paste_tree.rs` — paste trees: realise, flatten, pseudo-normalise | stable |
-| [[core-partial-map]] | `src/core/{partial_map,map_hole}.rs` + `src/interpreter/partial_map.rs` — extend/apply/compose, maps-with-holes, `attach … along` | stable |
+| [[core-partial-map]] | `src/core/{partial_map,map_hole}.rs` + `src/interpreter/partial_map.rs` — extend/apply/compose (core compose is hole-less; the interpreter's `compose_with_holes` is hole-aware), maps-with-holes, `attach … along` | stable |
 | [[interpreter]] | `src/interpreter/*` — eval, `GlobalStore`, types; holes ride out on maps | stable |
 | [[language-parser]] | `src/language/*` — lexer, chumsky parser, AST | stable |
 | [[output]] | `src/output/*` — normalize to a name-keyed, ID-free render tree | stable |
