@@ -160,9 +160,11 @@ pub struct EvalMap {
     pub map: PartialMap,
     /// The complex that is the domain of definition for `map`.
     pub domain: Arc<Complex>,
-    /// Unfilled holes (`arr => ?` assignments) collected while evaluating a map
-    /// definition.  Empty for any map built outside a definition block (name
-    /// lookups, compositions, identities, inclusions).
+    /// Unfilled holes (`arr => ?` assignments).  Created while evaluating a map
+    /// definition, and *carried through* the operations that preserve them: a
+    /// name lookup re-attaches the stored `Complex::map_holes` (so `F [ … ]`
+    /// fills), and composition propagates them (`compose_with_holes`).  Empty for
+    /// identities and inclusions, which are total by construction.
     pub holes: Vec<MapHole>,
 }
 
