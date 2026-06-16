@@ -1,8 +1,8 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-09
-code: [web/shared/src/lib.rs, web/server/src/lib.rs, web/wasm/src/lib.rs, web/mcp/src/lib.rs]
+last-touched: 2026-06-16
+code: [web/shared/src/lib.rs, web/server/src/lib.rs, web/server/build.rs, web/wasm/src/lib.rs, web/mcp/src/lib.rs]
 ---
 
 # web-backends — deployment wrappers around `WebRepl`
@@ -10,7 +10,8 @@ code: [web/shared/src/lib.rs, web/server/src/lib.rs, web/wasm/src/lib.rs, web/mc
 > Three transports, one kernel. `web/server` (HTTP), `web/wasm` (browser), and
 > `web/mcp` (LLM agents) each own a wire format and a process model, but all
 > three hold a single `alifib::interactive::web::WebRepl` and forward to its
-> methods verbatim. `web/shared` is the one thing they genuinely share: a
+> methods (the server and WASM verbatim; MCP trims the envelopes for an agent's
+> context window). `web/shared` is the one thing they genuinely share: a
 > runtime scanner for the `.ali` examples directory. None of these crates
 > touches the mathematics — they re-export a [[rewriting]] session, unchanged,
 > across a network/language/agent boundary.
@@ -27,7 +28,7 @@ semantics, only for transport and packaging.
 | `web/shared` (`alifib-web-shared`) | lib | `ExampleSet` — recursively scans an on-disk `.ali` examples tree, names each file by its `.ali`-stripped POSIX-relative path, and serves it as text or as an `index.json` map. Path-traversal-safe (`read_path`). Depends on `serde_json` *only* — not on `alifib`. |
 | `web/server` (`alifib-web-server`) | lib | `run_web_server` — a hand-rolled localhost HTTP/1.1 server (raw `TcpListener`, no framework) over one long-lived `WebRepl`, plus a `build.rs` that bundles the browser frontend into the binary. |
 | `web/wasm` (`alifib-wasm`) | cdylib | `WasmRepl` — a `#[wasm_bindgen]` struct that is a thin pass-through over `WebRepl`, exposing the same surface to in-browser JavaScript with no server. |
-| `web/mcp` (`alifib-web-mcp`) | lib | `run_mcp_server` / `serve` — a Model Context Protocol server (newline-delimited JSON-RPC 2.0 over stdio) mapping a fixed tool set 1:1 onto `WebRepl` methods. |
+| `web/mcp` (`alifib-web-mcp`) | lib | `run_mcp_server` / `serve` — a Model Context Protocol server (newline-delimited JSON-RPC 2.0 over stdio) mapping a fixed tool set onto `WebRepl` methods (mostly 1:1; `load_example`/`save_file` compose a couple), and trimming responses for the wire. |
 
 `web/{shared,server,mcp}` are root-workspace members; `cli` wires them as
 `alifib web` and `alifib mcp` (`cli::run_web_cmd` / `run_mcp_cmd`, examples dir
@@ -82,17 +83,34 @@ request line and `Content-Length` (no keep-alive — every response sets
 
 ### `build.rs` bundles the **frontend**, not the stdlib
 
-This is the easily-misread part. `web/server/build.rs` runs `npm ci`/`install`
-+ `npm run build` in `web/frontend/` to produce `dist/app.js`, which `lib.rs`
-pulls in with `include_str!("../../frontend/dist/app.js")` (alongside
-`index.html` and `style.css`). So the binary self-contains the **browser GUI**
-([[web-frontend]]).
+This is the easily-misread part. `web/server/build.rs` installs the frontend's
+dependencies and runs its `build` script in `web/frontend/` to produce
+`dist/app.js`, which `lib.rs` pulls in with
+`include_str!("../../frontend/dist/app.js")` (alongside `index.html` and
+`style.css`). So the binary self-contains the **browser GUI** ([[web-frontend]]).
 It does **not** bake in any `.ali` example or standard-library module — those
-are read at runtime from the on-disk `ExampleSet`. When Node.js is missing or
-the build fails, `build.rs` emits a cargo warning and writes a stub `app.js` so
-the crate still compiles (this is what lets `cargo test --workspace` pass on a
-toolchain without Node). `find_npm` also falls back to the newest
-`~/.nvm/versions/node` install since cargo's spawned shell lacks nvm's PATH.
+are read at runtime from the on-disk `ExampleSet`. When no package manager is
+available or the build fails, `build.rs` emits a cargo warning and writes a stub
+`app.js` so the crate still compiles (this is what lets `cargo test --workspace`
+pass on a toolchain without a frontend tool).
+
+**Bun-preferred, npm-fallback, modelled as kind + path.** The tool choice lives
+in a `PackageManager { kind: Kind, bin: PathBuf }` — one struct holding *which*
+tool it is (`enum Kind { Bun, Npm }`) and *where* its binary is, rather than two
+separate code paths. `PackageManager::find` tries **bun first** (our default:
+`which("bun")`, falling back to `~/.bun/bin/bun`) and only then **npm**
+(`which("npm")`, falling back to the newest `~/.nvm/versions/node` install via
+`find_nvm_npm`) — both home-dir fallbacks exist because cargo's spawned shell
+lacks the login PATH that would otherwise expose bun and nvm. `install` then
+branches on the kind: bun runs `install --frozen-lockfile` when `bun.lock`
+exists (its frozen install doubles as the up-to-date check, ~20 ms in sync),
+plain `install` otherwise; npm gates the slow reproducible `ci` behind a
+`needs_install` drift check (`node_modules` present and the
+`.package-lock.json` marker newer than `package-lock.json`) so editing frontend
+sources alone never triggers a reinstall. `run` prepends the chosen binary's
+directory to `PATH` because npm shells out to `node` (harmless for the
+self-contained bun). The stub message tells the operator to `install bun (or
+Node.js)`.
 
 The `bundled_modules.rs` test name is about *user-supplied modules*, not the
 build script: `include_user_supplied_module_resolves` checks that a `Theory.ali`
@@ -125,31 +143,59 @@ JSON-RPC 2.0, logs to **stderr** (stdout is protocol-only), and dispatches by
 - `initialize` → `protocolVersion: "2024-11-05"`, `serverInfo.name:
   "alifib-mcp"`, `capabilities.tools: {}` (pinned by
   `initialize_returns_protocol_metadata`).
-- `tools/list` → the nine `tool_descriptors`: `load_source`, `start_session`,
-  `resume_session`, `run_command`, `get_types`, `get_strdiag`,
-  `get_session_strdiag`, `get_rewrite_preview_strdiag`, `list_examples` (pinned
-  by `tools_list_advertises_expected_surface`). `resume_session` is a dedicated
-  tool because it must be: `run_command` rejects lifecycle commands, so without
-  it `WebRepl::resume_session` was unreachable over MCP. The `run_command`
-  descriptor spells out the full command vocabulary — including the
-  `holes`/`fill index`/`done` hole-filling workflow — so an agent never has to
-  guess the wire surface.
-- `tools/call` → `dispatch` routes to the matching `WebRepl` method and wraps
-  the returned JSON envelope in a single `text` content block.
+- `tools/list` → the thirteen `tool_descriptors`: `load_source`, `load_example`,
+  `save_file`, `start_session`, `resume_session`, `run_command`, `get_types`,
+  `get_strdiag`, `get_session_strdiag`, `get_target_strdiag`, `get_proof_strdiag`,
+  `get_rewrite_preview_strdiag`, `list_examples` (pinned by
+  `tools_list_advertises_expected_surface`). `resume_session` is a dedicated tool
+  because it must be: `run_command` rejects lifecycle commands, so without it
+  `WebRepl::resume_session` was unreachable over MCP. The `run_command` descriptor
+  spells out the full command vocabulary — including the `holes`/`fill index`/`done`
+  hole-filling workflow — so an agent never has to guess the wire surface. The
+  string-diagram views are the same family the HTTP server exposes, minus the two
+  that take browser-only arguments: MCP carries `get_session_strdiag`,
+  `get_target_strdiag`, `get_proof_strdiag`, `get_rewrite_preview_strdiag`, and the
+  by-name `get_strdiag`, but **not** `set_proof_view` or `get_map_image_strdiag`.
+- `tools/call` → `dispatch` routes to the matching `WebRepl` method, then trims
+  the returned envelope through `project_envelope` (below) before wrapping it in a
+  single `text` content block.
 - `ping` → `{}`; unknown method → JSON-RPC `-32601`; missing method → `-32600`.
 
-Two MCP-specific behaviours beyond the HTTP server:
+Three MCP-specific behaviours beyond the HTTP server:
 
-- **`load_source` auto-seeds the examples dir.** `dispatch` scans `examples`
-  and pushes every entry into the modules map as `<name>.ali → content` *before*
-  applying any caller-supplied `modules` overrides, so an agent's `include
-  <Name>` resolves without shipping content. Scan failure here is non-fatal —
-  surfaced via `list_examples` instead (`examples_dir_auto_seeded_for_include`,
-  `list_examples_sees_seeded_dir`).
+- **`load_source` / `load_example` auto-seed the examples dir.** A shared
+  `seed_and_load` scans `examples` and pushes every entry into the modules map as
+  `<name>.ali → content` *before* applying any caller-supplied `modules`
+  overrides, so an agent's `include <Name>` resolves without shipping content.
+  Scan failure here is non-fatal — surfaced via `list_examples` instead
+  (`examples_dir_auto_seeded_for_include`, `list_examples_sees_seeded_dir`).
+  `load_example` is the by-name front door: it finds the entry whose `name`
+  matches, loads its content, and on a miss returns an error envelope **listing
+  the available names** (`load_example_loads_by_name`,
+  `load_example_unknown_lists_available`).
+- **`save_file` writes the running source back to disk** — the MCP analog of the
+  browser editor's save. It asks the engine for the current source
+  (`run_command {command:"save"}`, reading `data.source`) and writes it to `path`,
+  which **defaults to the last `load_source`/`load_example` path** tracked in the
+  serve loop's `last_loaded_path`; with neither an explicit `path` nor a prior
+  load it errors (`save_file_writes_running_source`,
+  `save_file_without_path_or_prior_load_errors`).
 - **`run_command` is sugar over the wire command.** If `command_json` is given
   it is forwarded raw; otherwise the whole `arguments` object (minus
   `command_json`) *is* the command body, re-serialised — so
   `{command:'step', choice:0}` becomes the daemon `Request`.
+
+**Responses are trimmed by default** — MCP is the one transport that does not
+return the raw `WebRepl` envelope. `project_envelope(body, render, detail)` drops
+the human-readable `rendered` transcript unless the call passes `render:true`, and
+strips the heavy payloads unless `detail:true`: `trim_types` reduces each type to
+names/dims/map-holes (dropping `input`/`output` boundary-label strings, `face_tags`,
+`thin_tags`), `trim_rewrite` keeps a rewrite's index and match metadata but drops
+its diagrams, and `cells_by_dim` is removed from `current`/`initial`/`target`. The
+two flags are advertised on the read-heavy tools via the `render_prop`/`detail_prop`
+schema fragments so an agent can opt back in. A parse hiccup returns the body
+untouched. Pinned by `rendered_stripped_by_default_kept_with_render_flag` and
+`detail_flag_governs_boundary_payload`.
 
 An error envelope (`"status":"error"`) is forwarded with `isError: true` so MCP
 clients branch without re-parsing; an unknown tool likewise yields `isError`

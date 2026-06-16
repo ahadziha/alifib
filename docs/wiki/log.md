@@ -830,3 +830,45 @@ gotcha + Mathematics), [[partial-map]] (two-layer Implementation bullet), and th
 [[core-partial-map]] index row. The 2026-06-13 `source-drift` note's "compose
 replaced by compose_with_holes" remains true of the merge; this entry records the
 restoration on top.
+
+## [2026-06-16] refactor | web-backends: MCP save_file/load_example/strdiag + bun-aware build
+
+Documented the user's web/mcp + frontend-build stream after the `wiki`-branch
+reconciliation (Amar's holes stream was already documented on 2026-06-13).
+Single page touched: [[web-backends]].
+
+*MCP tool surface (`web/mcp/src/lib.rs`, commit `1d6f948`).* The roster grew from
+nine to **thirteen** `tool_descriptors`: added `load_example` (by-name front door,
+sharing `seed_and_load` with `load_source`; on a miss returns an error envelope
+listing available names), `save_file` (writes the running source — via
+`run_command {command:"save"}`, reading `data.source` — to `path`, defaulting to
+the serve loop's tracked `last_loaded_path`), and the string-diagram views
+`get_target_strdiag` + `get_proof_strdiag` (MCP now carries the same family as the
+HTTP server *minus* `set_proof_view`/`get_map_image_strdiag`, which take
+browser-only args). Documented the new **response trimming**: `project_envelope`
+drops `rendered` unless `render:true` and strips heavy payloads unless `detail:true`
+(`trim_types` → names/dims/map-holes; `trim_rewrite` → index+match metadata;
+`cells_by_dim` removed from current/initial/target). Updated the top blurb (MCP no
+longer "verbatim"), the crate-table row, and `tools/call` (now trims). Cited new
+tests `load_example_loads_by_name`, `load_example_unknown_lists_available`,
+`save_file_writes_running_source`, `save_file_without_path_or_prior_load_errors`,
+`rendered_stripped_by_default_kept_with_render_flag`,
+`detail_flag_governs_boundary_payload`, and the refreshed
+`tools_list_advertises_expected_surface` (`web/mcp/tests/handshake.rs`).
+
+*Frontend build (`web/server/build.rs`, commits `e177d8a`/`c3fa14c`).* Rewrote the
+"`build.rs` bundles the frontend" subsection: the package manager is now modelled
+as `PackageManager { kind: Kind, bin }` with `enum Kind { Bun, Npm }` rather than
+two payload variants; `find()` prefers **bun** (`~/.bun/bin/bun` fallback) and
+falls back to npm (nvm fallback via `find_nvm_npm`); bun installs
+`--frozen-lockfile`, npm gates `ci` behind the `needs_install` drift check; the
+stub message now says "install bun (or Node.js)". The `Justfile` `web-bun` /
+`web-js-bun` recipes (commit `dbee7c0`) are the bun-front-runner for what `build.rs`
+already does and are already named in the project `CLAUDE.md`; not separately
+documented in the wiki. Added `web/server/build.rs` to the page's `code:` frontmatter.
+
+Closing checklist: bridge `## Mathematics` intact; `last-touched: 2026-06-16`,
+`status: stable` (verified against current source); `index.md` summary unchanged
+(still accurate) so no row edit; no new wiki-links introduced. The holes pages
+(`hole`, `partial-map`, `core-partial-map`, `interpreter`, `interactive-session`,
+`aux`) were left untouched as directed — no contradictions found.
