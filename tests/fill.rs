@@ -44,6 +44,64 @@ fn fill_one_dim_hole_via_rewrite() {
     assert_eq!(new_source.matches("x =>").count(), 1, "x is assigned exactly once: {new_source}");
 }
 
+/// A map defined *inline in a type body* (`T <<= { … let H … }`) rather than in
+/// a separate `@T` block can still be filled: `done` locates and edits the inline
+/// definition.  (Previously the edit only searched `@T`-style blocks.)
+#[test]
+fn fill_hole_in_complex_body_map() {
+    let (store, path, _) = load_file_context(&fixture("BodyHole.ali")).unwrap();
+
+    let list = list_open_holes(&store, &path);
+    assert_eq!(list.len(), 1, "one open hole (x)");
+    assert_eq!(list[0].source_name, "x");
+
+    let (ctx, mut session) = start_fill(&store, &path, &path, 0, false).unwrap();
+    match &mut session {
+        FillSession::ZeroCell(zc) => zc.choose(0).expect("choose the 0-cell z"),
+        FillSession::Rewrite(_) => panic!("expected a 0-cell session for a 0-cell hole"),
+    }
+
+    let filler = session.filler().unwrap();
+    let source = std::fs::read_to_string(&path).unwrap();
+    let (new_store, new_source) = finalize(&store, &ctx, &filler, &path, &source).unwrap();
+
+    assert!(list_open_holes(&new_store, &path).is_empty(), "no holes left: {new_source}");
+    assert!(new_source.contains("x => z"), "filled in place in the body map: {new_source}");
+}
+
+/// Filling a hole in a bracket-less body map (`let H :: DG = F.G`) appends a
+/// fresh `[ … ]` extension; the conditional it unblocks then cascades to a
+/// commit, so `H` is left hole-free.
+#[test]
+fn fill_appends_bracket_and_cascades_conditional() {
+    let (store, path, _) = load_file_context(&fixture("ComposeOuterConditional.ali")).unwrap();
+
+    let list = list_open_holes(&store, &path);
+    // `px` is a conditional (a constraint), so `H`'s only *open* hole is `p2`.
+    let idx = list.iter().position(|h| h.map_name == "H" && h.source_name == "p2")
+        .expect("H has an open hole p2");
+
+    let (ctx, mut session) = start_fill(&store, &path, &path, idx, false).unwrap();
+    match &mut session {
+        FillSession::Rewrite(engine) => {
+            engine.step(0).expect("apply r2");
+            assert!(engine.target_reached());
+        }
+        FillSession::ZeroCell(_) => panic!("p2 is a 1-cell hole"),
+    }
+
+    let filler = session.filler().unwrap();
+    let source = std::fs::read_to_string(&path).unwrap();
+    let (new_store, new_source) = finalize(&store, &ctx, &filler, &path, &source).unwrap();
+
+    // The bracket-less `F.G` gains an extension, and `px` cascades to a commit.
+    assert!(new_source.contains("F.G [ p2 => r2 ]"), "extension appended: {new_source}");
+    assert!(
+        list_open_holes(&new_store, &path).iter().all(|h| h.map_name != "H"),
+        "H is hole-free after the cascade: {new_source}"
+    );
+}
+
 /// A conditional pending assignment whose image boundary still has holes shows
 /// up as a constraint, not an open hole.  `r => m` (with `r : f g -> h`) leaves
 /// `?y, ?f, ?g` open and imposes `?f #0 ?g = a #0 a` on its input boundary.

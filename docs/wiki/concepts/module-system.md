@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-11
+last-touched: 2026-06-13
 ---
 
 # Module system
@@ -53,6 +53,28 @@ $0$-dimensional generators** (objects). Every higher cell $\dim \ge 1$ must be
 declared inside a type body, where it has an ambient complex to be a cell *of*.
 This is the syntactic shadow of the fact that an $n$-cell is meaningless without
 its $(n{-}1)$-boundary already present.
+
+### Three layers: modules, types, cells
+
+The two scales rest on a third. The global store is stratified into three, each
+layer's generators being inhabitants of the one below:
+
+- **global cells** — the generators of a type's complex. A global cell is a
+  *pure name*: it carries no semantics of its own, it refers to nothing. (In the
+  store these are the `cells` table, keyed by `GlobalId`.)
+- **global types** — each a complex *whose generators are global cells*. A type
+  is, at bottom, "a complex of pure names."
+- **modules** — each a complex *whose generators are global types*. Here the
+  generators *do* carry semantics: each is itself a complex.
+
+So the same combinatorial gadget — a [[directed-complex]] — appears at two
+levels, distinguished only by what its generators *mean*: cells-as-pure-names (a
+type) versus types-as-complexes (a module). The "two scales" this page keeps
+returning to are those two complex levels; the global cells are the unsemantic
+bottom on which both stand. (Currently every global type sits as a
+*$0$-dimensional* generator of its module complex, so a module is barely more
+than a set of named types; higher module-complex generators are a future
+direction, not a current language primitive — see [[module-open-semantics]].)
 
 ### Local definitions across the two scales
 

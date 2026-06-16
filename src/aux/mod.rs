@@ -10,7 +10,7 @@ pub mod loader;
 pub mod path;
 
 pub use error::Error;
-pub use id::{GlobalId, HoleId, LocalId, ModuleId, Tag};
+pub use id::{GlobalId, LocalId, ModuleId, Tag};
 
 /// Format a non-negative integer as unicode subscript digits.
 pub fn dim_subscript(n: usize) -> String {

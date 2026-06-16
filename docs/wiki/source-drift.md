@@ -1,7 +1,7 @@
 ---
 kind: note
 status: stable
-last-touched: 2026-06-09
+last-touched: 2026-06-13
 ---
 
 # Source-side drift — deferred maintenance
@@ -303,3 +303,24 @@ agents).
   named pinning test — it is exercised only incidentally inside
   `virtual_loader_subdirectory_resolution`. A dedicated test would let 0002 cite
   behavioural evidence per the wiki's own convention.
+
+## [2026-06-13] note | maps-with-holes composition landed (merge of main into wiki)
+
+Commits `9cd2b92`..`a6f385f` merged in: `HoleId` dropped (holes keyed by source
+generator, `Tag::Hole(Box<Tag>)`), core `PartialMap::compose` replaced by the
+interpreter's hole-aware `compose_with_holes`, inline-body-map filling, and the
+`done` edit behaviour. The affected wiki pages were updated in the same pass (see
+`log.md` 2026-06-13). Two source-side doc-comment items shifted, and were
+**fixed** in this pass:
+
+- **Item 3a ✓ — DONE 2026-06-13.** `EvalMap::holes` doc
+  (`src/interpreter/types.rs`) had listed "name lookups" *and* "compositions"
+  among the cases where holes are empty — wrong for both (a name lookup
+  re-attaches `Complex::map_holes`; `compose_with_holes` propagates them).
+  Rewritten to state the carry-through and limit "empty" to identities and
+  inclusions (total by construction).
+- **Item 3b ✓ — DONE 2026-06-13.** `a6f385f` had updated `docs/INTERACTIVE.md`;
+  the `fill.rs` module header still described only the append-after-`?` case.
+  Rewritten to describe both — explicit `x => ?` replaced in place, implicit hole
+  appended — and that `find_map_def` locates the definition in a `@Type` block, a
+  type-body `let`, or at module level.

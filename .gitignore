@@ -3,8 +3,10 @@
 debug
 target
 
-# Local editor/tool settings
-.claude/
+# Local editor/tool settings — ignored (CLAUDE.md here is a local symlink to
+# AGENTS.md), but keep the checked-in background notes
+.claude/*
+!.claude/notes/
 /package-lock.json
 .codex
 

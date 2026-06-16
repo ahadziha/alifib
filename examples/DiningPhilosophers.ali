@@ -1,0 +1,132 @@
+(***
+    Dining philosophers, with the ring encoded as a 2-diagram shape.
+
+    Seats are a row of `place`s (fork on philosopher) along the `table` strand;
+    a parallel `loop` strand, opened by `start_loop` and closed by `end_loop`,
+    joins the far end back to the near one — so the row closes into a ring. A
+    fork hops between strands at each end (the `Movement` attaches) and slides
+    along the loop for free, by interchange — no drift rules. Picking forks and
+    eating are the only declared moves.
+
+    Workflow — `alifib repl examples/DiningPhilosophers.ali` (or `just web` for
+    string diagrams), then:
+
+        start Table 5places          (apply rewrites: pick forks, eat)
+        store dinner                 (record the process)
+        stop
+        start Outcome Eval.dinner    (how much each philosopher ate)
+***)
+
+@Type
+Movement <<= {
+    (* A reusable reversible move: a 3-cell `do : from => to` with inverse
+       `undo`. Attached, it equates the diagrams `from` and `to` map to. *)
+    pt,
+
+    s: pt -> pt,
+    t: pt -> pt,
+
+    from: s -> t,
+    to: s -> t,
+
+    do: from -> to,
+    undo: to -> from
+},
+
+Table <<= {
+    pt,
+
+    (* `table` carries the seats; `loop` is the wrap-around wire. *)
+    table: pt -> pt,
+    loop: pt -> pt,
+
+    (* Open / close the loop strand — these bound the ring. *)
+    start_loop: table -> table loop,
+    end_loop: table loop -> table,
+
+    (* A fork (on table or on loop) and a seat in its four states. *)
+    fork: table -> table,
+    fork_on_loop: loop -> loop,
+    philosopher: table -> table,
+    philosopher_with_left: table -> table,
+    philosopher_with_right: table -> table,
+    philosopher_with_both: table -> table,
+
+    (* Hop a fork between strands at each end of the loop (reversible). Sliding
+       along the loop between them is free, by interchange. *)
+    attach Fork_Start_Loop :: Movement along [
+        from => start_loop (fork loop),
+        to => start_loop (table fork_on_loop)
+    ],
+    attach Fork_End_Loop :: Movement along [
+        from => (table fork_on_loop) end_loop,
+        to => (fork loop) end_loop
+    ],
+
+    (* The directed moves: pick a fork on either side, in either order; with
+       both, eat and release them. No inverse. *)
+    Pick_Left_First: philosopher fork
+        -> philosopher_with_left,
+    Pick_Right_First: fork philosopher
+        -> philosopher_with_right,
+    Pick_Left_Second: philosopher_with_right fork
+        -> philosopher_with_both,
+    Pick_Right_Second: fork philosopher_with_left
+        -> philosopher_with_both,
+    Eat: philosopher_with_both
+        -> fork philosopher fork,
+
+    (* A seat: a fork stacked on a philosopher. *)
+    let place = fork philosopher,
+
+    (* Loop scaffolding — drawn as thin wire in the string-diagram view. *)
+    index thin = [ loop, start_loop, end_loop ]
+}
+
+@Table
+(* A five-seat table to rewrite in. *)
+let 5places = start_loop #1 (
+    (place place place place place)
+    #0 loop)
+    #1 end_loop
+
+@Type
+Outcome <<= {
+    (* The observation target. `Eval : Table -> Outcome` strips the dynamics and
+       keeps only how much each philosopher ate: a process from `5places`, pushed
+       through `Eval`, becomes a row of philosophers tallying `Ate`s. *)
+    pt,
+    table: pt -> pt,
+
+    philosopher: table -> table,
+
+    Ate: philosopher -> philosopher,
+
+    let total Eval :: Table = [
+        (* The carrier collapses (lowering dimension): the loop to a point,
+           forks and the open/close scaffolding to the bare table — all erased. *)
+        table => table, loop => pt,
+        start_loop => table, end_loop => table,
+        fork => table, fork_on_loop => pt,
+
+        (* Philosophers survive; their fork-holding states forget the forks. *)
+        philosopher => philosopher,
+        for state in [ with_left, with_right, with_both ] {
+            philosopher_<state> => philosopher
+        },
+
+        (* Hops and picks leave no trace. *)
+        for Loc in [ Start, End ] {
+            for action in [ do, undo ] {
+                Fork_<Loc>_Loop.<action> => table
+            }
+        },
+        for Action in [ Pick_Left_First, Pick_Left_Second,
+            Pick_Right_First, Pick_Right_Second ] {
+            <Action> => philosopher
+        },
+
+        (* The one real record: each meal becomes an `Ate`. *)
+        Eat => Ate
+    ]
+}

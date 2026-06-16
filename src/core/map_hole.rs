@@ -18,7 +18,7 @@
 //! for a metavariable and committing ready conditionals — happens in the
 //! map-extension machinery.
 
-use crate::aux::{HoleId, Tag};
+use crate::aux::Tag;
 use crate::core::diagram::Diagram;
 use crate::core::paste_tree::PasteTree;
 use std::collections::BTreeSet;
@@ -27,10 +27,9 @@ use std::collections::BTreeSet;
 /// assignment (`image: Some(a)`) awaiting its boundary faces.
 #[derive(Debug, Clone)]
 pub struct MapHole {
-    /// The metavariable standing for this image.  Equal to the [`HoleId`] inside
-    /// the [`Tag::Hole`] leaf that dependent holes use to reference this one.
-    pub(crate) meta: HoleId,
     /// The domain generator whose image is pending (the `arr`/`x` of the clause).
+    /// This *is* the entry's identity: dependent holes reference it by the
+    /// [`Tag::Hole`] leaf carrying this same tag.
     pub(crate) source: Tag,
     /// Dimension of the source generator = dimension the filler must have.
     pub(crate) dim: usize,
@@ -45,10 +44,11 @@ pub struct MapHole {
 }
 
 impl MapHole {
-    /// The metavariables this entry still depends on: the holes appearing in its
-    /// boundary trees.  Derived from the boundaries (their single source of
-    /// truth) — a conditional whose `deps` are empty is ready to commit.
-    pub(crate) fn deps(&self) -> BTreeSet<HoleId> {
+    /// The metavariables this entry still depends on: the source tags of the
+    /// holes appearing in its boundary trees.  Derived from the boundaries (their
+    /// single source of truth) — a conditional whose `deps` are empty is ready to
+    /// commit.
+    pub(crate) fn deps(&self) -> BTreeSet<Tag> {
         let Some((input, output)) = &self.boundary else {
             return BTreeSet::new();
         };
@@ -58,12 +58,13 @@ impl MapHole {
     }
 }
 
-/// Collect the metavariables (`Tag::Hole`) appearing as leaves of `tree`.
-pub(crate) fn collect_hole_deps(tree: &PasteTree) -> BTreeSet<HoleId> {
-    fn go(t: &PasteTree, acc: &mut BTreeSet<HoleId>) {
+/// Collect the metavariables (`Tag::Hole`) appearing as leaves of `tree`, as the
+/// source tags they carry.
+pub(crate) fn collect_hole_deps(tree: &PasteTree) -> BTreeSet<Tag> {
+    fn go(t: &PasteTree, acc: &mut BTreeSet<Tag>) {
         match t {
-            PasteTree::Leaf(Tag::Hole(id)) => {
-                acc.insert(*id);
+            PasteTree::Leaf(Tag::Hole(source)) => {
+                acc.insert(source.as_ref().clone());
             }
             PasteTree::Leaf(_) => {}
             PasteTree::Node { left, right, .. } => {
@@ -85,21 +86,21 @@ mod tests {
 
     #[test]
     fn collects_only_hole_leaves() {
-        let h1 = HoleId::fresh();
-        let h2 = HoleId::fresh();
+        let s1 = Tag::Global(GlobalId::fresh());
+        let s2 = Tag::Global(GlobalId::fresh());
         // A tree mixing a concrete leaf and two metavariable leaves.
         let tree = PasteTree::Node {
             dim: 0,
-            left: Arc::new(PasteTree::Leaf(Tag::Hole(h1))),
+            left: Arc::new(PasteTree::Leaf(Tag::Hole(Box::new(s1.clone())))),
             right: Arc::new(PasteTree::Node {
                 dim: 0,
                 left: Arc::new(PasteTree::Leaf(Tag::Global(GlobalId::fresh()))),
-                right: Arc::new(PasteTree::Leaf(Tag::Hole(h2))),
+                right: Arc::new(PasteTree::Leaf(Tag::Hole(Box::new(s2.clone())))),
             }),
         };
         let deps = collect_hole_deps(&tree);
         assert_eq!(deps.len(), 2);
-        assert!(deps.contains(&h1) && deps.contains(&h2));
+        assert!(deps.contains(&s1) && deps.contains(&s2));
     }
 
     #[test]

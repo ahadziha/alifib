@@ -1,7 +1,7 @@
 ---
 kind: decision
 status: stable
-last-touched: 2026-06-09
+last-touched: 2026-06-13
 ---
 
 # 0001 — no identity cells (but composition is unital)
@@ -14,6 +14,21 @@ that are the looser [[directed-complex|directed complexes]]. What the theory
 *lacks* is more precise than the slogan "no identities" suggests, and worth
 stating carefully — it explains both what the code refuses to build and what it
 deliberately permits.
+
+**Why unit-less, more deeply.** The motivation is not merely a guard against
+non-termination — though units do loop (a unit witnesses a *do-nothing* process,
+so admitting one makes rewriting non-terminating). It reflects a layering:
+*units are semantics*. A unit is a **representation of a process that does
+nothing**, whereas literally doing nothing is already present — it is the
+lower-dimensional cell itself. The raw, unit-less layer of directed-complex data
+is the one appropriate for *computation* (rewriting, abstract machines); units,
+unitors and the rest belong one storey up, where higher-categorical *meaning*
+lives (diagrammatic sets and the 2024–25 papers). Non-termination is then a
+*symptom* of conflating the storeys, not the root reason. Where the examples
+need unit-like behaviour they **direct** the would-be structural equivalences
+rather than adding units — the [[trs-encoding|TRS encoding]] is a *laxified*
+cartesian monoidal category whose copy/discard/swap coherences become directed
+higher cells.
 
 ## Decision
 

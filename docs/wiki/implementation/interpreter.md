@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-09
+last-touched: 2026-06-13
 code: [src/interpreter/mod.rs, src/interpreter/eval.rs, src/interpreter/global_store.rs, src/interpreter/types.rs, src/interpreter/resolve.rs, src/interpreter/binding.rs, src/interpreter/include.rs, src/interpreter/load.rs, src/interpreter/diagram.rs, src/interpreter/partial_map.rs]
 ---
 
@@ -61,9 +61,10 @@ module) escape the crate boundary. The binding/resolve/include machinery is
   `module_short_name` (internal)) to its canonical path.
 
 `ModuleId` and `LocalId` are both just `String` (`src/aux/id.rs`); a `Tag` is
-`Tag::Global(GlobalId)`, `Tag::Local(String)`, or `Tag::Hole(HoleId)` — the last
-is a map-hole metavariable, for which `cell_data_for_tag` returns `None`: a
-hole's boundary lives on its `MapHole` record, not in the store.
+`Tag::Global(GlobalId)`, `Tag::Local(String)`, or `Tag::Hole(Box<Tag>)` — the last
+is a map-hole metavariable wrapping its *source generator's* tag, for which
+`cell_data_for_tag` returns `None`: a hole's boundary lives on its `MapHole`
+record, not in the store.
 
 **Mutation is copy-on-write.** `Context::state` is an `Arc<GlobalStore>`; writes
 go through `state_mut` → `Arc::make_mut`, and module/type complexes are edited via
@@ -272,8 +273,12 @@ basic [[diagram]]*, then a *suffix of boundary operators* (`.in` $=
   taken in **one** `Diagram::boundary(last_sign, n − bds.len(), …)` call — only the
   final operator's polarity and the operator *count* matter, because the
   intermediate boundary ops collapse under the globular identities. Then the maps
-  are applied to that (small) boundary from the innermost outward. No composite map
-  is ever built.
+  are applied to that (small) boundary from the innermost outward — for a
+  diagram-valued expression no composite map is built (`PartialMap::apply`, on
+  the concrete boundary). A **pure map chain** (a `Decomp::Map`, no diagram) is
+  the exception: it *is* composed, innermost outward, via `compose_with_holes`,
+  which propagates the maps' holes and conditionals into the resulting
+  `Term::Map`.
 
 The payoff is twofold: a boundary suffix collapses to a single direct call rather
 than crawling one codimension per step, and a map need only be *total on the
@@ -296,8 +301,10 @@ collapse, forced faces) and conditional `cascade` of [[core-partial-map]] at
 interpretation time, plus the interactive `fill` workflow ([[interactive-session]])
 afterward. Note the asymmetry in name lookup: a named map used in *map* position
 (`eval_partial_map_basic`) carries its stored holes — so `F [ … ]` extends a
-map-with-holes, i.e. fills — while in *diagram* position (`interpret_dcomponent`)
-the holes are dropped. There is no separate `solve` pass, `InterpResult` carries
+map-with-holes, i.e. fills, and a dotted composite `F.G` propagates them through
+`compose_with_holes` — while in *diagram* position (`interpret_dcomponent`), where
+a map is *applied* to a concrete diagram, the holes play no part. There is no
+separate `solve` pass, `InterpResult` carries
 only `{ context, errors }`, and an `InterpretedFile` keeps no hole state of its
 own. See [[hole]] for the full model.
 

@@ -1,7 +1,7 @@
 ---
 kind: impl
 status: stable
-last-touched: 2026-06-09
+last-touched: 2026-06-13
 code: [src/aux/mod.rs, src/aux/id.rs, src/aux/error.rs, src/aux/loader.rs, src/aux/path.rs, src/aux/bitset.rs, src/aux/intset.rs, src/aux/graph.rs]
 ---
 
@@ -17,9 +17,10 @@ code: [src/aux/mod.rs, src/aux/id.rs, src/aux/error.rs, src/aux/loader.rs, src/a
 surface (`id`, `error`, `loader`, `path`) used across the [[interpreter]] and the
 *crate-private* data structures (`bitset`, `intset`, `graph`, all
 `pub(crate)`) used only inside `core`/`analysis`. The root also re-exports the
-identifier zoo (`pub use id::{GlobalId, HoleId, LocalId, ModuleId, Tag}` — where
-`HoleId` names a [[hole]]'s metavariable and `Tag::Hole(HoleId)` is its
-paste-tree leaf — `pub use error::Error`) and carries one stray helper,
+identifier zoo (`pub use id::{GlobalId, LocalId, ModuleId, Tag}` — where a
+[[hole]]'s metavariable is `Tag::Hole(Box<Tag>)`, a paste-tree leaf carrying the
+*source generator's own tag* as its identity — `pub use error::Error`) and
+carries one stray helper,
 `dim_subscript` (dimension → Unicode subscript digits), which currently has
 **no callers**: its boundary-slot renderers died with the old hole-inference
 pass, and being `pub` it draws no dead-code warning.
@@ -28,7 +29,7 @@ pass, and being `pub` it draws no dead-code warning.
 
 | Module | Responsibility |
 |---|---|
-| `id.rs` | the identifier kinds (`GlobalId`, `HoleId`, `LocalId`, `ModuleId`) + `Tag`, their union |
+| `id.rs` | the identifier kinds (`GlobalId`, `LocalId`, `ModuleId`) + `Tag`, their union (including the `Tag::Hole` metavariable) |
 | `error.rs` | `Error` (message + notes) and `report_load_file_error` |
 | `loader.rs` | `Loader` — read source, resolve `include <Name>` directives, return `LoadedFile` |
 | `path.rs` | canonicalisation and search-path dedup |
@@ -42,21 +43,19 @@ pass, and being `pub` it draws no dead-code warning.
   single `static AtomicUsize` via `GlobalId::fresh` (`Ordering::SeqCst`). Opaque;
   never construct directly. `Display` prints `#n`. This is the spine of the
   global store's cell identity.
-- **`HoleId(usize)`** (`id.rs`) — a metavariable: the unknown image of a domain
-  generator under a partial map with holes. Its own atomic counter
-  (`Ordering::Relaxed` — uniqueness is all that matters); `Display` prints `?n`.
-  Lives only inside `Tag::Hole`.
 - **`LocalId = String`**, **`ModuleId = String`** — type aliases. A `ModuleId` is
   *always* a canonical absolute path (`std::fs::canonicalize`), so two spellings
   of one file never become two modules.
-- **`Tag`** = `Local(LocalId)` | `Global(GlobalId)` | `Hole(HoleId)` — the
+- **`Tag`** = `Local(LocalId)` | `Global(GlobalId)` | `Hole(Box<Tag>)` — the
   identifier union that threads through elaboration. `Local` tags are scoped to
-  the enclosing type or module complex; `Global` tags name finalised cells;
-  `Hole` tags appear *only* inside the boundary paste trees of a
-  `core::map_hole::MapHole` — never as a key in a real map, a complex generator,
+  the enclosing type or module complex; `Global` tags name finalised cells; a
+  `Hole` tag wraps the *source generator's own tag* — it is a [[hole]]'s
+  metavariable, identified by the generator whose image is pending (there is no
+  separate id) — and appears *only* inside the boundary paste trees of a
+  `core::map_hole::MapHole`, never as a key in a real map, a complex generator,
   or a built diagram's labels. Central to the [[interpreter]] lookup chain. Its
   `Ord` is total and *segregated by variant*: `Local < Global < Hole`, before
-  comparing payloads.
+  comparing payloads. `Display` prints a hole as `?<source>`.
 - **`Error { message, notes }`** (`error.rs`) — a diagnostic accumulator;
   `with_note` chains. `report_load_file_error` is the only printer, fanning a
   `LoadFileError` out to stderr (and into `language::report_errors` for parse
@@ -214,8 +213,9 @@ plumbing those constructions are expressed in. For the identifier and error
 plumbing's role in the elaboration pipeline, see [[interpreter]] and
 [[core-complex]] (where `Tag` keys the lookup chain — the names that label
 generating [[atom|atoms]]). The one genuinely semantic identifier is
-`Tag::Hole(HoleId)`: it *is* the metavariable of a [[hole]], representable as an
-ordinary paste-tree leaf precisely so the hole machinery needs no special cases.
+`Tag::Hole(Box<Tag>)`: it *is* the metavariable of a [[hole]] — identified by
+the source generator whose image is pending — representable as an ordinary
+paste-tree leaf precisely so the hole machinery needs no special cases.
 
 The `loader`/`path` half realises the file-system side of the
 [[module-system]]: `include <Name>` is the language's import form, and the

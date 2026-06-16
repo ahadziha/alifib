@@ -5,7 +5,7 @@
 //! The main entry point is [`GlobalStore::normalize`]. The public `render_*`
 //! functions are also used to list a map's unfilled holes.
 
-use crate::aux::{HoleId, Tag};
+use crate::aux::Tag;
 use crate::core::{
     complex::{Complex, MapDomain},
     diagram::{CellData, Diagram, Sign},
@@ -252,8 +252,9 @@ fn render_domain(domain: &MapDomain, module_complex: &Complex) -> String {
 
 // ---- Map hole listing ----
 
-/// Display names for metavariables: `?` + the source generator's name.
-type HoleNames = HashMap<HoleId, String>;
+/// Display names for metavariables, keyed by source generator tag: `?` + the
+/// source generator's name.
+type HoleNames = HashMap<Tag, String>;
 
 /// Build display names for a map's holes, resolving each against its source
 /// generator in `domain` (`?f`, `?b`), disambiguating collisions numerically.
@@ -265,7 +266,7 @@ fn hole_names(holes: &[MapHole], domain: &Complex) -> HoleNames {
             .find_generator_by_tag(&h.source)
             .filter(|n| !n.is_empty())
             .map(|n| format!("?{}", n))
-            .unwrap_or_else(|| format!("{}", h.meta));
+            .unwrap_or_else(|| format!("?{}", h.source));
         let mut name = base.clone();
         let mut i = 1;
         while used.contains(&name) {
@@ -273,7 +274,7 @@ fn hole_names(holes: &[MapHole], domain: &Complex) -> HoleNames {
             i += 1;
         }
         used.insert(name.clone());
-        names.insert(h.meta, name);
+        names.insert(h.source.clone(), name);
     }
     names
 }
@@ -282,8 +283,8 @@ fn hole_names(holes: &[MapHole], domain: &Complex) -> HoleNames {
 /// metavariable name from `names`.
 fn render_paste_tree_with_holes(tree: &PasteTree, scope: &Complex, names: &HoleNames) -> String {
     match tree {
-        PasteTree::Leaf(Tag::Hole(id)) => {
-            names.get(id).cloned().unwrap_or_else(|| format!("{}", id))
+        PasteTree::Leaf(Tag::Hole(source)) => {
+            names.get(source.as_ref()).cloned().unwrap_or_else(|| format!("?{}", source))
         }
         PasteTree::Leaf(tag) => scope
             .find_generator_by_tag(tag)
@@ -321,7 +322,7 @@ fn collect_chain_with_holes(
 /// suffix is shown (pure holes and conditionals render uniformly).  Image leaves
 /// resolve against `scope`, metavariables against `names`.
 fn render_hole_line(hole: &MapHole, scope: &Complex, names: &HoleNames) -> String {
-    let name = names.get(&hole.meta).cloned().unwrap_or_else(|| format!("{}", hole.meta));
+    let name = names.get(&hole.source).cloned().unwrap_or_else(|| format!("?{}", hole.source));
     match &hole.boundary {
         Some((input, output)) => format!(
             "{} : {} -> {}",
@@ -340,7 +341,7 @@ fn render_hole_line(hole: &MapHole, scope: &Complex, names: &HoleNames) -> Strin
 fn render_map_holes(holes: &[MapHole], scope: &Complex, domain: &Complex) -> Vec<String> {
     let names = hole_names(holes, domain);
     let mut order: Vec<&MapHole> = holes.iter().collect();
-    order.sort_by_key(|h| (h.dim, names.get(&h.meta).cloned().unwrap_or_default()));
+    order.sort_by_key(|h| (h.dim, names.get(&h.source).cloned().unwrap_or_default()));
     order.iter().map(|h| render_hole_line(h, scope, &names)).collect()
 }
 

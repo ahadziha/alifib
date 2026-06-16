@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-09
+last-touched: 2026-06-13
 code: [src/core/map_hole.rs, src/interpreter/partial_map.rs, src/interactive/fill.rs, src/output/normalize.rs]
 ---
 
@@ -38,10 +38,11 @@ mapped leaves `r` pending and turns `f`, `g` into the unknowns, subject to the
 
 **Boundaries as paste trees, not diagrams.** The crux of the design: a hole's
 boundaries are stored as paste trees whose leaves may be *metavariables*, never
-as realised [[diagram|diagrams]]. Each hole owns a process-unique metavariable
-`HoleId` (rendered `?name`, after the generator it images), and a dependent hole
-refers to another by carrying that metavariable as a `Tag::Hole(id)` leaf in its
-boundary tree. Keeping boundaries unrealised is what lets a hole be filled by a
+as realised [[diagram|diagrams]]. A hole is identified by its **source
+generator** — the generator it images — with no separate id; a dependent hole
+refers to it by carrying that generator's tag as a `Tag::Hole(source)` leaf in
+its boundary tree (rendered `?source`). Keeping boundaries unrealised is what
+lets a hole be filled by a
 *non-round* or even lower-dimensional diagram: there is no premature commitment
 to a directed sphere that a degenerate filler would violate. A hole's
 outstanding **dependencies** are read straight off its boundary trees — the set
@@ -66,9 +67,17 @@ inferences fire, none of them a global solver:
   a legitimate move (see [[0001-no-identities]]).
 
 When a filled hole's image becomes known, its paste tree is **substituted** for
-its metavariable in every other hole's boundary trees, and any conditional whose
-dependencies have all closed is **cascaded** into the real map. The cascade
-repeats until no ready conditional remains.
+its `Tag::Hole(source)` leaf in every other hole's boundary trees, and any
+conditional whose dependencies have all closed is **cascaded** into the real
+map. The cascade repeats until no ready conditional remains.
+
+**Through composition.** Holes are not forgotten when maps compose. A dotted
+map `F.G` carries the inner map's pure holes out as pure holes, and inner or
+outer conditionals out as conditionals (with image `F(img)`), processing the
+inner domain in ascending dimension so a cell's faces settle before the cell —
+so filling a dependency of a *composite* still cascades to a commit. Pinned by
+`composition_propagates_inner_map_holes`, `composition_propagates_outer_map_holes`,
+and `composition_propagates_outer_map_conditionals` (`tests/interpreter.rs`).
 
 These behaviours are pinned by integration fixtures: `collapsed_boundary_infers_image`
 and `collapse_inference_cascades_through_implicit_faces` (collapse, including
@@ -95,18 +104,21 @@ Finalising a fill splices `x => <proof>` into the map's definition and
 re-evaluates the file. An explicit `x => ?` clause has its `?` *replaced in
 place* by the proof; an implicit hole — forced by another clause, with no `?` of
 its own — is appended as a fresh clause, which commits $x$ by the idempotence
-$[\,x \Rightarrow ?,\ x \Rightarrow a\,] \equiv [\,x \Rightarrow a\,]$. Either
-way the source file is the durable record — there is no separate hole store.
+$[\,x \Rightarrow ?,\ x \Rightarrow a\,] \equiv [\,x \Rightarrow a\,]$, and any
+conditional it unblocks cascades on re-evaluation
+(`fill_appends_bracket_and_cascades_conditional`). Either way the source file is
+the durable record — there is no separate hole store.
 
 ## Implementation
 
-The hole datum is `MapHole` in `src/core/map_hole.rs`: a metavariable `meta:
-HoleId`, the domain generator `source: Tag` and its `dim`, the optional known
-`image: Option<Diagram>` (the pure/conditional distinction), and `boundary:
-Option<(PasteTree, PasteTree)>` — the input/output trees, both present or both
-absent (a $0$-cell has neither). `MapHole::deps` derives the outstanding
-dependencies by collecting the `Tag::Hole` leaves of those trees
-(`collect_hole_deps`); `collects_only_hole_leaves` pins it.
+The hole datum is `MapHole` in `src/core/map_hole.rs`: the domain generator
+`source: Tag` — which *is* the entry's identity (dependent holes reference it by
+a `Tag::Hole(source)` leaf; there is no separate id) — and its `dim`, the
+optional known `image: Option<Diagram>` (the pure/conditional distinction), and
+`boundary: Option<(PasteTree, PasteTree)>` — the input/output trees, both present
+or both absent (a $0$-cell has neither). `MapHole::deps` derives the outstanding
+dependencies by collecting the `Tag::Hole` leaves of those trees as the source
+tags they carry (`collect_hole_deps`); `collects_only_hole_leaves` pins it.
 
 The build machinery is in `src/interpreter/partial_map.rs`. A `MapBuild`
 *(internal)* carries the hole-free `PartialMap` alongside the pending `holes`.
@@ -114,8 +126,8 @@ The build machinery is in `src/interpreter/partial_map.rs`. A `MapBuild`
 or records a hole via `upsert_entry`, applying case-1 and collapse inference
 (`collapsed_boundary_image`) along the way; `ensure_defined` forces undefined
 boundary faces through the same path. `commit_one` adds one entry to the real map
-and substitutes the filled metavariable into the remaining holes; `cascade` then
-commits every conditional whose `deps` have closed. `hole_map_image` implements
+and substitutes the filled source's tree into the remaining holes' `Tag::Hole`
+leaves; `cascade` then commits every conditional whose `deps` have closed. `hole_map_image` implements
 the pointwise `<map> => ?`. A pending assignment whose commit fails during
 cascading is re-aimed at its own clause by `blame_pending`, not at the filler
 that closed its last face. The evaluated map carries its leftover holes out as
@@ -136,7 +148,12 @@ $m \ge 1$, `ZeroCell` for a $0$-cell), checking via `blocking_holes` that a
 hole's dependencies are filled first; `edit_for_fill` splices the proof back into
 the map definition — pinning onto an explicit `=> ?` when present
 (`pins_a_dotted_explicit_hole_in_place`), otherwise appending
-(`appends_when_no_matching_explicit_hole`).
+(`appends_when_no_matching_explicit_hole`). `find_map_def` locates the
+definition whichever form it takes: a `@Type` block, a `let` *inline in a type
+body* (`Type <<= { … let H … }`), or a module-level definition — and a bare
+(unbracketed) map in a type body is wrapped before the clause is appended
+(`pins_hole_in_complex_body_map`, `brackets_bare_partial_map_in_complex_body`,
+and the end-to-end `fill_hole_in_complex_body_map` in `tests/fill.rs`).
 
 ## Related
 

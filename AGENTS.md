@@ -25,3 +25,10 @@ The `Justfile` also carries the web build recipes (`just web` / `web-bun` / `web
 ## Documentation
 
 When present, the curated wiki under `docs/wiki/` is the authoritative documentation layer: concept pages (the maths and language ideas) and one implementation page per module, indexed by `docs/wiki/index.md`, with claims pinned to named tests. Consult it **first** for any "how does X work" / semantics / concept question, before answering from source plus recall — then verify against current code, which may have advanced past a page. The wiki's own conventions live in `docs/wiki/CLAUDE.md`.
+
+## Background notes (read on demand)
+
+Unofficial working notes on the mathematical and conceptual picture behind alifib — deeper than the code, more informal than the wiki. Not authoritative (where they conflict with the code, the wiki, or the papers, those win), but they carry the *why*. Read when the task actually touches this material:
+
+- `.claude/notes/CONCEPTS.md` — the conceptual/semantic picture (what a type, map, diagram, module *is*; what alifib is and is not).
+- `.claude/notes/THREADS.md` — the intellectual lineage across Amar's papers and how each thread lands in alifib.

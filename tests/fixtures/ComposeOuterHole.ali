@@ -1,0 +1,21 @@
+(* Hole propagation from the *outer* map of a composite `F.G`.
+
+   `G` maps every generator of `DG` into `DF` (it is total); `F` maps `DF` into
+   `T` but leaves `r` a hole.  Since `r` is the image of `e` under `G`, the
+   composite `F.G` carries a pure hole at `e` — the outer map's hole, pulled back
+   along `G`. *)
+
+@Type
+
+DG <<= { a, b, e : a -> b },
+
+DF <<= {
+  p, q, r : p -> q,
+  let G :: DG = [ a => p, b => q, e => r ]
+},
+
+T <<= {
+  u, v,
+  let F :: DF = [ p => u, q => v, r => ? ],
+  let H :: DG = F.G
+}

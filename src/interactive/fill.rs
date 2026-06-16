@@ -3,23 +3,26 @@
 //! A hole on an *m*-cell `x` of a map `F : D → T` is a request to build `F(x)`:
 //! an *m*-diagram in `T` from `F(x.in)` to `F(x.out)`.  For `m ≥ 1` that is a
 //! rewrite, driven by the existing [`RewriteEngine`]; for a 0-cell it is the
-//! choice of one of `T`'s 0-cells.  Finalising (`done`) appends `x => <proof>` to
-//! `F`'s source definition and re-evaluates the file — the new clause, sitting
-//! after the original `x => ?`, commits `x` to the proof (by the idempotence of
-//! `[x => ?, x => a] ≡ [x => a]`) with the hole gone.
+//! choice of one of `T`'s 0-cells.  Finalising (`done`) splices `x => <proof>`
+//! into `F`'s source definition and re-evaluates the file.  An explicit
+//! `x => ?` clause is *replaced in place*; an implicit hole — forced by another
+//! clause, with no `?` of its own — is *appended* as a new clause, committing
+//! `x` by the idempotence of `[x => ?, x => a] ≡ [x => a]`.  The definition is
+//! located wherever it sits (`find_map_def`): a `@Type` block, a `let` inline
+//! in a type body, or a module-level definition.
 //!
 //! This module is front-end-agnostic: the CLI and web REPLs both drive it.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
-use crate::aux::{GlobalId, HoleId, Tag};
+use crate::aux::{GlobalId, Tag};
 use crate::core::complex::{Complex, MapDomain};
 use crate::core::diagram::{CellData, Diagram, Sign};
 use crate::core::map_hole::MapHole;
 use crate::core::paste_tree::realise_tree;
 use crate::interpreter::GlobalStore;
-use crate::language::ast::{self, Block, LocalInst, PMapEntry, PartialMapDef, Spanned};
+use crate::language::ast::{self, Block, ComplexInstr, Generator, LocalInst, PMapEntry, PartialMapDef, Spanned, TypeInst};
 use crate::output::normalize::{domain_complex, render_hole_boundary, render_hole_constraints};
 
 use super::engine::{reevaluate, RewriteEngine};
@@ -38,7 +41,6 @@ pub struct HoleRef {
     pub domain_name: String,
     pub source: Tag,
     pub source_name: String,
-    pub meta: HoleId,
     pub dim: usize,
     /// Pre-rendered boundary, `?name : in → out` (or `?name` for a 0-cell).
     pub boundary: String,
@@ -231,7 +233,6 @@ pub fn list_open_holes(store: &GlobalStore, root_module: &str) -> Vec<HoleRef> {
                 domain_name: m.domain_name.clone(),
                 source: h.source.clone(),
                 source_name,
-                meta: h.meta,
                 dim: h.dim,
                 boundary: render_hole_boundary(h, m.holes, m.target, m.domain),
             });
@@ -347,21 +348,21 @@ fn blocking_holes(store: &GlobalStore, list: &[HoleRef], href: &HoleRef) -> Vec<
     let Some(holes) = tc.map_holes(&href.map_name) else { return vec![]; };
     let Some(hole) = holes.iter().find(|h| h.source == href.source) else { return vec![]; };
 
-    let index_by_meta: HashMap<HoleId, usize> = list.iter()
+    let index_by_source: HashMap<Tag, usize> = list.iter()
         .filter(|r| r.type_gid == href.type_gid && r.map_name == href.map_name)
-        .map(|r| (r.meta, r.index))
+        .map(|r| (r.source.clone(), r.index))
         .collect();
 
     let mut result = BTreeSet::new();
     let mut seen = HashSet::new();
-    let mut stack: Vec<HoleId> = hole.deps().into_iter().collect();
-    while let Some(meta) = stack.pop() {
-        if !seen.insert(meta) {
+    let mut stack: Vec<Tag> = hole.deps().into_iter().collect();
+    while let Some(source) = stack.pop() {
+        if !seen.insert(source.clone()) {
             continue;
         }
-        match holes.iter().find(|h| h.meta == meta) {
+        match holes.iter().find(|h| h.source == source) {
             Some(h) if h.image.is_none() => {
-                if let Some(&i) = index_by_meta.get(&meta) {
+                if let Some(&i) = index_by_source.get(&source) {
                     result.insert(i);
                 }
             }
@@ -496,22 +497,52 @@ fn lhs_generator_name(d: &ast::Diagram) -> Option<String> {
     }
 }
 
-/// Locate the `value` of map `map_name` defined in the `@type_name` block.
+/// Locate the `value` of map `map_name` belonging to type `type_name`, wherever
+/// it is written: in a separate `@type_name` block (`LocalInst`), inline in the
+/// type's body `type_name <<= { … let map_name … }` (`ComplexInstr`), or — when
+/// `type_name` is empty — at the top level of a `@Type` block (`TypeInst`).
 fn find_map_def<'a>(program: &'a ast::Program, type_name: &str, map_name: &str) -> Option<&'a Spanned<PartialMapDef>> {
     for block in &program.blocks {
-        let Block::LocalBlock { complex, body } = &block.inner else { continue; };
-        if !complex_matches(complex, type_name) {
-            continue;
-        }
-        for inst in body {
-            if let LocalInst::DefPartialMap(dp) = &inst.inner {
-                if dp.name.inner == map_name {
-                    return Some(&dp.value);
+        match &block.inner {
+            // `@type_name  let map_name :: … = …`
+            Block::LocalBlock { complex, body } if complex_matches(complex, type_name) => {
+                for inst in body {
+                    if let LocalInst::DefPartialMap(dp) = &inst.inner {
+                        if dp.name.inner == map_name { return Some(&dp.value); }
+                    }
                 }
             }
+            Block::TypeBlock(insts) => {
+                for inst in insts {
+                    match &inst.inner {
+                        // A module-level map, outside any type body.
+                        TypeInst::DefPartialMap(dp)
+                            if type_name.is_empty() && dp.name.inner == map_name =>
+                        {
+                            return Some(&dp.value);
+                        }
+                        // `type_name <<= { … let map_name … }`
+                        TypeInst::Generator(g) if generator_name(g) == type_name => {
+                            let ast::Complex::Block { body, .. } = &g.complex.inner else { continue };
+                            for ci in body {
+                                if let ComplexInstr::DefPartialMap(dp) = &ci.inner {
+                                    if dp.name.inner == map_name { return Some(&dp.value); }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
         }
     }
     None
+}
+
+/// The name a type generator (`Name <<= { … }`) introduces.
+fn generator_name(g: &Generator) -> &str {
+    &g.name.inner.name.inner
 }
 
 /// Whether a block's `@…` address names `type_name`.
@@ -548,6 +579,25 @@ mod edit_tests {
         let out = edit_map_definition(src, "X", "H", "a", "z").unwrap();
         assert!(out.contains("Sub => ?"), "the explicit hole stays: {out}");
         assert!(out.contains("a => z"), "the implicit fill is appended: {out}");
+    }
+
+    /// A map defined inline in a type body (`X <<= { … let H … }`), not a separate
+    /// `@X` block, is located and edited in place.
+    #[test]
+    fn pins_hole_in_complex_body_map() {
+        let src = "@Type\n\nX <<= {\n  a, z,\n  let H :: D = [ a => z, x => ? ]\n}\n";
+        let out = edit_map_definition(src, "X", "H", "x", "z").unwrap();
+        assert!(out.contains("x => z"), "the hole is filled in place: {out}");
+        assert!(!out.contains("=> ?"), "no `?` left: {out}");
+    }
+
+    /// A bare partial-map body in a type body (`let H :: D = Base`, no brackets)
+    /// gets a fresh `[ … ]` extension appended.
+    #[test]
+    fn brackets_bare_partial_map_in_complex_body() {
+        let src = "@Type\n\nX <<= {\n  a, z,\n  let H :: D = Base\n}\n";
+        let out = edit_map_definition(src, "X", "H", "x", "z").unwrap();
+        assert!(out.contains("Base [ x => z ]"), "extension appended: {out}");
     }
 }
 
