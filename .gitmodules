@@ -1,0 +1,3 @@
+[submodule "docs/paper"]
+	path = docs/paper
+	url = git@github.com:lambdabetaeta/alifib-paper.git
