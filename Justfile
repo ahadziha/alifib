@@ -18,9 +18,18 @@ web *ARGS:
     just web-js
     cargo run -- web {{ARGS}}
 
+# Same as `web`, but bundle the frontend with Bun instead of npm.
+web-bun *ARGS:
+    just web-js-bun
+    cargo run -- web {{ARGS}}
+
 # Bundle the frontend JS (CodeMirror + app) with esbuild.
 web-js:
     cd web/frontend && npm install --silent && npm run build
+
+# Bundle the frontend JS with Bun (drop-in for `web-js`).
+web-js-bun:
+    cd web/frontend && bun install --silent && bun run build
 
 # Watch frontend JS for changes and rebuild automatically.
 web-js-watch:
