@@ -1,5 +1,6 @@
-//! Exhaustive interleaving-space analysis of the concurrency benchmarks
-//! (`Philosophers.ali`, `Corridor.ali`).
+//! Exhaustive interleaving-space analysis of two concurrency benchmarks:
+//! the minimal two-event square (`Independence.ali`) and Amar's dining
+//! philosophers ring (`DiningPhilosophers.ali`).
 //!
 //! An *interleaving* is a maximal run of the rewrite engine — a sequence
 //! of `step` choices until no rewrite applies. A *trace* is the proof
@@ -23,8 +24,8 @@
 //!    (reported as a lower bound).
 //!
 //! Run with: cargo run -p alifib --release --example trace_search
-//! (about three minutes; the full walk of the 119,328 interleavings of
-//! four philosophers dominates).
+//! (the square has two interleavings collapsing to one trace; the ring
+//! is cyclic, so its interleaving space is reported as infinite).
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -40,11 +41,11 @@ const FULL_WALK_BOUND: u128 = 150_000;
 const SAMPLES: usize = 2_000;
 
 /// What counts as a successful state.
+#[allow(dead_code)] // `Never`/`AllOf` are kept for other benchmarks.
 enum Success {
     /// Isomorphic to one specific diagram.
     Exact(String),
-    /// Contains all the named cells (the rest may vary, e.g. drifting
-    /// forks around the fed philosophers of the ring).
+    /// Contains all the named cells (the rest of the state may vary).
     AllOf(&'static [&'static str]),
     /// No state counts as success.
     Never,
@@ -58,37 +59,34 @@ struct Bench {
     success: Success,
 }
 
-/// `f p f p ... f` with `n` philosophers, and its all-fed final word.
-fn philosophers(n: usize) -> Bench {
+/// The minimal independence square: the word `a b`, with events `f` and
+/// `g` firing in either order. Two interleavings, one trace; the run
+/// succeeds once both have fired, reaching `c d`.
+fn independence() -> Bench {
     Bench {
-        title: format!("Philosophers, {n} in a row"),
-        file: "Philosophers.ali",
-        type_name: "Philosophers",
-        initial: format!("f {}", "p f ".repeat(n).trim_end()),
-        success: Success::Exact(format!("f {}", "done f ".repeat(n).trim_end())),
+        title: "Independence, two events".to_owned(),
+        file: "Independence.ali",
+        type_name: "Independence",
+        initial: "a b".to_owned(),
+        success: Success::Exact("c d".to_owned()),
     }
 }
 
-/// `w s ... s e` with `m` track segments. No success state exists.
-fn corridor(m: usize) -> Bench {
+/// Amar's dining philosophers: a five-seat ring encoded as a 2-diagram,
+/// forks hopping between the `table` and `loop` strands. Eating is
+/// repeatable and the hops are reversible, so the state graph is cyclic
+/// and the interleaving space infinite; the run reports the reachable
+/// states and the terminal verdicts (the classic all-grab-left deadlock)
+/// before bailing on the count. There is no success state in the `Table`
+/// dynamics — a meal leaves its mark only under the `Eval` map into
+/// `Outcome` — so success is `Never`.
+fn dining() -> Bench {
     Bench {
-        title: format!("Corridor, {m} segments"),
-        file: "Corridor.ali",
-        type_name: "Corridor",
-        initial: format!("w {}e", "s ".repeat(m)),
+        title: "Dining philosophers, 5-seat ring (2-diagram)".to_owned(),
+        file: "DiningPhilosophers.ali",
+        type_name: "Table",
+        initial: "5places".to_owned(),
         success: Success::Never,
-    }
-}
-
-/// Three philosophers around a table, the ring encoded by fork sorts.
-/// Success is everyone fed, with the free forks drifting anywhere.
-fn ring() -> Bench {
-    Bench {
-        title: "Philosophers, 3 around a table".to_owned(),
-        file: "PhilosophersRing.ali",
-        type_name: "PhilosophersRing",
-        initial: "f1 p1 f2 p2 f3 p3".to_owned(),
-        success: Success::AllOf(&["done1", "done2", "done3"]),
     }
 }
 
@@ -259,7 +257,7 @@ fn sample(
 
 /// Is the state graph acyclic? Iterative three-colour DFS. Acyclicity
 /// is what makes interleaving counting and exhaustive trace walks possible;
-/// structural cells (the ring's fork drift) break it.
+/// structural cells (e.g. drift rules) would break it.
 fn is_acyclic(start: &str, succs: &HashMap<String, Vec<String>>) -> bool {
     #[derive(Clone, Copy, PartialEq)]
     enum Colour {
@@ -390,10 +388,10 @@ fn run(bench: &Bench) {
         );
     }
 
-    // Schedule counting and trace classification need a finite interleaving
-    // space, i.e. an acyclic state graph. Structural cells (the ring's
-    // fork drift) make it cyclic: counting traces then means rewriting
-    // modulo the structural layer, which the engine does not yet do.
+    // Interleaving counting and trace classification need a finite
+    // interleaving space, i.e. an acyclic state graph. Structural cells
+    // (drift rules) would make it cyclic: counting traces then means
+    // rewriting modulo the structural layer, which the engine does not yet do.
     if !is_acyclic(&states[0].0, &succs) {
         println!("   interleavings: infinite — the drift cells make the state graph cyclic;");
         println!("              trace counting here means rewriting modulo the structural");
@@ -446,16 +444,7 @@ fn run(bench: &Bench) {
 }
 
 fn main() {
-    for bench in [
-        philosophers(2),
-        philosophers(3),
-        philosophers(4),
-        philosophers(5),
-        ring(),
-        corridor(4),
-        corridor(10),
-        corridor(40),
-    ] {
+    for bench in [independence(), dining()] {
         run(&bench);
     }
 }
