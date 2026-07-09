@@ -1,4 +1,4 @@
-//! Reachable-state and deadlock analysis of Amar's dining philosophers —
+//! Reachable-state and deadlock analysis of the dining philosophers —
 //! a 5-seat ring as a 2-diagram — using the engine's session API alone.
 //!
 //! Run: cargo run -p alifib --release --example trace_search

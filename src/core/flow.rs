@@ -8,7 +8,7 @@ use crate::aux::intset::{self, IntSet};
 use crate::aux::graph::DiGraph;
 use super::ogposet::{self, Ogposet, Sign};
 
-/// Constructs the k-flow graph **F**_k(U) (Definition 61 of Hadzihasanovic–Kessler).
+/// Constructs the k-flow graph **F**_k(U).
 ///
 /// **Nodes** — all cells of `g` at dimensions strictly greater than `k`.  The returned
 /// `node_map[i] = (dim, pos)` gives the `(dimension, position)` of node `i` in `g`.

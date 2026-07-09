@@ -75,6 +75,10 @@ web-zip out="alifib-web.zip": web-wasm
     (cd "$stage" && zip -qr "$out" .)
     echo "wrote $out ($(du -h "$out" | cut -f1)) — drag it into Cloudflare Pages"
 
+# Anonymized source archive (committed HEAD) for double-blind submission.
+anonymized-source out="alifib.zip":
+    git archive --format=zip -o {{out}} HEAD . ':(exclude).claude' ':(exclude)docs' ':(exclude)AGENTS.md' ':(exclude)CLAUDE.md'
+
 # ── Wiki (Quartz) ───────────────────────────────────────────────────────────
 # Build the wiki to docs/quartz/public/.  Run once to produce static HTML.
 wiki:

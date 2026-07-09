@@ -13,7 +13,7 @@
 //! codimension-2 and codimension-3 face cascades respectively, with cycles
 //! removed to ensure acyclicity.
 //!
-//! The construction follows Hadzihasanovic's `rewalt` library.
+//! The construction follows the reference `rewalt` library.
 
 use crate::aux::Tag;
 use crate::aux::graph::DiGraph;

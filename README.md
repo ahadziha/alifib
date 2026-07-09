@@ -48,15 +48,10 @@ complex — so one small language covers strikingly different ground:
 
 ## Background
 
-The mathematics is Amar Hadzihasanovic's theory of **directed complexes** and
-**molecules** — developed in his book *Combinatorics of higher-categorical
-diagrams*, building on foundations laid by Richard Steiner. The data structures
-and algorithms grew out of joint work with **Diana Kessler**; the
-higher-categorical semantics (a model of (∞, n)-categories carried by directed
-complexes) from joint work with **Clémence Chanavat**. alifib is developed as part
-of [ARIA](https://www.aria.org.uk/)'s *Safeguarded AI* programme; the interpreter
-and proof assistant are joint work with **Alex Kavvos** (University of Bristol),
-with contributions from **Wessel de Weijer**.
+The mathematics is the theory of **directed complexes** and **molecules**. alifib
+implements this theory as an interpreter and interactive proof assistant for
+directed higher-categorical rewriting. See the accompanying paper for the
+mathematical background and references.
 
 The name is borrowed from *Alifib*, a song on Robert Wyatt's 1974 album
 *Rock Bottom*.
