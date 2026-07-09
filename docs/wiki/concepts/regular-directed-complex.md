@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-10
+last-touched: 2026-07-10
 ---
 
 # Regular directed complex
@@ -97,12 +97,18 @@ partly-proven lemma, not a theorem about the code.
 ## No identities
 
 The most consequential everyday fact about RDCs is what they *lack*:
-identity cells. A degenerate $(k{+}1)$-cell over a $k$-cell $U$ would need
-input and output boundaries both equal to $U$, making the two hemispheres of
-its boundary coincide instead of meeting along a rim — not round, so its
-closure is no atom. alifib inherits this wholesale; the consequence for
-[[partial-map|partial maps]] — dimension-*lowering* collapse is fine, only
-dimension-*raising* is barred — is [[0001-no-identities]].
+identity cells. Be careful what that means. It does **not** mean a cell's
+input may not equal its output — an endo-cell $\alpha : U \Rightarrow U$ is
+legal (the rewrite construction glues two *disjoint copies* of $U$ along the
+rim; `id : mor -> mor` in `examples/Bicategory.ali` is one), and such a cell
+is an ordinary directed generator, not a unit. What is excluded is a
+*degenerate* $(k{+}1)$-cell — one whose two hemispheres are the **same
+subshape** of its boundary, coinciding instead of meeting along a rim: that
+boundary is not round, so its closure is no atom ([[atom]]). Nor does it
+mean composition lacks units: pasting is unital, with the boundaries
+themselves as the units. alifib inherits all of this wholesale; the
+consequence for [[partial-map|partial maps]] — dimension-*lowering* collapse
+is fine, only dimension-*raising* is barred — is [[0001-no-identities]].
 
 ## Implementation
 

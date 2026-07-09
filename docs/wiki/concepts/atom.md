@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-10
+last-touched: 2026-07-10
 ---
 
 # Atom
@@ -43,9 +43,21 @@ slowly. You are given two $n$-dimensional molecules $U$ and $V$.
 The result is an atom of dimension $n+1$ whose input boundary is $U$ and
 output boundary is $V$ (Lemma 3.2.3); it is itself round (3.2.9), which is
 what lets the construction iterate to the next dimension. The base case
-$n = 0$ is the point, given by no data. There are no identity atoms — a
-degenerate cell over $U$ would need $\partial^- = \partial^+$, which
-roundness forbids ([[0001-no-identities]]).
+$n = 0$ is the point, given by no data.
+
+There are no identity atoms — but be precise about why, because the tempting
+short version ("$\partial^- = \partial^+$ is forbidden") is **false**. A cell
+with input equal to output *as diagrams* is perfectly legal: step 3 glues two
+**disjoint copies** along the rim, so an endo-cell like `id : mor -> mor`
+(`examples/Bicategory.ali`) elaborates fine. But such a cell is a genuine
+directed generator, not an identity — pasting with it strictly grows a
+diagram, nothing makes it behave as a unit, and that is exactly why the
+corpus builds its unit-like coherence (`Idem`, the unitors) by hand. What
+cannot exist is a cell that *represents* the identity: a degenerate filler
+whose two hemispheres are the *same subshape*, coinciding instead of meeting
+along a rim — that boundary is a ball, not a sphere, and step 1's roundness
+requirement excludes it. None of this makes composition non-unital: pasting
+has units, the boundaries themselves ([[0001-no-identities]]).
 
 Note the asymmetry of the two gates in the molecule grammar: (Paste) needs
 *any* isomorphism of the shared boundary; (Atom) needs one that *respects

@@ -872,3 +872,60 @@ Closing checklist: bridge `## Mathematics` intact; `last-touched: 2026-06-16`,
 (still accurate) so no row edit; no new wiki-links introduced. The holes pages
 (`hole`, `partial-map`, `core-partial-map`, `interpreter`, `interactive-session`,
 `aux`) were left untouched as directed — no contradictions found.
+
+## [2026-07-10] lint | principal pasting is highest *non-trivial*, not highest possible
+
+[[diagram]] and [[molecule]] described the principal dimension
+$k = \min(\dim U, \dim V) - 1$ as "the highest dimension at which the two can
+meet" — wrong: `Diagram::pastability` clamps $k$ by `top_dim`, so pasting at
+$k \ge \min$ is accepted, defined exactly when the smaller diagram *is* the
+other's $k$-boundary, and then unital (returns the larger unchanged — Lemma
+3.3.7's degenerate cases, boundaries as units per [[0001-no-identities]]).
+Both pages now say "highest dimension at which the paste is non-trivial" and
+spell out the degenerate regime. The paper (`docs/paper/language.tex`) already
+had the correct wording; the paper wiki makes no maximality claim. Caught by
+Alex.
+
+## [2026-07-10] doc | degenerate-paste regime recorded in full (both wikis)
+
+Follow-up to the lint entry above, at Alex's direction: the compressed fix is
+expanded into a full account. [[diagram]] gains the section "Above the
+principal dimension: units, not errors" — worked example
+$f \#_1 \alpha = \alpha$ for $\alpha : f \Rightarrow g$, the
+$\partial^\pm_k U = U$ clamp identity, definedness condition (smaller diagram
+*is* the other's $k$-input, shape and labels), boundary-as-unit reading via
+[[0001-no-identities]], the $U \#_k U = U$ end case, and the code pin
+(`Diagram::pastability`'s `k.min(top_dim())`;
+`boundary_normal_clamps_history_to_top_dim` on the boundary side).
+[[molecule]] carries the same account compactly and cross-links the example.
+Paper wiki: new section "Principal pasting is highest *non-trivial*, not
+highest possible" in `docs/paper/alifib-paper-wiki/concepts/pasting.md`,
+engine mechanism pinned back here, Lem. 3.3.7 pin inherited from [[molecule]]
+(flagged as not re-verified — book PDF unavailable this session).
+
+## [2026-07-10] lint | "no units" sweep — endo-cells vs identity cells
+
+Directed sweep (Alex) after the principal-pasting fix: hunt statements that
+overclaim "no units". Two engine pages stated a falsehood: [[atom]] and
+[[regular-directed-complex]] both said an identity cell is impossible because
+"$\partial^- = \partial^+$" is "forbidden by roundness". False — the rewrite
+construction glues two *disjoint copies* along the rim, so endo-cells with
+input = output as diagrams are legal and load-bearing in the corpus
+(`id : mor -> mor`, `examples/Bicategory.ali`); they are ordinary directed
+generators, not units. What roundness excludes is the *degenerate filler*
+whose hemispheres are the same subshape (ball, not sphere). Both pages
+rewritten to draw the three-way distinction (endo-cell / degenerate filler /
+boundary-unit), consistent with [[0001-no-identities]] (which was already
+precise). Paper wiki sharpened in the same pass: `soundness` ("refuses units"
+→ "refuses unit cells" + precision note), `strictness-regimes` ("unit-less" →
+"no unit cells" + unitality clause), `eckmann-hilton`, `07-related-work`
+("unit-less" next to Frobenius invited η/ε confusion). `08-discussion` beat 3
+carries a precision flag for the revision pass — `discussion.tex` says
+"unit-less" twice (glossed by the identity-cell sentence, so defensible);
+whether the landed prose gets a clarifying clause is Alex's call, not edited.
+Left as-is, judged correct in context: `trs-encoding` ("η, ε would be maps
+I→I, i.e. identities" — right because the canonical algebra structure on $I$
+has $\eta = \mathrm{id}_I$), `bicategory.md` ("refuses strict units", names
+the degenerate cell), guarantees G12 ("no added units" = no added unit
+cells), THREADS/CONCEPTS "unit-less layer" (Amar's own term of art, raw
+sources immutable).

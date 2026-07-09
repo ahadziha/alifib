@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-10
+last-touched: 2026-07-10
 ---
 
 # Molecule
@@ -93,8 +93,16 @@ exactly when the value was minted by `cell`, not assembled by `paste`.
 
 Surface syntax: juxtaposition `U V` is *principal pasting*, elaborated by
 `interpret_sequence_as_term` (`src/interpreter/diagram.rs`) as $\#_k$ at
-$k = \min(\dim U, \dim V) - 1$, the highest dimension at which the two can
-meet; explicit `#n` goes through the same `Diagram::paste`.
+$k = \min(\dim U, \dim V) - 1$ — the highest dimension at which the paste is
+non-trivial, **not** the highest at which it is defined. Higher $k$ is still
+accepted: the `top_dim` clamp above makes $\partial^\pm_k U = U$ for
+$k \geq \dim U$, so the pastability condition collapses to "the
+lower-dimensional diagram *is* the other's $k$-input, in shape and labels",
+and the pushout then returns the larger diagram unchanged — the smaller acts
+as a boundary-unit (no identity cells; [[0001-no-identities]]). These are
+precisely Lemma 3.3.7's degenerate cases; the worked example
+($f \#_1 \alpha = \alpha$ for $\alpha : f \Rightarrow g$) is in [[diagram]].
+Explicit `#n` goes through the same `Diagram::paste`.
 
 ## Related
 

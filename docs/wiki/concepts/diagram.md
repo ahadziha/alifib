@@ -1,7 +1,7 @@
 ---
 kind: concept
 status: stable
-last-touched: 2026-06-10
+last-touched: 2026-07-10
 ---
 
 # Diagram
@@ -80,8 +80,41 @@ unital with the boundaries themselves acting as units — there are no
 identity cells to do that job ([[0001-no-identities]]).
 
 The surface juxtaposition `f g` is **principal pasting**: shorthand for
-$f \#_k g$ at $k = \min(\dim f, \dim g) - 1$, the highest dimension at which
-the two can meet. An explicit `#n` is the general $\#_n$.
+$f \#_k g$ at $k = \min(\dim f, \dim g) - 1$. An explicit `#n` is the general
+$\#_n$. The principal dimension is *not* the highest $k$ at which these two
+diagrams can be pasted — it is the highest $k$ at which the paste is
+**non-trivial**. That distinction is easy to get wrong (this page once did),
+so the next section works it out.
+
+### Above the principal dimension: units, not errors
+
+Take $f : a \to b$ and a 2-cell $\alpha : f \Rightarrow g$. Their principal
+dimension is $\min(1, 2) - 1 = 0$, so what is `f #1 alpha` — out of range for
+the 1-dimensional $f$? No. Boundaries clamp: for $k \geq \dim U$ the
+$k$-boundary of $U$ is $U$ itself, so the pastability condition
+$\partial^+_1 f = \partial^-_1 \alpha$ becomes $f = \partial^-_1 \alpha$. The
+paste above the principal dimension is therefore *defined*, but only when the
+lower-dimensional diagram literally **is** the other's $k$-input (in shape
+*and* labels). And when it is, the pushout glues $\alpha$ to a subdiagram
+$\alpha$ already contains, so the result is $\alpha$ unchanged:
+$f \#_1 \alpha = \alpha$. The smaller diagram acts as a **boundary-unit** —
+this is the unitality above made concrete, and it is exactly why alifib needs
+no identity cells: boundaries themselves do the unit's job
+([[0001-no-identities]]). Pushing further, at $k \geq$ both dimensions the
+condition degenerates to $f = g$ and $f \#_k f = f$.
+
+So the picture across $k$: below the principal dimension, pastes genuinely
+combine (two 2-cells at $\#_0$ lie side by side); at it, they stack; at
+$\min(\dim f, \dim g)$ and above, a defined paste only ever returns the
+larger diagram, absorbing the smaller as a unit.
+
+In code the clamp is one expression: `Diagram::pastability`
+(`src/core/diagram.rs`, *internal*) computes both boundaries at
+`k.min(top_dim())`, so an over-large `k` is never rejected as out of range —
+a paste fails only the usual way, when the clamped boundaries disagree
+(*"boundaries do not match"*). The boundary-side clamp is pinned by the test
+`boundary_normal_clamps_history_to_top_dim`; the degenerate pastes are the
+book's Lemma 3.3.7 cases (see [[molecule]]).
 
 ## Atoms as cells
 
