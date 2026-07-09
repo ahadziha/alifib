@@ -31,3 +31,7 @@ serde_json = "1"
 
 [dev-dependencies]
 insta = { version = "1", features = ["filters"] }
+
+[[example]]
+name = "trace_search"
+path = "analysis/trace_search.rs"

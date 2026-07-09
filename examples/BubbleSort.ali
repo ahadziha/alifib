@@ -1,0 +1,25 @@
+(* Bubble sort on the Dutch national flag (red < white < blue): a word
+   sorts to flag order by directed adjacent-swap 2-cells. Disjoint swaps
+   interchange — the three schedules below elaborate to equal diagrams. *)
+
+@Type
+Sort <<= {
+    pt,
+    red : pt -> pt,   white : pt -> pt,   blue : pt -> pt,
+    wr : white red  -> red white,
+    br : blue red   -> red blue,
+    bw : blue white -> white blue
+}
+
+@Sort
+let left_to_right =
+    (wr blue white blue red)
+    #1 (red white bw blue red)
+    #1 (red white white blue br),
+
+let right_to_left =
+    ((white red blue white) br)
+    #1 ((white red) bw (red blue))
+    #1 (wr (white blue red blue)),
+
+let all_at_once = wr #0 bw #0 br

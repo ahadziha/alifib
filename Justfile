@@ -18,22 +18,23 @@ web *ARGS:
     just web-js
     cargo run -- web {{ARGS}}
 
-# Same as `web`, but bundle the frontend with Bun instead of npm.
-web-bun *ARGS:
-    just web-js-bun
-    cargo run -- web {{ARGS}}
-
-# Bundle the frontend JS (CodeMirror + app) with esbuild.
-web-js:
-    cd web/frontend && npm install --silent && npm run build
-
-# Bundle the frontend JS with Bun (drop-in for `web-js`).
-web-js-bun:
-    cd web/frontend && bun install --silent && bun run build
+# Bundle the frontend JS (CodeMirror + app) with esbuild, running the named
+# package.json script ("build" by default, "watch" to rebuild on change).
+# Prefers Bun if present, otherwise npm — both drive the same esbuild scripts.
+web-js script="build":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd web/frontend
+    if command -v bun >/dev/null 2>&1; then
+        bun install --silent && bun run {{script}}
+    elif command -v npm >/dev/null 2>&1; then
+        npm install --silent && npm run {{script}}
+    else
+        echo "web-js: need bun or npm on PATH" >&2; exit 1
+    fi
 
 # Watch frontend JS for changes and rebuild automatically.
-web-js-watch:
-    cd web/frontend && npm install --silent && npm run watch
+web-js-watch: (web-js "watch")
 
 # Prepare a static WASM deployment under web/frontend/:
 #   - bundle frontend JS with esbuild
@@ -52,6 +53,27 @@ web-wasm:
 # WASM-backed build end-to-end.  Run `just web-wasm` first.
 web-static port="8000":
     cd web/frontend && python3 -m http.server {{port}}
+
+# Package the static WASM build into a self-contained zip for drag-and-drop
+# deployment (Cloudflare Pages, Netlify, any static host).  Builds via
+# `web-wasm`, then stages only the five runtime pieces — index.html, style.css,
+# dist/app.js, the wasm pkg/, and the examples/ tree — leaving node_modules,
+# frontend src, lockfiles, and wasm-pack's type stubs out of the archive.
+web-zip out="alifib-web.zip": web-wasm
+    #!/usr/bin/env bash
+    set -euo pipefail
+    stage=$(mktemp -d)
+    trap 'rm -rf "$stage"' EXIT
+    cp web/frontend/index.html web/frontend/style.css "$stage"/
+    mkdir -p "$stage/dist"
+    cp web/frontend/dist/app.js "$stage/dist"/
+    cp -r web/frontend/pkg "$stage"/pkg
+    rm -f "$stage"/pkg/package.json "$stage"/pkg/.gitignore "$stage"/pkg/*.d.ts
+    cp -r web/frontend/examples "$stage"/examples
+    out=$(cd "$(dirname "{{out}}")" && pwd)/$(basename "{{out}}")
+    rm -f "$out"
+    (cd "$stage" && zip -qr "$out" .)
+    echo "wrote $out ($(du -h "$out" | cut -f1)) — drag it into Cloudflare Pages"
 
 # ── Wiki (Quartz) ───────────────────────────────────────────────────────────
 # Build the wiki to docs/quartz/public/.  Run once to produce static HTML.
