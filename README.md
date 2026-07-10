@@ -28,7 +28,6 @@ operation on it: searching for one diagram inside another.
 
 > **The full story** — what alifib is for, where it comes from, and the vision
 > behind it — is in [`docs/CONCEPTS.md`](docs/CONCEPTS.md).
-> **Try it in your browser**, no install: **<http://compose.ee/alifib>**.
 
 ## What it is for
 

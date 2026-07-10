@@ -77,7 +77,7 @@ web-zip out="alifib-web.zip": web-wasm
 
 # Anonymized source archive (committed HEAD) for double-blind submission.
 anonymized-source out="alifib.zip":
-    git archive --format=zip -o {{out}} HEAD . ':(exclude).claude' ':(exclude)docs' ':(exclude)AGENTS.md' ':(exclude)CLAUDE.md'
+    git archive --format=zip -o {{out}} HEAD . ':(exclude).claude' ':(exclude)docs' ':(exclude)AGENTS.md' ':(exclude)CLAUDE.md' ':(exclude).gitmodules'
 
 # ── Wiki (Quartz) ───────────────────────────────────────────────────────────
 # Build the wiki to docs/quartz/public/.  Run once to produce static HTML.
