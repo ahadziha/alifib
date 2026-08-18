@@ -346,6 +346,7 @@ pub(super) fn boundary(sign: Sign, k: usize, g: &Arc<Ogposet>) -> (Arc<Ogposet>,
 /// roughly highest dimension first, and within each dimension in the order their
 /// input faces were finalised.  This ordering is the key invariant exploited by
 /// [`normalisation`] and [`boundary_traverse`].
+/// TODO: Is the comment "roughly highest dimension first" correct for an input-first traversal?
 ///
 /// Set `mark_normal = true` when the resulting cell ordering is already canonical
 /// so that downstream code can skip re-normalising it.
@@ -381,7 +382,7 @@ pub(super) fn traverse(g: &Arc<Ogposet>, initial_stack: Vec<(usize, IntSet)>, ma
     }
 
     let map_levels = max_dim + 1;
-    let map_sizes: Vec<usize>  = (0..map_levels).map(|d| dc[d].len()).collect();
+    let map_sizes: Vec<usize> = (0..map_levels).map(|d| dc[d].len()).collect();
     let mut map: Vec<Vec<usize>> = map_sizes.iter().map(|&n| vec![0usize; n]).collect();
     let mut next_idx = vec![0usize; map_levels];
     let mut inv: Vec<Vec<usize>> = sizes_g.iter().map(|&n| vec![NO_PREIMAGE; n]).collect();
@@ -406,28 +407,23 @@ pub(super) fn traverse(g: &Arc<Ogposet>, initial_stack: Vec<(usize, IntSet)>, ma
         (d, bs)
     }).collect();
 
-    // Pre-allocate scratch BitSets to avoid per-iteration allocations
+    // Reuse scratch BitSets for the set operations performed on every iteration.
     let mut scratch_in = BitSet::new(0);
     let mut scratch_out = BitSet::new(0);
     let mut scratch_input = BitSet::new(0);
-    let mut scratch_outputs = BitSet::new(0);
-    let mut scratch_singleton = BitSet::new(0);
 
-    while !stack.is_empty() {
-        let dim = stack.last().unwrap().0;
-
-        if stack.last().unwrap().1.is_empty() {
+    while let Some((dim, focus)) = stack.last() {
+        let dim = *dim;
+        if focus.is_empty() {
             stack.pop();
             continue;
         }
-        if stack.last().unwrap().1.iter().all(|p| inv[dim][p] != NO_PREIMAGE) {
+        if focus.iter().all(|p| inv[dim][p] != NO_PREIMAGE) {
             stack.pop();
             continue;
         }
         if dim == 0 {
-            let to_mark: Vec<usize> = stack.last().unwrap().1.iter()
-                .filter(|&p| inv[0][p] == NO_PREIMAGE)
-                .collect();
+            let to_mark: Vec<usize> = focus.iter().filter(|&p| inv[0][p] == NO_PREIMAGE).collect();
             for p in to_mark {
                 do_mark(0, p, &mut map, &mut inv, &mut next_idx);
             }
@@ -435,14 +431,14 @@ pub(super) fn traverse(g: &Arc<Ogposet>, initial_stack: Vec<(usize, IntSet)>, ma
             continue;
         }
 
-        let univ_lower = sizes_g.get(dim - 1).copied().unwrap_or(0);
+        let univ_lower = sizes_g[dim - 1];
 
         scratch_in.reset(univ_lower);
-        for p in stack.last().unwrap().1.iter() {
+        for p in focus.iter() {
             for &f in &g.faces_in[dim][p]  { scratch_in.insert(f); }
         }
         scratch_out.reset(univ_lower);
-        for p in stack.last().unwrap().1.iter() {
+        for p in focus.iter() {
             for &f in &g.faces_out[dim][p] { scratch_out.insert(f); }
         }
 
@@ -455,26 +451,22 @@ pub(super) fn traverse(g: &Arc<Ogposet>, initial_stack: Vec<(usize, IntSet)>, ma
             continue;
         }
 
-        if stack.last().unwrap().1.len() == 1 {
-            let q = stack.last().unwrap().1.iter().next().unwrap();
+        if focus.len() == 1 {
+            let q = focus.iter().next().unwrap();
             do_mark(dim, q, &mut map, &mut inv, &mut next_idx);
-            scratch_outputs.reset(univ_lower);
-            for &f in &g.faces_out[dim][q] { scratch_outputs.insert(f); }
-            if scratch_outputs.iter().any(|p| inv[dim - 1][p] == NO_PREIMAGE) {
-                let outputs = scratch_outputs.clone();
-                stack.pop();
-                stack.push((dim - 1, outputs));
-            } else {
-                stack.pop();
+            let has_unmarked_output = scratch_out.iter().any(|p| inv[dim - 1][p] == NO_PREIMAGE);
+            stack.pop();
+            if has_unmarked_output {
+                stack.push((dim - 1, scratch_out.clone()));
             }
             continue;
         }
 
         // Find best candidate: the unmarked cell whose earliest-marked input face
         // has the lowest new index, breaking ties by old cell index.
+        // TODO: If a tie is possible, is breaking it by the old cell index still intrinsic?
         let mut best: Option<(usize, usize)> = None;
         {
-            let focus = &stack.last().unwrap().1;
             for x in scratch_in.iter() {
                 let order = inv[dim - 1][x];
                 if order == NO_PREIMAGE { continue; }
@@ -495,14 +487,12 @@ pub(super) fn traverse(g: &Arc<Ogposet>, initial_stack: Vec<(usize, IntSet)>, ma
         }
 
         if let Some((_, q)) = best {
-            let univ = sizes_g.get(dim).copied().unwrap_or(0);
-            scratch_singleton.reset(univ);
-            scratch_singleton.insert(q);
-            let singleton = scratch_singleton.clone();
+            let mut singleton = BitSet::new(sizes_g[dim]);
+            singleton.insert(q);
             stack.push((dim, singleton));
         } else {
-            let q_opt = stack.last().unwrap().1.iter()
-                .find(|&p| inv[dim][p] == NO_PREIMAGE);
+            // TODO: When does this branch happen?
+            let q_opt = focus.iter().find(|&p| inv[dim][p] == NO_PREIMAGE);
             if let Some(q) = q_opt {
                 do_mark(dim, q, &mut map, &mut inv, &mut next_idx);
                 stack.last_mut().unwrap().1.remove(q);
@@ -512,8 +502,8 @@ pub(super) fn traverse(g: &Arc<Ogposet>, initial_stack: Vec<(usize, IntSet)>, ma
         }
     }
 
-    let faces_in   = remap_adjacency(map_levels, &map, &inv, -1, &g.faces_in);
-    let faces_out  = remap_adjacency(map_levels, &map, &inv, -1, &g.faces_out);
+    let faces_in    = remap_adjacency(map_levels, &map, &inv, -1, &g.faces_in);
+    let faces_out   = remap_adjacency(map_levels, &map, &inv, -1, &g.faces_out);
     let cofaces_in  = remap_adjacency(map_levels, &map, &inv,  1, &g.cofaces_in);
     let cofaces_out = remap_adjacency(map_levels, &map, &inv,  1, &g.cofaces_out);
 
@@ -550,6 +540,18 @@ fn build_stack_extremal(sign: Sign, g: &Ogposet) -> Vec<(usize, IntSet)> {
 /// in ascending order.  Used as the initial stack for paste boundary traversal.
 fn build_stack_paste(sign: Sign, g: &Ogposet, max_dim: usize) -> Vec<(usize, IntSet)> {
     (0..=max_dim).map(|k| (k, g.extremal(sign, k))).collect()
+}
+
+/// Build the stack obtained by starting an intrinsic traversal of the signed
+/// `max_dim`-boundary and descending through all of its input boundaries.
+///
+/// The last vector element is the top of the runtime stack. Consequently the
+/// level-0 input boundary is processed first, followed by the higher input
+/// boundaries, and finally by the signed boundary at `max_dim`.
+fn build_stack_boundary(sign: Sign, g: &Ogposet, max_dim: usize) -> Vec<(usize, IntSet)> {
+    std::iter::once((max_dim, g.extremal(sign, max_dim)))
+        .chain((0..max_dim).rev().map(|k| (k, g.extremal(Sign::Input, k))))
+        .collect()
 }
 
 /// Build the traversal stack for the shared boundary of an n-cell:
