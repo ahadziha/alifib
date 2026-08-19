@@ -536,14 +536,9 @@ fn build_stack_extremal(sign: Sign, g: &Ogposet) -> Vec<(usize, IntSet)> {
     (0..=d).map(|k| (k, g.extremal(sign, k))).rev().collect()
 }
 
-/// Build a traversal stack seeded with sign-extremal cells at levels 0..=`max_dim`,
-/// in ascending order.  Used as the initial stack for paste boundary traversal.
-fn build_stack_paste(sign: Sign, g: &Ogposet, max_dim: usize) -> Vec<(usize, IntSet)> {
-    (0..=max_dim).map(|k| (k, g.extremal(sign, k))).collect()
-}
-
 /// Build the stack obtained by starting an intrinsic traversal of the signed
 /// `max_dim`-boundary and descending through all of its input boundaries.
+/// Used as the initial stack for paste boundary traversal.
 ///
 /// The last vector element is the top of the runtime stack. Consequently the
 /// level-0 input boundary is processed first, followed by the higher input
@@ -579,7 +574,7 @@ fn build_stack_cell_n(g: &Ogposet) -> Vec<(usize, IntSet)> {
 pub(super) fn boundary_traverse(sign: Sign, k: usize, g: &Arc<Ogposet>) -> (Arc<Ogposet>, Embedding) {
     let effective_k = if g.dim < 0 { 0 } else { k.min(g.dim as usize) };
     match sign {
-        Sign::Input | Sign::Output => traverse(g, build_stack_paste(sign, g, effective_k), true),
+        Sign::Input | Sign::Output => traverse(g, build_stack_boundary(sign, g, effective_k), true),
         Sign::Both => traverse(g, build_stack_cell_n(g), false),
     }
 }
