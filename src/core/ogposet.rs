@@ -546,10 +546,16 @@ fn build_stack_extremal(sign: Sign, g: &Ogposet) -> Vec<(usize, IntSet)> {
     (0..=d).map(|k| (k, g.extremal(sign, k))).rev().collect()
 }
 
-/// Build a traversal stack seeded with sign-extremal cells at levels 0..=`max_dim`,
-/// in ascending order.  Used as the initial stack for paste boundary traversal.
+/// Build a traversal stack for the sign-side boundary at `max_dim`: sign-extremal
+/// cells at level `max_dim`, *input*-extremal cells below (the lower levels seed
+/// the canonical input-first order regardless of which side is being taken).
+/// Descending, like [`build_stack_extremal`]: the stack is consumed from the end,
+/// so lower dimensions are processed first.
 fn build_stack_paste(sign: Sign, g: &Ogposet, max_dim: usize) -> Vec<(usize, IntSet)> {
-    (0..=max_dim).map(|k| (k, g.extremal(sign, k))).collect()
+    (0..=max_dim)
+        .map(|k| (k, g.extremal(if k == max_dim { sign } else { Sign::Input }, k)))
+        .rev()
+        .collect()
 }
 
 /// Build the traversal stack for the shared boundary of an n-cell:

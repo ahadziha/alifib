@@ -158,6 +158,23 @@ fn total_composite_map() {
     assert!(graph.diagrams.contains(&Cell { name: "mid".into(), input: "A.t".into(), output: "B.s".into() }));
 }
 
+/// `WhiskerBoundary.ali` infers a total map sending a 3-cell to a whiskered
+/// composite `x.top #0 y.top`.  The boundary check at codimension 2 compares the
+/// same boundary computed two ways — `normal ∘ boundary` against
+/// `boundary_normal` — which must agree cell-for-cell.  They diverged when
+/// `build_stack_paste` seeded the traversal with output-extremal cells at every
+/// level instead of only the top one, so this pins the seeding convention:
+/// sign-extremal at the boundary dimension, input-extremal below.
+#[test]
+fn whiskered_codim2_boundary_normalises_canonically() {
+    let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("WhiskerBoundary.ali"))
+        .ok()
+        .expect("WhiskerBoundary.ali should interpret without errors");
+    let norm = file.state.normalize();
+    let whisker3 = norm.modules[0].types.iter().find(|t| t.name == "Whisker3").unwrap();
+    assert!(whisker3.maps.contains(&Map { name: "F".into(), domain: "O3".into(), holes: vec![] }));
+}
+
 #[test]
 fn tutorial_pair_maps() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("Tutorial.ali"))
