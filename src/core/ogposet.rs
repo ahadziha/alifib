@@ -160,11 +160,11 @@ impl Ogposet {
     /// For a pure molecule of dimension n with m top-cells, this is n-2 if
     /// m <= 1, and n-1 if m > 1. For non-pure ogposets, maximal elements at
     /// intermediate dimensions are counted too.
+    /// TODO: This comment is wrong, lydim = -1 iff the molecule is an atom
     pub(crate) fn layering_dimension(&self) -> isize {
         if self.dim < 0 { return -1; }
         let d = self.dim as usize;
-        // k = -1: count all maximal elements at dim >= 1
-        // k = j (j >= 0): count all maximal elements at dim >= j+2
+        // Count all maximal elements at dim >= k+2 (where k >= -1)
         for k in -1..=(d as isize - 1) {
             let min_dim = (k + 2) as usize; // dimensions strictly > k+1
             let count: usize = (min_dim..=d)
@@ -187,6 +187,7 @@ impl Ogposet {
 
     /// True if the ogposet is "round": the input and output interiors are disjoint
     /// at every dimension, as required for a well-formed diagram boundary.
+    /// TODO: Doesn't check that the ogposet is globular (but this is always true for molecules).
     pub fn is_round(&self) -> bool {
         if self.dim <= 0 { return true; }
         if !self.is_pure() { return false; }
@@ -321,11 +322,13 @@ pub(super) fn boundary(sign: Sign, k: usize, g: &Arc<Ogposet>) -> (Arc<Ogposet>,
         }
     }
 
-    let faces_in   = remap_adjacency(dims_b, &forward, &inv_dom, -1, &g.faces_in);
-    let faces_out  = remap_adjacency(dims_b, &forward, &inv_dom, -1, &g.faces_out);
+    let faces_in    = remap_adjacency(dims_b, &forward, &inv_dom, -1, &g.faces_in);
+    let faces_out   = remap_adjacency(dims_b, &forward, &inv_dom, -1, &g.faces_out);
     let cofaces_in  = remap_adjacency(dims_b, &forward, &inv_dom,  1, &g.cofaces_in);
     let cofaces_out = remap_adjacency(dims_b, &forward, &inv_dom,  1, &g.cofaces_out);
 
+    // TODO: For a general ogposet, the dimension of the k-boundary can be less than k, in which case this line would be wrong.
+    // For molecules this is fine.
     let sub = Arc::new(Ogposet::make(k as isize, faces_in, faces_out, cofaces_in, cofaces_out));
 
     let full_levels = sizes_g.len();
@@ -520,6 +523,7 @@ pub(super) fn traverse(g: &Arc<Ogposet>, initial_stack: Vec<(usize, IntSet)>, ma
 /// input-first traversal order.  Returns the normalised ogposet and the
 /// embedding that maps new indices to old ones.  Returns identity if `g` is
 /// already normal; otherwise recomputed on every call (no cache).
+/// TODO: Assumes the ogposet is a molecule. Normalisation would require graph isomorphism in general.
 pub(super) fn normalisation(g: &Arc<Ogposet>) -> (Arc<Ogposet>, Embedding) {
     if g.is_normal() {
         return (Arc::clone(g), Embedding::id(Arc::clone(g)));
@@ -674,6 +678,7 @@ pub(super) fn closure(g: &Ogposet, seeds: &[(usize, &[usize])]) -> Vec<BitSet> {
 
 /// Compute Δ^sign_k(x) for a single cell x = (dim, pos): the set of k-dimensional
 /// cells in the sign-side k-boundary of the atom cl{x}.
+/// TODO: cl{x} is not always an atom if g is a general ogposet.
 ///
 /// For the common case `dim == k+1`, this directly reads the face table.
 /// For `dim > k+1`, it constructs the atom via `traverse` and calls `extremal`.
@@ -684,6 +689,7 @@ pub(super) fn signed_k_boundary_of_cell(
     dim: usize,
     pos: usize,
 ) -> IntSet {
+    // TODO: If dim == k, this should return {x}, not the empty ogposet.
     if dim <= k {
         return vec![];
     }
