@@ -133,7 +133,7 @@ pub(super) fn multi_pushout(base: &Arc<Ogposet>, spans: &[Span]) -> MultiPushout
                 if preimage != NO_PREIMAGE {
                     let target_idx = f_map.get(d)
                         .and_then(|row| row.get(preimage))
-                        .copied().unwrap_or(0);
+                        .copied().unwrap_or(0); // TODO: Does this default value make sense? Why not panic?
                     inr_map[d][p] = target_idx;
                     inr_inv[d][target_idx] = p;
                 } else {

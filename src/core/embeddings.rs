@@ -1,6 +1,6 @@
 //! Embeddings between oriented graded posets.
 //!
-//! An [`Embedding`] is an injective, dimension-preserving map of ogposets: it
+//! An [`Embedding`] is an injective, structure-preserving map of ogposets: it
 //! records both the forward map (`map`) and its partial inverse (`inv`), using
 //! [`NO_PREIMAGE`] as a sentinel for cells that have no preimage.
 
