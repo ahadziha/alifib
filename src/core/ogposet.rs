@@ -426,6 +426,7 @@ pub(super) fn traverse(g: &Arc<Ogposet>, initial_stack: Vec<(usize, IntSet)>, ma
             continue;
         }
         if dim == 0 {
+            // TODO: A 0-dimensional molecule is just a single point; so to_mark will only ever contain one thing
             let to_mark: Vec<usize> = focus.iter().filter(|&p| inv[0][p] == NO_PREIMAGE).collect();
             for p in to_mark {
                 do_mark(0, p, &mut map, &mut inv, &mut next_idx);
