@@ -310,55 +310,52 @@ fn interpret_run_auto(
     diagram_ast: &Spanned<ast::Diagram>,
     span: Span,
 ) -> (Option<Component>, InterpResult) {
-    let (diag_opt, result) = interpret_diagram(context, scope, diagram_ast);
+    let (diag_opt, mut result) = interpret_diagram(context, scope, diagram_ast);
     let Some(initial) = diag_opt else { return (None, result); };
     if result.has_errors() { return (None, result); }
 
-    let n = initial.top_dim();
-    let rule_patterns = match build_rule_patterns(scope, n, false) {
-        Ok(rp) => rp,
-        Err(e) => return fail(context, span, format!("run auto: {}", e)),
-    };
+    match run_auto(scope, &initial) {
+        Ok(proof) => (Some(Component::Value(Term::Diag(proof))), result),
+        Err(error) => {
+            result.add_error(make_error(span, format!("run auto: {}", error)));
+            (None, result)
+        }
+    }
+}
 
-    let mut current = initial.clone();
+fn run_auto(scope: &Complex, initial: &Diagram) -> Result<Diagram, String> {
+    let n = initial.top_dim();
+    let rule_patterns = build_rule_patterns(scope, n, false)?;
+    let mut current = Diagram::normal(initial);
     let mut steps: Vec<Diagram> = Vec::new();
 
     for _ in 0..AUTO_STEP_LIMIT {
-        match greedy_parallel_auto_step(scope, &rule_patterns, &current) {
-            Ok(Some(pr)) => {
-                match Diagram::boundary(DiagramSign::Output, n, &pr.step) {
-                    Ok(d) => {
-                        steps.push(pr.step);
-                        current = d;
-                    }
-                    Err(e) => return fail(context, span, format!("run auto: {}", e)),
-                }
+        match greedy_parallel_auto_step(scope, &rule_patterns, &current)? {
+            Some(pr) => {
+                let next = Diagram::boundary_normal(DiagramSign::Output, n, &pr.step)
+                    .map_err(|e| e.to_string())?;
+                steps.push(pr.step);
+                current = next;
             }
-            Ok(None) => break,
-            Err(e) => return fail(context, span, format!("run auto: {}", e)),
+            None => break,
         }
     }
 
-    if steps.len() >= AUTO_STEP_LIMIT {
-        if let Ok(Some(_)) = greedy_parallel_auto_step(scope, &rule_patterns, &current) {
-            return fail(context, span,
-                format!("run auto: did not terminate within {} steps", AUTO_STEP_LIMIT));
-        }
+    if steps.len() >= AUTO_STEP_LIMIT
+        && let Ok(Some(_)) = greedy_parallel_auto_step(scope, &rule_patterns, &current)
+    {
+        return Err(format!("did not terminate within {} steps", AUTO_STEP_LIMIT));
     }
 
     if steps.is_empty() {
-        return (Some(Component::Value(Term::Diag(initial))), result);
+        return Ok(initial.clone());
     }
 
     let mut proof = steps[0].clone();
     for step in &steps[1..] {
-        match Diagram::paste(n, &proof, step) {
-            Ok(d) => proof = d,
-            Err(e) => return fail(context, span, format!("run auto: {}", e)),
-        }
+        proof = Diagram::paste(n, &proof, step).map_err(|e| e.to_string())?;
     }
-
-    (Some(Component::Value(Term::Diag(proof))), result)
+    Ok(proof)
 }
 
 // ---- Assert ----
@@ -710,5 +707,92 @@ mod dotted_expr_tests {
             &eval(&store, &tc, &path, "F.s"),
             &eval(&store, &tc, &path, "A.s"),
         ));
+    }
+}
+
+#[cfg(test)]
+mod run_auto_tests {
+    use super::*;
+    use crate::core::matching::{confirm_candidate, for_each_rule_candidate};
+    use crate::interactive::engine::{eval_diagram_expr, load_file_context, resolve_type};
+    use crate::output::render_diagram;
+    use std::path::PathBuf;
+
+    // Freeze the historical strategy: raw boundaries here must remain raw when
+    // production run_auto starts normalising its initial diagram and advances.
+    fn historical_run_auto(scope: &Complex, initial: &Diagram) -> Result<Diagram, String> {
+        let n = initial.top_dim();
+        let rule_patterns = build_rule_patterns(scope, n, false)?;
+        let mut current = initial.clone();
+        let mut steps = Vec::new();
+        for _ in 0..AUTO_STEP_LIMIT {
+            match greedy_parallel_auto_step(scope, &rule_patterns, &current)? {
+                Some(pr) => {
+                    current = Diagram::boundary(DiagramSign::Output, n, &pr.step)
+                        .map_err(|e| e.to_string())?;
+                    steps.push(pr.step);
+                }
+                None => break,
+            }
+        }
+        if steps.len() >= AUTO_STEP_LIMIT
+            && let Ok(Some(_)) = greedy_parallel_auto_step(scope, &rule_patterns, &current)
+        {
+            return Err(format!("did not terminate within {} steps", AUTO_STEP_LIMIT));
+        }
+        if steps.is_empty() {
+            return Ok(initial.clone());
+        }
+        let mut proof = steps[0].clone();
+        for step in &steps[1..] {
+            proof = Diagram::paste(n, &proof, step).map_err(|e| e.to_string())?;
+        }
+        Ok(proof)
+    }
+
+    #[test]
+    fn run_auto_independent_of_numbering() {
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/Idem.ali").to_string_lossy().into_owned();
+        let (store, path, _) = load_file_context(&fixture).expect("load Idem");
+        let scope = resolve_type(&store, &path, "Idem").expect("Idem type");
+        // Deliberately use one leftmost singleton step from id^4: the greedy
+        // parallel route was not a numbering-sensitive proof witness.
+        let initial = Diagram::normal(&eval_diagram_expr(&store, &scope, &path, "id id id id")
+            .expect("id^4"));
+        let rule_patterns = build_rule_patterns(&scope, 1, false).expect("Idem patterns");
+        let mut singleton = None;
+        for_each_rule_candidate(&scope, &rule_patterns, &initial, |candidate| {
+            if let Some(step) = confirm_candidate(&candidate, &scope, &initial, &rule_patterns) {
+                singleton = Some(step);
+                true
+            } else {
+                false
+            }
+        }).expect("singleton Idem candidates");
+        let singleton = singleton.expect("first confirmed singleton Idem step");
+        assert_eq!(singleton.members.len(), 1);
+        assert_eq!(singleton.image_positions, vec![0, 1]);
+        let d = Diagram::boundary(DiagramSign::Output, 1, &singleton.step)
+            .expect("raw singleton output boundary");
+        assert!(!d.is_normal(), "singleton output must be nonnormal");
+        let normal = Diagram::normal(&d);
+        let historical_proof = historical_run_auto(&scope, &d)
+            .expect("historical proof on raw diagram");
+        let historical_normal_proof = historical_run_auto(&scope, &normal)
+            .expect("historical proof on normal diagram");
+        assert!(!Diagram::isomorphic(&historical_proof, &historical_normal_proof),
+            "singleton output must witness numbering-dependent historical proofs");
+        let proof = run_auto(&scope, &d).expect("production proof on raw diagram");
+        let normal_proof = run_auto(&scope, &normal).expect("production proof on normal diagram");
+        assert!(Diagram::isomorphic(&proof, &normal_proof),
+            "run auto proofs must not depend on input numbering");
+        assert_eq!(render_diagram(&proof, &scope), render_diagram(&normal_proof, &scope));
+        let output = Diagram::boundary(DiagramSign::Output, d.top_dim(), &proof)
+            .expect("proof output boundary");
+        let normal_output = Diagram::boundary(DiagramSign::Output, d.top_dim(), &normal_proof)
+            .expect("normal proof output boundary");
+        assert!(Diagram::isomorphic(&output, &normal_output));
+        assert_eq!(render_diagram(&output, &scope), render_diagram(&normal_output, &scope));
     }
 }

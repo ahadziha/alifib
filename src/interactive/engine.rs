@@ -328,6 +328,7 @@ impl RewriteEngine {
         target_diagram_name: Option<String>,
         backward: bool,
     ) -> Result<Self, String> {
+        let initial_diagram = Diagram::normal(&initial_diagram);
         if let Some(ref target) = target_diagram {
             check_parallel(&initial_diagram, target)?;
         }
@@ -337,7 +338,7 @@ impl RewriteEngine {
             &type_complex, &rule_patterns, &initial_diagram,
         )?;
 
-        Ok(Self {
+        let engine = Self {
             current_diagram: initial_diagram.clone(),
             steps: Vec::new(),
             history: Vec::new(),
@@ -356,7 +357,9 @@ impl RewriteEngine {
             type_complex,
             initial_diagram,
             target_diagram,
-        })
+        };
+        debug_assert!(engine.current_diagram.is_normal());
+        Ok(engine)
     }
 
     /// Resume a session from a proof diagram: decompose it into the rewrite
@@ -427,10 +430,10 @@ impl RewriteEngine {
         } else {
             (Sign::Input, Sign::Output)
         };
-        let initial_diagram = Diagram::boundary(initial_sign, n, &proof)
+        let initial_diagram = Diagram::boundary_normal(initial_sign, n, &proof)
             .map_err(|e| format!("initial boundary: {}", e))?;
         let current_diagram = match steps.last() {
-            Some(last) => Diagram::boundary(step_sign, n, last)
+            Some(last) => Diagram::boundary_normal(step_sign, n, last)
                 .map_err(|e| format!("current boundary: {}", e))?,
             None => initial_diagram.clone(),
         };
@@ -448,7 +451,7 @@ impl RewriteEngine {
         let rewrites = collect_confirmed_matches(&type_complex, &rule_patterns, &current_diagram)?;
         let active_len = steps.len();
 
-        Ok(Self {
+        let engine = Self {
             current_diagram,
             steps,
             history,
@@ -467,7 +470,9 @@ impl RewriteEngine {
             type_complex,
             initial_diagram,
             target_diagram,
-        })
+        };
+        debug_assert!(engine.current_diagram.is_normal());
+        Ok(engine)
     }
 
 }
@@ -475,15 +480,20 @@ impl RewriteEngine {
 // ── Mutating operations ───────────────────────────────────────────────────────
 
 impl RewriteEngine {
-    fn diagram_after_step(&self, step_idx: usize) -> Result<Diagram, String> {
+    fn advance(&self, step: &Diagram) -> Result<Diagram, String> {
         let n = self.initial_diagram.top_dim();
-        Diagram::boundary(self.step_sign(), n, &self.steps[step_idx])
+        Diagram::boundary_normal(self.step_sign(), n, step)
             .map_err(|e| format!("step boundary failed: {}", e))
+    }
+
+    fn diagram_after_step(&self, step_idx: usize) -> Result<Diagram, String> {
+        self.advance(&self.steps[step_idx])
     }
 
     /// Recompute available rewrites (individual matches for manual selection).
     /// Parallel mode only affects `auto()`, not the manual rewrites list.
     fn refresh_rewrites(&mut self) -> Result<(), String> {
+        debug_assert!(self.current_diagram.is_normal());
         self.rewrites = collect_confirmed_matches(
             &self.type_complex, &self.rule_patterns, &self.current_diagram,
         )?;
@@ -523,10 +533,7 @@ impl RewriteEngine {
         let rule_name = names.join(", ");
         let step = pr.step.clone();
 
-        let n = self.current_diagram.top_dim();
-
-        let new_current = Diagram::boundary(self.step_sign(), n, &step)
-            .map_err(|e| format!("step boundary failed: {}", e))?;
+        let new_current = self.advance(&step)?;
 
         self.truncate_redo();
         self.current_diagram = new_current;
@@ -586,10 +593,7 @@ impl RewriteEngine {
             members, &self.type_complex, &self.current_diagram, &self.rule_patterns,
         ).ok_or("parallel rewrite construction failed")?;
 
-        let n = self.current_diagram.top_dim();
-
-        let new_current = Diagram::boundary(self.step_sign(), n, &pr.step)
-            .map_err(|e| format!("step boundary failed: {}", e))?;
+        let new_current = self.advance(&pr.step)?;
 
         self.truncate_redo();
         self.current_diagram = new_current;
@@ -686,10 +690,7 @@ impl RewriteEngine {
             let rule_name = names.join(", ");
             let is_parallel = self.parallel && pr.members.len() > 1;
 
-            let n = self.current_diagram.top_dim();
-
-            let new_current = Diagram::boundary(self.step_sign(), n, &pr.step)
-                .map_err(|e| format!("step boundary failed: {}", e))?;
+            let new_current = self.advance(&pr.step)?;
 
             self.current_diagram = new_current;
             self.steps.push(pr.step);
@@ -1073,6 +1074,150 @@ impl RewriteEngine {
         // No need to recompute rewrites — a let-binding doesn't add new rewrite rules.
 
         Ok((Arc::clone(&self.store), Arc::clone(&self.type_complex)))
+    }
+}
+
+#[cfg(test)]
+mod rewrite_order_independent_of_route {
+    use super::*;
+    use crate::interactive::fill::{self, FillSession};
+    use crate::output::render_diagram;
+    use std::path::PathBuf;
+
+    // Preserve candidate and member order: this is exactly what `apply n` indexes.
+    fn menu(engine: &RewriteEngine) -> Vec<(Vec<String>, Vec<usize>)> {
+        engine.rewrites().iter().map(|candidate| {
+            (
+                candidate.members.iter().map(|member| member.rule_name.clone()).collect(),
+                candidate.image_positions.clone(),
+            )
+        }).collect()
+    }
+
+    fn fresh_from_rendered(engine: &RewriteEngine) -> RewriteEngine {
+        let expr = render_diagram(engine.current_diagram(), &engine.type_complex);
+        RewriteEngine::from_store(
+            Arc::clone(&engine.store), Arc::clone(&engine.type_complex), &expr, None,
+            engine.source_file.clone(), engine.type_name.clone(), engine.backward,
+        ).expect("start from rendered current diagram")
+    }
+
+    fn assert_fresh_menu(engine: &RewriteEngine, route: &str) {
+        let fresh = fresh_from_rendered(engine);
+        assert!(Diagram::isomorphic(engine.current_diagram(), fresh.current_diagram()),
+            "rendered endpoint differs after {route}");
+        assert_eq!(menu(engine), menu(&fresh), "rewrite menu differs after {route}");
+    }
+
+    fn dining_philosophers() -> RewriteEngine {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("examples/DiningPhilosophers.ali").to_string_lossy().into_owned();
+        let (store, tc, path) = load_type_context(&path, "Table").expect("load DiningPhilosophers");
+        RewriteEngine::from_store(
+            store, tc, "5places", None, path, "Table".to_owned(), false,
+        ).expect("start Table from 5places")
+    }
+
+    fn dining_philosophers_manual_route() -> RewriteEngine {
+        let mut engine = dining_philosophers();
+        engine.step(3).expect("apply 3");
+        engine.step(1).expect("apply 1");
+        engine
+    }
+
+    #[test]
+    fn dining_philosophers_steps_3_1() {
+        let engine = dining_philosophers_manual_route();
+        assert_fresh_menu(&engine, "step(3); step(1)");
+    }
+
+    #[test]
+    fn dining_philosophers_resume_running_proof() {
+        let engine = dining_philosophers_manual_route();
+        let proof = engine.proof_expr().expect("running proof expression");
+        let resumed = RewriteEngine::resume(
+            Arc::clone(&engine.store), Arc::clone(&engine.type_complex), &proof, None,
+            engine.source_file.clone(), engine.type_name.clone(), false,
+        ).expect("resume running proof");
+        assert_eq!(resumed.step_count(), engine.step_count());
+        assert!(Diagram::isomorphic(engine.current_diagram(), resumed.current_diagram()),
+            "resume must reach the running proof's endpoint");
+        let fresh = fresh_from_rendered(&engine);
+        assert_eq!(menu(&resumed), menu(&fresh), "resumed menu differs from fresh endpoint");
+        assert_eq!(menu(&resumed), menu(&engine), "resume changed the running menu");
+    }
+
+    #[test]
+    fn dining_philosophers_undo() {
+        let mut engine = dining_philosophers_manual_route();
+        let endpoint = engine.current_diagram().clone();
+        engine.step(0).expect("apply 0 after steps 3, 1");
+        engine.undo().expect("undo step 0");
+        assert_eq!(engine.step_count(), 2);
+        assert!(Diagram::isomorphic(&endpoint, engine.current_diagram()),
+            "undo must return to the steps 3, 1 endpoint");
+        assert_fresh_menu(&engine, "step(3); step(1); step(0); undo()");
+    }
+
+    #[test]
+    fn dining_philosophers_auto_2() {
+        let mut engine = dining_philosophers();
+        assert_eq!(engine.auto(2).expect("auto(2)").0, 2);
+        // Parallel auto reaches its own endpoint, not the steps 3, 1 endpoint.
+        assert_fresh_menu(&engine, "auto(2)");
+    }
+
+    #[test]
+    fn dining_philosophers_backward() {
+        let forward = dining_philosophers_manual_route();
+        let mut backward = RewriteEngine::from_diagrams(
+            Arc::clone(&forward.store), Arc::clone(&forward.type_complex),
+            forward.current_diagram().clone(), None, forward.source_file.clone(),
+            forward.type_name.clone(), "forward endpoint".to_owned(), None, true,
+        ).expect("start backward from forward endpoint");
+        assert_fresh_menu(&backward, "backward start from forward endpoint");
+        backward.step(0).expect("apply a backward rewrite");
+        assert_fresh_menu(&backward, "backward step(0)");
+    }
+
+    fn visit_fill_routes(engine: &mut RewriteEngine, route: &mut Vec<usize>, visited: &mut [usize; 4]) {
+        visited[route.len()] += 1;
+        assert_fresh_menu(engine, &format!("IdemFill route {route:?}"));
+        if route.len() == 3 {
+            return;
+        }
+        // Do not merge equal endpoints: every history must give the same menu.
+        let choices = engine.rewrites().len();
+        for choice in 0..choices {
+            route.push(choice);
+            engine.step(choice).expect("apply fill route choice");
+            visit_fill_routes(engine, route, visited);
+            engine.undo().expect("return to fill route prefix");
+            route.pop();
+        }
+    }
+
+    #[test]
+    fn idem_fill_all_routes_up_to_depth_three() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/IdemFill.ali").to_string_lossy().into_owned();
+        let (store, canonical, _) = load_file_context(&path).expect("load IdemFill");
+        let (context, session) = fill::start_fill(&store, &canonical, &canonical, 0, false)
+            .expect("start IdemFill hole");
+        assert_eq!((context.type_name.as_str(), context.map_name.as_str(), context.source_name.as_str()),
+            ("Idem", "H", "c"));
+        let FillSession::Rewrite(mut engine) = session else {
+            panic!("IdemFill's c hole must start a rewrite engine");
+        };
+        assert_eq!(engine.rewrites().len(), 4, "five ids have four idem redexes");
+        assert!(engine.rewrites().iter().enumerate().any(|(i, a)| {
+            engine.rewrites()[i + 1..].iter().any(|b| {
+                a.image_positions.iter().any(|pos| b.image_positions.contains(pos))
+            })
+        }), "the fill fixture must have overlapping redexes");
+        let mut visited = [0; 4];
+        visit_fill_routes(&mut engine, &mut Vec::new(), &mut visited);
+        assert_eq!(visited, [1, 4, 12, 24], "visit every route through three steps");
     }
 }
 

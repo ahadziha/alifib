@@ -1,0 +1,11 @@
+@Type
+Idem <<= {
+  ob,
+  id : ob -> ob,
+  idem : id id -> id
+},
+
+D <<= { o, e : o -> o, c : e e e e e -> e },
+
+@Idem
+let H :: D = [ o => ob, e => id, c => ? ]
