@@ -1,0 +1,6 @@
+@Type
+
+S <<= {
+  u,
+  index thin = [ u ]
+}

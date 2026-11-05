@@ -80,10 +80,10 @@ of this README is the practical reference.
 | Command | What it is | See |
 |---------|------------|-----|
 | `alifib <file>` | One-shot interpret / `--ast` / `--print` / `--bench` | [Interpreter](#interpreter) |
-| `alifib repl <file>` | Interactive terminal REPL with readline, history, `store`/`save` | [REPL](#repl) |
-| `alifib serve` | JSON-lines daemon on stdin/stdout for editor plugins and agents | [Daemon](#daemon) |
-| `alifib mcp [<dir>]` | Model Context Protocol server exposing the engine as tools for AI agents | [MCP server](#mcp-server) |
-| `alifib web [<dir>]` | Localhost HTTP server + browser GUI (SSH-tunnel friendly) | [Web GUI](#web-gui) |
+| `alifib repl <file> [<line>]` | In-process terminal REPL with readline, history, `store`/`save` | [REPL](#repl) |
+| `alifib web [<dir>]` | Shared HTTP kernel + browser GUI (SSH-tunnel friendly) | [Web GUI](#web-gui) |
+| `alifib serve [<dir>]` | Same HTTP kernel, without the browser interface | [Shell or agent](#driving-alifib-from-a-shell-or-an-agent) |
+| `alifib do <line>` | Run one command line against a server | [Shell or agent](#driving-alifib-from-a-shell-or-an-agent) |
 | Static WASM build | Same frontend, interpreter in the browser (GitHub Pages etc.) | [Local preview](#local-preview) |
 
 ## Language
@@ -161,12 +161,12 @@ See `examples/` for more, and `docs/GRAMMAR.md` for the full grammar.
 ## Building
 
 The repository is a Cargo workspace. The default target is the `alifib` CLI
-binary — everything else (web server, wasm bindings) is opt-in.
+binary, including its HTTP server. The library is the other workspace member.
 
 ```
-cargo build --release              # builds the `alifib` CLI binary
-cargo test                         # runs the CLI + library tests
-cargo build --release --workspace  # also builds the web server
+cargo build --release              # builds the `alifib` CLI, including the server
+cargo test --workspace              # runs the CLI + library tests
+cargo build --release --workspace   # builds all workspace members
 ```
 
 The WebAssembly crate at `web/wasm/` is intentionally outside the workspace
@@ -195,28 +195,30 @@ cargo run --release -- examples/TRS.ali
 An interactive terminal session for building proof diagrams step by step.
 
 ```
-alifib repl <file> [--type <t>] [--source <s>] [--target <t>] [--emacs]
+alifib repl <file> [<line>] [--emacs]
 ```
 
 Example:
 
 ```
-alifib repl examples/TRS.ali --type Unit --source 'split merge' --target id
+alifib repl examples/TRS.ali 'start Unit (split merge) id'
 ```
 
-After loading, the REPL is in **no-session** mode: inspection commands like
+After loading, the REPL is **idle**: inspection commands like
 `types`, `type <name>`, `homology <name>`, and `holes` work immediately. Use
 `start <type> <source> [<target>]` to begin a rewrite session (target is
 optional), `resume <type> <proof> [<target>]` to reopen a stored proof
 diagram as a live session, or `fill <n>` to start filling an open `?` hole.
-Composite diagram expressions can be quoted:
+Group multi-word diagram expressions with parentheses:
 
 ```
-start Unit 'split merge' id
+start Unit (split merge) id
 ```
 
-If `--type` and `--source` are given on the command line, the session starts
-automatically.
+The optional first line runs once after loading, just like a typed line. The
+outer quotes in the shell example pass one argument; quotes inside an interactive
+line are alifib string literals, not grouping. `--emacs` selects Emacs keybindings
+instead of the default vi mode.
 
 Key commands:
 
@@ -224,7 +226,8 @@ Key commands:
 |---------|-------------|
 | `start <t> <s> [<g>]` | Start a rewrite session (target optional) |
 | `resume <t> <p> [<g>]` | Resume a session from a stored proof diagram (target optional) |
-| `holes` | List the open `?` holes of the module's maps |
+| `load [<path>]` | Load a file, or retry the last disk load |
+| `holes` | List open `?` holes of maps whose definitions the root source holds |
 | `fill <n>` | Start a hole-filling session for hole `n` (a rewrite, or a 0-cell choice) |
 | `apply <n>` | Apply rewrite at index `n` (alias `a`) |
 | `undo [<n>]` | Undo last step, or back to step `n` (alias `u`) |
@@ -233,141 +236,104 @@ Key commands:
 | `proof` | Show the running proof diagram (alias `p`) |
 | `done` | Finalise a hole-filling session, splicing the fill into the map |
 | `store <name>` | Store the current proof as a named diagram |
-| `save <path>` | Write source file with stored definitions appended |
+| `print` | Print the running source (without writing to the editor) |
+| `save [<path>]` | Write the running source to a path, or to its root file |
 | `stop` | End the active session |
 | `help` | Full command list |
 
 See `docs/INTERACTIVE.md` for the complete reference.
 
-### Daemon
+### Driving alifib from a shell or an agent
 
-A JSON-lines subprocess server for editor and AI integration.
-
-```
-alifib serve [<file> --type <t> --source <s> [--target <t>]]
-```
-
-One JSON object per line in each direction on stdin/stdout. Example:
+In one terminal, start a server for a project directory (default `.`):
 
 ```sh
-echo '{"command":"start","source_file":"examples/TRS.ali","type_name":"Unit","initial":"split merge"}' \
-  | alifib serve
+alifib serve examples
 ```
 
-Key requests:
+In another, quote each whole line for the shell:
 
-```json
-{"command":"start","source_file":"...","type_name":"...","initial":"..."}
-{"command":"resume","source_file":"...","type_name":"...","proof":"..."}
-{"command":"step","choice":0}
-{"command":"undo"}
-{"command":"redo"}
-{"command":"proof"}
-{"command":"holes"}
-{"command":"fill","index":0}
-{"command":"done"}
-{"command":"store","name":"myproof"}
-{"command":"types"}
-{"command":"type","name":"Unit"}
-{"command":"cell","name":"merge"}
-{"command":"shutdown"}
+```sh
+alifib do 'load TRS.ali'
+alifib do 'start Unit (split merge) id'
+alifib do 'show'                  # read the current menu before each apply n
+alifib do 'apply 0'
+alifib do 'store myproof; save Proof.ali'
 ```
 
-Every response is `{"status":"ok","data":{...}}` or `{"status":"error","message":"..."}`.
-The `data` object always includes the current session state (step count, current diagram,
-available rewrites). Informational commands add extra fields: `types`, `type_detail`,
-`cell_detail`, `holes`/`constraints` (the `holes` command), and `fill`/`zero_cell`
-(during a hole-filling session). All four front-ends — REPL, daemon, web, and MCP —
-share one command core, so the command set and responses are identical across them.
+`load`/`save` paths are relative to the server's project directory. After editing
+on disk, a bare `alifib do 'load'` reloads it, including retrying a failed load.
+`do` prints the replies and exits unsuccessfully on an error; chains stop at the
+first error. Connection and HTTP errors go to stderr. The default address is `127.0.0.1:8000`; use `serve --bind <addr>`
+and `do --at <addr>` for another server.
 
-See `docs/INTERACTIVE.md` for the full protocol reference.
-
-### MCP server
-
-A [Model Context Protocol](https://modelcontextprotocol.io) server, for driving
-the engine from AI agents (Claude Desktop, Claude Code, Cursor, …). It is a
-sibling of the daemon — the same command core, a different transport: instead of
-the raw JSON-lines protocol it speaks MCP's newline-delimited JSON-RPC 2.0 over
-stdin/stdout, so an MCP-aware client can discover and call the engine as tools.
-
-```
-alifib mcp [<examples-dir>]
-```
-
-Logs go to stderr; stdout carries protocol traffic only. The examples directory
-(default `./examples/`) is auto-seeded as virtual `<Name>.ali` modules, so
-`include <Name>` resolves in submitted source without the agent shipping the
-module contents itself.
-
-The tool surface wraps the same `WebRepl` kernel the web GUI uses:
-
-| Tool | What it does |
-|------|--------------|
-| `load_source` | Parse and interpret `.ali` source (auto-seeded modules included); returns the type list or diagnostics |
-| `start_session` | Begin a rewrite session on a type from an initial diagram (optional target; `backward` flag) |
-| `resume_session` | Reopen a stored proof diagram as a live session, decomposed into its steps |
-| `run_command` | Send any daemon-protocol command (`step`, `undo`, `holes`/`fill`/`done`, `store`, …); the arguments object *is* the command |
-| `get_types` | The full type list with generators, diagrams, and maps |
-| `get_strdiag` | String-diagram data for a named generator/diagram (optionally a boundary) |
-| `get_session_strdiag` | String-diagram data for the active session's current diagram |
-| `get_rewrite_preview_strdiag` | String-diagram data for the result of a rewrite, without committing it |
-| `list_examples` | List the auto-seeded example modules |
-
-Each call returns a single text block holding the same JSON envelope the daemon
-returns; an `"status":"error"` envelope is forwarded with MCP's `isError: true`.
-The interactive workflow — including hole-filling (`holes` → `fill` → `done`) —
-goes through `run_command`; see `docs/INTERACTIVE.md` for the command reference.
+Use `alifib web examples` instead of `serve` to share this same session with a
+browser. The browser is **not live**: it catches up when used or when it regains
+focus. There is one shared session: an agent's `load` replaces the browser's,
+and the browser's Evaluate replaces the agent's (after showing any intervening
+change). After a browser Evaluate, the source belongs to its in-memory editor:
+`save` and bare `load` are refused. That refusal tells an agent about the change;
+`load <path>` takes the session back, discarding the browser's session. `do`
+sends no stale-state expectation: read the menu again before choosing a rewrite.
+See [the interactive reference](docs/INTERACTIVE.md) for the line grammar, shared
+session rules, and JSON call surface for other clients.
 
 ### Web GUI
 
-A localhost-only browser GUI, intended for SSH-tunneled use in the style of a
-small notebook server.
+A browser GUI bound to localhost by default, intended for SSH-tunneled use in
+the style of a small notebook server.
 
 ```
-alifib web [<examples-dir>] [--bind <addr>]
+alifib web [<dir>] [--bind <addr>]
 ```
 
-This serves the files in `web/frontend` and runs a single long-lived Alifib
-session in the server process. By default it binds to `127.0.0.1:8000` and
-scans `./examples/` for `.ali` files. The scan is re-done on every request,
-so editing or adding `.ali` files on disk shows up without restarting.
+This serves the browser assets and runs one shared Alifib kernel in the server
+process. By default it binds to `127.0.0.1:8000` and serves the project directory
+`.`; the directory must exist. It is the base for relative `load`/`save` paths,
+the first include search directory, and the root of the browser file picker.
+The picker scan is re-done on every index request, so disk edits appear on the
+next refresh or Evaluate, not as live changes to an already loaded session.
 
 Typical remote workflow:
 
 ```sh
 # on the remote machine
-alifib web --bind 127.0.0.1:8000
+alifib web examples --bind 127.0.0.1:8000
 
 # on your local machine
 ssh -L 8000:127.0.0.1:8000 user@remote-host
 ```
 
-Then open `http://127.0.0.1:8000` in your local browser.
+Then open `http://127.0.0.1:8000` in your local browser. Forward the same port
+number the server bound: requests naming another port (say, a tunnel from local
+port 9000) are refused with 403, which guards the server against DNS rebinding.
 
 The editor supports live syntax highlighting, loading/saving `.ali` files from
 your local machine, and a dropdown listing every `.ali` file in the
-examples directory. Files there are also importable as modules, resolved by the
-same convention the interpreter uses (see [Modules](#language) above).
+project directory. Evaluate sends all open tabs and indexed files to the kernel,
+whose loader resolves includes; the browser has no include resolver.
 
-Subdirectories under `<examples-dir>` are traversed recursively. Each example's
+Subdirectories under `<dir>` are traversed recursively. Each example's
 name is its relative path minus the `.ali` suffix — `Theory` for `Theory.ali`,
 `TRS/Aux` for `TRS/Aux.ali` — which is both its dropdown label and its key in
-`/examples/index.json`. Every path segment must be a valid identifier
-(`[A-Za-z_][A-Za-z0-9_]*`); other files are skipped with a warning. Because a
-module resolves its `include`s from its own same-named subdirectory first, the
-same stem may recur under different modules — `Monoidal/Aux.ali`,
+`/examples/index.json`. Every path segment must be a name as the lexer reads it
+(`language::is_name`), not a keyword; names can begin with digits. Non-name
+directories are skipped, and invalid `.ali` stems are skipped with a warning.
+Because a module resolves its `include`s from its own directory, then its
+same-named subdirectory, the same stem may recur under different modules —
+`Monoidal/Aux.ali`,
 `Bicategory/Aux.ali`, `TRS/Aux.ali` — without clashing, each module seeing its own.
 
 #### Local preview
 
-The frontend assets (`index.html`, `app.js`, `style.css`) are embedded into
-the binary at compile time, so there is no separate build step for the HTTP
-mode:
+The frontend assets (`index.html`, bundled JavaScript, `style.css`) are embedded
+into the binary at compile time; `alifib-cli`'s build script bundles the
+JavaScript with bun or npm before compiling it:
 
 ```sh
-just web                         # scans ./examples/ by default
-just web docs/teaching-deck       # or any other directory
-just web --bind 127.0.0.1:8080   # pass-through args
+just web                        # scans ./examples/ by default
+just web path/to/project         # or any other existing directory
+just web examples 127.0.0.1:8080  # positional directory and bind address
 ```
 
 For the WASM-backed deployment (used when `web/frontend/` is hosted as
@@ -388,13 +354,10 @@ URL scheme, so the frontend fetches them identically in either environment.
 
 ```
 src/           alifib library crate (language/, core/, interpreter/, output/)
-cli/           alifib-cli crate — produces the `alifib` binary
+cli/           alifib-cli crate — batch, REPL, HTTP server, and `do` client
 web/
-  frontend/    Browser frontend (index.html, app.js, style.css)
-  shared/      alifib-web-shared crate — runtime example-directory scanner
-  server/      alifib-web-server crate — localhost HTTP server for `alifib web`
-  mcp/         alifib-web-mcp crate — Model Context Protocol server (`alifib mcp`)
-  wasm/        alifib-wasm crate — WebAssembly bindings (built via wasm-pack)
+  frontend/    Browser frontend (index.html, src/, dist/, style.css)
+  wasm/        alifib-wasm crate — same Rpc wire in WASM (outside workspace)
 editors/       Editor integrations (e.g. VS Code syntax highlighting)
 examples/      Example .ali files (served by `alifib web` at runtime)
 docs/          CONCEPTS (the vision), grammar, homology, interactive & testing guides

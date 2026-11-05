@@ -1,5 +1,5 @@
-use ariadne::{Color, Label, Report, ReportKind, Source};
-use serde::Serialize;
+use ariadne::{Color, Config, Label, Report, ReportKind, Source};
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use super::ast::Span;
 
@@ -22,10 +22,10 @@ impl Error {
         }
     }
 
-    pub fn kind(&self) -> &'static str {
+    pub fn kind(&self) -> DiagnosticKind {
         match self {
-            Error::Syntax { .. } => "syntax",
-            Error::Runtime { .. } => "runtime",
+            Error::Syntax { .. } => DiagnosticKind::Syntax,
+            Error::Runtime { .. } => DiagnosticKind::Runtime,
         }
     }
 
@@ -45,13 +45,20 @@ impl Error {
         let span = self.span();
         let start = Position::from_byte(source, span.start);
         let end = Position::from_byte(source, span.end.max(span.start));
-        let snippet = build_snippet(source, &start, &end);
+        let report_source = Source::from(source);
+        let char_span = byte_to_char(source, start.byte)..byte_to_char(source, end.byte);
+        let lines = report_source.get_line_range(&char_span);
+        let byte = report_source.lines().take(lines.start)
+            .map(|line| report_source.get_line_text(line).unwrap().len()).sum();
+        let text = report_source.lines().skip(lines.start).take(lines.len())
+            .map(|line| report_source.get_line_text(line).unwrap()).collect();
+        let excerpt = Excerpt { line: lines.start + 1, byte, text };
         Diagnostic {
             kind: self.kind(),
             message: self.message().to_string(),
             start,
             end,
-            snippet,
+            excerpt,
             notes: self.notes().to_vec(),
             path,
         }
@@ -73,7 +80,7 @@ impl fmt::Display for Error {
 ///
 /// `col` counts Unicode scalar values from the start of the line, matching
 /// the convention used by most editors.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Position {
     pub byte: usize,
     pub line: usize,
@@ -95,60 +102,72 @@ impl Position {
     }
 }
 
-/// Structured diagnostic emitted across the web boundary.
-///
-/// The frontend renders this directly: `kind` selects styling, `start`/`end`
-/// drive line:column display and editor highlighting, and `snippet` is a
-/// pre-rendered source line with a caret underline ready to be shown in a
-/// monospace block.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DiagnosticKind {
+    Syntax,
+    Runtime,
+}
+
+impl fmt::Display for DiagnosticKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Syntax => "syntax",
+            Self::Runtime => "runtime",
+        })
+    }
+}
+
+/// The source lines a report shows, cut by ariadne's own line rule.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Excerpt {
+    /// Ariadne's one-based number of the first line.
+    pub line: usize,
+    /// The first line's byte offset in the original source.
+    pub byte: usize,
+    /// Verbatim source lines, including their terminators.
+    pub text: String,
+}
+
+/// A medium-neutral report, with editor positions and the source it labels.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Diagnostic {
-    pub kind: &'static str,
+    pub kind: DiagnosticKind,
     pub message: String,
     pub start: Position,
     pub end: Position,
-    pub snippet: String,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub excerpt: Excerpt,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
 }
 
-fn build_snippet(source: &str, start: &Position, end: &Position) -> String {
-    let line = source.lines().nth(start.line.saturating_sub(1)).unwrap_or("");
-    let caret_start = start.col.saturating_sub(1);
-    let caret_len = if start.line == end.line {
-        end.col.saturating_sub(start.col).max(1)
-    } else {
-        line.chars().count().saturating_sub(caret_start).max(1)
-    };
-    let pad: String = std::iter::repeat(' ').take(caret_start).collect();
-    let carets: String = std::iter::repeat('^').take(caret_len).collect();
-    format!("{line}\n{pad}{carets}")
-}
-
-pub fn report_errors(errors: &[Error], source: &str, filename: &str) {
-    for error in errors {
-        let (label, message, span, notes): (&str, &str, &Span, &[String]) = match error {
-            Error::Syntax { message, span } => ("Syntax error", message.as_str(), span, &[]),
-            Error::Runtime { message, span, notes } => ("Runtime error", message.as_str(), span, notes),
+impl Diagnostic {
+    /// Build the ariadne report from this diagnostic alone.
+    pub fn render(&self, colour: bool) -> String {
+        // Display-line offsets only change ariadne's header, not its gutter.
+        let padding = self.excerpt.line - 1;
+        let source = "\n".repeat(padding) + &self.excerpt.text;
+        let start = padding + byte_to_char(&self.excerpt.text, self.start.byte - self.excerpt.byte);
+        let end = padding + byte_to_char(&self.excerpt.text, self.end.byte - self.excerpt.byte);
+        let path = self.path.as_deref().unwrap_or("<source>");
+        let label = match self.kind {
+            DiagnosticKind::Syntax => "Syntax error",
+            DiagnosticKind::Runtime => "Runtime error",
         };
-        let char_start = byte_to_char(source, span.start);
-        let char_end   = byte_to_char(source, span.end);
-        let mut report = Report::build(ReportKind::Error, (filename, char_start..char_end))
+        let mut report = Report::build(ReportKind::Error, (path, start..end))
+            .with_config(Config::default().with_color(colour))
             .with_message(label)
-            .with_label(
-                Label::new((filename, char_start..char_end))
-                    .with_message(message)
-                    .with_color(Color::Red),
-            );
-        for note in notes {
+            .with_label(Label::new((path, start..end))
+                .with_message(&self.message).with_color(Color::Red));
+        for note in &self.notes {
             report = report.with_note(note);
         }
-        report
-            .finish()
-            .eprint((filename, Source::from(source)))
-            .unwrap_or_else(|e| eprintln!("could not write diagnostic: {}", e));
+        let mut output = Vec::new();
+        report.finish().write((path, Source::from(source)), &mut output)
+            .expect("writing a diagnostic to a byte buffer cannot fail");
+        String::from_utf8(output).expect("ariadne reports are UTF-8")
     }
 }
 
@@ -182,14 +201,64 @@ mod tests {
     }
 
     #[test]
-    fn diagnostic_snippet_carets_align_with_span() {
-        let source = "let x = foo bar\n";
-        let span = Span { start: 8, end: 11 };
-        let err = Error::Syntax { message: "oops".into(), span };
-        let d = err.to_diagnostic(source, None);
-        assert_eq!(d.start.line, 1);
-        assert_eq!(d.start.col, 9);
-        assert_eq!(d.end.col, 12);
-        assert_eq!(d.snippet, "let x = foo bar\n        ^^^");
+    fn diagnostic_excerpt_and_render() {
+        let line_12 = format!("{}let x = foo bar\n", "earlier\n".repeat(11));
+        let mut cases = vec![
+            (line_12, "foo".to_string(), 12, 88, "let x = foo bar\n".to_string()),
+            ("before\nfirst\nsecond\nafter\n".into(), "first\nsecond".into(), 2, 7, "first\nsecond\n".into()),
+            ("before\nαβ foo\n".into(), "foo".into(), 2, 7, "αβ foo\n".into()),
+            ("before\nlast".into(), "".into(), 2, 7, "last".into()),
+            ("before\nlast\n".into(), "".into(), 2, 7, "last\n".into()),
+            ("before\r\nlast\r\n".into(), "last".into(), 2, 8, "last\r\n".into()),
+            ("before\r\nlast\r\n".into(), "".into(), 2, 8, "last\r\n".into()),
+            ("".into(), "".into(), 1, 0, "".into()),
+        ];
+        for separator in ['\r', '\n', '\x0b', '\x0c', '\u{0085}', '\u{2028}', '\u{2029}'] {
+            cases.push((format!("abc{separator}xyz"), "x".into(), 2, 3 + separator.len_utf8(), "xyz".into()));
+        }
+        for (source, marked, excerpt_line, excerpt_byte, excerpt_text) in cases {
+            let start = if marked.is_empty() { source.len() } else { source.find(&marked).unwrap() };
+            let span = Span { start, end: start + marked.len() };
+            for runtime in [false, true] {
+                let error = if runtime {
+                    Error::Runtime { message: "oops".into(), span, notes: vec!["a note".into()] }
+                } else {
+                    Error::Syntax { message: "oops".into(), span }
+                };
+                for path in [None, Some("F.ali".to_string())] {
+                    let diagnostic = error.to_diagnostic(&source, path.clone());
+                    let whole = Source::from(source.as_str());
+                    let chars = byte_to_char(&source, span.start)..byte_to_char(&source, span.end);
+                    assert_eq!(diagnostic.excerpt.line, excerpt_line);
+                    assert_eq!(diagnostic.excerpt.byte, excerpt_byte);
+                    assert_eq!(diagnostic.excerpt.text, excerpt_text);
+                    if marked.is_empty() && source.ends_with('\n') {
+                        assert_eq!(diagnostic.start.line, excerpt_line + 1);
+                        assert_eq!(diagnostic.start.col, 1);
+                    }
+                    if source.starts_with("abc") {
+                        assert_eq!(diagnostic.excerpt.text, "xyz");
+                        assert_eq!(diagnostic.start.byte - diagnostic.excerpt.byte, 0);
+                        assert_eq!(diagnostic.start.col, if source.contains('\n') { 1 } else { 5 });
+                    }
+                    if diagnostic.excerpt.line == 12 {
+                        assert!(diagnostic.render(false).contains("12 │"));
+                    }
+                    for colour in [false, true] {
+                        let filename = path.as_deref().unwrap_or("<source>");
+                        let mut report = Report::build(ReportKind::Error, (filename, chars.clone()))
+                            .with_config(Config::default().with_color(colour))
+                            .with_message(if runtime { "Runtime error" } else { "Syntax error" })
+                            .with_label(Label::new((filename, chars.clone()))
+                                .with_message("oops").with_color(Color::Red));
+                        for note in error.notes() { report = report.with_note(note); }
+                        let mut output = Vec::new();
+                        report.finish().write((filename, whole.clone()), &mut output).unwrap();
+                        assert_eq!(diagnostic.render(colour).as_bytes(), output,
+                            "source={source:?}, span={span:?}, colour={colour}");
+                    }
+                }
+            }
+        }
     }
 }

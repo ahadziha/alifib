@@ -27,14 +27,12 @@ fn example(name: &str) -> String {
 #[test]
 fn delta_simplicial_identities_hold() {
     InterpretedFile::load(&Loader::default(vec![]), &example("Delta.ali"))
-        .ok()
         .expect("Delta.ali should interpret without errors (simplicial identities hold)");
 }
 
 #[test]
 fn magma_interpretation() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("Magma.ali"))
-        .ok()
         .expect("Magma.ali should interpret without errors");
 
 
@@ -115,7 +113,6 @@ fn magma_interpretation() {
 #[test]
 fn empty2_single_type_with_one_cell() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("Empty2.ali"))
-        .ok()
         .expect("Empty2.ali should interpret without errors");
     let norm = file.state.normalize();
     assert_eq!(norm.cells_count, 1);
@@ -128,7 +125,6 @@ fn empty2_single_type_with_one_cell() {
 #[test]
 fn empty_maps_across_types() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("Empty.ali"))
-        .ok()
         .expect("Empty.ali should interpret without errors");
     let norm = file.state.normalize();
     assert_eq!(norm.cells_count, 2);
@@ -146,7 +142,6 @@ fn empty_maps_across_types() {
 #[test]
 fn total_composite_map() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("Total.ali"))
-        .ok()
         .expect("Total.ali should interpret without errors");
     let norm = file.state.normalize();
     assert_eq!(norm.cells_count, 10);
@@ -168,7 +163,6 @@ fn total_composite_map() {
 #[test]
 fn whiskered_codim2_boundary_normalises_canonically() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("WhiskerBoundary.ali"))
-        .ok()
         .expect("WhiskerBoundary.ali should interpret without errors");
     let norm = file.state.normalize();
     let whisker3 = norm.modules[0].types.iter().find(|t| t.name == "Whisker3").unwrap();
@@ -178,7 +172,6 @@ fn whiskered_codim2_boundary_normalises_canonically() {
 #[test]
 fn tutorial_pair_maps() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("Tutorial.ali"))
-        .ok()
         .expect("Tutorial.ali should interpret without errors");
     let norm = file.state.normalize();
     assert_eq!(norm.cells_count, 21);
@@ -195,7 +188,6 @@ fn tutorial_pair_maps() {
 #[test]
 fn theory_function_and_set_maps() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("Theory.ali"))
-        .ok()
         .expect("Theory.ali should interpret without errors");
     let norm = file.state.normalize();
     assert_eq!(norm.cells_count, 26);
@@ -217,7 +209,6 @@ fn theory_function_and_set_maps() {
 #[test]
 fn map_hole_basic_loads() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("MapHole.ali"))
-        .ok()
         .expect("MapHole.ali should interpret without errors");
     let gid = file.state.find_type_gid("A").expect("type A should exist");
     let tc = &file.state.find_type(gid).expect("type A entry").complex;
@@ -242,24 +233,22 @@ fn embedded_hole_is_error() {
 /// which is well-formed on its own.
 #[test]
 fn wrong_filler_blames_pending_assignment() {
-    let result = InterpretedFile::load(&Loader::default(vec![]), &fixture("WrongFiller.ali"));
-    match result {
-        alifib::interpreter::LoadResult::InterpError { errors, source, .. } => {
-            let err = errors.first().expect("at least one error");
-            assert!(
-                err.message().contains("pending assignment of `r`"),
-                "message should name the pending assignment `r`, got: {}",
-                err.message()
-            );
-            let span = err.span();
-            assert_eq!(
-                &source[span.start..span.end],
-                "r => m",
-                "the caret should underline the pending clause, not the filler"
-            );
-        }
-        _ => panic!("WrongFiller.ali should fail to interpret"),
-    }
+    let path = fixture("WrongFiller.ali");
+    let Err(failure) = InterpretedFile::load(&Loader::default(vec![]), &path) else {
+        panic!("WrongFiller.ali should fail to interpret");
+    };
+    let err = failure.diagnostics.first().expect("at least one error");
+    assert!(
+        err.message.contains("pending assignment of `r`"),
+        "message should name the pending assignment `r`, got: {}",
+        err.message
+    );
+    let source = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(
+        &source[err.start.byte..err.end.byte],
+        "r => m",
+        "the caret should underline the pending clause, not the filler"
+    );
 }
 
 /// Layered holes: `e : a0 -> a1` with `a1 => ?` and `e => ?` makes `e`'s hole
@@ -269,7 +258,6 @@ fn wrong_filler_blames_pending_assignment() {
 #[test]
 fn layered_holes_load() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("LayeredHole.ali"))
-        .ok()
         .expect("LayeredHole.ali should interpret without errors");
     let gid = file.state.find_type_gid("A").expect("type A should exist");
     let tc = &file.state.find_type(gid).expect("type A entry").complex;
@@ -290,7 +278,6 @@ fn hole_count(file: &alifib::interpreter::InterpretedFile, type_name: &str, map_
 #[test]
 fn fill_is_order_independent() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("MapFill.ali"))
-        .ok()
         .expect("MapFill.ali should interpret without errors");
     assert_eq!(hole_count(&file, "A", "HxFirst"), 0, "x-first map should end hole-less");
     assert_eq!(hole_count(&file, "A", "HxLast"), 0, "x-last map should be hole-less");
@@ -301,7 +288,6 @@ fn fill_is_order_independent() {
 #[test]
 fn prefix_extension_fills_holes() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("MapFill.ali"))
-        .ok()
         .expect("MapFill.ali should interpret without errors");
     assert!(hole_count(&file, "A", "Partial") > 0, "Partial should still have holes");
     assert_eq!(hole_count(&file, "A", "Filled"), 0, "Filled = Partial [ g => G ] should be hole-less");
@@ -312,7 +298,6 @@ fn prefix_extension_fills_holes() {
 #[test]
 fn redundant_hole_then_value_commits() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("MapIdempotent.ali"))
-        .ok()
         .expect("MapIdempotent.ali should interpret without errors");
     assert_eq!(hole_count(&file, "A", "H"), 0, "the `?` should be upgraded to `arr => f` and committed");
 }
@@ -323,7 +308,6 @@ fn redundant_hole_then_value_commits() {
 #[test]
 fn collapsed_boundary_infers_image() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("CollapseInfer.ali"))
-        .ok()
         .expect("CollapseInfer.ali should interpret without errors");
     assert_eq!(hole_count(&file, "A", "H"), 0, "x => ? should infer x => p, not a hole");
 }
@@ -334,7 +318,6 @@ fn collapsed_boundary_infers_image() {
 #[test]
 fn collapse_inference_cascades_through_implicit_faces() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("Cascade.ali"))
-        .ok()
         .expect("Cascade.ali should interpret without errors");
     assert_eq!(hole_count(&file, "A", "H"), 0, "a, b and w should all be inferred to p");
 }
@@ -347,7 +330,6 @@ fn collapse_inference_cascades_through_implicit_faces() {
 #[test]
 fn dimension_lowering_case1_is_sound() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("DimLower.ali"))
-        .ok()
         .expect("DimLower.ali should interpret without errors");
     assert_eq!(hole_count(&file, "A", "H"), 0, "x => e should infer f, g, a0, a1 with no holes");
 }
@@ -357,7 +339,6 @@ fn dimension_lowering_case1_is_sound() {
 #[test]
 fn map_to_hole_holes_each_cell() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("MapToHole.ali"))
-        .ok()
         .expect("MapToHole.ali should interpret without errors");
     assert_eq!(hole_count(&file, "A", "H"), 3, "Sub => ? should hole a, b and p");
 }
@@ -367,7 +348,6 @@ fn map_to_hole_holes_each_cell() {
 #[test]
 fn total_map_accepts_holes() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("TotalHole.ali"))
-        .ok()
         .expect("a total map whose only generator is a hole should be accepted");
     assert_eq!(hole_count(&file, "A", "H"), 1, "the hole should still be recorded");
 }
@@ -376,7 +356,6 @@ fn total_map_accepts_holes() {
 #[test]
 fn hole_on_defined_generator_is_noop() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("HoleAfterValue.ali"))
-        .ok()
         .expect("HoleAfterValue.ali should interpret without errors");
     assert_eq!(hole_count(&file, "A", "H"), 0, "`arr => ?` after `arr => f` should add no hole");
 }
@@ -387,7 +366,6 @@ fn hole_on_defined_generator_is_noop() {
 #[test]
 fn inferred_assignment_fills_hole() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("InferFill.ali"))
-        .ok()
         .expect("InferFill.ali should interpret without errors");
     assert_eq!(hole_count(&file, "A", "H"), 0, "inferring x => g.in should close ?x");
 }
@@ -403,7 +381,6 @@ fn inconsistent_fill_is_error() {
 #[test]
 fn for_index_expansion() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("ForIndex.ali"))
-        .ok()
         .expect("ForIndex.ali should interpret without errors");
 
 
@@ -436,7 +413,6 @@ fn for_index_expansion() {
 #[test]
 fn submodule_in_same_named_directory() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("SubMod.ali"))
-        .ok()
         .expect("SubMod.ali should resolve Aux from SubMod/ subdirectory");
 
 
@@ -451,7 +427,7 @@ fn submodule_in_same_named_directory() {
 }
 
 #[test]
-fn virtual_loader_subdirectory_resolution() {
+fn in_memory_loader_subdirectory_resolution() {
     use std::collections::HashMap;
 
     let files: HashMap<String, String> = [
@@ -462,14 +438,70 @@ fn virtual_loader_subdirectory_resolution() {
         ("B/Aux.ali".into(), "@Type\nOb <<= { pt, ob: pt -> pt }".into()),
     ].into_iter().collect();
 
-    let loader = Loader::with_virtual_files(files);
+    let loader = Loader::in_memory(files);
     let file = InterpretedFile::load(&loader, "source.ali")
-        .ok()
-        .expect("virtual loader should resolve Aux in subdirectories A/ and B/");
+        .expect("in-memory loader should resolve Aux in subdirectories A/ and B/");
 
     let norm = file.state.normalize();
     assert!(norm.modules.iter().any(|m| m.types.iter().any(|t| t.name == "AType")));
     assert!(norm.modules.iter().any(|m| m.types.iter().any(|t| t.name == "BType")));
+}
+
+#[test]
+fn in_memory_and_disk_resolve_alike() {
+    use std::collections::HashMap;
+
+    fn type_names(file: &InterpretedFile) -> Vec<Vec<String>> {
+        file.state.normalize().modules.into_iter()
+            .map(|module| module.types.into_iter().map(|ty| ty.name).collect())
+            .collect()
+    }
+
+    let files: HashMap<String, String> = ["SubMod.ali", "SubMod/Aux.ali"].into_iter()
+        .map(|name| (name.to_owned(), std::fs::read_to_string(fixture(name)).unwrap()))
+        .collect();
+    let disk = InterpretedFile::load(&Loader::default(vec![]), &fixture("SubMod.ali")).unwrap();
+    let memory = InterpretedFile::load(&Loader::in_memory(files), "SubMod.ali").unwrap();
+    assert_eq!(type_names(&disk), type_names(&memory));
+
+    let dir = std::env::temp_dir().join(format!("alifib-in-memory-and-disk-{}-{}",
+        std::process::id(), std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    std::fs::create_dir_all(dir.join("Sub")).unwrap();
+    let files: HashMap<String, String> = [
+        ("Sub/Main.ali", "@Type\ninclude Top,\ninclude Aux,\nMain <<= { attach T :: Top.Top, attach A :: Aux.Near }"),
+        ("Top.ali", "@Type\nTop <<= { t }"),
+        ("Sub/Aux.ali", "@Type\nNear <<= { n }"),
+        ("Aux.ali", "@Type\nFar <<= { f }"),
+    ].into_iter().map(|(path, source)| (path.to_owned(), source.to_owned())).collect();
+    for (path, source) in &files {
+        std::fs::write(dir.join(path), source).unwrap();
+    }
+    let disk = InterpretedFile::load(&Loader::in_dir(&dir.to_string_lossy(), vec![]),
+        &dir.join("Sub/Main.ali").to_string_lossy()).unwrap();
+    let memory = InterpretedFile::load(&Loader::in_memory(files), "Sub/Main.ali").unwrap();
+    assert_eq!(type_names(&disk), type_names(&memory));
+    assert_eq!(type_names(&memory), vec![vec!["", "Top"], vec!["", "Near"], vec!["", "Top.Top", "Aux.Near", "Main"]]);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn in_dir_resolves_relative_search_paths() {
+
+    let dir = std::env::temp_dir().join(format!("alifib-in-dir-search-paths-{}-{}",
+        std::process::id(), std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let root = dir.join("Root.ali");
+    std::fs::write(&root, "@Type\ninclude Aux,\nRoot <<= { attach Ob :: Aux.Ob }").unwrap();
+    let file = InterpretedFile::load(&Loader::in_dir(&fixture(""), vec!["SubMod".to_owned()]),
+        &root.to_string_lossy()).unwrap();
+    let norm = file.state.normalize();
+    assert_eq!(norm.modules.len(), 2);
+    assert_eq!(norm.modules[0].types.iter().map(|ty| ty.name.as_str()).collect::<Vec<_>>(), vec!["", "Ob"]);
+    assert_eq!(norm.modules[1].types.iter().map(|ty| ty.name.as_str()).collect::<Vec<_>>(), vec!["", "Aux.Ob", "Root"]);
+    assert_eq!(PathBuf::from(&norm.modules[0].path), std::fs::canonicalize(fixture("SubMod/Aux.ali")).unwrap());
+    std::fs::remove_dir_all(dir).unwrap();
 }
 
 /// The rendered unfilled holes of map `map_name` in type `type_name`.
@@ -488,7 +520,6 @@ fn map_holes(norm: &Store, type_name: &str, map_name: &str) -> Vec<String> {
 #[test]
 fn composition_propagates_inner_map_holes() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("ComposeHole.ali"))
-        .ok()
         .expect("ComposeHole.ali should interpret without errors");
     let norm = file.state.normalize();
 
@@ -509,7 +540,6 @@ fn composition_propagates_inner_map_holes() {
 #[test]
 fn composition_propagates_outer_map_holes() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("ComposeOuterHole.ali"))
-        .ok()
         .expect("ComposeOuterHole.ali should interpret without errors");
     let norm = file.state.normalize();
 
@@ -525,7 +555,6 @@ fn composition_propagates_outer_map_holes() {
 #[test]
 fn composition_propagates_outer_map_conditionals() {
     let file = InterpretedFile::load(&Loader::default(vec![]), &fixture("ComposeOuterConditional.ali"))
-        .ok()
         .expect("ComposeOuterConditional.ali should interpret without errors");
     let norm = file.state.normalize();
 

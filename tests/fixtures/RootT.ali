@@ -1,0 +1,7 @@
+@Type
+include ThinOrigin,
+
+T <<= { v },
+
+@T
+  let FromS :: ThinOrigin.S = [ u => v ]

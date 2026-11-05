@@ -1,551 +1,340 @@
-//! The shared interactive session state machine.
+//! The shared, module-only interactive session state machine.
 //!
-//! `Session` owns everything a REPL session needs — the store, the running
-//! source, the active rewrite engine or fill, the `backward` flag — and a single
-//! [`apply`](Session::apply) method that performs **all** command semantics,
-//! state transitions, and canonical user messages.  The three front-ends
-//! (CLI, stdio daemon, web) are thin adapters over it: they parse input into a
-//! [`Request`], call `apply`, and render the resulting [`ResponseData`] in their
-//! own medium.  Behaviour therefore lives in one place and cannot drift between
-//! front-ends; a new command lands on all three at once.
-//!
-//! Loading the source (disk vs. virtual modules) and the final byte-rendering
-//! are the only genuinely per-front-end concerns; the first is captured by
-//! [`LoadStrategy`], the second is left to the adapters.
+//! Commands add answers; callers read the activity's state separately. Disk
+//! policy belongs to the kernel, which supplies an authorized write target.
 
-use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 
 use crate::aux::loader::Loader;
-use crate::interpreter::{GlobalStore, InterpretedFile, LoadResult};
-use crate::output::render_diagram;
+use crate::core::complex::Complex;
+use crate::interpreter::{GlobalStore, InterpretedFile, LoadFailure};
+use crate::language;
 
-use super::engine::{load_file_context, reevaluate, resolve_type, RewriteEngine};
+use super::command::Command;
+use super::engine::{resolve_type, RewriteEngine, Steps};
 use super::fill::{
     edit_for_fill, filled_report, list_constraints, list_open_holes, start_fill,
-    FillContext, FillSession,
+    FillSession, HoleRef, ZeroCellFill,
 };
-use super::protocol::{
-    build_list_rules_response, build_response, AutoInfo, FillInfo, HistoryEntry, HoleInfo,
-    ProofInfo, Request, ResponseData, StoredInfo, ZeroCellChoice, ZeroCellInfo,
+use super::response::{
+    self, build_history, build_homology_data, build_list_rules, rewrite_state,
+    Answer, AutoInfo, Body, ConstraintInfo, FillInfo, FillState, HistoryEntry, HoleInfo,
+    Outcome, State, StoredInfo, ZeroCellChoice, ZeroCellInfo,
 };
+use super::type_info::{module_types, type_info, ThinIndex};
 
-/// How the session loads and re-evaluates source.
-pub enum LoadStrategy {
-    /// Read the root and its dependencies from disk.
-    Disk,
-    /// Serve the root and all `include`s from an in-memory file map (the web).
-    Virtual(HashMap<String, String>),
+const NO_SESSION: &str = "No active session — use 'start' or 'fill'";
+
+/// A loaded module is idle, rewriting freely, or filling exactly one hole.
+enum Activity {
+    Idle,
+    Rewrite(RewriteEngine),
+    Fill(HoleRef, FillSession),
 }
 
-/// A live interactive session: the single source of truth for session behaviour.
+/// How a rewrite session begins: [`RewriteEngine::from_store`] or
+/// [`RewriteEngine::resume`], which take the same arguments.
+type Begin = fn(
+    Arc<GlobalStore>, Arc<Complex>, &str, Option<&str>, String, String, bool,
+) -> Result<RewriteEngine, String>;
+
+/// The single source of truth for loaded-module command behaviour.
 pub struct Session {
-    store: Arc<GlobalStore>,
-    root_path: String,
-    source: String,
-    /// A free rewrite session (`start`/`resume`); mutually exclusive with `fill`.
-    engine: Option<RewriteEngine>,
-    /// A hole-filling session; mutually exclusive with `engine`.
-    fill: Option<(FillContext, FillSession)>,
+    /// The running root: loaded, re-evaluated by `done`, or extended by `store`.
+    file: InterpretedFile,
+    activity: Activity,
+    /// How many activities have begun, so a new one is told from its predecessor.
+    begun: u64,
     backward: bool,
-    loader: LoadStrategy,
+    loader: Loader,
 }
 
 impl Session {
-    // ── Construction ────────────────────────────────────────────────────────
-
-    /// Load `source_file` and its dependencies from disk.
-    pub fn from_disk(source_file: &str) -> Result<Self, String> {
-        let (store, root_path, _output) = load_file_context(source_file)?;
-        let source = std::fs::read_to_string(source_file).unwrap_or_default();
-        Ok(Self::new(store, root_path, source, LoadStrategy::Disk))
+    /// Load a module through `loader`, retaining it for re-evaluation.
+    pub fn open(loader: Loader, path: &str) -> Result<Self, LoadFailure> {
+        let file = InterpretedFile::load(&loader, path)?;
+        Ok(Session { file, activity: Activity::Idle, begun: 0, backward: false, loader })
     }
 
-    /// Load `source` plus virtual `modules` (`<Name>.ali → contents`), as the web
-    /// does.  `name` overrides the root's virtual filename.  Returns the session
-    /// and the loaded store on success.
-    pub fn from_virtual(
-        source: &str,
-        modules: HashMap<String, String>,
-        name: Option<&str>,
-    ) -> Result<Self, String> {
-        let root_path = name
-            .filter(|n| !n.is_empty())
-            .map(|n| if n.ends_with(".ali") { n.to_string() } else { format!("{}.ali", n) })
-            .unwrap_or_else(|| "source.ali".to_string());
+    pub fn store(&self) -> &Arc<GlobalStore> { &self.file.state }
+    pub fn root_path(&self) -> &str { &self.file.path }
+    pub fn source(&self) -> &str { &self.file.source }
 
-        let mut files = modules.clone();
-        files.insert(root_path.clone(), source.to_string());
-        let loader = Loader::with_virtual_files(files);
-        match InterpretedFile::load(&loader, &root_path) {
-            LoadResult::Loaded(file) => {
-                let store = Arc::clone(&file.state);
-                Ok(Self::new(store, root_path, source.to_owned(), LoadStrategy::Virtual(modules)))
-            }
-            LoadResult::LoadError(e) => Err(format!("{:?}", e)),
-            LoadResult::InterpError { errors, source: src, path } => Err(errors
-                .iter()
-                .map(|e| e.to_diagnostic(&src, Some(path.clone())).message)
-                .collect::<Vec<_>>()
-                .join("; ")),
+    /// The engine driving a free rewrite or fill; absent for a 0-cell fill.
+    pub fn engine(&self) -> Option<&RewriteEngine> {
+        match &self.activity {
+            Activity::Rewrite(e) | Activity::Fill(_, FillSession::Rewrite(e)) => Some(e),
+            _ => None,
         }
     }
 
-    /// Construct a session around an already-loaded store (used by the web,
-    /// which does its own load to surface structured diagnostics).
-    pub fn from_loaded(store: Arc<GlobalStore>, root_path: String, source: String, loader: LoadStrategy) -> Self {
-        Self::new(store, root_path, source, loader)
+    pub fn engine_mut(&mut self) -> Option<&mut RewriteEngine> {
+        match &mut self.activity {
+            Activity::Rewrite(e) | Activity::Fill(_, FillSession::Rewrite(e)) => Some(e),
+            _ => None,
+        }
     }
 
-    fn new(store: Arc<GlobalStore>, root_path: String, source: String, loader: LoadStrategy) -> Self {
-        Session { store, root_path, source, engine: None, fill: None, backward: false, loader }
-    }
-
-    // ── Accessors (for the front-ends' renderers) ────────────────────────────
-
-    pub fn store(&self) -> &Arc<GlobalStore> { &self.store }
-    pub fn root_path(&self) -> &str { &self.root_path }
-    pub fn source(&self) -> &str { &self.source }
-    pub fn backward(&self) -> bool { self.backward }
-    pub fn engine(&self) -> Option<&RewriteEngine> { self.engine.as_ref() }
-    pub fn fill(&self) -> Option<&(FillContext, FillSession)> { self.fill.as_ref() }
-    /// The engine driving the current rewrite — a free session or a fill's — for
-    /// renderers (string diagrams, proof view).  `None` during a 0-cell fill.
-    pub fn active_engine(&self) -> Option<&RewriteEngine> { self.engine_ref() }
-    pub fn active_engine_mut(&mut self) -> Option<&mut RewriteEngine> { self.engine_mut() }
-    pub fn session_active(&self) -> bool { self.engine.is_some() || self.fill.is_some() }
-
-    /// A `ResponseData` snapshot of the current state (for an initial emit).
-    pub fn state(&self) -> ResponseData { self.snapshot() }
-
-    // ── Command dispatch ─────────────────────────────────────────────────────
-
-    /// Perform one command.  `Ok` carries a `ResponseData` snapshot of the
-    /// resulting state (with a canonical `message` where applicable); `Err`
-    /// carries the user-facing error.  Read-only queries (`types`/`type`/`cell`/
-    /// `homology`) and front-end-only commands (`print`/`help`/`quit`/`shutdown`)
-    /// are handled by the adapters, not here.
-    pub fn apply(&mut self, req: Request) -> Result<ResponseData, String> {
-        use Request::*;
-        match req {
-            Start { type_name, initial, target, backward, .. } =>
-                self.start_rewrite(&type_name, &initial, target.as_deref(), backward),
-            Resume { type_name, proof, target, backward, .. } =>
-                self.resume_rewrite(&type_name, &proof, target.as_deref(), backward),
-            Stop => self.stop(),
-            Backward { on } => self.set_backward(on),
-            Holes => Ok(self.holes_response()),
-            Fill { index, backward } => self.begin_fill(index, backward),
+    /// Perform one module-only command, returning only what it adds.
+    pub fn apply(&mut self, cmd: Command) -> Result<Answer, String> {
+        use Command::*;
+        match cmd {
+            Types => Ok(Answer::outcome(Outcome::Types(
+                module_types(self.store(), &ThinIndex::of(self.store()), self.root_path()),
+            ))),
+            Type(name) => Ok(Answer::outcome(Outcome::Type(
+                type_info(self.store(), &ThinIndex::of(self.store()), self.root_path(), &name)?,
+            ))),
+            Homology(name) => Ok(Answer::outcome(Outcome::Homology(
+                build_homology_data(self.store(), self.root_path(), &name)?,
+            ))),
+            Print => Ok(Answer::outcome(Outcome::Source(self.file.source.clone()))),
+            Start { type_name, initial, target } =>
+                self.begin_rewrite(RewriteEngine::from_store, &type_name, &initial, target.as_deref()),
+            Resume { type_name, proof, target } =>
+                self.begin_rewrite(RewriteEngine::resume, &type_name, &proof, target.as_deref()),
+            Stop => {
+                self.activity = Activity::Idle;
+                Ok(Answer::message("Session stopped"))
+            }
+            Backward(on) => Ok(self.set_backward(on)),
+            Holes => {
+                let (holes, constraints) = self.holes();
+                Ok(Answer::outcome(Outcome::Holes { holes, constraints }))
+            }
+            Fill(index) => self.begin_fill(index),
             Done => self.finalize_fill(),
-            Save { path } => self.save(path),
-
-            Step { choice } => self.engine_step(&[choice]),
-            StepMulti { choices } => self.engine_step(&choices),
-            Auto { max_steps } => self.engine_auto(max_steps, false),
-            Random { max_steps } => self.engine_auto(max_steps, true),
-            Undo => self.engine_undo(None, false),
-            UndoTo { step } => self.engine_undo(Some(step), false),
-            Redo => self.engine_undo(None, true),
-            RedoTo { step } => self.engine_undo(Some(step), true),
-            Parallel { on } => self.set_parallel(on),
-            SetTarget { name } => self.engine_set_target(&name),
-            Show => Ok(self.show()),
+            Apply(choices) => self.apply_choices(&choices),
+            Auto(n) => self.engine_auto(n, false),
+            Random(n) => self.engine_auto(n, true),
+            Undo(step) => self.travel(step, false),
+            Redo(step) => self.travel(step, true),
+            Parallel(on) => self.set_parallel(on),
+            Show => Ok(Answer::outcome(Outcome::State)),
             Proof => self.proof_response(),
             History => self.history_response(),
-            ListRules => self.rules_response(),
-            Store { name } => self.store_proof(&name),
-
-            Load { .. } | Types | TypeInfo { .. } | Cell { .. } | Homology { .. } | Help { .. }
-            | Shutdown => Err("Not a session command".to_owned()),
+            Rules => self.rules_response(),
+            Store(name) => self.store_proof(&name),
         }
     }
 
-    // ── Session transitions ───────────────────────────────────────────────────
+    /// The open holes and constraints of maps the root's program defines.
+    pub(super) fn holes(&self) -> (Vec<HoleInfo>, Vec<ConstraintInfo>) {
+        let (store, program, root) = (self.store(), &self.file.program, self.root_path());
+        let holes = list_open_holes(store, program, root).into_iter().map(|h| HoleInfo {
+            module: root.to_owned(),
+            index: h.index,
+            type_name: h.type_name,
+            map_name: h.map_name,
+            domain_name: h.domain_name,
+            source_name: h.source_name,
+            dim: h.dim,
+            boundary: h.boundary,
+        }).collect();
+        (holes, list_constraints(store, program, root))
+    }
 
-    fn start_rewrite(&mut self, type_name: &str, initial: &str, target: Option<&str>, backward: bool)
-        -> Result<ResponseData, String>
+    fn ensure_idle(&self) -> Result<(), String> {
+        match self.activity {
+            Activity::Idle => Ok(()),
+            _ => Err("Session already active — stop it first".to_owned()),
+        }
+    }
+
+    fn begin(&mut self, activity: Activity) -> Answer {
+        self.activity = activity;
+        self.begun += 1;
+        Answer::outcome(Outcome::State)
+    }
+
+    fn begin_rewrite(&mut self, begin: Begin, type_name: &str, diagram: &str, target: Option<&str>)
+        -> Result<Answer, String>
     {
-        if self.session_active() {
-            return Err("Session already active — stop it first".to_owned());
-        }
-        let tc = resolve_type(&self.store, &self.root_path, type_name)?;
-        let engine = RewriteEngine::from_store(
-            Arc::clone(&self.store), tc, initial, target,
-            self.root_path.clone(), type_name.to_owned(), backward,
+        self.ensure_idle()?;
+        let tc = resolve_type(self.store(), self.root_path(), type_name)?;
+        let engine = begin(
+            Arc::clone(self.store()), tc, diagram, target,
+            self.root_path().to_owned(), type_name.to_owned(), self.backward,
         )?;
-        self.engine = Some(engine);
-        let mut data = self.snapshot();
-        data.message = Some("Started rewrite session".to_owned());
-        Ok(data)
+        Ok(self.begin(Activity::Rewrite(engine)))
     }
 
-    fn resume_rewrite(&mut self, type_name: &str, proof: &str, target: Option<&str>, backward: bool)
-        -> Result<ResponseData, String>
-    {
-        if self.session_active() {
-            return Err("Session already active — stop it first".to_owned());
+    /// Mid-session the mode is fixed and only reported; idle, it is set.
+    fn set_backward(&mut self, on: Option<bool>) -> Answer {
+        if let (Activity::Idle, Some(on)) = (&self.activity, on) {
+            self.backward = on;
         }
-        let tc = resolve_type(&self.store, &self.root_path, type_name)?;
-        let engine = RewriteEngine::resume(
-            Arc::clone(&self.store), tc, proof, target,
-            self.root_path.clone(), type_name.to_owned(), backward,
-        )?;
-        self.engine = Some(engine);
-        let mut data = self.snapshot();
-        data.message = Some("Resumed rewrite session".to_owned());
-        Ok(data)
-    }
-
-    fn stop(&mut self) -> Result<ResponseData, String> {
-        // Abandoning a fill and ending a rewrite are the same act to the user:
-        // both leave the loaded module idle, both report "Session stopped".
-        if self.fill.take().is_none() {
-            self.engine = None;
-        }
-        let mut data = self.snapshot();
-        data.message = Some("Session stopped".to_owned());
-        Ok(data)
-    }
-
-    fn set_backward(&mut self, on: Option<bool>) -> Result<ResponseData, String> {
-        // Mid-session the mode is fixed; only report it.  Idle, toggle/set it.
-        if !self.session_active() {
-            if let Some(b) = on { self.backward = b; }
-        }
-        let mut data = self.snapshot();
-        data.backward = self.session_backward();
-        data.message = Some(format!("Backward mode {}", if data.backward { "on" } else { "off" }));
-        Ok(data)
+        Answer::message(format!("Backward mode {}", on_off(self.session_backward())))
     }
 
     fn session_backward(&self) -> bool {
-        match (&self.engine, &self.fill) {
-            (Some(e), _) => e.backward(),
-            (_, Some((_, FillSession::Rewrite(e)))) => e.backward(),
-            _ => self.backward,
-        }
+        self.engine().map_or(self.backward, RewriteEngine::backward)
     }
 
-    // ── Hole filling ──────────────────────────────────────────────────────────
-
-    fn holes_response(&self) -> ResponseData {
-        let mut data = ResponseData::empty();
-        data.holes = list_open_holes(&self.store, &self.root_path).iter().map(|h| HoleInfo {
-            index: h.index,
-            type_name: h.type_name.clone(),
-            map_name: h.map_name.clone(),
-            domain_name: h.domain_name.clone(),
-            source_name: h.source_name.clone(),
-            dim: h.dim,
-            boundary: h.boundary.clone(),
-        }).collect();
-        data.constraints = list_constraints(&self.store, &self.root_path);
-        data
+    fn begin_fill(&mut self, index: usize) -> Result<Answer, String> {
+        self.ensure_idle()?;
+        let (hole, session) =
+            start_fill(self.store(), &self.file.program, self.root_path(), index, self.backward)?;
+        Ok(self.begin(Activity::Fill(hole, session)))
     }
 
-    fn begin_fill(&mut self, index: usize, backward: bool) -> Result<ResponseData, String> {
-        if self.session_active() {
-            return Err("Session already active — stop it first".to_owned());
-        }
-        let (ctx, session) = start_fill(&self.store, &self.root_path, &self.root_path, index, backward)?;
-        let boundary = ctx.boundary.clone();
-        self.fill = Some((ctx, session));
-        let mut data = self.snapshot();
-        data.message = Some(format!("Filling {}", boundary));
-        Ok(data)
-    }
-
-    fn finalize_fill(&mut self) -> Result<ResponseData, String> {
-        let (ctx, session) = self.fill.as_ref().ok_or("No active hole-filling session — use 'fill <n>'")?;
+    fn finalize_fill(&mut self) -> Result<Answer, String> {
+        let Activity::Fill(hole, session) = &self.activity else {
+            return Err("No active hole-filling session — use 'fill <n>'".to_owned());
+        };
         let filler = session.filler()?;
-        let message = filled_report(&self.store, ctx, &filler);
-        let new_source = edit_for_fill(&self.store, ctx, &filler, &self.source)?;
-        // An inconsistent fill makes re-evaluation error; report it and keep the
-        // session so the user can retry.
-        let new_store = self.reevaluate(&new_source)?;
-        self.store = new_store;
-        self.source = new_source;
-        self.fill = None;
-        let mut data = self.snapshot();
-        data.message = Some(message);
-        data.source = Some(self.source.clone());
-        Ok(data)
+        let message = filled_report(self.store(), hole, &filler);
+        let source = edit_for_fill(self.store(), hole, &filler, self.source())?;
+        // Keep the fill available for retry when re-evaluation fails.
+        self.file = InterpretedFile::load(&self.loader.with_file(self.root_path(), source), self.root_path())
+            .map_err(|failure| failure.message)?;
+        self.activity = Activity::Idle;
+        Ok(Answer { body: Body::Message(message), edited: true })
     }
 
-    // ── Persistence ─────────────────────────────────────────────────────────
+    /// The root's disk path; in-memory sessions have no disk target.
+    pub(super) fn disk_root(&self) -> Option<&str> {
+        if self.loader.is_in_memory() { None } else { Some(self.root_path()) }
+    }
 
-    fn save(&self, path: Option<String>) -> Result<ResponseData, String> {
-        let mut data = self.snapshot();
-        match &self.loader {
-            LoadStrategy::Disk => {
-                let target = path.unwrap_or_else(|| self.root_path.clone());
-                std::fs::write(&target, format!("{}\n", self.source.trim_end()))
-                    .map_err(|e| format!("cannot write '{}': {}", target, e))?;
-                data.message = Some(format!("Saved to '{}'", target));
-            }
-            LoadStrategy::Virtual(_) => {
-                // The editor performs the actual write; hand it the source.
-                data.source = Some(self.source.clone());
-            }
+    /// Write where the kernel directs, without applying filesystem policy.
+    pub(super) fn write(&self, to: &Path) -> Result<Answer, String> {
+        std::fs::write(to, format!("{}\n", self.source().trim_end()))
+            .map_err(|e| format!("cannot write '{}': {}", to.display(), e))?;
+        Ok(Answer::message(format!("Saved to '{}'", to.display())))
+    }
+
+    fn apply_choices(&mut self, choices: &[usize]) -> Result<Answer, String> {
+        match &mut self.activity {
+            Activity::Fill(_, FillSession::ZeroCell(zc)) => match choices {
+                [k] => zc.choose(*k)?,
+                _ => return Err("A 0-cell fill takes one choice".to_owned()),
+            },
+            Activity::Rewrite(e) | Activity::Fill(_, FillSession::Rewrite(e)) => match choices {
+                [k] => { e.step(*k)?; }
+                _ if e.parallel() => { e.step_multi(choices)?; }
+                _ => return Err("Multi-apply requires parallel mode".to_owned()),
+            },
+            Activity::Idle => return Err(NO_SESSION.to_owned()),
         }
-        Ok(data)
+        Ok(Answer::outcome(Outcome::State))
     }
 
-    // ── Engine commands ────────────────────────────────────────────────────────
-
-    fn engine_step(&mut self, choices: &[usize]) -> Result<ResponseData, String> {
-        if let Some(zc) = self.zero_cell_mut() {
-            let k = choices.first().copied().unwrap_or(0);
-            zc.choose(k)?;
-            let name = self.zero_cell().and_then(|z| z.chosen_name()).unwrap_or("?").to_owned();
-            let mut data = self.snapshot();
-            data.message = Some(format!("Chose {}", name));
-            return Ok(data);
-        }
-        let parallel = self.engine_ref().map(|e| e.parallel()).unwrap_or(false);
-        let e = self.engine_mut().ok_or("No active session — use 'start' or 'fill'")?;
-        let rule = if choices.len() == 1 {
-            e.step(choices[0])
-        } else if parallel {
-            e.step_multi(choices)
-        } else {
-            return Err("Multi-apply requires parallel mode".to_owned());
-        }?.to_owned();
-        let mut data = self.snapshot();
-        data.message = Some(format!("Applied {}", rule));
-        Ok(data)
+    fn engine_auto(&mut self, n: usize, random: bool) -> Result<Answer, String> {
+        let e = self.engine_mut().ok_or(NO_SESSION)?;
+        let (applied, stop_reason) = if random { e.random(n) } else { e.auto(n) }?;
+        Ok(Answer::outcome(Outcome::Auto(AutoInfo { applied, stop_reason })))
     }
 
-    fn engine_auto(&mut self, n: usize, random: bool) -> Result<ResponseData, String> {
-        let e = self.engine_mut().ok_or("No active session — use 'start' or 'fill'")?;
-        let (applied, stop) = if random { e.random(n) } else { e.auto(n) }?;
-        let tail = stop.map(|r| format!(" ({})", r)).unwrap_or_default();
-        let msg = format!("Applied {} step{}{}", applied, if applied == 1 { "" } else { "s" }, tail);
-        let mut data = self.snapshot();
-        data.auto = Some(AutoInfo { applied, stop_reason: stop.unwrap_or("").to_owned() });
-        data.message = Some(msg);
-        Ok(data)
-    }
-
-    fn engine_undo(&mut self, step: Option<usize>, redo: bool) -> Result<ResponseData, String> {
-        if let Some(zc) = self.zero_cell_mut() {
-            if redo { zc.redo()?; } else { zc.undo()?; }
-            return self.snapshot_active();
-        }
-        let e = self.engine_mut().ok_or("No active session — use 'start' or 'fill'")?;
-        let reset = !redo && step == Some(0);
+    /// Undo or redo, one step or to a step, through either kind of history.
+    fn travel(&mut self, step: Option<usize>, redo: bool) -> Result<Answer, String> {
+        let steps: &mut dyn Steps = match &mut self.activity {
+            Activity::Rewrite(e) | Activity::Fill(_, FillSession::Rewrite(e)) => e,
+            Activity::Fill(_, FillSession::ZeroCell(zc)) => zc,
+            Activity::Idle => return Err(NO_SESSION.to_owned()),
+        };
         match (redo, step) {
-            (false, None) => e.undo()?,
-            (false, Some(s)) => e.undo_to(s)?,
-            (true, None) => e.redo()?,
-            (true, Some(s)) => e.redo_to(s)?,
-        }
-        let mut data = self.snapshot();
-        if reset { data.message = Some("Reset to source".to_owned()); }
-        Ok(data)
+            (false, None) => steps.undo(),
+            (false, Some(step)) => steps.undo_to(step),
+            (true, None) => steps.redo(),
+            (true, Some(step)) => steps.redo_to(step),
+        }?;
+        Ok(Answer::outcome(Outcome::State))
     }
 
-    fn set_parallel(&mut self, on: Option<bool>) -> Result<ResponseData, String> {
-        // Parallel mode is a property of the rewrite engine, so it needs a
-        // session — mirroring `rules`.  `None` just reports the current mode.
-        {
-            let e = self.engine_mut().ok_or("No active session")?;
-            if let Some(on) = on { e.set_parallel(on); }
-        }
-        let mut data = self.snapshot();
-        data.message = Some(format!("Parallel mode {}", if data.parallel { "on" } else { "off" }));
-        Ok(data)
+    fn set_parallel(&mut self, on: Option<bool>) -> Result<Answer, String> {
+        let e = self.engine_mut().ok_or(NO_SESSION)?;
+        if let Some(on) = on { e.set_parallel(on); }
+        Ok(Answer::message(format!("Parallel mode {}", on_off(e.parallel()))))
     }
 
-    fn engine_set_target(&mut self, name: &str) -> Result<ResponseData, String> {
-        let e = self.engine_mut().ok_or("No active session")?;
-        e.set_target(name)?;
-        self.snapshot_active()
+    /// The expression that `store` would persist, together with its boundary.
+    fn proof_response(&self) -> Result<Answer, String> {
+        let proof = match &self.activity {
+            Activity::Rewrite(e) | Activity::Fill(_, FillSession::Rewrite(e)) => Some(response::proof(e)),
+            Activity::Fill(_, FillSession::ZeroCell(zc)) => zc.chosen_name()
+                .map(|name| response::Proof { boundary: None, expr: name.to_owned() }),
+            Activity::Idle => return Err(NO_SESSION.to_owned()),
+        };
+        Ok(Answer::outcome(Outcome::Proof(proof)))
     }
 
-    /// The running proof as the re-parseable expression `store` would persist
-    /// (with its `proof` boundary in `data.proof`).  A zero-step session is the
-    /// identity proof on the initial diagram — still a proof — so `proof_expr`
-    /// is the rendered initial diagram, never `None`, for an engine session.
-    fn proof_response(&self) -> Result<ResponseData, String> {
-        // A 0-cell fill has no engine, but it is still a session: before a choice
-        // the proof is empty (`(no proof yet)`); after, it is the chosen 0-cell.
-        if let Some(zc) = self.zero_cell() {
-            let mut data = self.snapshot();
-            if let Some(name) = zc.chosen_name() {
-                data.proof_expr = Some(name.to_owned());
-                data.proof = Some(zero_cell_proof_info());
-            }
-            return Ok(data);
-        }
-        let mut data = self.snapshot_active()?;
-        data.proof_expr = self.engine_ref().map(stored_expr);
-        Ok(data)
+    fn history_response(&self) -> Result<Answer, String> {
+        let history = match &self.activity {
+            Activity::Rewrite(e) | Activity::Fill(_, FillSession::Rewrite(e)) => build_history(e),
+            Activity::Fill(_, FillSession::ZeroCell(zc)) => zc.chosen_name().zip(zc.chosen_index())
+                .map(|(name, i)| HistoryEntry { step: 1, rule_name: name.to_owned(), choice: Some(vec![i]) })
+                .into_iter().collect(),
+            Activity::Idle => return Err(NO_SESSION.to_owned()),
+        };
+        Ok(Answer::outcome(Outcome::History(history)))
     }
 
-    fn history_response(&self) -> Result<ResponseData, String> {
-        // In a 0-cell fill the single "move" is the choice: `1. x [choice 3]`.
-        if let Some(zc) = self.zero_cell() {
-            let mut data = self.snapshot();
-            if let (Some(name), Some(i)) = (zc.chosen_name(), zc.chosen_index()) {
-                data.history = vec![HistoryEntry {
-                    step: 1,
-                    rule_name: name.to_owned(),
-                    choice: Some(vec![i]),
-                }];
-            }
-            return Ok(data);
-        }
-        match self.engine_ref() {
-            Some(e) => Ok(build_response(e, true)),
-            None => self.snapshot_active(),
-        }
+    fn rules_response(&self) -> Result<Answer, String> {
+        let rules = match &self.activity {
+            Activity::Rewrite(e) | Activity::Fill(_, FillSession::Rewrite(e)) => build_list_rules(e),
+            Activity::Fill(_, FillSession::ZeroCell(_)) => Vec::new(),
+            Activity::Idle => return Err(NO_SESSION.to_owned()),
+        };
+        Ok(Answer::outcome(Outcome::Rules(rules)))
     }
 
-    fn rules_response(&self) -> Result<ResponseData, String> {
-        match self.engine_ref() {
-            Some(e) => Ok(build_list_rules_response(e)),
-            // A 0-cell fill has no rewrite rules — `(no rules)`, as a rewrite
-            // session with none would show; the candidates live under `show`.
-            None if self.zero_cell().is_some() => Ok(self.snapshot()),
-            None => Err("No active session".to_owned()),
-        }
-    }
-
-    fn store_proof(&mut self, name: &str) -> Result<ResponseData, String> {
-        if self.zero_cell().is_some() {
-            return Err("Nothing to store in a 0-cell hole-filling session".to_owned());
-        }
-        let e = self.engine_mut().ok_or("No active session")?;
-        let expr = stored_expr(e);
+    fn store_proof(&mut self, name: &str) -> Result<Answer, String> {
+        let e = match &self.activity {
+            Activity::Rewrite(e) | Activity::Fill(_, FillSession::Rewrite(e)) => e,
+            Activity::Fill(_, FillSession::ZeroCell(_)) =>
+                return Err("Nothing to store in a 0-cell hole-filling session".to_owned()),
+            Activity::Idle => return Err(NO_SESSION.to_owned()),
+        };
+        let expr = e.proof_expr();
         let type_name = e.type_name().to_owned();
-        let (new_store, _) = e.register_proof(name)?;
-        self.store = new_store;
-        self.source = format!("{}\n\n@{}\nlet {} = {}\n", self.source.trim_end(), type_name, name, expr);
-        let mut data = self.snapshot();
-        data.stored = Some(StoredInfo { type_name, def_name: name.to_owned(), expr });
-        data.message = Some(format!("Stored '{}'", name));
-        data.source = Some(self.source.clone());
-        Ok(data)
+        let source = format!("{}\n\n@{}\nlet {} = {}\n", self.source().trim_end(), type_name, name, expr);
+        let program = language::parse(&source)
+            .map_err(|errs| format!("Cannot store proof: resulting source does not parse ({} error(s))", errs.len()))?;
+        let store = self.engine_mut().ok_or(NO_SESSION)?.register_proof(name)?;
+        self.file.state = store;
+        self.file.source = source;
+        self.file.program = program;
+        Ok(Answer {
+            body: Body::Outcome(Outcome::Stored(StoredInfo { type_name, def_name: name.to_owned(), expr })),
+            edited: true,
+        })
     }
 
-    // ── Snapshot + internal helpers ──────────────────────────────────────────
-
-    /// Build a `ResponseData` for the current state — the active rewrite engine's
-    /// state, a 0-cell fill's state, or an empty response when idle.
-    fn snapshot(&self) -> ResponseData {
-        match &self.fill {
-            Some((ctx, FillSession::Rewrite(e))) => {
-                let mut d = build_response(e, false);
-                d.fill = Some(fill_info(ctx));
-                d
-            }
-            Some((ctx, FillSession::ZeroCell(zc))) => {
-                let mut d = ResponseData::empty();
-                d.fill = Some(fill_info(ctx));
-                d.target_reached = zc.target_reached();
-                d.zero_cell = Some(zero_cell_info(zc));
-                d
-            }
-            None => match &self.engine {
-                Some(e) => build_response(e, false),
-                None => ResponseData::empty(),
+    /// The activity's image. A loaded session never returns `Unloaded`.
+    pub fn state(&self) -> State {
+        let backward = self.session_backward();
+        let activity = self.begun;
+        match &self.activity {
+            Activity::Idle => State::Idle { module: self.root_path().to_owned(), backward },
+            Activity::Rewrite(e) => State::Rewrite { activity, backward, rewrite: rewrite_state(e) },
+            Activity::Fill(hole, session) => State::Fill {
+                activity, backward, hole: fill_info(hole),
+                by: match session {
+                    FillSession::Rewrite(e) => FillState::Rewrite(rewrite_state(e)),
+                    FillSession::ZeroCell(zc) => FillState::ZeroCell(zero_cell_info(zc)),
+                },
             },
         }
     }
-
-    fn snapshot_active(&self) -> Result<ResponseData, String> {
-        if self.session_active() { Ok(self.snapshot()) } else { Err("No active session".to_owned()) }
-    }
-
-    /// `show`/`status`: the active session's state, or the loaded module's info
-    /// when idle.  Never errors — idle is a valid state to inspect.
-    fn show(&self) -> ResponseData {
-        if self.session_active() {
-            self.snapshot()
-        } else {
-            let mut d = ResponseData::empty();
-            d.module = Some(self.root_path.clone());
-            d
-        }
-    }
-
-    fn engine_ref(&self) -> Option<&RewriteEngine> {
-        match &self.fill {
-            Some((_, FillSession::Rewrite(e))) => Some(e),
-            Some((_, FillSession::ZeroCell(_))) => None,
-            None => self.engine.as_ref(),
-        }
-    }
-
-    fn engine_mut(&mut self) -> Option<&mut RewriteEngine> {
-        match &mut self.fill {
-            Some((_, FillSession::Rewrite(e))) => Some(e),
-            Some((_, FillSession::ZeroCell(_))) => None,
-            None => self.engine.as_mut(),
-        }
-    }
-
-    fn zero_cell(&self) -> Option<&super::fill::ZeroCellFill> {
-        match &self.fill {
-            Some((_, FillSession::ZeroCell(zc))) => Some(zc),
-            _ => None,
-        }
-    }
-
-    fn zero_cell_mut(&mut self) -> Option<&mut super::fill::ZeroCellFill> {
-        match &mut self.fill {
-            Some((_, FillSession::ZeroCell(zc))) => Some(zc),
-            _ => None,
-        }
-    }
-
-    fn reevaluate(&self, new_source: &str) -> Result<Arc<GlobalStore>, String> {
-        match &self.loader {
-            LoadStrategy::Disk => reevaluate(&self.root_path, new_source),
-            LoadStrategy::Virtual(modules) => {
-                let mut files = modules.clone();
-                files.insert(self.root_path.clone(), new_source.to_string());
-                let loader = Loader::with_virtual_files(files);
-                match InterpretedFile::load(&loader, &self.root_path) {
-                    LoadResult::Loaded(file) => Ok(Arc::clone(&file.state)),
-                    LoadResult::LoadError(e) => Err(format!("{:?}", e)),
-                    LoadResult::InterpError { errors, source, path } => Err(errors
-                        .iter()
-                        .map(|e| e.to_diagnostic(&source, Some(path.clone())).message)
-                        .collect::<Vec<_>>()
-                        .join("; ")),
-                }
-            }
-        }
-    }
 }
 
-/// The expression `store` persists for the running proof, and `proof` displays:
-/// the composite of the rewrite steps, or — for a **zero-step** (identity)
-/// proof — the initial diagram itself.  A zero-step proof is still a proof, so
-/// this is always defined for an active engine session.
-fn stored_expr(e: &RewriteEngine) -> String {
-    e.proof_expr().unwrap_or_else(|| render_diagram(e.initial_diagram(), e.type_complex()))
+fn on_off(on: bool) -> &'static str {
+    if on { "on" } else { "off" }
 }
 
-/// The `proof` header for a 0-cell fill: dimension 0 and no boundary, which the
-/// renderer shows as a bare `proof :` above the chosen cell.
-fn zero_cell_proof_info() -> ProofInfo {
-    ProofInfo { dim: 0, step_count: 1, input_label: String::new(), output_label: String::new() }
-}
-
-fn fill_info(ctx: &FillContext) -> FillInfo {
+fn fill_info(hole: &HoleRef) -> FillInfo {
     FillInfo {
-        type_name: ctx.type_name.clone(),
-        map_name: ctx.map_name.clone(),
-        domain_name: ctx.domain_name.clone(),
-        source_name: ctx.source_name.clone(),
-        dim: ctx.dim,
+        type_name: hole.type_name.clone(),
+        map_name: hole.map_name.clone(),
+        domain_name: hole.domain_name.clone(),
+        source_name: hole.source_name.clone(),
+        dim: hole.dim,
     }
 }
 
-fn zero_cell_info(zc: &super::fill::ZeroCellFill) -> ZeroCellInfo {
+fn zero_cell_info(zc: &ZeroCellFill) -> ZeroCellInfo {
     let choices = if zc.chosen.is_some() {
         Vec::new()
     } else {
@@ -557,7 +346,54 @@ fn zero_cell_info(zc: &super::fill::ZeroCellFill) -> ZeroCellInfo {
         choices,
         chosen: zc.chosen_name().map(str::to_owned),
         target_reached: zc.target_reached(),
-        can_undo: zc.chosen.is_some(),
+        can_undo: zc.applied() > 0,
         can_redo: zc.can_redo(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn store_proof_refuses_unparseable_source_without_mutation() {
+        let loader = Loader::in_memory([(
+            "Idem.ali".to_owned(),
+            include_str!("../../tests/fixtures/Idem.ali").to_owned(),
+        )].into_iter().collect());
+        let mut session = Session::open(loader, "Idem.ali").expect("load Idem");
+        session.apply(Command::Start {
+            type_name: "Idem".to_owned(),
+            initial: "lhs".to_owned(),
+            target: Some("rhs".to_owned()),
+        }).expect("start Idem");
+        session.apply(Command::Apply(vec![0])).expect("apply first rewrite");
+
+        let source_before = session.source().as_bytes().to_vec();
+        let store_before = Arc::clone(session.store());
+        let engine_store_before = session.engine().unwrap().store_arc();
+        assert!(Arc::ptr_eq(&store_before, &engine_store_before));
+        let state_before = serde_json::to_value(session.state()).unwrap();
+        let proof_before = session.engine().unwrap().proof_expr();
+
+        // Bypass command parsing to exercise the source commit boundary directly.
+        let result = session.apply(Command::Store("bad(".to_owned()));
+        assert!(result.is_err());
+        assert_eq!(session.source().as_bytes(), source_before);
+        assert!(language::parse(session.source()).is_ok());
+        assert!(Arc::ptr_eq(session.store(), &store_before));
+        let engine = session.engine().unwrap();
+        assert!(Arc::ptr_eq(&engine.store_arc(), &engine_store_before));
+        assert_eq!(serde_json::to_value(session.state()).unwrap(), state_before);
+        assert_eq!(engine.proof_expr(), proof_before);
+        assert!(!engine.type_complex().name_in_use("bad("));
+        assert!(engine.type_complex().find_generator("bad(").is_none());
+
+        assert!(session.apply(Command::Holes).is_ok());
+        let answer = session.apply(Command::Store("p".to_owned())).expect("valid store after refusal");
+        assert!(answer.edited);
+        assert!(language::parse(session.source()).is_ok());
+        assert!(session.engine().unwrap().type_complex().name_in_use("p"));
+        assert!(Arc::ptr_eq(session.store(), &session.engine().unwrap().store_arc()));
     }
 }

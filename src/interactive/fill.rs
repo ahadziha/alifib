@@ -25,14 +25,14 @@ use crate::interpreter::GlobalStore;
 use crate::language::ast::{self, Block, ComplexInstr, Generator, LocalInst, PMapEntry, PartialMapDef, Spanned, TypeInst};
 use crate::output::normalize::{domain_complex, render_hole_boundary, render_hole_constraints};
 
-use super::engine::{reevaluate, RewriteEngine};
-use super::protocol::ConstraintInfo;
+use super::engine::{RewriteEngine, Steps};
+use super::response::ConstraintInfo;
 
 /// One entry of the global hole list: an *actual* hole (`image: None`) of a map
 /// in a type of the current module.
 #[derive(Debug, Clone)]
 pub struct HoleRef {
-    /// 0-based position in the list (displayed 1-based).
+    /// 0-based position in the list, as `holes` displays and `fill` takes it.
     pub index: usize,
     pub type_gid: GlobalId,
     pub type_name: String,
@@ -43,20 +43,6 @@ pub struct HoleRef {
     pub source_name: String,
     pub dim: usize,
     /// Pre-rendered boundary, `?name : in → out` (or `?name` for a 0-cell).
-    pub boundary: String,
-}
-
-/// What a `done` needs to know to extend the right map.
-#[derive(Debug, Clone)]
-pub struct FillContext {
-    pub type_gid: GlobalId,
-    pub type_name: String,
-    pub map_name: String,
-    pub domain_name: String,
-    pub source_name: String,
-    /// Dimension of the hole (0 → a 0-cell choice; ≥1 → a rewrite session).
-    pub dim: usize,
-    /// Pre-rendered hole boundary, `?name : in → out` (or `?name` for a 0-cell).
     pub boundary: String,
 }
 
@@ -87,22 +73,7 @@ impl ZeroCellFill {
         Ok(())
     }
 
-    pub fn undo(&mut self) -> Result<(), String> {
-        match self.chosen.take() {
-            Some(c) => { self.undone = Some(c); Ok(()) }
-            None => Err("nothing to undo".to_owned()),
-        }
-    }
-
-    pub fn redo(&mut self) -> Result<(), String> {
-        match self.undone.take() {
-            Some(c) => { self.chosen = Some(c); Ok(()) }
-            None => Err("nothing to redo".to_owned()),
-        }
-    }
-
     pub fn target_reached(&self) -> bool { self.chosen.is_some() }
-    pub fn can_redo(&self) -> bool { self.undone.is_some() }
 
     /// Display name of the chosen 0-cell, if any.
     pub fn chosen_name(&self) -> Option<&str> {
@@ -122,6 +93,23 @@ impl ZeroCellFill {
         let tag = self.chosen.as_ref()
             .ok_or_else(|| "choose a 0-cell first".to_owned())?;
         Diagram::cell(tag.clone(), &CellData::Zero).map_err(|e| format!("{}", e))
+    }
+}
+
+/// The choice is the single step: undone, it is kept for redo.
+impl Steps for ZeroCellFill {
+    fn applied(&self) -> usize { usize::from(self.chosen.is_some()) }
+    fn recorded(&self) -> usize { usize::from(self.chosen.is_some() || self.undone.is_some()) }
+
+    fn seek(&mut self, step: usize) -> Result<(), String> {
+        let (from, to) = match step {
+            0 => (&mut self.chosen, &mut self.undone),
+            _ => (&mut self.undone, &mut self.chosen),
+        };
+        if let Some(tag) = from.take() {
+            *to = Some(tag);
+        }
+        Ok(())
     }
 }
 
@@ -161,11 +149,15 @@ struct MapView<'a> {
     holes: &'a [MapHole],
 }
 
-/// Visit every map of every type in `root_module`, in the canonical
-/// `(type, map)` order both listings number by, resolving each map's domain.
-/// The single source of that traversal — [`list_open_holes`] and
-/// [`list_constraints`] differ only in what they read off each [`MapView`].
-fn visit_maps(store: &GlobalStore, root_module: &str, mut visit: impl FnMut(MapView)) {
+/// Visit maps defined in the root's program, in the canonical `(type, map)`
+/// order both listings number by, resolving each map's domain. The same
+/// [`find_map_def`] lookup decides ownership here and locates edits for `done`.
+fn visit_maps(
+    store: &GlobalStore,
+    program: &ast::Program,
+    root_module: &str,
+    mut visit: impl FnMut(MapView),
+) {
     let Some(module) = store.find_module(root_module) else { return };
 
     let mut types: Vec<(String, GlobalId)> = module
@@ -185,6 +177,7 @@ fn visit_maps(store: &GlobalStore, root_module: &str, mut visit: impl FnMut(MapV
             target.maps_iter().map(|(n, _, d)| (n.clone(), d.clone())).collect();
         maps.sort_by(|a, b| a.0.cmp(&b.0));
         for (map_name, mdom) in &maps {
+            if find_map_def(program, &type_name, map_name).is_none() { continue; }
             let Some(holes) = target.map_holes(map_name) else { continue };
             let domain = domain_complex(store, mdom);
             let domain_name = match mdom {
@@ -215,11 +208,15 @@ fn holes_in_order<'a>(m: &MapView<'a>, want_image: bool) -> Vec<&'a MapHole> {
     hs
 }
 
-/// The actual holes (`image: None`) of maps in types of the current module,
+/// The actual holes (`image: None`) of maps defined in the root's program,
 /// numbered in a deterministic order (type, map, dim, source-generator name).
-pub fn list_open_holes(store: &GlobalStore, root_module: &str) -> Vec<HoleRef> {
+pub fn list_open_holes(
+    store: &GlobalStore,
+    program: &ast::Program,
+    root_module: &str,
+) -> Vec<HoleRef> {
     let mut out = Vec::new();
-    visit_maps(store, root_module, |m| {
+    visit_maps(store, program, root_module, |m| {
         for h in holes_in_order(&m, false) {
             let source_name = m.domain
                 .find_generator_by_tag(&h.source)
@@ -242,17 +239,22 @@ pub fn list_open_holes(store: &GlobalStore, root_module: &str) -> Vec<HoleRef> {
 }
 
 /// The constraints imposed by conditional pending assignments (`x => a`) of maps
-/// in the current module: for each such assignment whose image boundary still has
-/// holes, the equations `F(x.side) = a.side`.  Ordered as [`list_open_holes`].
-pub fn list_constraints(store: &GlobalStore, root_module: &str) -> Vec<ConstraintInfo> {
+/// defined in the root's program: for each assignment whose image boundary still
+/// has holes, the equations `F(x.side) = a.side`. Ordered as [`list_open_holes`].
+pub fn list_constraints(
+    store: &GlobalStore,
+    program: &ast::Program,
+    root_module: &str,
+) -> Vec<ConstraintInfo> {
     let mut out = Vec::new();
-    visit_maps(store, root_module, |m| {
+    visit_maps(store, program, root_module, |m| {
         for h in holes_in_order(&m, true) {
             let equations = render_hole_constraints(h, m.holes, m.target, m.domain);
             if equations.is_empty() {
                 continue;
             }
             out.push(ConstraintInfo {
+                module: root_module.to_owned(),
                 type_name: m.type_name.to_owned(),
                 map_name: m.map_name.to_owned(),
                 domain_name: m.domain_name.clone(),
@@ -268,12 +270,12 @@ pub fn list_constraints(store: &GlobalStore, root_module: &str) -> Vec<Constrain
 /// dependencies (reporting their numbers).
 pub fn start_fill(
     store: &Arc<GlobalStore>,
+    program: &ast::Program,
     root_module: &str,
-    source_file: &str,
     index: usize,
     backward: bool,
-) -> Result<(FillContext, FillSession), String> {
-    let list = list_open_holes(store, root_module);
+) -> Result<(HoleRef, FillSession), String> {
+    let list = list_open_holes(store, program, root_module);
     let href = list.get(index).cloned()
         .ok_or_else(|| format!("no hole numbered {}", index))?;
 
@@ -291,16 +293,6 @@ pub fn start_fill(
         .ok_or_else(|| format!("type `{}` not found", href.type_name))?
         .complex.clone();
 
-    let ctx = FillContext {
-        type_gid: href.type_gid,
-        type_name: href.type_name.clone(),
-        map_name: href.map_name.clone(),
-        domain_name: href.domain_name.clone(),
-        source_name: href.source_name.clone(),
-        dim: href.dim,
-        boundary: href.boundary.clone(),
-    };
-
     let session = if href.dim == 0 {
         let choices: Vec<(Tag, String)> = tc
             .generators_iter()
@@ -316,7 +308,7 @@ pub fn start_fill(
             Arc::clone(&tc),
             initial,
             Some(target),
-            source_file.to_owned(),
+            root_module.to_owned(),
             href.type_name.clone(),
             format!("?{}.in", href.source_name),
             Some(format!("?{}.out", href.source_name)),
@@ -324,7 +316,7 @@ pub fn start_fill(
         )?;
         FillSession::Rewrite(engine)
     };
-    Ok((ctx, session))
+    Ok((href, session))
 }
 
 /// Realise a hole's boundary paste trees (now hole-free) to concrete diagrams.
@@ -375,15 +367,15 @@ fn blocking_holes(store: &GlobalStore, list: &[HoleRef], href: &HoleRef) -> Vec<
 
 /// The shared "Filled ?x with <filler> : in → out" report — the boundary is
 /// read off the *filler* (empty for a 0-cell, and correct even when the filler
-/// is a lower-dimensional/degenerate diagram).  Used by both REPLs.
-pub fn filled_report(store: &GlobalStore, ctx: &FillContext, filler: &Diagram) -> String {
-    match store.find_type(ctx.type_gid) {
-        Some(t) => filled_message(ctx, filler, &t.complex),
-        None => format!("Filled ?{}", ctx.source_name),
+/// is a lower-dimensional/degenerate diagram).
+pub fn filled_report(store: &GlobalStore, hole: &HoleRef, filler: &Diagram) -> String {
+    match store.find_type(hole.type_gid) {
+        Some(t) => filled_message(hole, filler, &t.complex),
+        None => format!("Filled ?{}", hole.source_name),
     }
 }
 
-fn filled_message(ctx: &FillContext, filler: &Diagram, scope: &Complex) -> String {
+fn filled_message(hole: &HoleRef, filler: &Diagram, scope: &Complex) -> String {
     let expr = crate::output::render_diagram(filler, scope);
     let boundary = filler.top_dim().checked_sub(1).and_then(|k| {
         let inp = Diagram::boundary(Sign::Input, k, filler).ok()?;
@@ -392,38 +384,22 @@ fn filled_message(ctx: &FillContext, filler: &Diagram, scope: &Complex) -> Strin
             crate::output::render_diagram(&inp, scope),
             crate::output::render_diagram(&out, scope)))
     }).unwrap_or_default();
-    format!("Filled ?{} with {}{}", ctx.source_name, expr, boundary)
+    format!("Filled ?{} with {}{}", hole.source_name, expr, boundary)
 }
 
-/// Finalise a fill: append `x => <filler>` to `F`'s definition in `source` and
-/// re-evaluate.  Returns the new store and the edited source on success; on an
-/// inconsistent fill the interpreter errors and nothing is changed.
-pub fn finalize(
-    store: &Arc<GlobalStore>,
-    ctx: &FillContext,
-    filler: &Diagram,
-    canonical_path: &str,
-    source: &str,
-) -> Result<(Arc<GlobalStore>, String), String> {
-    let new_source = edit_for_fill(store, ctx, filler, source)?;
-    let new_store = reevaluate(canonical_path, &new_source)?;
-    Ok((new_store, new_source))
-}
-
-/// Splice the proof of `ctx`'s hole into `F`'s definition, returning the edited
-/// source *without* re-evaluating.  The CLI re-evaluates from disk; the web with
-/// its own virtual loader, so they share only the edit.
+/// Splice the proof of `hole` into its map's definition, returning the edited
+/// source without re-evaluating.
 pub fn edit_for_fill(
     store: &GlobalStore,
-    ctx: &FillContext,
+    hole: &HoleRef,
     filler: &Diagram,
     source: &str,
 ) -> Result<String, String> {
-    let tc = store.find_type(ctx.type_gid)
-        .ok_or_else(|| format!("type `{}` not found", ctx.type_name))?
+    let tc = store.find_type(hole.type_gid)
+        .ok_or_else(|| format!("type `{}` not found", hole.type_name))?
         .complex.clone();
     let expr = crate::output::render_diagram(filler, &tc);
-    edit_map_definition(source, &ctx.type_name, &ctx.map_name, &ctx.source_name, &expr)
+    edit_map_definition(source, &hole.type_name, &hole.map_name, &hole.source_name, &expr)
 }
 
 /// Splice the proof `expr` of generator `source_name` into map `map_name`'s
@@ -448,12 +424,11 @@ fn edit_map_definition(
         PartialMapDef::Ext(ext) => {
             // Pin onto an explicit `source_name => ?` clause if there is one.
             for c in &ext.clauses {
-                if let PMapEntry::Clause(cl) = &c.inner {
-                    if lhs_generator_name(&cl.lhs.inner).as_deref() == Some(source_name) {
-                        if let ast::ClauseRhs::Hole(span) = &cl.rhs {
-                            return Ok(format!("{}{}{}", &source[..span.start], expr, &source[span.end..]));
-                        }
-                    }
+                if let PMapEntry::Clause(cl) = &c.inner
+                    && lhs_generator_name(&cl.lhs.inner).as_deref() == Some(source_name)
+                    && let ast::ClauseRhs::Hole(span) = &cl.rhs
+                {
+                    return Ok(format!("{}{}{}", &source[..span.start], expr, &source[span.end..]));
                 }
             }
             // No `?` to pin onto: append a fresh clause.
@@ -507,8 +482,10 @@ fn find_map_def<'a>(program: &'a ast::Program, type_name: &str, map_name: &str) 
             // `@type_name  let map_name :: … = …`
             Block::LocalBlock { complex, body } if complex_matches(complex, type_name) => {
                 for inst in body {
-                    if let LocalInst::DefPartialMap(dp) = &inst.inner {
-                        if dp.name.inner == map_name { return Some(&dp.value); }
+                    if let LocalInst::DefPartialMap(dp) = &inst.inner
+                        && dp.name.inner == map_name
+                    {
+                        return Some(&dp.value);
                     }
                 }
             }
@@ -525,8 +502,10 @@ fn find_map_def<'a>(program: &'a ast::Program, type_name: &str, map_name: &str) 
                         TypeInst::Generator(g) if generator_name(g) == type_name => {
                             let ast::Complex::Block { body, .. } = &g.complex.inner else { continue };
                             for ci in body {
-                                if let ComplexInstr::DefPartialMap(dp) = &ci.inner {
-                                    if dp.name.inner == map_name { return Some(&dp.value); }
+                                if let ComplexInstr::DefPartialMap(dp) = &ci.inner
+                                    && dp.name.inner == map_name
+                                {
+                                    return Some(&dp.value);
                                 }
                             }
                         }
@@ -545,7 +524,7 @@ fn generator_name(g: &Generator) -> &str {
     &g.name.inner.name.inner
 }
 
-/// Whether a block's `@…` address names `type_name`.
+/// Whether a block's whole `@…` address is the type's name in the root.
 fn complex_matches(c: &Spanned<ast::Complex>, type_name: &str) -> bool {
     let addr = match &c.inner {
         ast::Complex::Address(addr) => Some(addr),
@@ -553,7 +532,7 @@ fn complex_matches(c: &Spanned<ast::Complex>, type_name: &str) -> bool {
     };
     addr.map(|a| {
         let joined = a.iter().map(|s| s.inner.as_str()).collect::<Vec<_>>().join(".");
-        joined == type_name || a.last().map(|s| s.inner == type_name).unwrap_or(false)
+        joined == type_name
     }).unwrap_or(false)
 }
 

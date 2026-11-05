@@ -7,8 +7,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use alifib::interactive::engine::{eval_diagram_expr, load_type_context, RewriteEngine};
-use alifib::interpreter::GlobalStore;
+use alifib::interactive::engine::{eval_diagram_expr, resolve_type, RewriteEngine, Steps};
+use alifib::aux::loader::Loader;
+use alifib::interpreter::{GlobalStore, InterpretedFile};
 use alifib::output::render_diagram;
 use alifib::{Complex, Diagram};
 
@@ -25,8 +26,9 @@ impl Ctx {
             .join(file)
             .to_string_lossy()
             .into_owned();
-        let (store, complex, path) =
-            load_type_context(&file, type_name).expect("benchmark file should load");
+        let file = InterpretedFile::load(&Loader::default(vec![]), &file).expect("benchmark file should load");
+        let (store, path) = (file.state, file.path);
+        let complex = resolve_type(&store, &path, type_name).expect("benchmark type should resolve");
         Ctx { store, complex, path, type_name: type_name.to_owned() }
     }
 

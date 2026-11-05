@@ -1,0 +1,13 @@
+@Type
+
+Arrow <<= { s, t, arr : s -> t },
+
+Ob <<= {
+  a0, a1,
+  aEdge : a0 -> a1,
+  let item = aEdge,
+  index thin = [ aEdge ]
+},
+
+@Ob
+  let F :: Arrow = [ s => a0, t => a1, arr => ? ]

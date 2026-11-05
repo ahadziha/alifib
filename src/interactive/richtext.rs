@@ -1,25 +1,28 @@
-//! Medium-neutral structured rendering of a [`ResponseData`].
+//! Medium-neutral structured rendering of a command's [`Outcome`].
 //!
-//! A single producer turns a response into [`RichText`] — lines of role-tagged
+//! A single producer turns an answer into [`RichText`] — lines of role-tagged
 //! [`Segment`]s — which each front-end then styles in its own medium: the CLI to
-//! ANSI (via [`Display::style`](super::display::Display::style)), the web to CSS
-//! spans.  Layout and content live here **once**, so they cannot drift between
-//! front-ends; only the role→colour mapping is declared per medium (which is
-//! correct — styling *should* differ per medium).
+//! ANSI (the CLI crate's `Display`), the browser to CSS spans. Layout and content
+//! live here **once**, so they cannot drift between front-ends; only the
+//! role→colour mapping is declared per
+//! medium (which is correct — styling *should* differ per medium).
 //!
 //! Plain-mode invariant: concatenating every segment's `text` (with [`Role::Redex`]
 //! wrapped in `[…]`) reproduces the uncoloured transcript exactly.
 
-use serde::Serialize;
+use std::fmt;
 
-use super::protocol::{
-    ConstraintInfo, DiagramInfo, HoleInfo, HomologyInfo, Request, ResponseData, RuleInfo,
-    TypeDetailInfo, TypeSummaryInfo, ZeroCellInfo,
+use serde::{Deserialize, Serialize};
+
+use super::response::{
+    AutoInfo, ConstraintInfo, DiagramInfo, FillState, HistoryEntry, HoleInfo,
+    HomologyInfo, Outcome, Proof, RewriteState, RuleInfo, State, StoredInfo,
+    TypeInfo, ZeroCellInfo,
 };
 
 /// A semantic role for a run of text — mapped to a colour per medium, never
 /// chosen by the front-end.
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Role {
     /// Indentation, punctuation, connectives, the `→` arrow (default foreground).
@@ -42,7 +45,7 @@ pub enum Role {
 }
 
 /// One styled run of text.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Segment {
     pub role: Role,
     pub text: String,
@@ -53,7 +56,7 @@ pub type Line = Vec<Segment>;
 
 /// A rendered transcript block: lines of segments.  Serializes as
 /// `{ "lines": [ [ {role,text}, … ], … ] }`.
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct RichText {
     pub lines: Vec<Line>,
 }
@@ -97,86 +100,78 @@ impl RichText {
     fn ok(&mut self, t: impl AsRef<str>) -> &mut Self { self.push(Role::Ok, t) }
 }
 
+impl fmt::Display for RichText {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (i, line) in self.lines.iter().enumerate() {
+            if i > 0 { writeln!(f)?; }
+            for segment in line {
+                match segment.role {
+                    Role::Redex => write!(f, "[{}]", segment.text)?,
+                    _ => f.write_str(&segment.text)?,
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 // ── Dispatch ─────────────────────────────────────────────────────────────────
 
-/// Which view to render for a given response.
-#[derive(Clone, Copy, Debug)]
-pub enum RenderKind {
-    State,
-    Auto,
-    Rules,
-    History,
-    Proof,
-    Store,
-    Holes,
-    Types,
-    TypeDetail,
-    Homology,
-}
-
-/// The render kind for a session request, or `None` for requests whose reply is
-/// a single canonical message (`stop`/`done`/`save`/`backward`), the
-/// bespoke `parallel` mode line, or a non-rendered request.
-pub fn render_kind_for(req: &Request) -> Option<RenderKind> {
-    use Request::*;
-    Some(match req {
-        Start { .. } | Resume { .. } | Step { .. } | StepMulti { .. } | Undo | UndoTo { .. }
-        | Redo | RedoTo { .. } | Show | SetTarget { .. } | Fill { .. } => RenderKind::State,
-        Auto { .. } | Random { .. } => RenderKind::Auto,
-        ListRules => RenderKind::Rules,
-        History => RenderKind::History,
-        Proof => RenderKind::Proof,
-        Store { .. } => RenderKind::Store,
-        Holes => RenderKind::Holes,
-        Types => RenderKind::Types,
-        TypeInfo { .. } => RenderKind::TypeDetail,
-        Homology { .. } => RenderKind::Homology,
-        Parallel { .. } | Stop | Backward { .. } | Save { .. } | Done | Load { .. }
-        | Cell { .. } | Help { .. } | Shutdown => return None,
-    })
-}
-
-/// Render a response in the requested view.
-pub fn render_response(kind: RenderKind, data: &ResponseData) -> RichText {
-    match kind {
-        RenderKind::State => match &data.zero_cell {
-            Some(zc) => zero_cell(zc),
-            None => state(data),
-        },
-        RenderKind::Auto => auto(data),
-        RenderKind::Rules => rules(&data.rules),
-        RenderKind::History => history(data),
-        RenderKind::Proof => proof(data),
-        RenderKind::Store => store(data),
-        RenderKind::Holes => holes(&data.holes, &data.constraints),
-        RenderKind::Types => types(&data.types),
-        RenderKind::TypeDetail => data.type_detail.as_ref().map(type_detail).unwrap_or_default(),
-        RenderKind::Homology => data.homology.as_ref().map(homology).unwrap_or_default(),
+/// Render an outcome, reading the state only when the view shows it.
+pub fn render(outcome: &Outcome, state: impl FnOnce() -> State) -> RichText {
+    match outcome {
+        Outcome::Help => help(),
+        Outcome::State => render_state(&state()),
+        Outcome::Auto(info) => auto(info, &state()),
+        Outcome::Types(info) => types(info),
+        Outcome::Type(info) => type_detail(info),
+        Outcome::Homology(info) => homology(info),
+        Outcome::Holes { holes: open, constraints } => holes(open, constraints),
+        Outcome::Rules(info) => rules(info),
+        Outcome::History(entries) => history(entries),
+        Outcome::Proof(running) => proof(running.as_ref()),
+        Outcome::Stored(info) => store(info),
+        Outcome::Source(source) => {
+            let mut t = RichText::new();
+            // Keep the source's final newline as a trailing empty transcript row.
+            for line in source.split('\n') {
+                t.line().value(line);
+            }
+            t
+        }
     }
 }
 
 // ── Producers ────────────────────────────────────────────────────────────────
 
+fn render_state(state: &State) -> RichText {
+    match state {
+        State::Unloaded => {
+            let mut t = RichText::new();
+            t.line().label("no active session");
+            t
+        }
+        State::Idle { module, .. } => {
+            let mut t = RichText::new();
+            t.line().label("module:").plain(" ").value(module);
+            t
+        }
+        State::Rewrite { rewrite: data, .. }
+        | State::Fill { by: FillState::Rewrite(data), .. } => rewrite(data),
+        State::Fill { by: FillState::ZeroCell(zc), .. } => zero_cell(zc),
+    }
+}
+
 /// An active rewrite state: step count, current/target diagrams, and the
 /// available rewrites (each `in → out` with its bracketed match), or none.
-fn state(data: &ResponseData) -> RichText {
+fn rewrite(data: &RewriteState) -> RichText {
     let mut t = RichText::new();
-
-    // Idle: no active session — `show`/`status` reports the loaded module instead.
-    if data.current.is_none() {
-        match &data.module {
-            Some(path) => { t.line().label("module:").plain(" ").value(path); }
-            None => { t.line().label("no active session"); }
-        }
-        return t;
-    }
 
     t.line().label("step:").plain(" ").value(data.step_count.to_string());
 
-    if let Some(cur) = &data.current {
-        let label = if cur.label.is_empty() { "—" } else { cur.label.as_str() };
-        t.line().label("current:").plain(" ").value(label);
-    }
+    let cur = &data.current;
+    let label = if cur.label.is_empty() { "—" } else { cur.label.as_str() };
+    t.line().label("current:").plain(" ").value(label);
 
     if let Some(tg) = &data.target {
         t.line().label("target:").plain(" ").value(&tg.label);
@@ -227,27 +222,20 @@ fn zero_cell(zc: &ZeroCellInfo) -> RichText {
 }
 
 /// An `auto`/`random` run: the summary line then the resulting state.
-fn auto(data: &ResponseData) -> RichText {
-    let (applied, reason) = match &data.auto {
-        Some(a) => (a.applied, if a.stop_reason.is_empty() { String::new() } else { format!(" ({})", a.stop_reason) }),
-        None => (0, String::new()),
-    };
+fn auto(info: &AutoInfo, state: &State) -> RichText {
+    let applied = info.applied;
+    let reason = info.stop_reason.map(|r| format!(" ({})", r)).unwrap_or_default();
     let mut t = RichText::new();
     t.line().label(format!("applied {} step{}{}", applied, if applied == 1 { "" } else { "s" }, reason));
-    t.lines.extend(state(data).lines);
+    t.lines.extend(render_state(state).lines);
     t
 }
 
 /// The result of `store`: the confirmation and the appended `let` clause.
-fn store(data: &ResponseData) -> RichText {
+fn store(s: &StoredInfo) -> RichText {
     let mut t = RichText::new();
-    match &data.stored {
-        Some(s) => {
-            t.line().ok(format!("Stored '{}'", s.def_name));
-            t.line().plain("  let ").value(&s.def_name).plain(" = ").label(&s.expr);
-        }
-        None => { t.line().plain("store failed"); }
-    }
+    t.line().ok(format!("Stored '{}'", s.def_name));
+    t.line().plain("  let ").value(&s.def_name).plain(" = ").label(&s.expr);
     t
 }
 
@@ -286,7 +274,7 @@ fn holes(holes: &[HoleInfo], constraints: &[ConstraintInfo]) -> RichText {
 }
 
 /// The type summaries for `types`: one line each, `name (dim …, N generators, …)`.
-fn types(types: &[TypeSummaryInfo]) -> RichText {
+fn types(types: &[TypeInfo]) -> RichText {
     let mut t = RichText::new();
     if types.is_empty() {
         t.line().label("  (No types found)");
@@ -294,10 +282,14 @@ fn types(types: &[TypeSummaryInfo]) -> RichText {
     }
     for ty in types {
         let mut parts = Vec::new();
-        if let Some(d) = ty.max_dim { parts.push(format!("dim {}", d)); }
-        if ty.generator_count > 0 { parts.push(format!("{} generator{}", ty.generator_count, plural(ty.generator_count))); }
-        if ty.diagram_count > 0 { parts.push(format!("{} diagram{}", ty.diagram_count, plural(ty.diagram_count))); }
-        if ty.map_count > 0 { parts.push(format!("{} map{}", ty.map_count, plural(ty.map_count))); }
+        let max_dim = ty.generators.iter().map(|g| g.dim).max();
+        let generator_count = ty.generators.len();
+        let diagram_count = ty.diagrams.len();
+        let map_count = ty.maps.len();
+        if let Some(d) = max_dim { parts.push(format!("dim {}", d)); }
+        if generator_count > 0 { parts.push(format!("{} generator{}", generator_count, plural(generator_count))); }
+        if diagram_count > 0 { parts.push(format!("{} diagram{}", diagram_count, plural(diagram_count))); }
+        if map_count > 0 { parts.push(format!("{} map{}", map_count, plural(map_count))); }
         t.line().plain("  ").value(&ty.name);
         if !parts.is_empty() {
             t.plain(" ").label(format!("({})", parts.join(", ")));
@@ -308,7 +300,7 @@ fn types(types: &[TypeSummaryInfo]) -> RichText {
 
 /// The full detail of a type: `generators:` by dimension, `diagrams:` with
 /// `= expr`, and `maps:` (flagged `… with holes`, each hole's boundary shown).
-fn type_detail(d: &TypeDetailInfo) -> RichText {
+fn type_detail(d: &TypeInfo) -> RichText {
     let mut t = RichText::new();
 
     if !d.generators.is_empty() {
@@ -395,34 +387,33 @@ fn rules(rules: &[RuleInfo]) -> RichText {
 }
 
 /// The running proof for `proof`: the re-parseable expression `store` would
-/// persist, headed by its boundary.  A zero-step session is the identity proof on
-/// the initial diagram, so this is non-empty for any engine session.
-fn proof(data: &ResponseData) -> RichText {
+/// persist, headed by its boundary (none for a 0-cell).  A zero-step session is
+/// the identity proof on the initial diagram, so only an unchosen 0-cell fill
+/// has no proof.
+fn proof(running: Option<&Proof>) -> RichText {
     let mut t = RichText::new();
-    let Some(expr) = &data.proof_expr else {
+    let Some(running) = running else {
         t.line().label("(no proof yet)");
         return t;
     };
-    match &data.proof {
-        // A 0-cell proof has no boundary — just the header.
-        Some(p) if p.dim == 0 => { t.line().label("proof :"); }
-        Some(p) => { t.line().label("proof :").plain(" ").src(&p.input_label).plain(" → ").tgt(&p.output_label); }
-        None => { t.line().label("proof:"); }
+    t.line().label("proof :");
+    if let Some((input, output)) = &running.boundary {
+        t.plain(" ").src(input).plain(" → ").tgt(output);
     }
-    for line in expr.lines() {
+    for line in running.expr.lines() {
         t.line().plain("  ").value(line);
     }
     t
 }
 
 /// The move history for `history`.
-fn history(data: &ResponseData) -> RichText {
+fn history(entries: &[HistoryEntry]) -> RichText {
     let mut t = RichText::new();
-    if data.history.is_empty() {
+    if entries.is_empty() {
         t.line().label("(no moves yet)");
         return t;
     }
-    for h in &data.history {
+    for h in entries {
         let choice = match &h.choice {
             None => "[n/a]".to_owned(),
             Some(v) => format!("[choice {}]", v.iter().map(|n| n.to_string()).collect::<Vec<_>>().join(", ")),
@@ -455,78 +446,62 @@ fn plural(n: usize) -> &'static str { if n == 1 { "" } else { "s" } }
 
 // ── Help ───────────────────────────────────────────────────────────────────
 
-/// Where a command applies: every front-end, the CLI only, or the web only.
-/// The two front-ends share one help table and differ only in `print`/`save`/
-/// `quit` (CLI) versus `clear` (web).
-#[derive(Clone, Copy)]
-enum Scope { All, Cli, Web }
-
-/// `(token, description, scope)` — always-available commands.
-const ALWAYS: &[(&str, &str, Scope)] = &[
-    ("types",            "List all types in the file",                          Scope::All),
-    ("type <name>",      "Inspect a type: generators, diagrams, maps",          Scope::All),
-    ("homology <name>",  "Compute cellular homology of a type",                 Scope::All),
-    ("start <t> <s>",    "Start a rewrite session (target optional)",           Scope::All),
-    ("resume <t> <p>",   "Resume a session from a diagram (target optional)",    Scope::All),
-    ("holes",            "List open holes of maps in this module",              Scope::All),
-    ("fill <n>",         "Start a hole-filling session for hole <n>",           Scope::All),
-    ("backward [on|off]", "Show or toggle backward rewrite mode (default: off)", Scope::All),
-    ("status / show",    "Session state, or module info when idle",             Scope::All),
-    ("print",            "Print the running source",                            Scope::Cli),
-    ("save <path>",      "Write the running source to disk",                    Scope::Cli),
-    ("stop",             "End the active session",                              Scope::All),
-    ("clear",            "Clear the REPL output",                               Scope::Web),
-    ("help / ?",         "Show this help",                                      Scope::All),
-    ("quit / exit / q",  "Exit",                                                Scope::Cli),
+/// `(token, description)` — always-available commands.
+const ALWAYS: &[(&str, &str)] = &[
+    ("load [<path>]",     "Load a module, or reload the last load — quote a path with spaces"),
+    ("types",            "List all types in the file"),
+    ("type <name>",      "Inspect a type: generators, diagrams, maps"),
+    ("homology <name>",  "Compute cellular homology of a type"),
+    ("start <t> <s> [<g>]", "Start a rewrite session (target optional) — group a multi-word diagram in ( )"),
+    ("resume <t> <p> [<g>]", "Resume a session from a diagram (target optional)"),
+    ("holes",            "List open holes of maps in this module"),
+    ("fill <n>",         "Start a hole-filling session for hole <n>"),
+    ("backward [on|off]", "Show or toggle backward rewrite mode (default: off)"),
+    ("status / show",    "Session state, or module info when idle"),
+    ("print",            "Print the running source"),
+    ("save [<path>]",     "Write the running source to disk"),
+    ("stop",             "End the active session"),
+    ("help / ?",         "Show this help"),
 ];
 
-/// `(token, description, where)` — commands needing an active session.
-const SESSION: &[(&str, &str, Scope)] = &[
-    ("apply <n> [<n2>..]", "Apply rewrite(s) at given indices (alias: a)",      Scope::All),
-    ("auto <n>",         "Apply up to <n> rewrites automatically",              Scope::All),
-    ("random <n>",       "Apply randomly selected rewrites",                    Scope::All),
-    ("parallel [on|off]", "Show or toggle parallel rewrite mode (default: on)", Scope::All),
-    ("undo [<n>]",       "Undo the last step, or back to step <n> (alias: u)",  Scope::All),
-    ("redo [<n>]",       "Redo the last undone step, or forward to step <n>",   Scope::All),
-    ("undo all / restart", "Reset to the initial diagram",                      Scope::All),
-    ("rules",            "List rewrite rules at current dimension (alias: r)",  Scope::All),
-    ("history",          "Show the move history (alias: h)",                    Scope::All),
-    ("proof",            "Show the running proof diagram (alias: p)",           Scope::All),
-    ("store <name>",     "Store the current proof as a named diagram",          Scope::All),
-    ("done",             "Finalise the hole-filling session",                  Scope::All),
+/// `(token, description)` — commands needing an active session.
+const SESSION: &[(&str, &str)] = &[
+    ("apply <n> [<n2>..]", "Apply rewrite(s) at given indices (alias: a)"),
+    ("auto <n>",         "Apply up to <n> rewrites automatically"),
+    ("random <n>",       "Apply randomly selected rewrites"),
+    ("parallel [on|off]", "Show or toggle parallel rewrite mode (default: on)"),
+    ("undo [<n>]",       "Undo the last step, or back to step <n> (alias: u)"),
+    ("redo [<n>]",       "Redo the last undone step, or forward to step <n>"),
+    ("undo all / restart", "Reset to the initial diagram"),
+    ("rules",            "List rewrite rules at current dimension (alias: r)"),
+    ("history",          "Show the move history (alias: h)"),
+    ("proof",            "Show the running proof diagram (alias: p)"),
+    ("store <name>",     "Store the current proof as a named diagram"),
+    ("done",             "Finalise the hole-filling session"),
 ];
 
-/// The command help, shared by both front-ends.  `web` selects the web-only
-/// commands and drops the CLI-only ones, so each lists exactly what it supports.
+/// The command help, shared by every front end.
 /// The command token is coloured like an alifib expression; descriptions plain.
-pub fn help(web: bool) -> RichText {
+fn help() -> RichText {
     let mut t = RichText::new();
-    let shown = |scope: Scope| match scope {
-        Scope::All => true,
-        Scope::Cli => !web,
-        Scope::Web => web,
-    };
-
     t.line().plain("Always available:");
-    for &(tok, desc, on) in ALWAYS {
-        if shown(on) { help_line(&mut t, tok, desc); }
+    for &(tok, desc) in ALWAYS {
+        help_line(&mut t, tok, desc);
     }
     t.line();
     t.line().plain("Session commands (require active session):");
-    for &(tok, desc, on) in SESSION {
-        if shown(on) { help_line(&mut t, tok, desc); }
+    for &(tok, desc) in SESSION {
+        help_line(&mut t, tok, desc);
     }
-    if web {
-        t.line();
-        t.line().plain("Keyboard: ↑/↓ navigate history · Ctrl+Enter evaluate file");
-    }
+    t.line();
+    t.line().plain("Front ends: quit / exit / q (terminal) · clear, ↑/↓ history, Ctrl+Enter evaluate (browser)");
     t
 }
 
 /// One help row: `  <token padded to 20> <description>`, the token in the value
 /// colour, measured on its plain length for alignment.
 fn help_line(t: &mut RichText, tok: &str, desc: &str) {
-    let pad = " ".repeat(20usize.saturating_sub(tok.len()));
+    let pad = " ".repeat(20usize.saturating_sub(tok.len()).max(1));
     t.line().plain("  ").value(tok).plain(format!("{pad}{desc}"));
 }
 

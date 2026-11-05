@@ -14,8 +14,7 @@ fn example_path(name: &str) -> String {
 
 fn load_example(name: &str) -> Store {
     InterpretedFile::load(&Loader::default(vec![]), &example_path(name))
-        .ok()
-        .unwrap_or_else(|| panic!("{} should interpret without errors", name))
+        .unwrap_or_else(|failure| panic!("{} should interpret without errors: {}", name, failure.message))
         .state
         .normalize()
 }

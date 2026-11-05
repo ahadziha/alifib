@@ -5,11 +5,23 @@ import { indentUnit, bracketMatching } from '@codemirror/language';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { search, searchKeymap, findNext } from '@codemirror/search';
 import { aliExtensions } from './ali-lang.js';
+import { run, Failure, canvas, selectionView, viewKey } from './sync.js';
+import {
+  rewriteOf, zeroOf, controls, sessionKey, menuKey, moduleLabel, itemOf,
+  generatorKeys, thinTags as moduleThinTags, scopeThinOverlay, formatStartCmd,
+} from './model.js';
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
 let repl = null;
-let sessionActive = false;
+let loop = null;
+let shown = null;          // The shown cut (sync.js), null until the first answer.
+let editorLink = null;
+let thinOverlay = null;
+// The page's local choices (sync.js `canvas`); the DOM controls render them.
+let choice = { selection: null, preview: null, proof: false, targetPressed: false };
+let highlight = null;      // null | {of:'rewrite', index} | {of:'bunch'}: canvas styling only.
+let bunch = [];            // Menu indices bunched for one parallel apply.
 const replHistory = [];
 let histIdx = -1;
 let currentLayout = null;
@@ -18,15 +30,11 @@ let dragState = null;
 let panState = null;
 let zoomLevel = 1;
 let splitterDrag = null;
-const thinTags = new Set();
+let generatorKeyOf = new Map(); // Tag → canonical generator key (model.js).
+let thinTags = new Set();
+let fullyThinTags = new Set();
 const tagFaces = new Map();
-const fullyThinTags = new Set();
-let proofView = false;
-let proofLayout = null;
 let proofBoundaryMap = null;
-let openHoles = [];        // open holes of the module, from the `holes` command
-let openConstraints = [];  // the constraints those holes are under, same source
-let fillSession = null;    // { index, dim } when a fill is active
 
 // ── Theme ────────────────────────────────────────────────────────────────────
 
@@ -83,14 +91,9 @@ function canvasColors() {
   };
 }
 
-function recomputeFullyThin() {
-  fullyThinTags.clear();
-  for (const tag of thinTags) {
-    const faces = tagFaces.get(tag);
-    if (faces && faces.every(f => thinTags.has(f))) {
-      fullyThinTags.add(tag);
-    }
-  }
+function applyThin(module) {
+  thinTags = moduleThinTags(module, thinOverlay.values);
+  fullyThinTags = new Set([...thinTags].filter(tag => tagFaces.get(tag)?.every(face => thinTags.has(face))));
 }
 
 const MIN_WORKSPACE_WIDTHS = [240, 260, 280];
@@ -156,7 +159,6 @@ const rewriteList = document.getElementById('rewrite-list');
 const canvasCtx   = visCanvas.getContext('2d');
 const tabBar      = document.getElementById('tab-bar');
 const btnNewTab   = document.getElementById('btn-new-tab');
-const fileLabel   = document.getElementById('file-label');
 const btnTheme    = document.getElementById('btn-theme');
 
 // ── Editor state & tabs ──────────────────────────────────────────────────────
@@ -168,34 +170,24 @@ const editorTabs = {
 
 let tabIdCounter = 0;
 let untitledCounter = 0;
-
-// The source-file name the REPL last loaded (the tab name we passed to
-// `load_source`).  Code generation (`store`, `done`) targets *this* file, not
-// whichever tab happens to be active — so switching tabs mid-session can no
-// longer misdirect a write.  We match by name, mirroring the REPL's own notion
-// of the source: see `resolveEvaluatedTab`.
-let lastEvaluatedTabName = null;
-
-// The open tab whose name matches the REPL's loaded source, or null if none
-// still carries that name (it was closed, or renamed after evaluation).  The
-// one residual hazard is reusing the name on a fresh tab — reckless enough to
-// punish with a misdirected write.
-function resolveEvaluatedTab() {
-  if (lastEvaluatedTabName == null) return null;
-  return editorTabs.tabs.find(t => t.name === lastEvaluatedTabName) || null;
-}
+let activeTabRename = null;
 
 function activeTab() {
   return editorTabs.tabs.find(t => t.id === editorTabs.activeTabId) || null;
 }
 
-function tabNameExists(name, excludeTabId) {
-  return editorTabs.tabs.some(t => t.id !== excludeTabId && t.name === name);
+function tabNameAvailable(name, excludeTabId = null) {
+  const conflict = editorTabs.tabs.find(t => t.id !== excludeTabId && t.name === name);
+  if (!conflict) return true;
+  appendReplMsg(`Tab "${conflict.name}" is already open`, 'repl-result err');
+  return false;
 }
 
 function nextUntitledName() {
-  untitledCounter++;
-  return `Untitled${untitledCounter}`;
+  let name;
+  do { name = `Untitled${++untitledCounter}`; }
+  while (editorTabs.tabs.some(tab => tab.name === name));
+  return name;
 }
 
 function getEditorText() {
@@ -243,7 +235,7 @@ function makeEditorState(doc) {
         ...historyKeymap,
         { key: 'Tab', run: insertTab },
         { key: 'Shift-Tab', run: indentLess },
-        { key: 'Mod-Enter', run: () => { void evaluateSource(); return true; } },
+        { key: 'Mod-Enter', run: () => { evaluateSource(); return true; } },
       ]),
       EditorState.languageData.of(() => [{ commentTokens: { block: { open: '(*', close: '*)' } } }]),
       EditorView.updateListener.of(update => {
@@ -270,6 +262,7 @@ let view = null;
 function createTab(name, content, fileHandle) {
   const id = String(++tabIdCounter);
   if (!name) name = nextUntitledName();
+  if (!tabNameAvailable(name)) return null;
   const cmState = makeEditorState(content);
   const tab = { id, name, cmState, savedSnapshot: content, dirty: false, fileHandle };
   editorTabs.tabs.push(tab);
@@ -329,6 +322,7 @@ function closeTab(tabId) {
 }
 
 function renderTabBar() {
+  settleTabRename(activeTabRename);
   if (!tabBar) return;
   tabBar.querySelectorAll('.tab-item').forEach(el => el.remove());
   for (const tab of editorTabs.tabs) {
@@ -360,104 +354,84 @@ function renderTabBar() {
   }
 }
 
+// Retire ownership and both callbacks before a renderer can remove the input.
+// Only direct Enter/blur attempts keep a duplicate candidate open for correction.
+function settleTabRename(rename, { apply = true, keepDuplicate = false } = {}) {
+  if (!rename || activeTabRename !== rename) return false;
+  const tab = editorTabs.tabs.find(tab => tab.id === rename.tabId);
+  const name = stemFromFilename(rename.input.value.trim());
+  if (apply && tab && name) {
+    if (tabNameAvailable(name, tab.id)) tab.name = name;
+    else if (keepDuplicate) {
+      rename.input.classList.add('tab-rename--error');
+      rename.input.title = `"${name}" is already open`;
+      return false;
+    }
+  }
+  rename.input.removeEventListener('keydown', rename.onKeydown);
+  rename.input.removeEventListener('blur', rename.onBlur);
+  activeTabRename = null;
+  return true;
+}
+
 function startTabRename(tabId, nameSpan) {
   const tab = editorTabs.tabs.find(t => t.id === tabId);
-  if (!tab) return;
+  if (!tab || activeTabRename) return;
   const input = document.createElement('input');
   input.type = 'text';
   input.className = 'tab-rename';
   input.value = tab.name || '';
   input.placeholder = 'module name';
+  const rename = { tabId, input, onKeydown, onBlur };
+  activeTabRename = rename;
+  input.addEventListener('keydown', onKeydown);
+  input.addEventListener('blur', onBlur);
   nameSpan.replaceWith(input);
   input.focus();
   input.select();
 
-  function commit() {
-    const raw = input.value.trim();
-    if (!raw) { renderTabBar(); return; }
-    const name = stemFromFilename(raw);
-    if (name && tabNameExists(name, tab.id)) {
-      input.classList.add('tab-rename--error');
-      input.title = `"${name}" is already open`;
-      return;
+  function onKeydown(event) {
+    if (activeTabRename !== rename) return;
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      onBlur();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      settleTabRename(rename, { apply: false });
+      renderTabBar();
     }
-    tab.name = name || nextUntitledName();
-    renderTabBar();
   }
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); commit(); }
-    if (e.key === 'Escape') { e.preventDefault(); renderTabBar(); }
-  });
-  input.addEventListener('blur', commit);
+
+  function onBlur() {
+    if (settleTabRename(rename, { keepDuplicate: true })) renderTabBar();
+  }
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
+// A decoded call answers JSON; anything else breaks the wire.
+function parseAnswer(text) {
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    throw new Failure('protocol', `malformed answer: ${error.message}`);
+  }
+}
+
 class WasmBackend {
-  constructor(inner) {
-    this.inner = inner;
+  constructor(kernel) {
+    this.kernel = kernel;
     this.label = 'WASM';
   }
 
-  async reset() {
-    this.inner.reset();
-  }
-
-  async stop_session() {
-    this.inner.stop_session();
-  }
-
-  async load_source(source, modules, sourceName) {
-    const modulesJson = modules ? JSON.stringify(modules) : null;
-    return this.inner.load_source(source, modulesJson, sourceName || null);
-  }
-
-  async start_session(typeName, initial, target, backward = false) {
-    return this.inner.start_session(typeName, initial, target ?? null, backward);
-  }
-
-  async resume_session(typeName, proof, target, backward = false) {
-    return this.inner.resume_session(typeName, proof, target ?? null, backward);
-  }
-
-  async run_command(commandJson) {
-    return this.inner.run_command(commandJson);
-  }
-
-  async parse_command(line) {
-    return this.inner.parse_command(line);
-  }
-
-  async get_types() {
-    return this.inner.get_types();
-  }
-
-  async get_strdiag(typeName, itemName, boundaryDim, boundarySign) {
-    return this.inner.get_strdiag(typeName, itemName, boundaryDim, boundarySign);
-  }
-
-  async get_session_strdiag() {
-    return this.inner.get_session_strdiag();
-  }
-
-  async get_target_strdiag() {
-    return this.inner.get_target_strdiag();
-  }
-
-  async get_rewrite_preview_strdiag(choice) {
-    return this.inner.get_rewrite_preview_strdiag(choice);
-  }
-
-  async get_map_image_strdiag(typeName, mapName, genName, boundaryDim, boundarySign) {
-    return this.inner.get_map_image_strdiag(typeName, mapName, genName, boundaryDim, boundarySign);
-  }
-
-  async set_proof_view(on) {
-    return this.inner.set_proof_view(on);
-  }
-
-  async get_proof_strdiag() {
-    return this.inner.get_proof_strdiag();
+  async call(request) {
+    let text;
+    try {
+      text = this.kernel.call(JSON.stringify(request));
+    } catch (error) {
+      throw new Failure('backend', error.message, { cause: error });
+    }
+    return parseAnswer(text);
   }
 }
 
@@ -467,103 +441,33 @@ class HttpBackend {
     this.label = 'HTTP';
   }
 
-  async reset() {}
-
-  async stop_session() {
-    return this.post('/api/stop_session', {});
-  }
-
-  async load_source(source, modules, sourceName) {
-    const body = { source, modules: modules || {} };
-    if (sourceName) body.source_name = sourceName;
-    return this.post('/api/load_source', body);
-  }
-
-  async start_session(typeName, initial, target, backward = false) {
-    const body = { type_name: typeName, initial };
-    if (target) body.target = target;
-    if (backward) body.backward = true;
-    return this.post('/api/start_session', body);
-  }
-
-  async resume_session(typeName, proof, target, backward = false) {
-    const body = { type_name: typeName, proof };
-    if (target) body.target = target;
-    if (backward) body.backward = true;
-    return this.post('/api/resume_session', body);
-  }
-
-  async run_command(commandJson) {
-    return this.post('/api/run_command', { command_json: commandJson });
-  }
-
-  async parse_command(line) {
-    return this.post('/api/parse_command', { line });
-  }
-
-  async get_types() {
-    return this.post('/api/get_types', {});
-  }
-
-  async get_strdiag(typeName, itemName, boundaryDim, boundarySign) {
-    return this.post('/api/get_strdiag', {
-      type_name: typeName,
-      item_name: itemName,
-      boundary_dim: boundaryDim,
-      boundary_sign: boundarySign,
-    });
-  }
-
-  async get_session_strdiag() {
-    return this.post('/api/get_session_strdiag', {});
-  }
-
-  async get_target_strdiag() {
-    return this.post('/api/get_target_strdiag', {});
-  }
-
-  async get_rewrite_preview_strdiag(choice) {
-    return this.post('/api/get_rewrite_preview_strdiag', { choice });
-  }
-
-  async get_map_image_strdiag(typeName, mapName, genName, boundaryDim, boundarySign) {
-    return this.post('/api/get_map_image_strdiag', {
-      type_name: typeName,
-      map_name: mapName,
-      gen_name: genName,
-      boundary_dim: boundaryDim,
-      boundary_sign: boundarySign,
-    });
-  }
-
-  async set_proof_view(on) {
-    return this.post('/api/set_proof_view', { on });
-  }
-
-  async get_proof_strdiag() {
-    return this.post('/api/get_proof_strdiag', {});
-  }
-
-  async post(path, body) {
+  async call(request) {
+    let response, text;
     try {
-      const response = await fetch(this.baseUrl + path, {
+      response = await fetch(this.baseUrl + '/api', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify(request),
       });
-      const text = await response.text();
-      if (text) return text;
-      return JSON.stringify({
-        status: 'error',
-        message: `empty response from ${path}`,
-      });
+      text = await response.text();
     } catch (error) {
-      return JSON.stringify({
-        status: 'error',
-        message: `request failed: ${error}`,
-      });
+      throw new Failure('transport', error.message, { cause: error });
     }
+    if (!response.ok) throw new Failure('http', `HTTP ${response.status}: ${text}`);
+    return parseAnswer(text);
   }
+}
+
+const FAILURE_LABEL = {
+  transport: 'backend unreachable',
+  http: 'backend error',
+  backend: 'backend failed',
+  protocol: 'protocol error',
+  paint: 'display failed',
+};
+
+function call(method, args) {
+  return repl.call({ method, args });
 }
 
 function backendConfig() {
@@ -577,37 +481,117 @@ function backendConfig() {
 
 async function createBackend() {
   const config = backendConfig();
-  if (config.mode === 'http') {
-    return new HttpBackend(config.apiBase);
-  }
-
+  if (config.mode === 'http') return new HttpBackend(config.apiBase);
   const wasm = await import('../pkg/alifib_wasm.js');
   await wasm.default();
-  return new WasmBackend(new wasm.WasmRepl());
+  return new WasmBackend(new wasm.WasmKernel());
 }
 
-async function parseReplResponse(promise) {
-  return JSON.parse(await promise);
+function captureExpectation() {
+  return loop && shown && { instance: shown.record.instance, revision: shown.record.revision };
+}
+
+function submit(line) {
+  const expect = captureExpectation();
+  if (!expect) return;
+  if (line === 'clear') {
+    replOutput.innerHTML = '';
+    return;
+  }
+  loop.enqueue(page => call('eval', { line, expect, page }));
+}
+
+function tabText(tabId) {
+  return editorTabs.tabs.find(tab => tab.id === tabId)?.cmState.doc.toString() ?? null;
+}
+
+// Apply a settled editor write in place, never switching tabs.
+function writeTab({ tabId, from, to }) {
+  const tab = editorTabs.tabs.find(tab => tab.id === tabId);
+  if (tabId === editorTabs.activeTabId) replaceEditorSource(to, from);
+  else {
+    tab.cmState = tab.cmState.update({ changes: { from: 0, to: tab.cmState.doc.length, insert: to } }).state;
+    markDirty(tab);
+  }
+}
+
+function commit(result, p) {
+  for (const reply of result.transcript) renderReply(reply);
+  for (const note of result.notes) appendReplMsg(note);
+  if (result.write) writeTab(result.write);
+  for (const note of result.editorNotes) appendReplMsg(note, 'repl-result err');
+  const previous = shown;
+  shown = result.shown;
+  editorLink = result.editorLink;
+  thinOverlay = scopeThinOverlay(thinOverlay, shown.record.instance, shown.generation);
+  const hasState = Object.hasOwn(p, 'state');
+  const menuChanged = hasState && endGestures(previous);
+  if (Object.hasOwn(p, 'module')) installModule(p.module);
+  if (hasState || Object.hasOwn(p, 'module')) renderSession(previous, menuChanged);
+  if (!previous) {
+    btnEval.disabled = false;
+    btnEval.textContent = 'Evaluate';
+    replInput.disabled = false;
+    submit('help');
+  }
+}
+
+// A new state ends the target press, whose button it replaces. A new session
+// (load or activity) ends all session UI; a new menu ends what indexes it.
+// Returns whether the menu changed.
+function endGestures(previous) {
+  choice.targetPressed = false;
+  if (sessionKey(previous) !== sessionKey(shown)) {
+    deselectRow();
+    choice = { selection: null, preview: null, proof: false, targetPressed: false };
+  } else if (menuKey(previous.state) === menuKey(shown.state)) return false;
+  choice.preview = null;
+  highlight = null;
+  bunch = [];
+  return true;
+}
+
+// Catch up once each time the page becomes active (visible and focused):
+// visibilitychange and focus usually both announce one return.
+function watchActivity() {
+  const isActive = () => document.visibilityState === 'visible' && document.hasFocus();
+  let active = isActive();
+  const update = () => {
+    const now = isActive();
+    if (now && !active) loop?.focus();
+    active = now;
+  };
+  window.addEventListener('focus', update);
+  window.addEventListener('blur', update);
+  document.addEventListener('visibilitychange', update);
 }
 
 async function boot() {
-  btnEval.disabled = true;
   btnEval.textContent = 'Loading…';
   try {
     repl = await createBackend();
-    btnEval.disabled = false;
-    btnEval.textContent = 'Evaluate';
     appendReplMsg('\u{266B} No nit not, nit no not, nit nit folly bololey...', 'repl-dim');
     appendReplMsg(' ', 'repl-dim');
-    appendReplMsg(`${repl.label} engine ready — evaluate a file to begin`, 'repl-dim');
-    const helpEl = document.createElement('div');
-    helpEl.className = 'repl-result';
-    helpEl.innerHTML = await renderHelp();
-    replOutput.appendChild(helpEl);
+    appendReplMsg(`${repl.label} engine ready`, 'repl-dim');
+    loop = run({
+      poll: page => call('poll', { page }),
+      getState: () => ({ shown, editorLink }),
+      choices: () => choice,
+      textOf: tabText,
+      commit, paint,
+      onError: error => appendReplMsg(`${FAILURE_LABEL[error.kind] ?? 'action failed'}: ${error.message}`, 'repl-result err'),
+    });
+    void loop.failed.catch(error => {
+      appendReplMsg(`Page loop failed: ${error.message}`, 'repl-result err');
+      btnEval.disabled = true;
+      replInput.disabled = true;
+      loop = null;
+    });
+    if (repl instanceof HttpBackend) watchActivity();
     void populateExamples();
-  } catch (e) {
+  } catch (error) {
     btnEval.textContent = 'Error';
-    appendReplMsg('Failed to load backend: ' + e, 'repl-result err');
+    appendReplMsg('Failed to load backend: ' + error, 'repl-result err');
   }
 }
 
@@ -1014,164 +998,102 @@ btnTheme.addEventListener('click', () => applyTheme(!isDark()));
 
 // ── Evaluate ──────────────────────────────────────────────────────────────────
 
-btnEval.addEventListener('click', () => { void evaluateSource(); });
+btnEval.addEventListener('click', evaluateSource);
 
-async function evaluateSource(silent = false) {
-  if (!repl) return;
-  const src = getEditorText();
-  if (!src.trim()) return;
-
-  const previousType = selType.value;
-
-  await repl.reset();
+// Capture the tabs when the user acts and start fetching the examples at once,
+// so example I/O never holds up the call loop.
+function evaluateSource() {
+  const expect = captureExpectation();
+  if (!expect) return;
   const tab = activeTab();
-  const tabName = tab ? tab.name : null;
-  const modules = await collectIncludeModules(src, tabName);
-  const result = await parseReplResponse(repl.load_source(src, modules, tabName));
+  const source = tab.cmState.doc.toString();
+  const tabs = Object.fromEntries(editorTabs.tabs.map(open => [`${open.name}.ali`, open.cmState.doc.toString()]));
+  const examples = fetchExamples(tabs);
+  loop.enqueue(async page => call('load_source', {
+    source, modules: { ...await examples, ...tabs }, name: `${tab.name}.ali`, expect, page,
+  }), { tabId: tab.id, text: source });
+}
 
-  if (result.status === 'error') {
-    fileOutput.innerHTML = '';
-    fileOutput.hidden = true;
-    appendReplEntry('', formatError(result));
-    resetSession();
-    sessionSetup.hidden = true;
-    replInput.disabled = true;
-    syncAnalysisLayout();
-    return;
-  }
-
-  // The load succeeded: this tab's name is now the REPL's source file, and the
-  // target any subsequent `store`/`done` must write back to.
-  lastEvaluatedTabName = tabName;
-
-  const types = result.types || [];
-
-  thinTags.clear();
+function installModule(module) {
   tagFaces.clear();
-  fullyThinTags.clear();
-  for (const t of types) {
-    for (const g of t.generators) {
-      if (g.tag != null) tagFaces.set(g.tag, (g.face_tags || []).filter(ft => ft != null));
-    }
-    for (const tag of (t.thin_tags || [])) {
-      if (tag != null) thinTags.add(tag);
+  for (const type of module.types) {
+    for (const generator of type.generators) {
+      if (generator.tag != null) tagFaces.set(generator.tag, generator.face_tags);
     }
   }
-  recomputeFullyThin();
-
-  // Build accordion in file output area, grouped by module
+  generatorKeyOf = generatorKeys(module);
+  applyThin(module);
+  // A selection survives a module change while its row does.
+  const selection = choice.selection;
+  const item = selection && itemOf(module, selection);
+  if (!item) choice.selection = null;
+  else if (selection.generator != null && !item.generators.some(generator => generator.name === selection.generator)) {
+    choice.selection = { ...selection, generator: null, boundary: null };
+  }
+  selectedEl = null;
   fileOutput.innerHTML = '';
-  fileOutput.hidden = types.length === 0;
-  buildModuleAccordion(types, fileOutput);
-
-  await fetchHoles();
-
+  buildModuleAccordion(module, fileOutput);
+  for (let parent = selectedEl?.parentElement; parent && parent !== fileOutput; parent = parent.parentElement) {
+    if (parent.tagName === 'DETAILS') parent.open = true;
+  }
+  const previousType = selType.value;
   selType.innerHTML = '<option value="">— select type —</option>';
-  const sourceMod = tabName || 'source';
-  const sourceTypes = types.filter(t => (t.module || 'source') === sourceMod);
-  sourceTypes.forEach(t => {
-    const opt = document.createElement('option');
-    opt.value = opt.textContent = t.name;
-    selType.appendChild(opt);
-  });
-
-  if (previousType && sourceTypes.some(t => t.name === previousType)) {
-    selType.value = previousType;
+  const rootTypes = module.types.filter(type => type.module === module.root);
+  for (const type of rootTypes) {
+    const option = document.createElement('option');
+    option.value = option.textContent = type.name;
+    selType.appendChild(option);
   }
-
-  resetSession();
-  sessionSetup.hidden = false;
-  replInput.disabled = false;
-  syncAnalysisLayout();
-  // Suppress the success notice for an implicit re-evaluation (e.g. after
-  // `done`), so finalising a fill feels seamless; errors are always shown.
-  if (!silent) {
-    appendReplEntry('', formatOk(
-      types.length
-        ? `Loaded ${types.length} type${types.length !== 1 ? 's' : ''}`
-        : 'Loaded (no named types found)'
-    ));
-  }
+  if (rootTypes.some(type => type.name === previousType)) selType.value = previousType;
 }
 
 // ── Holes ──────────────────────────────────────────────────────────────────
 
-// Refresh the module's open holes from the backend.  Holes are shown in a map's
-// infobox, not the accordion, so this just refreshes the cache.
-async function fetchHoles() {
-  openHoles = [];
-  openConstraints = [];
-  if (!repl) return null;
-  const result = await parseReplResponse(repl.run_command('{"command":"holes"}'));
-  if (result.status === 'ok' && result.data) {
-    if (Array.isArray(result.data.holes)) openHoles = result.data.holes;
-    if (Array.isArray(result.data.constraints)) openConstraints = result.data.constraints;
-  }
-  return result;
-}
+const ofMap = ({ module, type_name, name }) => row =>
+  row.module === module && row.type_name === type_name && row.map_name === name;
 
-function holesForMap(typeName, mapName) {
-  return openHoles.filter(h => h.type_name === typeName && h.map_name === mapName);
+function holesOf(selection) {
+  return shown.module.holes.filter(ofMap(selection));
 }
 
 // The constraint equations a map's pending assignments impose, flattened across
 // its assignments — shown after the holes, in the same style.
-function constraintsForMap(typeName, mapName) {
-  return openConstraints
-    .filter(c => c.type_name === typeName && c.map_name === mapName)
-    .flatMap(c => c.equations);
+function constraintsOf(selection) {
+  return shown.module.constraints.filter(ofMap(selection)).flatMap(constraint => constraint.equations);
 }
 
 // ── Accordion builders ───────────────────────────────────────────────────────
 
-function displayModuleName(mod) {
-  return mod;
-}
-
-function buildModuleAccordion(types, container) {
-  const groups = [];
-  const indexByModule = new Map();
-  for (const t of types) {
-    const mod = t.module || 'source';
-    let idx = indexByModule.get(mod);
-    if (idx === undefined) {
-      idx = groups.length;
-      indexByModule.set(mod, idx);
-      groups.push({ module: mod, types: [] });
-    }
-    groups[idx].types.push(t);
-  }
-  for (let i = 0; i < groups.length; i++) {
-    const g = groups[i];
+function buildModuleAccordion(module, container) {
+  const groups = [...Map.groupBy(module.types, type => type.module)];
+  groups.forEach(([path, types], i) => {
     const details = document.createElement('details');
     details.className = 'acc-module';
     details.open = i === groups.length - 1;
     const summary = document.createElement('summary');
-    summary.innerHTML = esc(displayModuleName(g.module)) + ` <span class="acc-count">${g.types.length}</span>`;
+    summary.innerHTML = esc(moduleLabel(path, module.base)) + ` <span class="acc-count">${types.length}</span>`;
     details.appendChild(summary);
-    g.types.forEach(t => details.appendChild(buildTypeAccordion(t)));
+    for (const type of types) details.appendChild(buildTypeAccordion(type));
     container.appendChild(details);
-  }
+  });
 }
 
-function buildTypeAccordion(t) {
+function buildTypeAccordion(type) {
   const details = document.createElement('details');
   details.className = 'acc-type';
   const summary = document.createElement('summary');
-  summary.textContent = t.name;
+  summary.textContent = type.name;
   details.appendChild(summary);
 
   const body = document.createElement('div');
   body.className = 'acc-type-body';
-
-  if (t.generators.length) body.appendChild(buildSection('Generators', t.generators,
-    g => buildGeneratorRow(g, t.name)));
-  if (t.diagrams.length) body.appendChild(buildSection('Diagrams', t.diagrams,
-    d => buildClickableRow(hi(d.name),
-      () => selectItem(t.name, { kind: 'diagram', name: d.name, input: d.input, output: d.output }))));
-  if (t.maps.length) body.appendChild(buildSection('Maps', t.maps,
-    m => buildClickableRow(hi(m.name),
-      () => selectItem(t.name, { kind: 'map', name: m.name, domain: m.domain, generators: m.generators || [] }))));
+  const selection = (kind, name) => ({ module: type.module, type_name: type.name, kind, name, generator: null, boundary: null });
+  if (type.generators.length) body.appendChild(buildSection('Generators', type.generators,
+    g => buildGeneratorRow(g, selection('generator', g.name))));
+  if (type.diagrams.length) body.appendChild(buildSection('Diagrams', type.diagrams,
+    d => buildClickableRow(hi(d.name), selection('diagram', d.name))));
+  if (type.maps.length) body.appendChild(buildSection('Maps', type.maps,
+    m => buildClickableRow(hi(m.name), selection('map', m.name))));
 
   details.appendChild(body);
   return details;
@@ -1186,33 +1108,20 @@ function buildSection(title, items, buildItem) {
 
   const list = document.createElement('div');
   list.className = 'acc-section-body';
-  items.forEach(item => list.appendChild(buildItem(item)));
+  for (const item of items) list.appendChild(buildItem(item));
   details.appendChild(list);
   return details;
 }
 
-function buildClickableRow(innerHTML, onClick) {
+function buildClickableRow(innerHTML, selection) {
   const div = document.createElement('div');
   div.className = 'acc-leaf';
   div.innerHTML = innerHTML;
-  div.addEventListener('click', () => {
-    if (selectedEl === div) {
-      // Deselect: return to session view.
-      div.classList.remove('acc-leaf--selected');
-      selectedEl = null;
-      currentItem = null;
-      void returnToSessionView();
-      return;
-    }
-    if (selectedEl) selectedEl.classList.remove('acc-leaf--selected');
-    selectedEl = div;
-    div.classList.add('acc-leaf--selected');
-    void onClick();
-  });
+  bindSelectableRow(div, selection);
   return div;
 }
 
-function buildGeneratorRow(g, typeName) {
+function buildGeneratorRow(g, selection) {
   const div = document.createElement('div');
   div.className = 'acc-leaf acc-leaf-gen';
   if (g.tag != null && thinTags.has(g.tag)) div.classList.add('acc-leaf--thin');
@@ -1228,281 +1137,91 @@ function buildGeneratorRow(g, typeName) {
   toggle.addEventListener('click', (e) => {
     e.stopPropagation();
     if (g.tag == null) return;
-    const wasThin = thinTags.has(g.tag);
-    if (wasThin) thinTags.delete(g.tag);
-    else thinTags.add(g.tag);
-    recomputeFullyThin();
-    toggle.classList.toggle('thin-toggle--active', !wasThin);
-    div.classList.toggle('acc-leaf--thin', !wasThin);
+    const thin = !thinTags.has(g.tag);
+    thinOverlay.values.set(generatorKeyOf.get(g.tag), thin);
+    applyThin(shown.module);
     document.querySelectorAll(`.acc-leaf-gen[data-tag="${g.tag}"]`).forEach(row => {
-      row.classList.toggle('acc-leaf--thin', !wasThin);
-      row.querySelector('.thin-toggle')?.classList.toggle('thin-toggle--active', !wasThin);
+      row.classList.toggle('acc-leaf--thin', thin);
+      row.querySelector('.thin-toggle').classList.toggle('thin-toggle--active', thin);
     });
     resizeAndRender();
   });
   div.appendChild(toggle);
-  div.dataset.tag = g.tag != null ? g.tag : '';
+  div.dataset.tag = g.tag ?? '';
   div.dataset.gen = g.name;
-
-  div.addEventListener('click', () => {
-    if (selectedEl === div) {
-      div.classList.remove('acc-leaf--selected');
-      selectedEl = null;
-      currentItem = null;
-      void returnToSessionView();
-      return;
-    }
-    if (selectedEl) selectedEl.classList.remove('acc-leaf--selected');
-    selectedEl = div;
-    div.classList.add('acc-leaf--selected');
-    void selectItem(typeName, { kind: 'generator', name: g.name, dim: g.dim, input: g.input, output: g.output });
-  });
-
+  bindSelectableRow(div, selection);
   return div;
 }
 
-async function returnToSessionView() {
-  if (!sessionActive || !repl) {
-    infobox.hidden = true;
-    rewriteList.hidden = true;
-    syncAnalysisLayout();
-    return;
+// A row selects its item; clicking the selected row returns to the session.
+function bindSelectableRow(row, selection) {
+  const current = choice.selection;
+  if (current && ['module', 'type_name', 'kind', 'name'].every(field => current[field] === selection[field])) {
+    selectedEl = row;
+    row.classList.add('acc-leaf--selected');
   }
-  // Re-fetch session state and show diagram.
-  const result = await parseReplResponse(repl.run_command('{"command":"show"}'));
-  if (result.status === 'ok' && result.data) {
-    await showSessionDiagram(result.data);
-  }
+  row.addEventListener('click', () => {
+    const reselect = selectedEl !== row;
+    deselectRow();
+    if (reselect) {
+      selectedEl = row;
+      row.classList.add('acc-leaf--selected');
+    }
+    select(reselect ? selection : null);
+  });
+}
+
+function deselectRow() {
+  selectedEl?.classList.remove('acc-leaf--selected');
+  selectedEl = null;
+}
+
+// The selection owns the canvas and the infobox text.
+function select(selection) {
+  choice.selection = selection;
+  renderInfobox();
+  loop?.choicesChanged();
 }
 
 // ── Session setup ─────────────────────────────────────────────────────────────
 
-btnStart.addEventListener('click', () => { void startSession(); });
-inpSource.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); void startSession(); } });
-inpTarget.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); void startSession(); } });
-btnStop.addEventListener('click', () => {
-  if (!sessionActive || !repl) return;
-  void stopFromRepl('stop');
+btnStart.addEventListener('click', startSession);
+inpSource.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey) { event.preventDefault(); startSession(); } });
+inpTarget.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey) { event.preventDefault(); startSession(); } });
+btnStop.addEventListener('click', () => submit('stop'));
+chkBackward.addEventListener('change', () => {
+  const desired = chkBackward.checked;
+  chkBackward.checked = Boolean(shown.state.backward);
+  submit(`backward ${desired ? 'on' : 'off'}`);
 });
 
-// End the session/fill through the backend so the message matches the CLI
-// exactly (one source of truth), then reset the client-side UI.  Covers both a
-// rewrite session and a fill — the backend reports "Session stopped" for both.
-async function stopFromRepl(raw) {
-  const result = await parseReplResponse(repl.run_command('{"command":"stop"}'));
-  resetSession();
-  appendReplEntry(raw, { cls: 'meta', text: (result.data && result.data.message) || 'Session stopped' });
-}
-
-async function startSession() {
-  if (!repl) return;
+function startSession() {
   const typeName = selType.value;
-  const src = inpSource.value.trim();
-  const tgt = inpTarget.value.trim() || undefined;
-  const backward = chkBackward.checked;
+  const source = inpSource.value.trim();
   if (!typeName) { appendReplMsg('Select a type first', 'repl-result err'); return; }
-  if (!src)      { appendReplMsg('Enter an initial diagram', 'repl-result err'); return; }
-  await startSessionFromRepl(typeName, src, tgt, backward, formatStartCmd(typeName, src, tgt));
+  if (!source) { appendReplMsg('Enter an initial diagram', 'repl-result err'); return; }
+  submit(formatStartCmd(typeName, source, inpTarget.value));
 }
 
-function resetSession() {
-  const wasActive = sessionActive;
-  sessionActive = false;
-  fillSession = null;
-  sessionStop.hidden = true;
-  if (wasActive) sessionSetup.hidden = false;
-  if (selectedEl) {
-    selectedEl.classList.remove('acc-item--selected');
-    selectedEl.classList.remove('acc-leaf--selected');
-    selectedEl = null;
+// The panels a state decides, then the infobox and, when it changed, the menu.
+function renderSession(previous, menuChanged) {
+  const state = shown.state;
+  const ui = controls(state, canvas(choice).owner);
+  fileOutput.hidden = !ui.accordion;
+  sessionSetup.hidden = !ui.setup;
+  sessionStop.hidden = !ui.stop;
+  chkBackward.checked = ui.backward;
+  renderInfobox();
+  if (menuChanged) renderMenu();
+  const reached = Boolean(rewriteOf(state)?.target_reached);
+  const sameSession = sessionKey(previous) === sessionKey(shown);
+  if (reached && !(sameSession && rewriteOf(previous.state)?.target_reached)) {
+    visContainer.classList.remove('target-reached-flash');
+    void visContainer.offsetWidth;
+    visContainer.classList.add('target-reached-flash');
+    visContainer.addEventListener('animationend', () => visContainer.classList.remove('target-reached-flash'), { once: true });
   }
-  currentItem = null;
-  currentLayout = null;
-  resetZoom();
-  sessionStrdiag = null;
-  selectedRewrite = null;
-  previewActive = false;
-  proofView = false;
-  proofLayout = null;
-  proofBoundaryMap = null;
-  infoboxText.innerHTML = '';
-  rewriteList.innerHTML = '';
-  infobox.hidden = true;
-  rewriteList.hidden = true;
-  visContainer.hidden = true;
-  visContainer.classList.remove('target-reached-flash');
-  visControls.hidden = true;
-  boundaryControls.hidden = true;
   syncAnalysisLayout();
-}
-
-async function startSessionFromRepl(typeName, src, tgt, backward, rawCmd) {
-  await enterSession(repl.start_session(typeName, src, tgt, backward), rawCmd);
-}
-
-async function startResumeFromRepl(typeName, proof, target, backward, rawCmd) {
-  await enterSession(repl.resume_session(typeName, proof, target, backward), rawCmd);
-}
-
-async function enterSession(responsePromise, rawCmd) {
-  const result = await parseReplResponse(responsePromise);
-  if (result.status === 'error') {
-    appendReplEntry(rawCmd, formatError(result));
-    return;
-  }
-  sessionActive = true;
-  sessionSetup.hidden = true;
-  sessionStop.hidden = false;
-  replInput.focus();
-  if (selectedEl) {
-    selectedEl.classList.remove('acc-item--selected');
-    selectedEl.classList.remove('acc-leaf--selected');
-    selectedEl = null;
-  }
-  currentItem = null;
-  appendReplEntry(rawCmd, renderSegments(result.rendered));
-  await showSessionDiagram(result.data);
-}
-
-// ── Hole-filling ──────────────────────────────────────────────────────────────
-
-// Start a fill session for the hole with the given (0-based) index.  A fill is
-// just a rewrite session in the backend, so it reuses the session machinery; a
-// 0-cell hole has no rewrites and is filled by choosing one of the type's
-// 0-cells.
-async function startFill(index) {
-  if (!repl) return;
-  const hole = openHoles.find(h => h.index === index);
-  const result = await parseReplResponse(repl.run_command(JSON.stringify({ command: 'fill', index, backward: chkBackward.checked })));
-  if (result.status === 'error') {
-    appendReplEntry(`fill ${index}`, formatError(result));
-    return;
-  }
-  sessionActive = true;
-  fillSession = {
-    index,
-    dim: result.data.fill ? result.data.fill.dim : (hole ? hole.dim : 1),
-  };
-  sessionSetup.hidden = true;
-  sessionStop.hidden = false;
-  if (selectedEl) {
-    selectedEl.classList.remove('acc-item--selected');
-    selectedEl.classList.remove('acc-leaf--selected');
-    selectedEl = null;
-  }
-  currentItem = null;
-  // Print the session state immediately, exactly as starting a normal session.
-  const isZero = !!result.data.zero_cell;
-  appendReplEntry(`fill ${index}`, renderSegments(result.rendered));
-  if (isZero) {
-    await showZeroCellFill(result.data);
-  } else {
-    await showSessionDiagram(result.data);
-  }
-}
-
-// Render a boundaryless 0-cell fill so it feels like a normal session: an
-// Undo/Redo/Done action row, the candidate 0-cells as a clickable list while
-// unchosen, the chosen cell + target-reached once picked.  Never a string diagram.
-async function showZeroCellFill(data) {
-  selectedRewrite = null;
-  previewActive = false;
-  infobox.hidden = false;
-  boundaryControls.hidden = true;
-  const zc = data.zero_cell || { choices: [], chosen: null, target_reached: false, can_undo: false, can_redo: false };
-
-  let buttons = '';
-  buttons += `<button id="btn-undo-vis" class="btn-undo-vis btn-secondary" title="Undo"${zc.can_undo ? '' : ' disabled'}>&#x21A9;</button>`;
-  buttons += `<button id="btn-redo-vis" class="btn-redo-vis btn-secondary" title="Redo"${zc.can_redo ? '' : ' disabled'}>&#x21AA;</button>`;
-  buttons += `<button id="btn-done-fill" class="btn-done-fill btn-secondary" title="Finalise this fill"${zc.target_reached ? '' : ' disabled'}>Done</button>`;
-  // A 0-cell has no current/target diagram; choosing one completes the proof.
-  let html = `<div class="infobox-actions">${buttons}</div>`;
-  if (zc.chosen) {
-    html += `<span class="infobox-qual">Chosen 0-cell</span>`;
-    html += `<div class="infobox-name">${hi(zc.chosen)}</div>`;
-    html += `<div class="target-reached-banner">&#x2714; target reached</div>`;
-  } else {
-    html += `<span class="infobox-qual">Choose a 0-cell</span>`;
-  }
-  infoboxText.innerHTML = html;
-  document.getElementById('btn-undo-vis')?.addEventListener('click', () => { void zeroCellCmd('undo'); });
-  document.getElementById('btn-redo-vis')?.addEventListener('click', () => { void zeroCellCmd('redo'); });
-  document.getElementById('btn-done-fill')?.addEventListener('click', () => { void finishFill(); });
-
-  // A 0-cell fill never draws a string diagram.
-  resetZoom();
-  currentLayout = null;
-  visContainer.hidden = true;
-  visControls.hidden = true;
-
-  buildZeroCellChoices(zc.choices);
-  syncAnalysisLayout();
-}
-
-// Clickable list of candidate 0-cells, in the rewrite-list slot.  Empty once a
-// cell is chosen (the backend offers candidates only while unchosen).
-function buildZeroCellChoices(choices) {
-  rewriteList.innerHTML = '';
-  if (!choices.length) { rewriteList.hidden = true; return; }
-  rewriteList.hidden = false;
-  for (const c of choices) {
-    const row = document.createElement('div');
-    row.className = 'rewrite-row';
-    row.innerHTML = `<span class="rw-content"><span class="rw-name">${esc(c.name)}</span></span>`;
-    row.addEventListener('click', () => { void chooseZeroCell(c.index); });
-    rewriteList.appendChild(row);
-  }
-}
-
-async function chooseZeroCell(choice) {
-  if (!repl) return;
-  const result = await parseReplResponse(repl.run_command(JSON.stringify({ command: 'step', choice })));
-  if (result.status === 'error') { appendReplEntry(`apply ${choice}`, formatError(result)); return; }
-  // Log the choice to the transcript, exactly as clicking a rewrite does.
-  appendReplEntry(`apply ${choice}`, renderSegments(result.rendered));
-  await showZeroCellFill(result.data);
-}
-
-// Undo/redo within a 0-cell fill.
-async function zeroCellCmd(command) {
-  if (!repl) return;
-  const result = await parseReplResponse(repl.run_command(JSON.stringify({ command })));
-  if (result.status === 'error') { appendReplEntry(command, formatError(result)); return; }
-  appendReplEntry(command, renderSegments(result.rendered));
-  await showZeroCellFill(result.data);
-}
-
-// Route a typed session command while a 0-cell fill is active, mirroring the CLI:
-// updates both the analysis pane and the transcript.
-// Finalise the active fill: the backend appends the clause and returns the
-// updated source, which we drop into the editor (flashing the new clause) and
-// re-evaluate.
-async function finishFill() {
-  if (!repl) return;
-  // Write the clause back to the file that was evaluated, not the active tab.
-  const target = resolveEvaluatedTab();
-  if (!target) {
-    appendReplEntry('done', formatError(
-      `cannot finalise: the source tab '${lastEvaluatedTabName}' is no longer open (it was closed or renamed)`));
-    return;
-  }
-  if (target.id !== editorTabs.activeTabId) switchTab(target.id);
-  const before = getEditorText();
-  const result = await parseReplResponse(repl.run_command('{"command":"done"}'));
-  if (result.status === 'error') {
-    appendReplEntry('done', formatError(result));
-    return;
-  }
-  const message = result.data.message || 'Filled';
-  const newSource = result.data.source || before;
-  appendReplEntry('done', formatOk(message));
-  fillSession = null;
-  resetSession();
-  replaceEditorSource(newSource, before);
-  await evaluateSource(true);
-  // The silent re-evaluation reflows the layout after the last scroll, so
-  // re-pin the transcript to the bottom (where the `done` message is).
-  replOutput.scrollTop = replOutput.scrollHeight;
 }
 
 // Replace the editor contents with `next` and briefly flash the inserted span
@@ -1530,14 +1249,15 @@ function replaceEditorSource(next, prev) {
 // ── REPL input ────────────────────────────────────────────────────────────────
 
 replInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) return;
   if (e.key === 'Enter') {
     e.preventDefault();
     const cmd = replInput.value.trim();
-    if (!cmd) return;
+    if (!cmd || !captureExpectation()) return;
     replHistory.unshift(cmd);
     histIdx = -1;
     replInput.value = '';
-    void handleCommand(cmd);
+    submit(cmd);
   } else if (e.key === 'ArrowUp') {
     e.preventDefault();
     if (histIdx + 1 < replHistory.length) { histIdx++; replInput.value = replHistory[histIdx]; }
@@ -1548,102 +1268,10 @@ replInput.addEventListener('keydown', e => {
   }
 });
 
-async function handleCommand(raw) {
-  // One shared parser (Rust, same as the CLI) classifies the line; the web only
-  // dispatches.  Usage/unknown-command errors and their wording come from there,
-  // so the two front-ends cannot drift.
-  const parsed = await parseReplResponse(repl.parse_command(raw));
-  if (parsed.status === 'error') { appendReplEntry(raw, formatError(parsed)); return; }
-  if (parsed.status === 'action') { await runAction(raw, parsed); return; }
-  // parsed.status === 'request' — hand the ready request to the backend.
-  const result = await parseReplResponse(repl.run_command(JSON.stringify(parsed.request)));
-  await renderResult(raw, parsed.request.command, result);
-}
-
-// Commands the web drives as a UI flow rather than a plain backend round-trip.
-async function runAction(raw, p) {
-  switch (p.action) {
-    case 'start':    await startSessionFromRepl(p.type_name, p.initial, p.target ?? undefined, chkBackward.checked, raw); break;
-    case 'resume':   await startResumeFromRepl(p.type_name, p.proof, p.target ?? undefined, chkBackward.checked, raw); break;
-    case 'fill':     await startFill(p.index); break;
-    case 'done':     await finishFill(); break;
-    case 'stop':     await stopFromRepl(raw); break;
-    case 'clear':    replOutput.innerHTML = ''; break;
-    case 'holes':    { const r = await fetchHoles(); appendReplEntry(raw, r ? renderSegments(r.rendered) : ''); break; }
-    case 'backward': await runBackward(raw, p.on); break;
-  }
-}
-
-// Request tags whose (state-changing) result should refresh the diagram pane.
-const STATE_REQS = new Set(['step', 'step_multi', 'auto', 'random', 'undo', 'undo_to', 'redo', 'redo_to', 'show', 'store', 'parallel']);
-
-// Render a backend command's reply: its shared transcript view (or its message),
-// then the medium-specific follow-ups — the fill UI, the diagram pane, the editor.
-// `reqCmd` is the request's own `command` tag (e.g. `step`, `undo_to`, `store`).
-async function renderResult(raw, reqCmd, result) {
-  if (result.status === 'error') { appendReplEntry(raw, formatError(result)); return; }
-  if (result.data && result.data.module) {
-    // Idle `show`/`status`: report the editor's filename (the backend keys the
-    // module on a virtual path, so we substitute the active tab's name).
-    const tab = activeTab();
-    appendReplEntry(raw, `${dim('module:')} ${hi(tab ? tab.name : result.data.module)}`);
-    return;
-  }
-  appendReplEntry(raw, result.rendered
-    ? renderSegments(result.rendered)
-    : { cls: 'meta', text: (result.data && result.data.message) || '' });
-  // In a 0-cell fill, refresh the fill UI; otherwise the session diagram.
-  if (fillSession && fillSession.dim === 0) {
-    await showZeroCellFill(result.data);
-  } else if (sessionActive && STATE_REQS.has(reqCmd)) {
-    await updateVisInfo(result.data);
-  }
-  // `store` appends its definition to the file that was evaluated (switching to
-  // its tab if needed), then refreshes the accordion.  The backend already holds
-  // the definition in memory; if its tab is gone we just decline the editor write.
-  if (reqCmd === 'store' && result.data && result.data.stored) {
-    const target = resolveEvaluatedTab();
-    if (!target) {
-      appendReplEntry(raw, formatError(
-        `stored, but not written to source: the tab '${lastEvaluatedTabName}' is no longer open (it was closed or renamed)`));
-      return;
-    }
-    if (target.id !== editorTabs.activeTabId) switchTab(target.id);
-    const s = result.data.stored;
-    const code = `\n\n@${s.type_name}\nlet ${s.def_name} = ${s.expr}`;
-    const doc = view.state.doc;
-    const trimmed = doc.toString().trimEnd();
-    const newText = trimmed + code + '\n';
-    view.dispatch({
-      changes: { from: 0, to: doc.length, insert: newText },
-      selection: { anchor: newText.length },
-      scrollIntoView: true,
-    });
-    await refreshAccordion();
-  }
-}
-
-// `backward` is a mode the web also surfaces as a checkbox: set it when idle,
-// only report it mid-session (where it is fixed), and take the message and the
-// resulting mode from the backend.
-async function runBackward(raw, on) {
-  const effectiveOn = sessionActive ? null : on;
-  const result = await parseReplResponse(repl.run_command(JSON.stringify({ command: 'backward', on: effectiveOn })));
-  if (!sessionActive) chkBackward.checked = !!(result.data && result.data.backward);
-  appendReplEntry(raw, { cls: 'meta', text: (result.data && result.data.message) || '' });
-}
-
-function quoteArg(s) { return /\s/.test(s) ? `'${s}'` : s; }
-
-function formatStartCmd(type, src, tgt) {
-  return `start ${quoteArg(type)} ${quoteArg(src)}${tgt ? ' ' + quoteArg(tgt) : ''}`;
-}
-
-
 // ── Rendering ─────────────────────────────────────────────────────────────────
 
 // Style a shared RichText (lines of role-tagged segments, produced by the Rust
-// `render_response` and carried in the response's `rendered` field) into
+// `richtext::render` and carried in the reply's `rendered` field) into
 // transcript HTML.  This is the web half of the single shared renderer — the
 // CLI styles the same RichText to ANSI; here each role maps to a `repl-*` span,
 // the same classes the rest of the REPL uses.  Layout lives in Rust, not here.
@@ -1657,7 +1285,6 @@ const ROLE_CLASS = {
   redex: 'repl-match-hi',
 };
 function renderSegments(rendered) {
-  if (!rendered || !Array.isArray(rendered.lines)) return '';
   return rendered.lines.map(line =>
     line.map(seg => {
       const cls = ROLE_CLASS[seg.role];
@@ -1666,55 +1293,40 @@ function renderSegments(rendered) {
   ).join('\n');
 }
 
-async function updateVisInfo(data) {
-  // When a session is active and no accordion item is selected,
-  // show the current diagram in the analysis pane.
-  if (!sessionActive || !data || !data.current) return;
-  if (currentItem) return; // accordion item takes priority
-
-  await showSessionDiagram(data);
-}
-
 // ── Formatting helpers ────────────────────────────────────────────────────────
 
 // Escape raw strings before embedding in HTML.
+const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
 function esc(s) {
-  return String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+  return String(s).replace(/[&<>"]/g, c => ESCAPES[c]);
 }
 
-// Span helpers for UI outside the REPL transcript (the accordion, the idle
-// `module:` line).  Transcript rendering goes through `renderSegments` instead,
-// which maps RichText roles to the same `repl-*` classes.
+// UI outside the transcript uses the same value style as RichText.
 function hi(s)  { return `<span class="repl-hi">${esc(s)}</span>`; }
-function dim(s) { return `<span class="repl-dim">${esc(s)}</span>`; }
 
-// Plain-text messages (errors, status) — no HTML, use textContent.
-function formatOk(msg)    { return { cls: 'repl-result ok',  text: msg }; }
+// A successful reply carries a message or rendered text, never both.
+function renderReply(reply) {
+  if (reply.status === 'error') appendReplEntry(reply.input, formatError(reply));
+  else appendReplEntry(reply.input, reply.rendered
+    ? renderSegments(reply.rendered)
+    : { cls: 'repl-result meta', text: reply.message });
+}
 
-// Errors come in two shapes:
-//   - a parsed response `{message, diagnostics?}` from the backend or the shared
-//     command parser (the usual case — REPL message text lives there, not here)
-//   - a plain string, for the rare locally-raised message
+// Error replies carry a message and optional structured diagnostics.
 // When `diagnostics` is present we render a structured block with line:col
-// and a source snippet; otherwise we fall back to the flat text path.
-function formatError(messageOrResult) {
-  if (typeof messageOrResult === 'string') {
-    return { cls: 'repl-result err', text: messageOrResult };
-  }
-  const { message, diagnostics } = messageOrResult || {};
-  if (!Array.isArray(diagnostics) || diagnostics.length === 0) {
-    return { cls: 'repl-result err', text: message || 'unknown error' };
-  }
-  const html = diagnostics.map(renderDiagnostic).join('');
+// and a source snippet; otherwise we fall back to the reply's message.
+function formatError({ message, diagnostics }) {
+  if (!diagnostics?.length) return { cls: 'repl-result err', text: message };
+  const html = `<div>${esc(message)}</div>` + diagnostics.map(renderDiagnostic).join('');
   return { cls: 'repl-result err', html };
 }
 
+const utf8 = new TextEncoder();
+const fromUtf8 = new TextDecoder();
+
 function renderDiagnostic(d) {
   const kindLabel = `${d.kind} error`;
-  const path = d.path ? ` in ${esc(d.path)}` : '';
+  const path = d.path ? ` in ${d.path}` : '';
   const loc = `line ${d.start.line}:${d.start.col}`;
   const header =
     `<div class="err-header">` +
@@ -1722,9 +1334,16 @@ function renderDiagnostic(d) {
       `<span class="err-loc">${esc(path)} at ${esc(loc)}</span>` +
       `<span class="err-msg"> — ${esc(d.message)}</span>` +
     `</div>`;
-  const snippet = d.snippet
-    ? `<pre class="err-snippet">${esc(d.snippet)}</pre>`
-    : '';
+  // Offsets are bytes into the excerpt, whose first line holds the start.
+  const bytes = utf8.encode(d.excerpt.text);
+  const span = (from, to) => Array.from(fromUtf8.decode(bytes.subarray(from - d.excerpt.byte, to - d.excerpt.byte)));
+  const before = span(d.excerpt.byte, d.start.byte);
+  const marked = span(d.start.byte, d.end.byte);
+  const line = d.excerpt.text.split(/\r\n|[\r\n\v\f\u0085\u2028\u2029]/u)[0];
+  // The caret's indent keeps the line's tabs, so it aligns however tabs render.
+  const indent = before.map(character => character === '\t' ? '\t' : ' ').join('');
+  const carets = '^'.repeat(Math.max(1, Math.min(marked.length, Array.from(line).length - before.length)));
+  const snippet = `<pre class="err-snippet">${esc(line)}\n${indent}${carets}</pre>`;
   const notes = (d.notes || [])
     .map(n => `<div class="err-note">note: ${esc(n)}</div>`)
     .join('');
@@ -1743,8 +1362,7 @@ function appendReplEntry(cmdText, result) {
   const entry = document.createElement('div');
   entry.className = 'repl-entry';
 
-  // Omit the `> cmd` line for entries that aren't real commands (e.g. the
-  // implicit re-evaluation after editing or `done`).
+  // Each committed reply carries its own input part; Evaluate has none.
   if (cmdText) {
     const cmdEl = document.createElement('div');
     cmdEl.className = 'repl-cmd';
@@ -1763,7 +1381,7 @@ function appendReplEntry(cmdText, result) {
       resEl.className = result.cls;
       resEl.innerHTML = result.html;
     } else {
-      // plain-text object from formatOk/formatError
+      // plain-text message or error
       resEl.className = result.cls;
       resEl.textContent = result.text;
     }
@@ -1780,134 +1398,81 @@ btnClear.addEventListener('click', () => {
   replOutput.innerHTML = '';
 });
 
-// The command help is rendered by the backend (the same table the CLI prints,
-// minus the CLI-only commands), so the two front-ends never drift apart.
-async function renderHelp() {
-  const result = await parseReplResponse(repl.run_command('{"command":"help","web":true}'));
-  return result.rendered ? renderSegments(result.rendered) : '';
-}
-
-// ── Examples, load/save, syntax highlighting ─────────────────────────────────
-//
-// Examples are served as plain HTTP files alongside the frontend:
-//   examples/index.json   —  { "Theory": "Theory.ali",
-//                              "TRS/Aux": "TRS/Aux.ali",
-//                              ... }  or  { "error": "<message>" }
-//   examples/<relpath>    —  file contents
-//
-// A file's **name** is its relative path under the root minus ".ali" (e.g.
-// "Theory", "TRS/Aux") — the manifest key and dropdown label.  `include <Name>`
-// takes a bare identifier, resolved relative to the including file (sibling →
-// same-named subdirectory → root; see resolveIncludeKey), so the same stem may
-// name different files under different modules.  Names are paths, hence unique
-// by construction — there is no global stem-uniqueness rule.
-//
-// Under `alifib web [<dir>]`, the Rust server generates the manifest
-// dynamically.  Under a static WASM deployment (GitHub Pages etc.), the
-// manifest is a committed artefact produced by the deploy workflow from the
-// same recursive scan.  Either way the frontend code is identical.
+// ── Examples, load/save ──────────────────────────────────────────────────────
 
 const EXAMPLES_BASE = 'examples';
 
-// Index: name → relative path (e.g. "TRS/Aux" → "TRS/Aux.ali").
-// Populated once at boot by populateExamples().
+// Picker index, refreshed at boot and by every Evaluate: names are module
+// paths; values are exact file names (one .ali per tab).
 let EXAMPLES_INDEX = null;
 
-// Cache of name → contents, filled lazily so `include <Name>` in the editor
-// can be forwarded to the backend without a round-trip per include.
-const EXAMPLE_CONTENTS = new Map();
+// Why a fetch failed: the server explains in JSON {error}; other hosts send a page.
+async function failure(response) {
+  let error;
+  try {
+    ({ error } = JSON.parse(await response.text()));
+  } catch {
+    // Not the server's JSON.
+  }
+  return error ?? `HTTP ${response.status}`;
+}
+
+async function fetchExamplesIndex() {
+  const response = await fetch(`${EXAMPLES_BASE}/index.json`, { cache: 'no-store' });
+  if (!response.ok) throw new Error(await failure(response));
+  const { modules } = await response.json();
+  if (!modules || typeof modules !== 'object' || Array.isArray(modules)) throw new Error('invalid examples index');
+  return modules;
+}
+
+function renderExamplePicker(index) {
+  EXAMPLES_INDEX = index;
+  selExamples.innerHTML = '<option value="">Examples…</option>';
+  for (const name of Object.keys(index).sort()) {
+    const option = document.createElement('option');
+    option.value = option.textContent = name;
+    selExamples.appendChild(option);
+  }
+}
 
 async function populateExamples() {
   try {
-    const resp = await fetch(`${EXAMPLES_BASE}/index.json`, { cache: 'no-store' });
-    if (!resp.ok) return;
-    const data = await resp.json();
-    if (data && typeof data === 'object' && typeof data.error === 'string') {
-      appendReplMsg('Examples unavailable: ' + data.error, 'repl-result err');
-      return;
-    }
-    if (!data || typeof data !== 'object' || Array.isArray(data)) return;
-    EXAMPLES_INDEX = data;
-    const names = Object.keys(data).sort();
-    selExamples.innerHTML = '<option value="">Examples…</option>';
-    for (const name of names) {
-      const opt = document.createElement('option');
-      opt.value = name;
-      opt.textContent = name;
-      selExamples.appendChild(opt);
-    }
-  } catch (e) {
-    appendReplMsg('Failed to load examples: ' + e, 'repl-result err');
+    renderExamplePicker(await fetchExamplesIndex());
+  } catch (error) {
+    appendReplMsg(`Examples unavailable: ${error.message}`, 'repl-result err');
   }
+}
+
+async function fetchExampleFile(path) {
+  const urlPath = path.split('/').map(encodeURIComponent).join('/');
+  const response = await fetch(`${EXAMPLES_BASE}/${urlPath}`, { cache: 'no-store' });
+  if (!response.ok) throw new Error(`${path}: ${await failure(response)}`);
+  return response.text();
 }
 
 async function fetchExampleByKey(key) {
-  if (EXAMPLE_CONTENTS.has(key)) return EXAMPLE_CONTENTS.get(key);
-  const relPath = EXAMPLES_INDEX && EXAMPLES_INDEX[key];
-  if (!relPath) return null;
-  const resp = await fetch(`${EXAMPLES_BASE}/${relPath}`, { cache: 'no-store' });
-  if (!resp.ok) return null;
-  const text = await resp.text();
-  EXAMPLE_CONTENTS.set(key, text);
-  return text;
+  const path = EXAMPLES_INDEX?.[key];
+  if (!path) throw new Error(`unknown example: ${key}`);
+  return fetchExampleFile(path);
 }
 
-function resolveIncludeKey(stem, parentKey) {
-  if (!EXAMPLES_INDEX) return null;
-  const parts = parentKey ? parentKey.split('/') : [];
-  const parentDir = parts.slice(0, -1).join('/');
-  const parentStem = parts[parts.length - 1] || '';
-  const candidates = [];
-  candidates.push(parentDir ? `${parentDir}/${stem}` : stem);
-  if (parentStem) {
-    candidates.push(parentDir ? `${parentDir}/${parentStem}/${stem}` : `${parentStem}/${stem}`);
+// The indexed files the tabs do not shadow, fetched concurrently. Never
+// rejects: what cannot be fetched is skipped with a note, and the kernel
+// reports any include that therefore fails.
+async function fetchExamples(tabs) {
+  let index;
+  try {
+    index = await fetchExamplesIndex();
+  } catch (error) {
+    appendReplMsg(`examples not sent: ${error.message}`, 'repl-result err');
+    return {};
   }
-  if (parentDir) candidates.push(stem);
-  for (const c of candidates) {
-    if (EXAMPLES_INDEX[c]) return c;
-  }
-  return null;
-}
-
-async function collectIncludeModules(source, parentKey) {
-  const map = {};
-  const pending = [{ src: source, parent: parentKey || null }];
-  const seen = new Set();
-  while (pending.length) {
-    const { src, parent } = pending.pop();
-    for (const stem of collectDirectIncludes(src)) {
-      const tab = editorTabs.tabs.find(t =>
-        t.name === stem || t.name.split('/').pop() === stem
-      );
-      if (tab) {
-        const filePath = `${stem}.ali`;
-        if (seen.has(filePath)) continue;
-        seen.add(filePath);
-        const content = tab.cmState.doc.toString();
-        map[filePath] = content;
-        pending.push({ src: content, parent: tab.name });
-        continue;
-      }
-      const key = resolveIncludeKey(stem, parent);
-      if (!key) continue;
-      const relPath = EXAMPLES_INDEX[key];
-      if (seen.has(relPath)) continue;
-      seen.add(relPath);
-      const content = await fetchExampleByKey(key);
-      if (content === null) continue;
-      map[relPath] = content;
-      pending.push({ src: content, parent: key });
-    }
-  }
-  return map;
-}
-
-function collectDirectIncludes(source) {
-  const re = /(^|[,\s])include\s+([A-Za-z_][A-Za-z0-9_]*)\b/g;
-  const names = [];
-  let m;
-  while ((m = re.exec(source)) !== null) names.push(m[2]);
-  return names;
+  renderExamplePicker(index);
+  const paths = Object.values(index).filter(path => !Object.hasOwn(tabs, path));
+  const files = await Promise.allSettled(paths.map(fetchExampleFile));
+  const skipped = files.flatMap(file => file.status === 'rejected' ? [file.reason.message] : []);
+  if (skipped.length) appendReplMsg(`examples skipped: ${skipped.join('; ')}`, 'repl-result err');
+  return Object.fromEntries(files.flatMap((file, i) => file.status === 'fulfilled' ? [[paths[i], file.value]] : []));
 }
 
 selExamples.addEventListener('change', async () => {
@@ -1920,17 +1485,20 @@ selExamples.addEventListener('change', async () => {
     switchTab(existing.id);
     return;
   }
-  const content = await fetchExampleByKey(name);
-  if (content === null) {
-    appendReplMsg(`Failed to fetch example: ${name}`, 'repl-result err');
-    return;
-  }
-  const tab = activeTab();
-  if (tab && !tab.dirty && tab.savedSnapshot === '') {
-    tab.name = name;
-    setEditorValue(content);
-  } else {
-    createTab(name, content, null);
+  try {
+    const content = await fetchExampleByKey(name);
+    // A tab may have been opened or renamed while the fetch was in flight.
+    const opened = editorTabs.tabs.find(tab => tab.name === name);
+    if (opened) { switchTab(opened.id); return; }
+    const tab = activeTab();
+    if (tab && !tab.dirty && tab.savedSnapshot === '') {
+      if (!tabNameAvailable(name, tab.id)) return;
+      tab.name = name;
+      tab.fileHandle = null;
+      setEditorValue(content);
+    } else createTab(name, content, null);
+  } catch (error) {
+    appendReplMsg(`Failed to fetch example: ${error.message}`, 'repl-result err');
   }
 });
 
@@ -1985,12 +1553,15 @@ btnSave.addEventListener('click', async () => {
           suggestedName,
           types: aliPickerTypes,
         });
-        tab.fileHandle = handle;
       }
+      const name = stemFromFilename(handle.name);
+      if (!tabNameAvailable(name, tab.id)) return;
       const writable = await handle.createWritable();
       await writable.write(content);
       await writable.close();
-      tab.name = stemFromFilename(handle.name);
+      if (!tabNameAvailable(name, tab.id)) return;
+      tab.fileHandle = handle;
+      tab.name = name;
       markClean(tab, content);
     } catch (e) {
       if (e?.name === 'AbortError') return;
@@ -2000,16 +1571,19 @@ btnSave.addEventListener('click', async () => {
     const defaultName = (tab.name || 'untitled') + '.ali';
     const name = window.prompt('Save as:', defaultName);
     if (!name) return;
+    const filename = name.endsWith('.ali') ? name : name + '.ali';
+    const tabName = stemFromFilename(filename);
+    if (!tabNameAvailable(tabName, tab.id)) return;
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = name.endsWith('.ali') ? name : name + '.ali';
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 0);
-    tab.name = stemFromFilename(a.download);
+    tab.name = tabName;
     markClean(tab, content);
   }
 });
@@ -2027,8 +1601,9 @@ btnNewTab.addEventListener('click', () => createTab(null, '', null));
 
 window.addEventListener('keydown', e => {
   const mod = e.ctrlKey || e.metaKey;
-  if (!mod) return;
+  if (!mod || e.defaultPrevented) return;
   switch (e.key.toLowerCase()) {
+    case 'enter': e.preventDefault(); evaluateSource(); break;
     case 's': e.preventDefault(); btnSave.click(); break;
     case 'o': e.preventDefault(); btnLoad.click(); break;
     case 't': e.preventDefault(); createTab(null, '', null); break;
@@ -2044,658 +1619,381 @@ window.addEventListener('keydown', e => {
   }
 });
 
-async function refreshAccordion() {
-  if (!repl) return;
-  const result = await parseReplResponse(repl.get_types());
-  if (result.status !== 'ok') return;
-  const types = result.data.types || [];
-  tagFaces.clear();
-  for (const t of types) {
-    for (const g of t.generators) {
-      if (g.tag != null) tagFaces.set(g.tag, (g.face_tags || []).filter(ft => ft != null));
-    }
+// ── Session display (DOM only; the canvas belongs to paint) ───────────────────
+
+// The infobox header: the owner's text and the actions the state admits. It is
+// rebuilt only when the state, selection or owner change, never by paint, so a
+// pressed button keeps its element; paint fills only its drawn-info slot.
+function renderInfobox() {
+  const state = shown?.state;
+  const active = state?.mode === 'rewrite' || state?.mode === 'fill';
+  infobox.hidden = !choice.selection && !active;
+  if (!infobox.hidden) {
+    infoboxText.innerHTML = actionsMarkup(controls(state, canvas(choice).owner))
+      + (choice.selection ? itemMarkup(choice.selection) : sessionMarkup(state))
+      + '<div class="infobox-drawn"></div>';
+    bindInfobox();
   }
-  recomputeFullyThin();
-  fileOutput.innerHTML = '';
-  fileOutput.hidden = types.length === 0;
-  buildModuleAccordion(types, fileOutput);
   syncAnalysisLayout();
 }
 
-// ── Session diagram display ──────────────────────────────────────────────────
-
-async function showSessionDiagram(data) {
-  selectedRewrite = null;
-  previewActive = false;
-
-  // Fetch strdiag for current diagram.
-  if (!repl) return;
-  const strResult = await parseReplResponse(repl.get_session_strdiag());
-  if (strResult.status !== 'ok') return;
-
-  sessionStrdiag = strResult.data;
-
-  if (proofView) {
-    try {
-      const proofResult = await parseReplResponse(repl.get_proof_strdiag());
-      if (proofResult.status === 'ok') {
-        proofLayout = layoutStrDiag(proofResult.data.strdiag, selOrientation.value);
-        proofBoundaryMap = proofResult.data.output_boundary_map;
-      }
-    } catch (e) {
-      console.error('proof strdiag fetch failed:', e);
-    }
-  }
-
-  // Show infobox with session info.
-  infobox.hidden = false;
-  boundaryControls.hidden = true;
-
-  let html = '';
+function actionsMarkup(ui) {
+  if (!ui.stop) return '';
   let buttons = '';
-  if (data.target) buttons += `<button id="btn-target-vis" class="btn-target-vis btn-secondary" title="Show target diagram">Target</button>`;
-  buttons += `<button id="btn-undo-vis" class="btn-undo-vis btn-secondary" title="Undo"${data.step_count === 0 ? ' disabled' : ''}>&#x21A9;</button>`;
-  buttons += `<button id="btn-redo-vis" class="btn-redo-vis btn-secondary" title="Redo"${!data.can_redo ? ' disabled' : ''}>&#x21AA;</button>`;
-  const viewLabel = proofView ? 'Step view' : 'Proof view';
-  buttons += `<button id="btn-view-toggle" class="btn-view-toggle" title="${viewLabel}">${viewLabel}</button>`;
-  if (fillSession) buttons += `<button id="btn-done-fill" class="btn-done-fill btn-secondary" title="Finalise this fill"${data.target_reached ? '' : ' disabled'}>Done</button>`;
-  html += `<div class="infobox-actions">${buttons}</div>`;
-  html += `<span class="infobox-qual">Current diagram</span>`;
-  html += `<div class="infobox-name">${hi(data.current.label || '—')} <span class="acc-dim">dim ${data.current.dim}, step ${data.step_count}</span></div>`;
-  if (data.target) {
-    html += `<div class="infobox-boundary">target: ${esc(data.target.label)}</div>`;
-    if (data.target_reached) {
-      html += `<div class="target-reached-banner">&#x2714; target reached</div>`;
-    }
+  if (ui.target) buttons += '<button id="btn-target-vis" class="btn-target-vis btn-secondary" title="Show target diagram">Target</button>';
+  buttons += `<button id="btn-undo-vis" class="btn-undo-vis btn-secondary" title="Undo"${ui.canUndo ? '' : ' disabled'}>&#x21A9;</button>`;
+  buttons += `<button id="btn-redo-vis" class="btn-redo-vis btn-secondary" title="Redo"${ui.canRedo ? '' : ' disabled'}>&#x21AA;</button>`;
+  if (ui.proof) {
+    const label = choice.proof ? 'Step view' : 'Proof view';
+    buttons += `<button id="btn-view-toggle" class="btn-view-toggle" title="${label}">${label}</button>`;
   }
-  infoboxText.innerHTML = html;
-  const btnUndo = document.getElementById('btn-undo-vis');
-  if (btnUndo) btnUndo.addEventListener('click', () => { void performUndo(); });
-  const btnRedo = document.getElementById('btn-redo-vis');
-  if (btnRedo) btnRedo.addEventListener('click', () => { void performRedo(); });
-  const btnTarget = document.getElementById('btn-target-vis');
-  if (btnTarget) {
-    btnTarget.addEventListener('mousedown', (e) => {
-      e.preventDefault();
-      previewActive = true;
-      void showTargetPreview();
-    });
-    btnTarget.addEventListener('mouseup', () => {
-      previewActive = false;
-      endRewritePreview();
-    });
-    btnTarget.addEventListener('mouseleave', () => {
-      if (previewActive) { previewActive = false; endRewritePreview(); }
-    });
-  }
-  const btnViewToggle = document.getElementById('btn-view-toggle');
-  if (btnViewToggle) btnViewToggle.addEventListener('click', () => { void toggleProofView(); });
-  const btnDoneFill = document.getElementById('btn-done-fill');
-  if (btnDoneFill) btnDoneFill.addEventListener('click', () => { void finishFill(); });
-
-  // Render the string diagram.
-  resetZoom();
-  currentLayout = proofView && proofLayout
-    ? proofLayout
-    : layoutStrDiag(sessionStrdiag, selOrientation.value);
-  visContainer.hidden = false;
-  visControls.hidden = false;
-  if (data.target_reached) {
-    visContainer.classList.remove('target-reached-flash');
-    void visContainer.offsetWidth;
-    visContainer.classList.add('target-reached-flash');
-    visContainer.addEventListener('animationend', () => {
-      visContainer.classList.remove('target-reached-flash');
-    }, { once: true });
-  }
-  resizeAndRender();
-
-  // Build rewrite list.
-  bunchedIndices = [];
-  bunchPositions = new Set();
-  lastParallelMode = !!data.parallel;
-  buildRewriteList(data.rewrites || []);
-  syncAnalysisLayout();
+  if (ui.done) buttons += `<button id="btn-done-fill" class="btn-done-fill btn-secondary"${ui.canDone ? '' : ' disabled'}>Done</button>`;
+  return `<div class="infobox-actions">${buttons}</div>`;
 }
 
-async function toggleProofView() {
-  if (!repl) return;
-  proofView = !proofView;
-  try {
-    if (proofView) {
-      await parseReplResponse(repl.set_proof_view(true));
-    } else {
-      await parseReplResponse(repl.set_proof_view(false));
-      proofLayout = null;
-      proofBoundaryMap = null;
-    }
-  } catch (e) {
-    console.error('set_proof_view failed:', e);
+const TARGET_REACHED = '<div class="target-reached-banner">&#x2714; target reached</div>';
+
+function sessionMarkup(state) {
+  const zero = zeroOf(state);
+  if (zero) {
+    return `<span class="infobox-qual">Fill ${hi(state.hole.source_name)}</span>` + (zero.chosen != null
+      ? `<div class="infobox-name">${hi(zero.chosen)}</div>${TARGET_REACHED}`
+      : '<div class="infobox-name">Choose a 0-cell</div>');
   }
-  const result = await parseReplResponse(repl.run_command('{"command":"show"}'));
-  if (result.status === 'ok' && result.data) {
-    await showSessionDiagram(result.data);
+  const rewrite = rewriteOf(state);
+  let html = '<span class="infobox-qual">Current diagram</span>'
+    + `<div class="infobox-name">${hi(rewrite.current.label || '—')} <span class="acc-dim">dim ${rewrite.current.dim}, step ${rewrite.step_count}</span></div>`;
+  if (rewrite.target) {
+    html += `<div class="infobox-boundary">target: ${esc(rewrite.target.label)}</div>`;
+    if (rewrite.target_reached) html += TARGET_REACHED;
   }
+  return html;
 }
 
-function buildRewriteList(rewrites) {
-  rewriteList.innerHTML = '';
-  lastRewriteData = rewrites;
-  if (!rewrites.length) {
-    rewriteList.hidden = true;
-    return;
+const QUALIFIER = { generator: 'Generator of', diagram: 'Diagram at', map: 'Map at' };
+
+function itemMarkup(selection) {
+  const { type_name, kind, name, boundary } = selection;
+  const item = itemOf(shown.module, selection);
+  const title = boundary && kind !== 'map'
+    ? `${boundary.side === 'output' ? 'Output' : 'Input'} ${boundary.dim}-boundary of ${name}` : name;
+  let html = `<span class="infobox-qual">${QUALIFIER[kind]} ${hi(type_name)}</span><div class="infobox-name">${hi(title)}`;
+  if (!boundary && kind === 'generator') html += ` <span class="acc-dim">dim ${item.dim}</span>`;
+  html += '</div>';
+  return kind === 'map' ? html + mapMarkup(selection, item) : html;
+}
+
+function mapMarkup(selection, map) {
+  let html = `<div class="infobox-boundary">:: ${esc(map.domain)}</div>`;
+  const holes = holesOf(selection);
+  if (holes.length) {
+    html += '<div class="infobox-holes"><div class="infobox-holes-title">Open holes</div>';
+    for (const hole of holes) html += `<div class="infobox-hole"><span class="infobox-hole-bd">${hi(hole.boundary)}</span><button class="btn-fill-hole btn-secondary" data-hole-index="${hole.index}">Fill</button></div>`;
+    html += '</div>';
   }
-  rewriteList.hidden = false;
-
-  const inBunchMode = bunchedIndices.length > 0;
-
-  // Bunch card at top when bunching is active.
-  if (inBunchMode) {
-    const bunchCard = document.createElement('div');
-    bunchCard.className = 'rewrite-row rewrite-row--bunch';
-
-    const content = document.createElement('span');
-    content.className = 'rw-content';
-    const names = bunchedIndices.map(idx => {
-      const r = rewrites.find(rw => rw.index === idx);
-      return r ? esc(r.rule_name) : String(idx);
-    });
-    content.innerHTML = `<span class="rw-bunch-label">parallel</span>`
-      + `<span class="rw-name">${names.join(', ')}</span>`;
-    bunchCard.appendChild(content);
-
-    const actions = document.createElement('span');
-    actions.className = 'rewrite-actions rewrite-actions--bunch';
-    const btnUnbunch = document.createElement('button');
-    btnUnbunch.className = 'rw-btn-unbunch';
-    btnUnbunch.textContent = 'Unbunch';
-    btnUnbunch.addEventListener('click', (e) => {
-      e.stopPropagation();
-      bunchedIndices = [];
-      bunchPositions = new Set();
-      buildRewriteList(lastRewriteData);
-    });
-    actions.appendChild(btnUnbunch);
-    bunchCard.appendChild(actions);
-
-    bunchCard.addEventListener('click', () => { void applyBunch(); });
-
-    // Hover: highlight union of all bunched positions.
-    bunchCard.addEventListener('mouseenter', () => {
-      if (previewActive) return;
-      selectedRewrite = -1;
-      if (currentLayout) {
-        const positions = [...bunchPositions];
-        if (proofView && proofBoundaryMap) {
-          currentLayout._highlightPositions = null;
-          currentLayout._highlightWires = positions.map(p => proofBoundaryMap[p]).filter(w => w != null);
-          currentLayout._highlightWireInputHalf = chkBackward.checked;
-        } else {
-          currentLayout._highlightPositions = positions;
-          currentLayout._highlightWires = null;
-          currentLayout._highlightWireInputHalf = false;
-        }
-        resizeAndRender();
-      }
-    });
-    bunchCard.addEventListener('mouseleave', () => {
-      if (previewActive) return;
-      selectedRewrite = null;
-      if (currentLayout) {
-        currentLayout._highlightPositions = null;
-        currentLayout._highlightWires = null;
-        currentLayout._highlightWireInputHalf = false;
-        resizeAndRender();
-      }
-    });
-
-    rewriteList.appendChild(bunchCard);
+  const equations = constraintsOf(selection);
+  if (equations.length) {
+    html += '<div class="infobox-holes"><div class="infobox-holes-title">Constraints</div>';
+    for (const equation of equations) html += `<div class="infobox-hole"><span class="infobox-hole-bd">${hi(equation)}</span></div>`;
+    html += '</div>';
   }
+  if (map.generators.length) {
+    html += '<div class="setup-row infobox-map-gen"><label for="sel-map-gen">Image of</label><select id="sel-map-gen"><option value="">— select generator —</option>';
+    for (const generator of map.generators) html += `<option value="${esc(generator.name)}"${selection.generator === generator.name ? ' selected' : ''}>${esc(generator.name)} (dim ${generator.dim})</option>`;
+    html += '</select></div>';
+  }
+  return html;
+}
 
-  rewrites.forEach((r, i) => {
-    // In bunch mode, hide overlapping and already-bunched rewrites.
-    if (inBunchMode) {
-      if (bunchedIndices.includes(r.index)) return;
-      if (r.match_positions && r.match_positions.some(p => bunchPositions.has(p))) return;
-    }
-
-    const row = document.createElement('div');
-    row.className = 'rewrite-row';
-
-    const isFamily = r.family && r.family.length > 0;
-    const content = document.createElement('span');
-    content.className = 'rw-content';
-    content.innerHTML = `<span class="rw-index">${r.index}</span>`
-      + `<span class="rw-name">${esc(r.rule_name)}</span>`
-      + (isFamily ? ` <span class="rw-parallel-badge">parallel ×${r.family.length}</span>` : '');
-    row.appendChild(content);
-
-    // Build action buttons (always present, shown on hover via CSS).
-    const actions = document.createElement('span');
-    actions.className = 'rewrite-actions';
-
-    // Bunch button (only when parallel mode is on and not already in bunch mode
-    // where clicking adds automatically).
-    if (lastParallelMode && !inBunchMode) {
-      const btnBunch = document.createElement('button');
-      btnBunch.className = 'rw-btn-bunch';
-      btnBunch.textContent = 'Bunch';
-      btnBunch.addEventListener('click', (e) => {
-        e.stopPropagation();
-        bunchedIndices = [r.index];
-        bunchPositions = new Set(r.match_positions || []);
-        buildRewriteList(lastRewriteData);
-      });
-      actions.appendChild(btnBunch);
-    }
-
-    if (!proofView) {
-      const btnPreview = document.createElement('button');
-      btnPreview.className = 'rw-btn-preview';
-      btnPreview.textContent = 'Preview';
-      btnPreview.addEventListener('mousedown', (e) => {
-        e.stopPropagation();
-        previewActive = true;
-        void showRewritePreview(i);
-      });
-      btnPreview.addEventListener('mouseup', () => {
-        previewActive = false;
-        endRewritePreview();
-      });
-      btnPreview.addEventListener('mouseleave', () => {
-        if (previewActive) { previewActive = false; endRewritePreview(); }
-      });
-      btnPreview.addEventListener('click', (e) => e.stopPropagation());
-      actions.appendChild(btnPreview);
-    }
-    row.appendChild(actions);
-
-    // Click: in bunch mode, add to bunch. Otherwise apply.
-    if (inBunchMode) {
-      row.addEventListener('click', () => {
-        bunchedIndices.push(r.index);
-        for (const p of (r.match_positions || [])) bunchPositions.add(p);
-        buildRewriteList(lastRewriteData);
-      });
-    } else {
-      row.addEventListener('click', () => { void applyRewrite(i); });
-    }
-
-    // Hover: highlight match positions.
-    row.addEventListener('mouseenter', () => {
-      if (previewActive) return;
-      selectedRewrite = i;
-      if (currentLayout) {
-        if (proofView && proofBoundaryMap) {
-          currentLayout._highlightPositions = null;
-          currentLayout._highlightWires = (r.match_positions || []).map(p => proofBoundaryMap[p]).filter(w => w != null);
-          currentLayout._highlightWireInputHalf = chkBackward.checked;
-        } else {
-          currentLayout._highlightPositions = r.match_positions;
-          currentLayout._highlightWires = null;
-          currentLayout._highlightWireInputHalf = false;
-        }
-        resizeAndRender();
-      }
+function bindInfobox() {
+  const element = id => document.getElementById(id);
+  element('btn-undo-vis')?.addEventListener('click', () => submit('undo'));
+  element('btn-redo-vis')?.addEventListener('click', () => submit('redo'));
+  element('btn-done-fill')?.addEventListener('click', () => submit('done'));
+  const target = element('btn-target-vis');
+  target?.addEventListener('mousedown', event => {
+    event.preventDefault();
+    choice.targetPressed = true;
+    loop?.choicesChanged();
+  });
+  const releaseTarget = () => {
+    if (!choice.targetPressed) return;
+    choice.targetPressed = false;
+    loop?.choicesChanged();
+  };
+  target?.addEventListener('mouseup', releaseTarget);
+  target?.addEventListener('mouseleave', releaseTarget);
+  element('btn-view-toggle')?.addEventListener('click', () => {
+    choice.proof = !choice.proof;
+    renderInfobox();
+    renderMenu();
+    loop?.choicesChanged();
+  });
+  for (const button of infoboxText.querySelectorAll('.btn-fill-hole')) {
+    button.addEventListener('click', () => {
+      deselectRow();
+      select(null);
+      submit(`fill ${button.dataset.holeIndex}`);
     });
-    row.addEventListener('mouseleave', () => {
-      if (previewActive) return;
-      selectedRewrite = null;
-      if (currentLayout) {
-        currentLayout._highlightPositions = null;
-        currentLayout._highlightWires = null;
-        currentLayout._highlightWireInputHalf = false;
-        resizeAndRender();
-      }
-    });
-
-    rewriteList.appendChild(row);
+  }
+  element('sel-map-gen')?.addEventListener('change', event => {
+    select({ ...choice.selection, generator: event.target.value || null, boundary: null });
   });
 }
 
-let savedLayoutBeforePreview = null;
-
-async function showRewritePreview(choice) {
-  if (!repl) return;
-  savedLayoutBeforePreview = currentLayout;
-  const result = await parseReplResponse(repl.get_rewrite_preview_strdiag(choice));
-  if (result.status !== 'ok') return;
-  currentLayout = layoutStrDiag(result.data, selOrientation.value);
-  currentLayout._highlightPositions = null;
-  resizeAndRender();
+// What the drawn view adds to the infobox: an item's label and boundary, or a
+// view's error (a session's only while it has an engine to draw from).
+function renderDrawnInfo(result) {
+  const slot = infoboxText.querySelector('.infobox-drawn');
+  if (!slot) return;
+  const engine = shown && rewriteOf(shown.state);
+  if (result.kind === 'error' && (result.owner === 'selection' || engine)) {
+    slot.innerHTML = `<div class="infobox-boundary infobox-error">${esc(result.message)}</div>`;
+  } else if (result.kind === 'ok' && result.owner === 'selection') {
+    const { label, input, output } = result.data;
+    slot.innerHTML = (label ? `<div class="infobox-label">${esc(label)}</div>` : '')
+      + (input || output ? `<div class="infobox-boundary">${esc(input)} → ${esc(output)}</div>` : '');
+  } else slot.innerHTML = '';
 }
 
-async function showTargetPreview() {
-  if (!repl) return;
-  savedLayoutBeforePreview = currentLayout;
-  const result = await parseReplResponse(repl.get_target_strdiag());
-  if (result.status !== 'ok') return;
-  currentLayout = layoutStrDiag(result.data, selOrientation.value);
-  currentLayout._highlightPositions = null;
-  resizeAndRender();
-}
-
-function endRewritePreview() {
-  // Restore the saved layout (with any drag modifications intact).
-  if (savedLayoutBeforePreview) {
-    currentLayout = savedLayoutBeforePreview;
-    savedLayoutBeforePreview = null;
-    if (selectedRewrite !== null && lastRewriteData && lastRewriteData[selectedRewrite]) {
-      const positions = lastRewriteData[selectedRewrite].match_positions;
-      if (proofView && proofBoundaryMap) {
-        currentLayout._highlightPositions = null;
-        currentLayout._highlightWires = (positions || []).map(p => proofBoundaryMap[p]).filter(w => w != null);
-        currentLayout._highlightWireInputHalf = chkBackward.checked;
-      } else {
-        currentLayout._highlightPositions = positions;
-        currentLayout._highlightWires = null;
-        currentLayout._highlightWireInputHalf = false;
-      }
+// The menu: rewrite rows, or a 0-cell fill's choices. Rebuilt only when it,
+// the bunch or the proof view changed, so a hovered row keeps its element.
+function renderMenu() {
+  const state = shown.state;
+  const zero = zeroOf(state);
+  const rewrite = rewriteOf(state);
+  rewriteList.innerHTML = '';
+  rewriteList.hidden = !(zero?.choices ?? rewrite?.rewrites ?? []).length;
+  if (zero) {
+    for (const option of zero.choices) {
+      const row = document.createElement('div');
+      row.className = 'rewrite-row';
+      row.innerHTML = `<span class="rw-content"><span class="rw-name">${esc(option.name)}</span></span>`;
+      row.addEventListener('click', () => submit(`apply ${option.index}`));
+      rewriteList.appendChild(row);
     }
-    resizeAndRender();
-  }
-}
-
-async function performUndo() {
-  if (!repl) return;
-  const result = await parseReplResponse(repl.run_command('{"command":"undo"}'));
-  if (result.status === 'error') {
-    appendReplMsg('Undo error: ' + result.message, 'repl-result err');
-    return;
-  }
-  appendReplEntry('undo', renderSegments(result.rendered));
-  selectedRewrite = null;
-  previewActive = false;
-  await showSessionDiagram(result.data);
-}
-
-async function performRedo() {
-  if (!repl) return;
-  const result = await parseReplResponse(repl.run_command('{"command":"redo"}'));
-  if (result.status === 'error') {
-    appendReplMsg('Redo error: ' + result.message, 'repl-result err');
-    return;
-  }
-  appendReplEntry('redo', renderSegments(result.rendered));
-  selectedRewrite = null;
-  previewActive = false;
-  await showSessionDiagram(result.data);
-}
-
-async function applyRewrite(choice) {
-  // Send apply command through the REPL.
-  const json = JSON.stringify({ command: 'step', choice });
-  const result = await parseReplResponse(repl.run_command(json));
-  if (result.status === 'error') {
-    appendReplMsg('Apply error: ' + result.message, 'repl-result err');
-    return;
-  }
-  appendReplEntry(`apply ${choice}`, renderSegments(result.rendered));
-  selectedRewrite = null;
-  previewActive = false;
-  // Update the session display.
-  await showSessionDiagram(result.data);
-}
-
-async function applyBunch() {
-  if (!bunchedIndices.length) return;
-  const json = JSON.stringify({ command: 'step_multi', choices: bunchedIndices });
-  const result = await parseReplResponse(repl.run_command(json));
-  if (result.status === 'error') {
-    appendReplMsg('Parallel apply error: ' + result.message, 'repl-result err');
-    return;
-  }
-  appendReplEntry(`apply ${bunchedIndices.join(' ')}`, renderSegments(result.rendered));
-  bunchedIndices = [];
-  bunchPositions = new Set();
-  selectedRewrite = null;
-  previewActive = false;
-  await showSessionDiagram(result.data);
-}
-
-// Store last rewrite data for re-highlighting after preview ends.
-let lastRewriteData = null;
-let lastParallelMode = false;
-
-// Bunch state: indices into the rewrites list that have been bunched.
-let bunchedIndices = [];
-let bunchPositions = new Set();
-
-// ── String diagram visualisation ─────────────────────────────────────────────
-
-let currentItem = null;   // { typeName, item }
-let currentItemDim = null; // dimension of the main diagram
-let currentMapGen = null;  // selected generator name for map infobox
-let sessionStrdiag = null; // strdiag data for current session diagram
-let selectedRewrite = null; // index of selected rewrite
-let previewActive = false;
-
-async function selectItem(typeName, item) {
-  currentItem = { typeName, item };
-  currentMapGen = null;
-  infobox.hidden = false;
-  rewriteList.hidden = true; // hide session rewrite list when inspecting an item
-
-  if (item.kind === 'map') {
-    currentItemDim = 0;
-    selBoundary.value = 'main';
-    setSignControlsEnabled(false);
-    boundaryControls.hidden = true;
-    await refreshInfobox();
-    return;
-  }
-
-  // For generators and diagrams: fetch dimension from the main strdiag response
-  if (repl) {
-    const mainResult = await parseReplResponse(
-      repl.get_strdiag(typeName, item.name, undefined, undefined)
-    );
-    if (mainResult.status === 'ok') {
-      currentItemDim = mainResult.data.dim;
-    } else {
-      currentItemDim = item.dim || 0;
+  } else if (rewrite) {
+    // A bunch hides its members and every rewrite overlapping them.
+    const positions = bunchPositions(rewrite.rewrites);
+    if (bunch.length) rewriteList.appendChild(bunchCard(rewrite.rewrites));
+    for (const r of rewrite.rewrites) {
+      if (bunch.length && (bunch.includes(r.index) || r.match_positions.some(p => positions.has(p)))) continue;
+      rewriteList.appendChild(rewriteRow(r, rewrite.parallel));
     }
-  } else {
-    currentItemDim = item.dim || 0;
   }
-
-  // Populate boundary selector
-  if (currentItemDim >= 1) {
-    selBoundary.innerHTML = '<option value="main">Main</option>';
-    for (let k = currentItemDim - 1; k >= 0; k--) {
-      const opt = document.createElement('option');
-      opt.value = String(k);
-      opt.textContent = `${k}-boundary`;
-      selBoundary.appendChild(opt);
-    }
-    boundaryControls.hidden = false;
-    selBoundary.value = 'main';
-    setSignControlsEnabled(false);
-  } else {
-    boundaryControls.hidden = true;
-  }
-
-  await refreshInfobox();
-}
-
-async function refreshInfobox() {
-  if (!currentItem) return;
-  const { typeName, item } = currentItem;
-  const bdVal = selBoundary.value;
-  const mapHasGen = item.kind === 'map' && currentMapGen;
-  const isBoundary = bdVal !== 'main' && (item.kind !== 'map' || mapHasGen);
-  const bdDim = isBoundary ? parseInt(bdVal, 10) : null;
-  const bdSign = isBoundary ? document.querySelector('input[name="bd-sign"]:checked').value : null;
-
-  // Build infobox text
-  const qualPrefix = item.kind === 'generator' ? 'Generator of'
-                   : item.kind === 'diagram'   ? 'Diagram at'
-                   : 'Map at';
-  let displayName;
-  if (isBoundary && !mapHasGen) {
-    const signLabel = bdSign === 'output' ? 'Output' : 'Input';
-    displayName = `${signLabel} ${bdDim}-boundary of ${item.name}`;
-  } else {
-    displayName = item.name;
-  }
-
-  let html = `<span class="infobox-qual">${esc(qualPrefix)} ${hi(typeName)}</span>`;
-  html += `<div class="infobox-name">${hi(displayName)}`;
-  if (!isBoundary && item.kind === 'generator') html += ` <span class="acc-dim">dim ${item.dim}</span>`;
-  html += `</div>`;
-
-  if (item.kind === 'map') {
-    html += `<div class="infobox-boundary">:: ${esc(item.domain)}</div>`;
-    const mapHoles = holesForMap(typeName, item.name);
-    if (mapHoles.length) {
-      html += `<div class="infobox-holes">`;
-      html += `<div class="infobox-holes-title">Open holes</div>`;
-      for (const h of mapHoles) {
-        html += `<div class="infobox-hole">`
-              + `<span class="infobox-hole-bd">${hi(h.boundary)}</span>`
-              + `<button class="btn-fill-hole btn-secondary" data-hole-index="${h.index}">Fill</button>`
-              + `</div>`;
-      }
-      html += `</div>`;
-    }
-    const mapConstraints = constraintsForMap(typeName, item.name);
-    if (mapConstraints.length) {
-      html += `<div class="infobox-holes">`;
-      html += `<div class="infobox-holes-title">Constraints</div>`;
-      for (const eq of mapConstraints) {
-        html += `<div class="infobox-hole"><span class="infobox-hole-bd">${hi(eq)}</span></div>`;
-      }
-      html += `</div>`;
-    }
-    if (item.generators && item.generators.length) {
-      html += `<div class="setup-row infobox-map-gen"><label for="sel-map-gen">Image of</label><select id="sel-map-gen">`;
-      html += `<option value="">— select generator —</option>`;
-      for (const g of item.generators) {
-        const sel = currentMapGen === g.name ? ' selected' : '';
-        html += `<option value="${esc(g.name)}"${sel}>${esc(g.name)} (dim ${g.dim})</option>`;
-      }
-      html += `</select></div>`;
-    }
-
-    currentLayout = null;
-    resetZoom();
-    if (currentMapGen && repl) {
-      const result = await parseReplResponse(
-        repl.get_map_image_strdiag(typeName, item.name, currentMapGen, bdDim ?? undefined, bdSign ?? undefined)
-      );
-      if (result.status === 'error') {
-        html += `<div class="infobox-boundary" style="color:var(--err)">${esc(result.message)}</div>`;
-      } else {
-        const data = result.data;
-        if (data.label) html += `<div class="infobox-label">${esc(data.label)}</div>`;
-        if (data.input || data.output) html += `<div class="infobox-boundary">${esc(data.input)} → ${esc(data.output)}</div>`;
-        currentLayout = layoutStrDiag(data.strdiag, selOrientation.value);
-        const imageDim = data.dim ?? 0;
-        if (bdDim == null && imageDim !== currentItemDim) {
-          currentItemDim = imageDim;
-          if (currentItemDim >= 1) {
-            selBoundary.innerHTML = '<option value="main">Main</option>';
-            for (let k = currentItemDim - 1; k >= 0; k--) {
-              const opt = document.createElement('option');
-              opt.value = String(k);
-              opt.textContent = `${k}-boundary`;
-              selBoundary.appendChild(opt);
-            }
-            boundaryControls.hidden = false;
-            selBoundary.value = 'main';
-            setSignControlsEnabled(false);
-          } else {
-            boundaryControls.hidden = true;
-          }
-        }
-      }
-    }
-
-    infoboxText.innerHTML = html;
-
-    infoboxText.querySelectorAll('.btn-fill-hole').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        void startFill(parseInt(btn.dataset.holeIndex, 10));
-      });
-    });
-
-    const selMapGen = document.getElementById('sel-map-gen');
-    if (selMapGen) {
-      selMapGen.addEventListener('change', async () => {
-        currentMapGen = selMapGen.value || null;
-        currentItemDim = 0;
-        selBoundary.value = 'main';
-        setSignControlsEnabled(false);
-        boundaryControls.hidden = true;
-        await refreshInfobox();
-      });
-    }
-
-    if (currentLayout) {
-      visContainer.hidden = false;
-      visControls.hidden = false;
-      resizeAndRender();
-    } else {
-      visContainer.hidden = true;
-      visControls.hidden = true;
-    }
-    syncAnalysisLayout();
-    return;
-  }
-
-  // Fetch strdiag (with optional boundary)
-  if (!repl) { infoboxText.innerHTML = html; return; }
-  const result = await parseReplResponse(
-    repl.get_strdiag(typeName, item.name, bdDim ?? undefined, bdSign ?? undefined)
-  );
-  if (result.status === 'error') {
-    html += `<div class="infobox-boundary" style="color:var(--err)">${esc(result.message)}</div>`;
-    infoboxText.innerHTML = html;
-    visContainer.hidden = true;
-    visControls.hidden = true;
-    currentLayout = null;
-    resetZoom();
-    syncAnalysisLayout();
-    return;
-  }
-
-  const data = result.data;
-  if (data.label) {
-    html += `<div class="infobox-label">${esc(data.label)}</div>`;
-  }
-  if (data.input || data.output) {
-    html += `<div class="infobox-boundary">${esc(data.input)} → ${esc(data.output)}</div>`;
-  }
-  infoboxText.innerHTML = html;
-
-  resetZoom();
-  currentLayout = layoutStrDiag(data.strdiag, selOrientation.value);
-  visContainer.hidden = false;
-  visControls.hidden = false;
-  resizeAndRender();
   syncAnalysisLayout();
 }
 
-function setSignControlsEnabled(enabled) {
-  signControls.style.opacity = enabled ? '1' : '0.35';
-  document.querySelectorAll('input[name="bd-sign"]').forEach(r => r.disabled = !enabled);
+function bunchPositions(rewrites) {
+  return new Set(bunch.flatMap(index => rewrites.find(r => r.index === index)?.match_positions ?? []));
+}
+
+function setBunch(indices) {
+  bunch = indices;
+  highlight = null;
+  renderMenu();
+  loop?.repaint();
+}
+
+// Hovering highlights a redex, or a bunch's union, on the drawn diagram: a
+// styling choice that asks nothing. A held preview freezes the highlight.
+function hover(next) {
+  if (choice.preview != null) return;
+  highlight = next;
+  loop?.repaint();
+}
+
+// Pressing Preview draws that rewrite's result until released.
+function holdPreview(index) {
+  choice.preview = index;
+  loop?.choicesChanged();
+}
+
+function releasePreview() {
+  if (choice.preview == null) return;
+  choice.preview = null;
+  loop?.choicesChanged();
+}
+
+function bunchCard(rewrites) {
+  const card = document.createElement('div');
+  card.className = 'rewrite-row rewrite-row--bunch';
+  const names = bunch.map(index => esc(rewrites.find(r => r.index === index)?.rule_name ?? index));
+  card.innerHTML = `<span class="rw-content"><span class="rw-bunch-label">parallel</span><span class="rw-name">${names.join(', ')}</span></span>`
+    + '<span class="rewrite-actions rewrite-actions--bunch"><button class="rw-btn-unbunch">Unbunch</button></span>';
+  card.querySelector('.rw-btn-unbunch').addEventListener('click', event => {
+    event.stopPropagation();
+    setBunch([]);
+  });
+  card.addEventListener('click', () => submit(`apply ${bunch.join(' ')}`));
+  card.addEventListener('mouseenter', () => hover({ of: 'bunch' }));
+  card.addEventListener('mouseleave', () => hover(null));
+  return card;
+}
+
+function rewriteRow(r, parallel) {
+  const bunching = bunch.length > 0;
+  const row = document.createElement('div');
+  row.className = 'rewrite-row';
+  const family = r.family?.length ? ` <span class="rw-parallel-badge">parallel ×${r.family.length}</span>` : '';
+  row.innerHTML = `<span class="rw-content"><span class="rw-index">${r.index}</span><span class="rw-name">${esc(r.rule_name)}</span>${family}</span>`;
+
+  // Action buttons are always present, shown on hover via CSS.
+  const actions = document.createElement('span');
+  actions.className = 'rewrite-actions';
+  if (parallel && !bunching) {
+    const btnBunch = document.createElement('button');
+    btnBunch.className = 'rw-btn-bunch';
+    btnBunch.textContent = 'Bunch';
+    btnBunch.addEventListener('click', event => {
+      event.stopPropagation();
+      setBunch([r.index]);
+    });
+    actions.appendChild(btnBunch);
+  }
+  if (!choice.proof) {
+    const btnPreview = document.createElement('button');
+    btnPreview.className = 'rw-btn-preview';
+    btnPreview.textContent = 'Preview';
+    btnPreview.addEventListener('mousedown', event => {
+      event.stopPropagation();
+      event.preventDefault();
+      holdPreview(r.index);
+    });
+    btnPreview.addEventListener('mouseup', releasePreview);
+    btnPreview.addEventListener('mouseleave', releasePreview);
+    btnPreview.addEventListener('click', event => event.stopPropagation());
+    actions.appendChild(btnPreview);
+  }
+  row.appendChild(actions);
+
+  // Click: in bunch mode, add to the bunch; otherwise apply.
+  row.addEventListener('click', bunching ? () => setBunch([...bunch, r.index]) : () => submit(`apply ${r.index}`));
+  row.addEventListener('mouseenter', () => hover({ of: 'rewrite', index: r.index }));
+  row.addEventListener('mouseleave', () => hover(null));
+  return row;
+}
+
+// ── String diagram visualisation ─────────────────────────────────────────────
+
+// The dimension the boundary options offer: the main view's, once held, else
+// the module row's (for a map, its chosen generator's).
+function selectionDim(selection) {
+  const main = selectionView({ ...selection, boundary: null });
+  const held = main && shown.views.get(viewKey(main));
+  if (held?.status === 'ok') return held.data.dim;
+  const item = itemOf(shown.module, selection);
+  return selection.kind !== 'map' ? item.dim
+    : item.generators.find(generator => generator.name === selection.generator)?.dim ?? 0;
+}
+
+const signRadios = document.querySelectorAll('input[name="bd-sign"]');
+let boundaryDim = null; // The dimension the boundary options were built for.
+
+// Render the selection's boundary choice; the controls never hold it.
+function renderBoundaryControls() {
+  const selection = choice.selection;
+  const dim = selection ? selectionDim(selection) : 0;
+  boundaryControls.hidden = dim < 1;
+  if (dim !== boundaryDim) {
+    boundaryDim = dim;
+    selBoundary.innerHTML = '<option value="main">Main</option>';
+    for (let boundary = dim - 1; boundary >= 0; boundary--) {
+      const option = document.createElement('option');
+      option.value = String(boundary);
+      option.textContent = `${boundary}-boundary`;
+      selBoundary.appendChild(option);
+    }
+  }
+  const boundary = selection?.boundary;
+  selBoundary.value = boundary ? String(boundary.dim) : 'main';
+  for (const radio of signRadios) {
+    radio.disabled = !boundary;
+    if (boundary) radio.checked = radio.value === boundary.side;
+  }
+  signControls.style.opacity = boundary ? '1' : '0.35';
+}
+
+function setBoundary(boundary) {
+  select({ ...choice.selection, boundary });
 }
 
 selBoundary.addEventListener('change', () => {
-  const isBd = selBoundary.value !== 'main';
-  setSignControlsEnabled(isBd);
-  void refreshInfobox();
+  const side = [...signRadios].find(radio => radio.checked).value;
+  setBoundary(selBoundary.value === 'main' ? null : { dim: Number(selBoundary.value), side });
 });
-document.querySelectorAll('input[name="bd-sign"]').forEach(r =>
-  r.addEventListener('change', () => { void refreshInfobox(); }));
+for (const radio of signRadios) {
+  radio.addEventListener('change', () => setBoundary({ ...choice.selection.boundary, side: radio.value }));
+}
 
-selOrientation.addEventListener('change', () => {
-  if (currentLayout) {
-    currentLayout = layoutStrDiag(currentLayout._raw, selOrientation.value);
-    resizeAndRender();
+// Layouts by view key. An entry lives while its payload is unchanged, so drags,
+// zoom and scroll survive view switches and an equal payload re-sent in a new
+// cut; entries of views no longer held are dropped.
+const layouts = new Map();
+let painted = null; // The last painted {result, entry}.
+
+function layoutEntry(view, data) {
+  const key = viewKey(view);
+  const orientation = selOrientation.value;
+  const old = layouts.get(key);
+  const payload = old?.data === data ? old.payload : JSON.stringify(data.strdiag);
+  if (old?.payload === payload) {
+    old.data = data;
+    if (old.orientation !== orientation) Object.assign(old, { orientation, layout: layoutStrDiag(data.strdiag, orientation) });
+    return old;
   }
-});
+  const entry = {
+    data, payload, orientation, layout: layoutStrDiag(data.strdiag, orientation),
+    zoom: 1, scrollLeft: 0, scrollTop: 0,
+  };
+  layouts.set(key, entry);
+  return entry;
+}
+
+// The only owner of canvas view and layout replacement.
+function paint(result) {
+  const entry = result.kind === 'ok' ? layoutEntry(result.view, result.data) : null;
+  for (const key of layouts.keys()) if (!shown?.views.has(key)) layouts.delete(key);
+  const switched = entry !== painted?.entry;
+  if (switched) {
+    if (painted?.entry) {
+      Object.assign(painted.entry, { zoom: zoomLevel, scrollLeft: visContainer.scrollLeft, scrollTop: visContainer.scrollTop });
+    }
+    dragState = null;
+    panState = null;
+  }
+  painted = { result, entry };
+  currentLayout = entry?.layout ?? null;
+  proofBoundaryMap = result.kind === 'ok' && result.view.of === 'proof' ? result.data.output_boundary_map : null;
+  renderBoundaryControls();
+  renderDrawnInfo(result);
+  const visible = Boolean(currentLayout);
+  visContainer.hidden = !visible;
+  visControls.hidden = !visible;
+  if (!visible) canvasCtx.clearRect(0, 0, visCanvas.width, visCanvas.height);
+  updateRewriteHighlight();
+  syncAnalysisLayout();
+  if (!switched) resizeAndRender();
+  else {
+    setZoom(entry?.zoom ?? 1);
+    visContainer.scrollLeft = entry?.scrollLeft ?? 0;
+    visContainer.scrollTop = entry?.scrollTop ?? 0;
+  }
+}
+
+function updateRewriteHighlight() {
+  if (!currentLayout) return;
+  const rewrites = rewriteOf(shown.state)?.rewrites ?? [];
+  const positions = highlight?.of === 'bunch' ? [...bunchPositions(rewrites)]
+    : highlight ? rewrites.find(rewrite => rewrite.index === highlight.index)?.match_positions ?? [] : [];
+  const drawnView = painted.result.view.of;
+  currentLayout._highlightPositions = drawnView === 'current' ? positions : null;
+  currentLayout._highlightWires = drawnView === 'proof'
+    ? positions.map(position => proofBoundaryMap?.[position]).filter(wire => wire != null) : null;
+  currentLayout._highlightWireInputHalf = Boolean(shown.state.backward);
+}
+
+selOrientation.addEventListener('change', () => loop?.repaint());
 
 appearanceBtn.addEventListener('click', (e) => {
   e.stopPropagation();
@@ -2707,19 +2005,17 @@ document.addEventListener('click', () => { appearanceMenu.hidden = true; });
 chkNodeLabels.addEventListener('change', () => resizeAndRender());
 chkWireLabels.addEventListener('change', () => resizeAndRender());
 
-zoomSlider.addEventListener('input', () => {
-  zoomLevel = parseFloat(zoomSlider.value);
-  zoomLabel.textContent = zoomLevel.toFixed(1) + 'x';
-  resizeAndRender();
-});
-btnZoomReset.addEventListener('click', () => resetZoom());
-
-function resetZoom() {
-  zoomLevel = 1;
-  zoomSlider.value = '1';
-  zoomLabel.textContent = '1.0x';
+zoomSlider.addEventListener('input', () => setZoom(parseFloat(zoomSlider.value)));
+btnZoomReset.addEventListener('click', () => {
+  setZoom(1);
   visContainer.scrollLeft = 0;
   visContainer.scrollTop = 0;
+});
+
+function setZoom(level) {
+  zoomLevel = level;
+  zoomSlider.value = String(level);
+  zoomLabel.textContent = level.toFixed(1) + 'x';
   resizeAndRender();
 }
 
@@ -2731,7 +2027,7 @@ const PAD = 0;
 
 function layoutStrDiag(data, orientation = 'bt') {
   const n = data.vertices.length;
-  if (n === 0) return { _raw: data, verts: [], pos: [], orientation, hAdj: [], wAdj: [], dAdj: [], hPred: [], wPred: [], hTopo: [], wTopo: [] };
+  if (n === 0) return { verts: [], pos: [], orientation, hAdj: [], wAdj: [], dAdj: [], hPred: [], wPred: [], hTopo: [], wTopo: [] };
 
   const hAdj = buildAdj(n, data.height.edges);
   const hPred = buildPred(n, data.height.edges);
@@ -2751,7 +2047,7 @@ function layoutStrDiag(data, orientation = 'bt') {
 
   separateOverlaps(pos, n);
 
-  return { _raw: data, verts: data.vertices, pos, orientation, hAdj, hPred, wAdj, wPred, dAdj,
+  return { verts: data.vertices, pos, orientation, hAdj, hPred, wAdj, wPred, dAdj,
            hTopo: hDist.topo, wTopo: wDist.topo,
            numWires: data.num_wires, numNodes: data.num_nodes, depthEdges: data.depth.edges };
 }
@@ -3265,14 +2561,9 @@ visCanvas.addEventListener('wheel', (e) => {
   const fracX = cursorX / canvasW;
   const fracY = cursorY / canvasH;
 
-  zoomLevel = newZoom;
-  resizeAndRender();
-
+  setZoom(newZoom);
   visContainer.scrollLeft = fracX * rect.width * newZoom - (e.clientX - rect.left);
   visContainer.scrollTop = fracY * rect.height * newZoom - (e.clientY - rect.top);
-
-  zoomSlider.value = zoomLevel;
-  zoomLabel.textContent = zoomLevel.toFixed(1) + 'x';
 }, { passive: false });
 
 // ── Init ──────────────────────────────────────────────────────────────────────

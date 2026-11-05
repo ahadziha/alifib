@@ -17,6 +17,14 @@ pub use error::Error;
 
 use ast::Span;
 
+/// Whether the lexer reads exactly one name spanning the whole string.
+/// Names include naturals, but exclude keywords, padding, and comments.
+pub fn is_name(s: &str) -> bool {
+    let Ok(tokens) = lexer::lexer().parse(s).into_result() else { return false; };
+    matches!(tokens.as_slice(), [(token::Token::Ident(_) | token::Token::Nat(_), span)]
+        if span.start == 0 && span.end == s.len())
+}
+
 pub fn parse(source: &str) -> Result<Program, Vec<Error>> {
     let (tokens, lex_errs) = lexer::lexer().parse(source).into_output_errors();
 
@@ -91,10 +99,6 @@ pub fn parse_diagram(source: &str) -> Result<ast::Spanned<ast::Diagram>, String>
     }
 
     ast.ok_or_else(|| "parse error".to_string())
-}
-
-pub fn report_errors(errors: &[Error], source: &str, filename: &str) {
-    error::report_errors(errors, source, filename);
 }
 
 /// Collect the names of all modules referenced by `IncludeModule` instructions
@@ -277,3 +281,21 @@ pub fn parse_pmap_clauses(source: &str) -> Result<Vec<ast::Spanned<ast::PMapEntr
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::is_name;
+
+    #[test]
+    fn is_name_accepts_exactly_one_full_lexer_name() {
+        for name in ["0Simplex", "2Morphism", "Δ", "_x", "42", "2p"] {
+            assert!(is_name(name), "{name:?}");
+        }
+        for not_name in [
+            "map", "in", "a b", "a.b", "\"a\"", "'a'", "", "(p)",
+            " a", "a ", "a\n", "(* note *)a", "a(* note *)", "(* note *)",
+            "a!", "a(* unclosed", "let", "Type", "run",
+        ] {
+            assert!(!is_name(not_name), "{not_name:?}");
+        }
+    }
+}

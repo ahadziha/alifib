@@ -1,0 +1,14 @@
+@Type
+include A,
+include B,
+
+Ob <<= {
+  root0, root1,
+  rootEdge : root0 -> root1,
+  let item = rootEdge,
+  index thin = [ root1 ]
+},
+
+@Ob
+  let F :: A.Arrow = [ s => root0, t => root1, arr => ? ],
+  let RootMap :: Ob = [ root0 => root0, root1 => root1, rootEdge => rootEdge ]

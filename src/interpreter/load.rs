@@ -5,69 +5,35 @@
 //! modules in topological order.
 
 use crate::aux::loader::{LoadFileError, Loader};
-use crate::language::Error as LangError;
+use crate::language::{Error as LangError, Program, error::Diagnostic};
 use std::fmt;
 use std::sync::Arc;
 use super::{Context, GlobalStore, interpret_program};
 
-// ---- LoadResult ----
-
-/// The outcome of attempting to load and interpret a source file.
-///
-/// On success the variant is [`LoadResult::Loaded`]. On failure, call
-/// [`LoadResult::report`] to print diagnostics to stderr, then handle or
-/// discard the error as needed.
-#[must_use]
-pub enum LoadResult {
-    /// Interpretation succeeded with no errors (holes may still be present).
-    Loaded(InterpretedFile),
-    /// The source file or one of its dependencies could not be read from disk.
-    LoadError(LoadFileError),
-    /// Parsing or interpretation of a module produced one or more errors.
-    InterpError {
-        errors: Vec<LangError>,
-        /// Original source text of the failing module, for diagnostic rendering.
-        source: String,
-        /// Path of the failing module.
-        path: String,
-    },
+/// A failed load's summary and structured parse or interpretation diagnostics.
+#[derive(Debug)]
+pub struct LoadFailure {
+    pub message: String,
+    pub diagnostics: Vec<Diagnostic>,
 }
 
-impl LoadResult {
-    /// Print diagnostics for the failure case to stderr.
-    ///
-    /// Does nothing if the result is [`LoadResult::Loaded`].
-    pub fn report(&self) {
-        match self {
-            LoadResult::Loaded(_) => {}
-            LoadResult::LoadError(e) => crate::aux::error::report_load_file_error(e),
-            LoadResult::InterpError { errors, source, path } => {
-                crate::language::report_errors(errors, source, path);
-            }
-        }
+impl LoadFailure {
+    fn from_errors(errors: &[LangError], source: &str, path: &str) -> Self {
+        let diagnostics: Vec<_> = errors.iter()
+            .map(|error| error.to_diagnostic(source, Some(path.to_owned()))).collect();
+        let message = diagnostics.iter().map(|d| format!(
+            "{} error at line {}:{} — {}", d.kind, d.start.line, d.start.col, d.message,
+        )).collect::<Vec<_>>().join("\n");
+        Self { message, diagnostics }
     }
+}
 
-    /// Consume the result, returning `Some(InterpretedFile)` on success and
-    /// `None` on any failure. Diagnostics are **not** printed; call
-    /// [`report`](Self::report) first if you need them.
-    pub fn ok(self) -> Option<InterpretedFile> {
-        match self {
-            LoadResult::Loaded(f) => Some(f),
-            _ => None,
-        }
-    }
-
-    /// Returns `true` if interpretation succeeded.
-    pub fn is_ok(&self) -> bool {
-        matches!(self, LoadResult::Loaded(_))
-    }
-
-    /// Print diagnostics and convert to `Result`, returning `Err(())` on failure.
-    #[allow(clippy::result_unit_err)]
-    pub fn into_result(self) -> Result<InterpretedFile, ()> {
-        match self {
-            LoadResult::Loaded(f) => Ok(f),
-            other => { other.report(); Err(()) }
+impl From<LoadFileError> for LoadFailure {
+    fn from(error: LoadFileError) -> Self {
+        match error {
+            LoadFileError::Parse { path, source, errors } if !errors.is_empty() =>
+                Self::from_errors(&errors, &source, &path),
+            other => Self { message: other.to_string(), diagnostics: vec![] },
         }
     }
 }
@@ -86,25 +52,22 @@ pub struct InterpretedFile {
     pub source: String,
     /// Canonical path of the root file.
     pub path: String,
+    /// The root file's program, as interpreted.
+    pub program: Program,
 }
 
 impl InterpretedFile {
-    /// Load, parse, and interpret a source file, returning a structured [`LoadResult`].
+    /// Load, parse, and interpret a source file, retaining any failure as data
+    /// and printing nothing.
     ///
     /// The pipeline has three phases:
     /// 1. Parse the root file and discover all transitively included modules.
     /// 2. Resolve the full dependency graph (handled inside `loader.load`).
     /// 3. Interpret every dependency in topological order (leaves first), then
     ///    interpret the root. All results share a single accumulated [`GlobalStore`].
-    ///
-    /// Call [`LoadResult::report`] to print diagnostics to stderr, then
-    /// [`LoadResult::ok`] to extract the file on success.
-    pub fn load(loader: &Loader, path: &str) -> LoadResult {
+    pub fn load(loader: &Loader, path: &str) -> Result<Self, LoadFailure> {
         // Phase 1 + 2: read, parse, resolve all dependencies.
-        let loaded = match loader.load(path) {
-            Ok(f) => f,
-            Err(e) => return LoadResult::LoadError(e),
-        };
+        let loaded = loader.load(path)?;
 
         let resolutions = Arc::new(loaded.resolutions);
 
@@ -119,11 +82,7 @@ impl InterpretedFile {
             );
             let dep_result = interpret_program(dep_context, &dep_module.program);
             if !dep_result.errors.is_empty() {
-                return LoadResult::InterpError {
-                    errors: dep_result.errors,
-                    source: dep_module.source.clone(),
-                    path: dep_path.clone(),
-                };
+                return Err(LoadFailure::from_errors(&dep_result.errors, &dep_module.source, dep_path));
             }
             prev_state = dep_result.context.state;
         }
@@ -139,17 +98,14 @@ impl InterpretedFile {
         let result = interpret_program(root_context, &loaded.program);
 
         if !result.errors.is_empty() {
-            return LoadResult::InterpError {
-                errors: result.errors,
-                source: loaded.source,
-                path: loaded.canonical_path,
-            };
+            return Err(LoadFailure::from_errors(&result.errors, &loaded.source, &loaded.canonical_path));
         }
 
-        LoadResult::Loaded(Self {
+        Ok(Self {
             state: Arc::clone(&result.context.state),
             source: loaded.source,
             path: loaded.canonical_path,
+            program: loaded.program,
         })
     }
 }
@@ -157,5 +113,58 @@ impl InterpretedFile {
 impl fmt::Display for InterpretedFile {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.state)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::aux::loader::LoadError;
+    use crate::language::ast::Span;
+
+    #[test]
+    fn load_failure_preserves_diagnostics_and_summary() {
+        let errors = vec![
+            LangError::Syntax { message: "first".into(), span: Span { start: 0, end: 1 } },
+            LangError::Runtime {
+                message: "second".into(), span: Span { start: 2, end: 3 }, notes: vec!["detail".into()],
+            },
+        ];
+        let parse: LoadFailure = LoadFileError::Parse {
+            path: "F.ali".into(), source: "x\ny".into(), errors: errors.clone(),
+        }.into();
+        let interp = LoadFailure::from_errors(&errors, "x\ny", "F.ali");
+        assert_eq!(parse.message, "syntax error at line 1:1 — first\nruntime error at line 2:1 — second");
+        assert_eq!(interp.message, parse.message);
+        assert_eq!(parse.diagnostics.len(), 2);
+        assert_eq!(parse.diagnostics[1].notes, ["detail"]);
+        for (parse, interp) in parse.diagnostics.iter().zip(&interp.diagnostics) {
+            assert_eq!(parse.path.as_deref(), Some("F.ali"));
+            assert_eq!(parse.render(false), interp.render(false));
+        }
+    }
+
+    #[test]
+    fn load_failure_without_diagnostics_uses_batch_wording() {
+        let cases = [
+            (LoadFileError::Load { path: "F.ali".into(), cause: LoadError::NotFound },
+                "could not load `F.ali`"),
+            (LoadFileError::Load { path: "F.ali".into(), cause: LoadError::IoError("reason".into()) },
+                "could not load `F.ali`: reason"),
+            (LoadFileError::Parse { path: "F.ali".into(), source: "".into(), errors: vec![] },
+                "could not parse `F.ali`"),
+            (LoadFileError::ModuleNotFound { module_name: "Aux".into() },
+                "module file Aux.ali not found in search paths"),
+            (LoadFileError::ModuleIoError { path: "F.ali".into(), reason: "reason".into() },
+                "could not load `F.ali`: reason"),
+            (LoadFileError::Cycle { path: "F.ali".into() },
+                "cyclic module dependency involving `F.ali`"),
+        ];
+        for (error, message) in cases {
+            assert_eq!(error.to_string(), message);
+            let failure = LoadFailure::from(error);
+            assert_eq!(failure.message, message);
+            assert!(failure.diagnostics.is_empty());
+        }
     }
 }

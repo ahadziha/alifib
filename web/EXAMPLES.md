@@ -1,27 +1,34 @@
 # The examples manifest
 
 This document describes how the web GUI discovers and serves `.ali` example
-files — the same machinery feeds the Examples dropdown, the `include <Name>`
-resolution, and the static GitHub Pages deployment.
+files. The index feeds the Examples dropdown and the files sent to the kernel
+on Evaluate, in both the HTTP and static WASM deployments. Only the kernel
+loader resolves `include <Name>`.
 
 ## What the manifest is
 
 A "manifest" is a small index file that lists what's available in a collection.
-In our case it's `examples/index.json`, a JSON object mapping each example's
-**name** to its **relative path** from the examples root. A name is the file's
-path under the root with the `.ali` suffix removed (forward slashes):
+In our case it's `examples/index.json`, a JSON object whose `modules` object maps
+each example's **name** to its **relative path** from the examples root. A name
+is the file's path under the root with the `.ali` suffix removed (forward
+slashes):
 
 ```json
 {
-  "Theory":  "Theory.ali",
-  "TRS":     "TRS.ali",
-  "TRS/Aux": "TRS/Aux.ali"
+  "modules": {
+    "Theory":  "Theory.ali",
+    "TRS":     "TRS.ali",
+    "TRS/Aux": "TRS/Aux.ali"
+  }
 }
 ```
 
+A failed scan is never a manifest: the server answers it with HTTP 500 and
+`{"error": "<message>"}`, so no example name can be mistaken for an error.
+
 The frontend fetches this once on boot, populates the dropdown with the keys,
-and — when the user picks one, or a file `include`s another — fetches the file
-at `examples/<relpath>`.
+and fetches a selected file at `examples/<relpath>`. It refreshes the index on
+every Evaluate and fetches every indexed file not supplied by an open tab.
 
 ## Why we need it
 
@@ -32,26 +39,27 @@ opaque `index.html`. The frontend therefore needs an explicit list.
 The same file works in both modes:
 
 - **`alifib web [<dir>]`** serves `GET /examples/index.json` dynamically — the
-  server rescans the directory on every request, so edits on disk appear without
-  a restart.
-- **GitHub Pages / static hosting** ships the manifest as a committed artefact in
-  `dist/`, generated at build time by the deploy workflow.
+  server rescans on every index request, so the next refresh or Evaluate sees
+  disk edits without a restart. The default directory is `.`, and it must exist.
+- **GitHub Pages / static hosting** ships the manifest under `examples/`,
+  generated at build time by the deploy workflow.
 
 The URL scheme (`/examples/index.json`, `/examples/<relpath>`) is identical in
-both cases, which is why the frontend contains no branching for "am I talking to
-a server or a static host."
+both cases; the same picker/fetch code works against either host.
 
 ## Rules
 
-Enforced identically by the Rust scanner (`web/shared/src/lib.rs`) and the deploy
-script (`scripts/build_examples_manifest.py`) — both use the same recursive walk
-and the same segment rule:
+The Rust scanner in [`cli/src/examples.rs`](../cli/src/examples.rs) is used by
+both the running server and the static builder in
+[`cli/examples/static_examples.rs`](../cli/examples/static_examples.rs):
 
-1. **Recursive.** Subdirectories under the root are traversed.
-2. **Segment rule.** Every path segment — each directory name and the file
-   stem — must match `[A-Za-z_][A-Za-z0-9_]*`, exactly the language's identifier
-   rule. A file or directory with an invalid segment is skipped with a warning
-   (it could never be `include`d anyway).
+1. **Recursive.** Subdirectories under the root are traversed; symlinks and
+   other non-file/non-directory entries are ignored.
+2. **Segment rule.** Every directory name and `.ali` file stem must be a name
+   as the lexer reads it (`language::is_name`), not a keyword. This is not an
+   ASCII identifier regex: names such as `0Simplex` are accepted. Non-name
+   directories are skipped silently; `.ali` files with invalid stems are skipped,
+   and the scan returns them for its caller to report on stderr.
 3. **Name = relative path minus `.ali`.** `Theory.ali` → `Theory`,
    `TRS/Aux.ali` → `TRS/Aux`. This is both the manifest key and the dropdown
    label. Names are filesystem paths, hence unique by construction: there is **no
@@ -69,11 +77,14 @@ to the including file's location** — trying, in order:
 1. a sibling `<Name>.ali` in the including file's own directory;
 2. `<Name>.ali` in the including file's **same-named subdirectory** (so `Foo.ali`
    may keep private submodules in a `Foo/` directory);
-3. `<Name>.ali` at the root.
+3. `<Name>.ali` at the in-memory loader's top level (the project root in the
+   manifest).
 
-The first match wins. This mirrors how the command-line interpreter resolves
-includes — own directory → same-named subdirectory → `ALIFIB_PATH` (see
-`src/aux/loader.rs`) — and is implemented in the frontend by `resolveIncludeKey`.
+The first match wins. The kernel's loader implements this, not JavaScript (see
+[`src/aux/loader.rs`](../src/aux/loader.rs)). A disk-loaded module searches its
+own directory, its same-named subdirectory, then the loader search paths
+(the server directory followed by `ALIFIB_PATH` under a server). Evaluate uses
+an in-memory loader with all the supplied files, without disk search.
 Because resolution is scoped this way, the **same stem can name different files
 in different modules**: `Monoidal/Aux.ali`, `Bicategory/Aux.ali`, and
 `TRS/Aux.ali` are three distinct submodules, and each parent module's
@@ -81,34 +92,43 @@ in different modules**: `Monoidal/Aux.ali`, `Bicategory/Aux.ali`, and
 
 ## URL scheme
 
-| Method | Path                    | Returns                                          |
-| ------ | ----------------------- | ------------------------------------------------ |
-| GET    | `/examples/index.json`  | Manifest (`{name: relpath}`) or `{ "error": … }` |
-| GET    | `/examples/<relpath>`   | File contents, `text/plain`                      |
-| POST   | `/api/load_source`      | `{ source, modules, source_name }` → load result |
+| Method | Path | Returns |
+|--------|------|---------|
+| GET | `/examples/index.json` | Manifest (`{"modules": {name: relpath}}`), or HTTP 500 with `{"error": …}` |
+| GET | `/examples/<relpath>` | File contents, `text/plain` |
+| POST | `/api` | One `Rpc` call, including `load_source` for Evaluate |
 
 `<relpath>` is the same slash-separated path that appears as a manifest value
-(e.g. `TRS/Aux.ali`). Each segment is revalidated at request time — no path
-traversal via request-path trickery. The `modules` field is the
-`{relpath: contents}` map the frontend assembles from the editor's `include`s.
+(e.g. `TRS/Aux.ali`). Each segment is revalidated at request time, and the file
+is canonicalised within the root. Request paths are percent-decoded once before
+validation. See [the interactive reference](../docs/INTERACTIVE.md#server-concurrency-and-trust-boundary)
+for the server's checks and limits on every route. `serve` has no picker routes.
 
 ## Frontend data flow
 
-1. **Boot** — `populateExamples()` in `web/frontend/src/app.js` fetches
-   `examples/index.json` and fills the dropdown with the (path-qualified) names.
-   If the manifest is an error object, the message is surfaced in the REPL log
-   and the dropdown stays empty.
+1. **Boot** — the frontend in `web/frontend/src/app.js` fetches
+   `examples/index.json` and fills the dropdown with path-qualified names. An
+   index error is surfaced in the REPL log and leaves the dropdown empty.
 2. **User picks an example** — its contents are fetched at the manifest's
-   relative path and dropped into the editor (cached per session, so each file
-   is fetched once).
-3. **User hits Evaluate** — `collectIncludeModules(source, parentKey)` scans the
-   editor text for `include <Name>` directives; for each, `resolveIncludeKey`
-   finds the right manifest entry (sibling → same-named subdirectory → root),
-   and dependencies are fetched transitively. The resulting `{relpath: contents}`
-   map is handed to the backend.
-4. **Backend** — `load_source_with_modules` seeds a virtual loader with that map;
-   the interpreter then resolves `include Name` exactly as it does against the
-   real filesystem.
+   relative path and opened in an editor tab.
+3. **User hits Evaluate** — capture the active source and every open tab under
+   its unique `.ali` filename. Refresh the index and fetch every indexed file
+   not already supplied by a tab, concurrently and afresh for this Evaluate; a
+   file that cannot be fetched is skipped with a note. Open tabs take
+   precedence over indexed files with the same path; there is no transitive
+   JavaScript include scan or per-session include-content cache.
+4. **Call** — send `{"method":"load_source","args":{"source":…, "name":…,
+   "modules":…,"expect":…, "page":…}}` through the one `POST /api` under HTTP,
+   or through `WasmKernel.call` in the static build. `modules` is the
+   `{relativePath: contents}` map of all tabs and indexed files.
+5. **Kernel** — `Kernel::open_text` installs the root source at `name` in that
+   map and creates `Loader::in_memory`. Only this loader resolves includes;
+   failures are answered as diagnostics. Successful Evaluate links that editor
+   tab to the new load generation; an error or stale-state refusal does not.
+
+The picker index is not a live session feed. Disk edits are picked up on a later
+fetch/Evaluate; a browser sharing an HTTP session catches up on its next call
+or when it regains focus, not continuously.
 
 ## Subdirectories in practice
 
@@ -127,9 +147,11 @@ the manifest is:
 
 ```json
 {
-  "Bicategory/Aux": "Bicategory/Aux.ali",
-  "Monoidal":       "Monoidal.ali",
-  "Monoidal/Aux":   "Monoidal/Aux.ali"
+  "modules": {
+    "Bicategory/Aux": "Bicategory/Aux.ali",
+    "Monoidal":       "Monoidal.ali",
+    "Monoidal/Aux":   "Monoidal/Aux.ali"
+  }
 }
 ```
 
@@ -140,10 +162,21 @@ includes.
 
 ## Two producers, one format
 
-- **`ExampleSet::scan` (Rust — `web/shared/src/lib.rs`)** — used by `alifib web`
-  on every request. Returns `Result<Vec<ExampleEntry>, ScanError>`; a missing
-  root is not an error (empty manifest), any other I/O failure is. Names are
-  qualified paths, so there is nothing to deduplicate.
-- **`scripts/build_examples_manifest.py`** — used by `just web-wasm` and the
-  GitHub Pages workflow. Mirrors the source tree into a destination and writes
-  `<dest>/index.json` by the same rules, so there is no dev-vs-CI drift.
+- **`ExampleSet::scan` ([`cli/src/examples.rs`](../cli/src/examples.rs))** — used
+  by `alifib web` for each index request. Returns `io::Result<Scan>`: the sorted
+  entries and the skipped files. Startup canonicalises the project directory and
+  refuses a nonexistent root; later scan I/O failures are answered HTTP 500.
+  Qualified paths need no deduplication.
+- **[`cli/examples/static_examples.rs`](../cli/examples/static_examples.rs)** —
+  used by `just web-wasm` and the GitHub Pages workflow. Scans once with the
+  server's own scanner, mirrors that scan's `.ali` tree into the destination, and
+  writes `<dest>/index.json` from the same scan; a scan error fails it before
+  anything is written. The destination must be disjoint from the source and
+  either missing, empty, or an earlier mirror (holding only `.ali` files, their
+  directories, and a top-level `index.json`); anything else is refused rather
+  than replaced. There is no second Python
+  scanner or naming rule.
+
+```sh
+cargo run -p alifib-cli --example static_examples -- examples web/frontend/examples
+```

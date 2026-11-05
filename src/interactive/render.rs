@@ -2,7 +2,7 @@
 //!
 //! Transcript layout lives in [`super::richtext`]; this module only builds the
 //! `(a #0 [idem]) #0 b` string stored in `RewriteInfo.match_display` (consumed by
-//! [`super::protocol`] and re-parsed into segments by `richtext`).
+//! [`super::response`] and re-parsed into segments by `richtext`).
 
 use crate::aux::Tag;
 use crate::core::complex::Complex;

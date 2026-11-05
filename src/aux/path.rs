@@ -25,19 +25,3 @@ pub fn canonicalize_existing(path: &str) -> Result<String, std::io::Error> {
         .canonicalize()
         .map(|p| p.to_string_lossy().into_owned())
 }
-
-/// Canonicalize and deduplicate search paths, preserving order.
-///
-/// Uses the best-effort [`canonicalize`] because search paths may point to
-/// directories that do not exist yet.
-pub fn normalize_search_paths(paths: Vec<String>) -> Vec<String> {
-    let mut seen = std::collections::HashSet::new();
-    let mut result = Vec::new();
-    for path in paths {
-        let canonical = canonicalize(&path);
-        if seen.insert(canonical.clone()) {
-            result.push(canonical);
-        }
-    }
-    result
-}

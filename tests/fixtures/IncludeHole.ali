@@ -1,0 +1,5 @@
+@Type
+include MapHole,
+
+@MapHole.A
+  let G :: MapHole.Arrow = [ s => x, t => y, arr => ? ]

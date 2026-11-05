@@ -767,6 +767,8 @@ header {
   color: var(--text-dim);
   margin-top: 2px;
 }
+/* A drawn view's error, in place of its label and boundary. */
+.infobox-error { color: var(--err); }
 /* Open holes of a map, shown above the "Image of" selector. */
 .infobox-holes {
   margin-top: 6px;

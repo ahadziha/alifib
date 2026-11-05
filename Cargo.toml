@@ -1,12 +1,8 @@
 [workspace]
-members = ["cli", "web/mcp", "web/server", "web/shared"]
+members = ["cli"]
 # Running `cargo build` / `cargo run` / `cargo test` from the workspace root
-# defaults to the CLI binary + its transitive deps.  The web crates
-# still build on explicit request (e.g. `cargo build --workspace`).
+# defaults to the CLI binary and its library dependency.
 default-members = ["cli"]
-
-[workspace.dependencies]
-alifib = { path = "." }
 
 [package]
 name = "alifib"
@@ -16,16 +12,11 @@ license = "MIT OR Apache-2.0"
 
 [lib]
 
-[features]
-default = []
-cli = ["dep:rustyline"]
-
 [dependencies]
 ariadne = "0.6.0"
 chumsky = "0.12.0"
 indexmap = "2"
 rand_xoshiro = "0.8.1"
-rustyline = { version = "14", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

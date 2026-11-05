@@ -1,8 +1,7 @@
 //! Stateful rewrite engine: holds session state in memory for incremental
 //! step/apply without re-interpreting the source file.
 
-use crate::aux::loader::Loader;
-use crate::aux::Tag;
+use crate::aux::{GlobalId, Tag};
 use crate::core::complex::Complex;
 use crate::core::diagram::{Diagram, Sign};
 use crate::core::matching::{
@@ -14,7 +13,7 @@ use crate::core::matching::{
     try_family_from_members,
 };
 use crate::core::paste_tree::{flatten_at, is_pseudo_normal, pseudo_normalise, realise_tree, top_generators};
-use crate::interpreter::{GlobalStore, InterpretedFile};
+use crate::interpreter::GlobalStore;
 use rand_xoshiro::rand_core::{Rng, SeedableRng};
 use rand_xoshiro::Xoshiro256PlusPlus;
 use std::collections::HashMap;
@@ -31,12 +30,11 @@ pub(crate) struct HistoryEntry {
 
 /// Cached assembled proof diagram at a known step count.
 ///
-/// When proof view is active the frontend needs the (n+1)-dimensional proof
-/// diagram at every step.  Rather than rebuilding from scratch each time,
-/// we cache the last assembled proof and extend it incrementally.
-pub struct ProofCache {
-    pub snapshot: Diagram,
-    pub at_step: usize,
+/// Built on the first proof view request. Rather than rebuilding from scratch
+/// each time, we cache the last assembled proof and extend it incrementally.
+struct ProofCache {
+    snapshot: Diagram,
+    at_step: usize,
 }
 
 /// Stateful rewrite session engine.
@@ -68,12 +66,12 @@ pub struct RewriteEngine {
     rng: Xoshiro256PlusPlus,
 
     /// Per-rule precomputed pattern data (normalised input or output boundary
-    /// + embedding into the rule's shape, depending on [`backward`]).
+    /// and embedding into the rule's shape, depending on [`backward`]).
     /// Built once when the engine is constructed and reused for every
     /// [`for_each_rule_candidate`] call.
     rule_patterns: HashMap<String, RulePattern>,
 
-    /// Incremental proof cache, active only while proof view is enabled.
+    /// Incremental proof cache, initialised on the first proof view request.
     proof_cache: Option<ProofCache>,
 
     // Metadata (for session file persistence)
@@ -85,79 +83,34 @@ pub struct RewriteEngine {
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
-/// Load a file and return the store, canonical path, and the interpreter's
-/// display output (the same string `alifib <file>` would print to stdout).
-///
-/// Used by the REPL to load context eagerly at startup so that `types`,
-/// `rules`, and `info` commands can work before the user selects a type.
-pub fn load_file_context(
-    source_file: &str,
-) -> Result<(Arc<GlobalStore>, String, String), String> {
-    let loader = Loader::default(vec![]);
-    let file = InterpretedFile::load(&loader, source_file)
-        .into_result()
-        .map_err(|_| format!("failed to interpret '{}'", source_file))?;
-    let canonical_path = file.path.clone();
-    let output = file.to_string();
-    let store = Arc::clone(&file.state);
-    Ok((store, canonical_path, output))
-}
+/// Resolve a type name in a store module to its global id.
+pub fn resolve_type_id(
+    store: &GlobalStore,
+    canonical_path: &str,
+    type_name: &str,
+) -> Result<GlobalId, String> {
+    let module_complex = store
+        .find_module(canonical_path)
+        .ok_or_else(|| format!("module '{}' not found in store", canonical_path))?;
 
-/// Re-evaluate an edited root source (held in memory) against its canonical path,
-/// resolving dependencies from disk as usual.  Returns the fresh store on success,
-/// or the interpreter's error messages if the edit is inconsistent.
-pub fn reevaluate(canonical_path: &str, source: &str) -> Result<Arc<GlobalStore>, String> {
-    let loader = Loader::default_with_root_source(vec![], canonical_path.to_owned(), source.to_owned());
-    match crate::interpreter::InterpretedFile::load(&loader, canonical_path) {
-        crate::interpreter::LoadResult::Loaded(file) => Ok(Arc::clone(&file.state)),
-        crate::interpreter::LoadResult::InterpError { errors, .. } => {
-            Err(errors.iter().map(|e| format!("{}", e)).collect::<Vec<_>>().join("; "))
-        }
-        crate::interpreter::LoadResult::LoadError(_) => {
-            Err(format!("failed to re-read '{}'", canonical_path))
-        }
+    match module_complex.find_generator(type_name) {
+        Some((Tag::Global(gid), _)) => Ok(*gid),
+        Some((Tag::Local(_) | Tag::Hole(_), _)) => Err(format!("'{}' is a local cell, not a type", type_name)),
+        None => Err(format!("type '{}' not found", type_name)),
     }
 }
 
-/// Resolve a type name to its [`Complex`] given an already-loaded store.
-///
-/// Called by the REPL when the user types `@ <TypeName>`.
+/// Resolve a type name in a store module to its [`Complex`].
 pub fn resolve_type(
     store: &GlobalStore,
     canonical_path: &str,
     type_name: &str,
 ) -> Result<Arc<Complex>, String> {
-    let module_complex = store
-        .find_module(canonical_path)
-        .ok_or_else(|| format!("module '{}' not found in store", canonical_path))?;
-
-    let (type_tag, _) = module_complex
-        .find_generator(type_name)
-        .ok_or_else(|| format!("type '{}' not found", type_name))?;
-
-    let type_gid = match type_tag {
-        Tag::Global(gid) => *gid,
-        Tag::Local(_) | Tag::Hole(_) => return Err(format!("'{}' is a local cell, not a type", type_name)),
-    };
-
+    let gid = resolve_type_id(store, canonical_path, type_name)?;
     store
-        .find_type(type_gid)
+        .find_type(gid)
         .ok_or_else(|| format!("type entry for '{}' not found", type_name))
         .map(|e| Arc::clone(&e.complex))
-}
-
-/// Load a file and return the store, type complex, and canonical file path —
-/// without locating any diagrams.
-///
-/// Convenience wrapper over [`load_file_context`] + [`resolve_type`].
-/// Used by the cli and the daemon which always know the type upfront.
-pub fn load_type_context(
-    source_file: &str,
-    type_name: &str,
-) -> Result<(Arc<GlobalStore>, Arc<Complex>, String), String> {
-    let (store, canonical_path, _output) = load_file_context(source_file)?;
-    let type_complex = resolve_type(&store, &canonical_path, type_name)?;
-    Ok((store, type_complex, canonical_path))
 }
 
 fn seeded_rng() -> Xoshiro256PlusPlus {
@@ -279,6 +232,71 @@ fn find_first_match(
         }
     })?;
     Ok(result)
+}
+
+// ── Step history ─────────────────────────────────────────────────────────────
+
+/// A linear history with a redo buffer, addressed by step count: what `undo`
+/// and `redo` move through, whether a step is a rewrite or a 0-cell choice.
+pub trait Steps {
+    /// The number of steps applied.
+    fn applied(&self) -> usize;
+    /// The number of steps applied or kept for redo.
+    fn recorded(&self) -> usize;
+    /// Move to `step ≤ recorded()`, keeping later steps for redo.
+    fn seek(&mut self, step: usize) -> Result<(), String>;
+
+    fn can_redo(&self) -> bool {
+        self.applied() < self.recorded()
+    }
+
+    /// Undo the last applied step.
+    fn undo(&mut self) -> Result<(), String> {
+        match self.applied() {
+            0 => Err("nothing to undo".to_owned()),
+            applied => self.seek(applied - 1),
+        }
+    }
+
+    /// Redo the last undone step.
+    fn redo(&mut self) -> Result<(), String> {
+        if !self.can_redo() {
+            return Err("nothing to redo".to_owned());
+        }
+        self.seek(self.applied() + 1)
+    }
+
+    /// Undo back to `step` (0 = fully undone); a no-op at the current step.
+    fn undo_to(&mut self, step: usize) -> Result<(), String> {
+        let applied = self.applied();
+        if step > applied {
+            return Err(format!("cannot undo to step {}: only {} step(s) applied", step, applied));
+        }
+        if step == applied { Ok(()) } else { self.seek(step) }
+    }
+
+    /// Redo forward to `step`; a no-op at or before the current step.
+    fn redo_to(&mut self, step: usize) -> Result<(), String> {
+        let recorded = self.recorded();
+        if step > recorded {
+            return Err(format!("cannot redo to step {}: only {} step(s) in history", step, recorded));
+        }
+        if step <= self.applied() { Ok(()) } else { self.seek(step) }
+    }
+}
+
+impl Steps for RewriteEngine {
+    fn applied(&self) -> usize { self.active_len }
+    fn recorded(&self) -> usize { self.history.len() }
+
+    fn seek(&mut self, step: usize) -> Result<(), String> {
+        self.current_diagram = match step {
+            0 => self.initial_diagram.clone(),
+            _ => self.diagram_after_step(step - 1)?,
+        };
+        self.active_len = step;
+        self.refresh_rewrites()
+    }
 }
 
 // ── Constructor impls ─────────────────────────────────────────────────────────
@@ -480,7 +498,7 @@ impl RewriteEngine {
 // ── Mutating operations ───────────────────────────────────────────────────────
 
 impl RewriteEngine {
-    fn advance(&self, step: &Diagram) -> Result<Diagram, String> {
+    pub(super) fn advance(&self, step: &Diagram) -> Result<Diagram, String> {
         let n = self.initial_diagram.top_dim();
         Diagram::boundary_normal(self.step_sign(), n, step)
             .map_err(|e| format!("step boundary failed: {}", e))
@@ -508,10 +526,8 @@ impl RewriteEngine {
     fn truncate_redo(&mut self) {
         self.steps.truncate(self.active_len);
         self.history.truncate(self.active_len);
-        if let Some(ref cache) = self.proof_cache {
-            if cache.at_step > self.active_len {
-                self.proof_cache = None;
-            }
+        if self.proof_cache.as_ref().is_some_and(|cache| cache.at_step > self.active_len) {
+            self.proof_cache = None;
         }
     }
 
@@ -609,46 +625,6 @@ impl RewriteEngine {
         Ok(&self.history.last().unwrap().rule_name)
     }
 
-    /// Move the cursor to `target` and restore the corresponding diagram.
-    fn seek(&mut self, target: usize) -> Result<(), String> {
-        self.active_len = target;
-        self.current_diagram = if target == 0 {
-            self.initial_diagram.clone()
-        } else {
-            self.diagram_after_step(target - 1)?
-        };
-        self.refresh_rewrites()
-    }
-
-    /// Undo the last applied step. The undone step is kept in the redo buffer.
-    pub fn undo(&mut self) -> Result<(), String> {
-        if self.active_len == 0 { return Err("nothing to undo".to_owned()); }
-        self.seek(self.active_len - 1)
-    }
-
-    /// Undo all steps, resetting to the source diagram.
-    pub fn undo_all(&mut self) -> Result<(), String> {
-        self.seek(0)
-    }
-
-    /// Redo the last undone step.
-    pub fn redo(&mut self) -> Result<(), String> {
-        if self.active_len >= self.history.len() { return Err("nothing to redo".to_owned()); }
-        self.seek(self.active_len + 1)
-    }
-
-    /// Redo forward to the given step index.
-    pub fn redo_to(&mut self, target_step: usize) -> Result<(), String> {
-        if target_step > self.history.len() {
-            return Err(format!(
-                "cannot redo to step {}: only {} step(s) in history",
-                target_step, self.history.len(),
-            ));
-        }
-        if target_step <= self.active_len { return Ok(()); }
-        self.seek(target_step)
-    }
-
     /// Apply up to `max_steps` rewrites automatically, always picking the
     /// first available candidate. Discards any redo buffer.
     ///
@@ -727,19 +703,6 @@ impl RewriteEngine {
         Ok((max_steps, None))
     }
 
-    /// Undo back to (but not past) the given step index (0 = fully undone,
-    /// 1 = after step 1, etc.). Undone steps are kept in the redo buffer.
-    pub fn undo_to(&mut self, target_step: usize) -> Result<(), String> {
-        if target_step > self.active_len {
-            return Err(format!(
-                "cannot undo to step {}: only {} step(s) applied",
-                target_step, self.active_len,
-            ));
-        }
-        if target_step == self.active_len { return Ok(()); }
-        self.seek(target_step)
-    }
-
     /// Toggle parallel rewrite mode on or off. Only affects `auto()`.
     pub fn set_parallel(&mut self, on: bool) {
         self.parallel = on;
@@ -751,9 +714,6 @@ impl RewriteEngine {
 impl RewriteEngine {
     /// Number of active rewrite steps (excludes the redo buffer).
     pub fn step_count(&self) -> usize { self.active_len }
-
-    /// Whether there are undone steps that can be redone.
-    pub fn can_redo(&self) -> bool { self.active_len < self.history.len() }
 
     /// The n-diagram being actively rewritten (changes after each [`step`](Self::step)).
     pub fn current_diagram(&self) -> &Diagram { &self.current_diagram }
@@ -829,30 +789,23 @@ impl RewriteEngine {
 
     /// Render the active proof as a re-parseable *source expression* — one
     /// rewrite step per line, `d₁ #ₙ … #ₙ dₘ` in session order (reversed for
-    /// backward) — or `None` when no steps have been applied.
+    /// backward). A zero-step proof is the identity on the initial diagram,
+    /// rendered as that diagram.
     ///
     /// This is the durable, step-structured form: what `store` writes into the
-    /// `.ali` and what `resume` consumes. Contrast [`proof_label`](Self::proof_label),
-    /// which flattens the whole proof to a single line for a status banner;
-    /// both denote the same diagram, but this one preserves the step layout.
-    pub fn proof_expr(&self) -> Option<String> {
+    /// `.ali` and what `resume` consumes.
+    pub fn proof_expr(&self) -> String {
+        let render = |d: &Diagram| crate::output::render_diagram(d, &self.type_complex);
         let steps = self.steps();
         if steps.is_empty() {
-            return None;
+            return render(&self.initial_diagram);
         }
-        let n = self.initial_diagram.top_dim();
-        let scope = &self.type_complex;
-        let ordered: Vec<&Diagram> = if self.backward {
-            steps.iter().rev().collect()
+        let rendered: Vec<String> = if self.backward {
+            steps.iter().rev().map(render).collect()
         } else {
-            steps.iter().collect()
+            steps.iter().map(render).collect()
         };
-        let mut it = ordered.into_iter();
-        let first = crate::output::render_diagram(it.next().unwrap(), scope);
-        let rest: String = it
-            .map(|s| format!("\n#{} {}", n, crate::output::render_diagram(s, scope)))
-            .collect();
-        Some(format!("{}{}", first, rest))
+        rendered.join(&format!("\n#{} ", self.initial_diagram.top_dim()))
     }
 
     /// Canonical path to the `.ali` source file for this session.
@@ -867,93 +820,27 @@ impl RewriteEngine {
     /// Name of the target diagram, or `None` if no goal was declared.
     pub fn target_diagram_name(&self) -> Option<&str> { self.target_diagram_name.as_deref() }
 
-    /// Set or replace the target diagram on a running session.
-    pub fn set_target(&mut self, name: &str) -> Result<(), String> {
-        let diag = eval_diagram_expr(&self.store, &self.type_complex, &self.source_file, name)?;
-        check_parallel(&self.initial_diagram, &diag)?;
-        self.target_diagram = Some(diag);
-        self.target_diagram_name = Some(name.to_owned());
-        Ok(())
-    }
-
     // ── Proof cache ──────────────────────────────────────────────────────
 
-    /// Enable the proof cache, building the initial snapshot at the current step.
-    pub fn enable_proof_cache(&mut self) -> Result<(), String> {
-        self.proof_cache = Some(ProofCache {
-            snapshot: self.assemble_proof()?,
-            at_step: self.active_len,
-        });
-        Ok(())
-    }
-
-    pub fn disable_proof_cache(&mut self) {
-        self.proof_cache = None;
-    }
-
-    pub fn proof_cache(&self) -> Option<&ProofCache> {
-        self.proof_cache.as_ref()
-    }
-
-    pub fn proof_cache_active(&self) -> bool {
-        self.proof_cache.is_some()
-    }
-
-    /// Return the assembled proof diagram, using the cache if available.
-    /// At step 0, returns the source diagram.
+    /// Return the assembled proof diagram, extending the cached prefix when it
+    /// is still active and assembling afresh otherwise. At step 0, the source.
     pub fn proof_diagram(&mut self) -> Result<Diagram, String> {
-        if self.active_len == 0 {
-            if let Some(ref mut cache) = self.proof_cache {
-                cache.snapshot = self.initial_diagram.clone();
-                cache.at_step = 0;
+        let snapshot = match self.proof_cache.take() {
+            Some(cache) if cache.at_step == self.active_len => cache.snapshot,
+            // A step-0 snapshot is the n-dimensional source, not a prefix proof.
+            Some(cache) if 0 < cache.at_step && cache.at_step < self.active_len => {
+                let n = self.initial_diagram.top_dim();
+                self.steps[cache.at_step..self.active_len].iter()
+                    .try_fold(cache.snapshot, |acc, step| {
+                        let (left, right) = if self.backward { (step, &acc) } else { (&acc, step) };
+                        Diagram::paste(n, left, right)
+                            .map_err(|e| format!("proof cache extend failed: {}", e))
+                    })?
             }
-            return Ok(self.initial_diagram.clone());
-        }
-        if let Some(ref cache) = self.proof_cache {
-            if cache.at_step == self.active_len {
-                return Ok(cache.snapshot.clone());
-            }
-        }
-        self.sync_proof_cache()?;
-        Ok(self.proof_cache.as_ref().unwrap().snapshot.clone())
-    }
-
-    /// Bring the proof cache up to date with the current active step.
-    fn sync_proof_cache(&mut self) -> Result<(), String> {
-        if self.proof_cache.is_none() { return Ok(()); }
-
-        if self.active_len == 0 {
-            self.proof_cache = Some(ProofCache {
-                snapshot: self.initial_diagram.clone(),
-                at_step: 0,
-            });
-            return Ok(());
-        }
-
-        let cache_step = self.proof_cache.as_ref().unwrap().at_step;
-        if cache_step == self.active_len {
-            return Ok(());
-        }
-
-        let n = self.initial_diagram.top_dim();
-
-        let proof = if cache_step < self.active_len && cache_step > 0 {
-            let mut acc = self.proof_cache.as_ref().unwrap().snapshot.clone();
-            for step in &self.steps[cache_step..self.active_len] {
-                let (left, right) = if self.backward { (step, &acc) } else { (&acc, step) };
-                acc = Diagram::paste(n, left, right)
-                    .map_err(|e| format!("proof cache extend failed: {}", e))?;
-            }
-            acc
-        } else {
-            self.assemble_proof()?
+            _ => self.assemble_proof()?,
         };
-
-        self.proof_cache = Some(ProofCache {
-            snapshot: proof,
-            at_step: self.active_len,
-        });
-        Ok(())
+        self.proof_cache = Some(ProofCache { snapshot: snapshot.clone(), at_step: self.active_len });
+        Ok(snapshot)
     }
 
     /// Returns true when the current diagram is isomorphic to the target — including
@@ -963,17 +850,6 @@ impl RewriteEngine {
         self.target_diagram.as_ref()
             .map(|t| Diagram::isomorphic(&self.current_diagram, t))
             .unwrap_or(false)
-    }
-
-    /// Render the assembled proof as a single flattened term, for the REPL
-    /// completion banner (`proof : src -> tgt`).
-    ///
-    /// Builds the full proof by pasting all recorded steps and rendering the
-    /// result, so the `#ₙ` chain collapses to one line — unlike
-    /// [`proof_expr`](Self::proof_expr), which keeps one step per line for
-    /// storing and resuming.  Both denote the same diagram.
-    pub fn proof_label(&self) -> Result<String, String> {
-        Ok(crate::output::render_diagram(&self.assemble_proof()?, &self.type_complex))
     }
 
     /// Typecheck the current proof diagram.
@@ -1037,28 +913,15 @@ impl RewriteEngine {
     }
 
     /// Register the current running proof as a named diagram (let-binding)
-    /// in the type complex.
-    ///
-    /// Returns `(updated_store, updated_type_complex)` so the caller can resync
-    /// its own `Arc` references.
-    pub fn register_proof(&mut self, name: &str) -> Result<(Arc<GlobalStore>, Arc<Complex>), String> {
-        let diagram = match &self.proof_cache {
-            Some(cache) if cache.at_step == self.active_len => cache.snapshot.clone(),
-            _ => self.assemble_proof()?,
-        };
+    /// in the type complex, returning the updated store for the caller to share.
+    pub fn register_proof(&mut self, name: &str) -> Result<Arc<GlobalStore>, String> {
+        let diagram = self.proof_diagram()?;
 
         if self.type_complex.name_in_use(name) || self.type_complex.find_generator(name).is_some() {
             return Err(format!("name '{}' is already in use", name));
         }
 
-        let type_gid = {
-            let mc = self.store.find_module(&self.source_file)
-                .ok_or_else(|| format!("module '{}' not found", self.source_file))?;
-            match mc.find_generator(&self.type_name) {
-                Some((Tag::Global(gid), _)) => *gid,
-                _ => return Err(format!("type '{}' not found in module", self.type_name)),
-            }
-        };
+        let type_gid = resolve_type_id(&self.store, &self.source_file, &self.type_name)?;
 
         Arc::make_mut(&mut self.store)
             .modify_type_complex(type_gid, |cx| {
@@ -1073,13 +936,14 @@ impl RewriteEngine {
 
         // No need to recompute rewrites — a let-binding doesn't add new rewrite rules.
 
-        Ok((Arc::clone(&self.store), Arc::clone(&self.type_complex)))
+        Ok(Arc::clone(&self.store))
     }
 }
 
 #[cfg(test)]
 mod rewrite_order_independent_of_route {
     use super::*;
+    use crate::aux::loader::Loader;
     use crate::interactive::fill::{self, FillSession};
     use crate::output::render_diagram;
     use std::path::PathBuf;
@@ -1112,7 +976,9 @@ mod rewrite_order_independent_of_route {
     fn dining_philosophers() -> RewriteEngine {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("examples/DiningPhilosophers.ali").to_string_lossy().into_owned();
-        let (store, tc, path) = load_type_context(&path, "Table").expect("load DiningPhilosophers");
+        let file = crate::interpreter::InterpretedFile::load(&Loader::default(vec![]), &path).expect("load DiningPhilosophers");
+        let (store, path) = (file.state, file.path);
+        let tc = resolve_type(&store, &path, "Table").expect("resolve Table");
         RewriteEngine::from_store(
             store, tc, "5places", None, path, "Table".to_owned(), false,
         ).expect("start Table from 5places")
@@ -1134,7 +1000,7 @@ mod rewrite_order_independent_of_route {
     #[test]
     fn dining_philosophers_resume_running_proof() {
         let engine = dining_philosophers_manual_route();
-        let proof = engine.proof_expr().expect("running proof expression");
+        let proof = engine.proof_expr();
         let resumed = RewriteEngine::resume(
             Arc::clone(&engine.store), Arc::clone(&engine.type_complex), &proof, None,
             engine.source_file.clone(), engine.type_name.clone(), false,
@@ -1201,8 +1067,10 @@ mod rewrite_order_independent_of_route {
     fn idem_fill_all_routes_up_to_depth_three() {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests/fixtures/IdemFill.ali").to_string_lossy().into_owned();
-        let (store, canonical, _) = load_file_context(&path).expect("load IdemFill");
-        let (context, session) = fill::start_fill(&store, &canonical, &canonical, 0, false)
+        let file = crate::interpreter::InterpretedFile::load(&Loader::default(vec![]), &path).expect("load IdemFill");
+        let program = crate::language::parse(&file.source).expect("parse IdemFill source");
+        let (store, canonical) = (file.state, file.path);
+        let (context, session) = fill::start_fill(&store, &program, &canonical, 0, false)
             .expect("start IdemFill hole");
         assert_eq!((context.type_name.as_str(), context.map_name.as_str(), context.source_name.as_str()),
             ("Idem", "H", "c"));
@@ -1225,6 +1093,7 @@ mod rewrite_order_independent_of_route {
 mod resume_tests {
     use super::*;
     use crate::aux::loader::Loader;
+    use crate::interpreter::InterpretedFile;
     use std::path::PathBuf;
 
     const TYPE: &str = "Assoc";
@@ -1234,7 +1103,7 @@ mod resume_tests {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests/fixtures/Assoc.ali").to_string_lossy().into_owned();
         let file = InterpretedFile::load(&Loader::default(vec![]), &path)
-            .ok().expect("fixture should load");
+            .expect("fixture should load");
         let store = Arc::clone(&file.state);
         let module = store.find_module(&file.path).expect("module");
         let gid = match module.find_generator(TYPE) {
@@ -1292,7 +1161,7 @@ mod resume_tests {
         assert!(err.to_lowercase().contains("parallel") || err.contains("dimension"), "got: {err}");
     }
 
-    /// The save → resume loop: a session's `proof_expr` (what the daemon's
+    /// The save → resume loop: a session's `proof_expr` (what the
     /// `proof` response surfaces and the editor saves) resumes to an isomorphic
     /// proof with the same step count.
     #[test]
@@ -1301,7 +1170,7 @@ mod resume_tests {
         let first = RewriteEngine::resume(
             Arc::clone(&store), Arc::clone(&tc), "inter", None, path.clone(), TYPE.to_owned(), false,
         ).unwrap();
-        let expr = first.proof_expr().expect("a proof with steps has an expression");
+        let expr = first.proof_expr();
         let proof1 = first.assemble_proof().unwrap();
 
         let again = RewriteEngine::resume(
@@ -1331,7 +1200,7 @@ mod resume_tests {
         assert_eq!(steps, 3);
         let end = engine.current_diagram().clone();
 
-        engine.undo_all().expect("undo all");
+        engine.undo_to(0).expect("undo all");
         assert_eq!(engine.step_count(), 0);
         assert!(Diagram::isomorphic(engine.current_diagram(), engine.initial_diagram()));
 

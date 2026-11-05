@@ -1,4 +1,4 @@
-//! Builds the frontend bundle (`web/frontend/dist/app.js`) that `lib.rs`
+//! Builds the frontend bundle (`web/frontend/dist/app.js`) that `src/server.rs`
 //! `include_str!`s.  Installs dependencies and runs the `build` script with
 //! whichever package manager is available — bun first (our default), npm as a
 //! fallback — before the Rust crate is compiled.
@@ -14,7 +14,7 @@ fn main() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let frontend = manifest_dir
         .join("..")
-        .join("frontend")
+        .join("web/frontend")
         .canonicalize()
         .expect("web/frontend directory must exist");
 
@@ -26,11 +26,12 @@ fn main() {
             println!("cargo:rerun-if-changed={}", path.display());
         }
     }
-    rerun_dir(&frontend.join("src"));
+    // Cargo scans a directory whole, including files added later.
+    println!("cargo:rerun-if-changed={}", frontend.join("src").display());
 
     if let Err(err) = build_frontend(&frontend) {
         println!(
-            "cargo:warning=alifib-web-server: frontend bundle not built ({}); \
+            "cargo:warning=alifib-cli: frontend bundle not built ({}); \
              serving a stub — install bun (or Node.js) and rebuild for the real GUI",
             err
         );
@@ -159,24 +160,9 @@ fn ensure_stub(path: &Path) {
         return;
     }
     let stub = b"// alifib frontend bundle missing.  \
-                 Install bun (or Node.js) and rebuild `alifib-web-server` to produce the real bundle.\n";
+                 Install bun (or Node.js) and rebuild `alifib-cli` to produce the real bundle.\n";
     if let Err(e) = std::fs::write(path, stub) {
         println!("cargo:warning=could not write stub {}: {}", path.display(), e);
-    }
-}
-
-fn rerun_dir(dir: &Path) {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            rerun_dir(&path);
-        } else {
-            println!("cargo:rerun-if-changed={}", path.display());
-        }
     }
 }
 
@@ -192,15 +178,25 @@ fn home_bin(rel: &str) -> Option<PathBuf> {
     candidate.is_file().then_some(candidate)
 }
 
-/// The highest-versioned npm under `~/.nvm/versions/node`, if any.
+/// The npm of the highest Node version under `~/.nvm/versions/node`, if any.
 fn find_nvm_npm() -> Option<PathBuf> {
     let nvm = PathBuf::from(std::env::var_os("HOME")?).join(".nvm/versions/node");
-    let mut versions: Vec<_> = std::fs::read_dir(&nvm)
+    std::fs::read_dir(nvm)
         .ok()?
         .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.join("bin/npm").is_file())
-        .collect();
-    versions.sort();
-    versions.pop().map(|v| v.join("bin/npm"))
+        .filter_map(|entry| {
+            let version = version(entry.file_name().to_str()?)?;
+            let npm = entry.path().join("bin/npm");
+            npm.is_file().then_some((version, npm))
+        })
+        .max_by(|(a, _), (b, _)| a.cmp(b))
+        .map(|(_, npm)| npm)
+}
+
+/// A `vMAJOR.MINOR.PATCH` directory name as numbers, so `v22` outranks `v9`.
+fn version(name: &str) -> Option<Vec<u64>> {
+    name.strip_prefix('v')?
+        .split('.')
+        .map(|part| part.parse().ok())
+        .collect()
 }

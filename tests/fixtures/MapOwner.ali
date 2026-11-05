@@ -1,0 +1,11 @@
+@Type
+include M,
+
+Ob <<= { root0, root1, rootEdge : root0 -> root1 },
+
+@M.Ob
+  (* This earlier block must remain byte-for-byte unchanged. *)
+  let F :: M.Arrow = [ s => inc0, t => inc1, arr => ? ]
+
+@Ob
+  let F :: M.Arrow = [ s => root0, t => root1, arr => ? ]

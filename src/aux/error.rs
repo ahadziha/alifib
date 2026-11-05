@@ -1,4 +1,4 @@
-//! Generic error type and load-error reporting.
+//! Generic errors and canonical load-error messages.
 
 use std::fmt;
 
@@ -36,24 +36,20 @@ impl fmt::Display for Error {
     }
 }
 
-/// Print a human-readable diagnostic for a [`LoadFileError`] to stderr.
-pub fn report_load_file_error(err: &LoadFileError) {
-    match err {
-        LoadFileError::Load { path, cause } => match cause {
-            LoadError::NotFound => eprintln!("error: could not load `{}`", path),
-            LoadError::IoError(reason) => eprintln!("error: could not load `{}`: {}", path, reason),
-        },
-        LoadFileError::Parse { path, source, errors } => {
-            crate::language::report_errors(errors, source, path);
-        }
-        LoadFileError::ModuleNotFound { module_name } => {
-            eprintln!("error: module file {}.ali not found in search paths", module_name);
-        }
-        LoadFileError::ModuleIoError { path, reason } => {
-            eprintln!("error: could not load `{}`: {}", path, reason);
-        }
-        LoadFileError::Cycle { path } => {
-            eprintln!("error: cyclic module dependency involving `{}`", path);
+impl fmt::Display for LoadFileError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LoadFileError::Load { path, cause } => match cause {
+                LoadError::NotFound => write!(f, "could not load `{}`", path),
+                LoadError::IoError(reason) => write!(f, "could not load `{}`: {}", path, reason),
+            },
+            LoadFileError::Parse { path, .. } => write!(f, "could not parse `{}`", path),
+            LoadFileError::ModuleNotFound { module_name } =>
+                write!(f, "module file {}.ali not found in search paths", module_name),
+            LoadFileError::ModuleIoError { path, reason } =>
+                write!(f, "could not load `{}`: {}", path, reason),
+            LoadFileError::Cycle { path } =>
+                write!(f, "cyclic module dependency involving `{}`", path),
         }
     }
 }

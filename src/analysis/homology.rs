@@ -771,7 +771,7 @@ mod tests {
         std::fs::write(&path, source).expect("write temp file");
         let loader = Loader::default(vec![]);
         let file = InterpretedFile::load(&loader, path.to_str().unwrap())
-            .ok().expect("fixture should load");
+            .expect("fixture should load");
         let store = Arc::clone(&file.state);
         let module = store.find_module(&file.path).expect("module should exist");
         let (tag, _) = module.find_generator(type_name).expect("type not found");

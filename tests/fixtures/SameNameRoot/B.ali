@@ -1,0 +1,11 @@
+@Type
+
+Ob <<= {
+  b0, b1,
+  bEdge : b0 -> b1,
+  let item = bEdge,
+  index thin = [ b0 ]
+},
+
+@Ob
+  let BMap :: Ob = [ b0 => b0, b1 => b1, bEdge => bEdge ]

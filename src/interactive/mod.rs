@@ -6,57 +6,39 @@
 //! step.  When the running proof's output boundary matches the declared goal
 //! diagram (the *target*), the proof is complete.
 //!
+//! [`kernel::Kernel`] evaluates parsed command lines, owns filesystem policy,
+//! and returns rendered transcript replies separately from session state.
+//!
 //! # Interfaces
 //!
-//! The user-facing interfaces share the same [`engine::RewriteEngine`] core,
-//! differing only in transport and how (or whether) they persist:
-//!
-//! - **`alifib repl`** (`repl`): in-process interactive REPL with readline
-//!   support, live state, O(1) undo, and `store`/`save` commands to persist
-//!   completed proofs back into the `.ali` source file.
-//! - **`alifib serve`** (`daemon`, `protocol`): a long-lived JSON-lines
-//!   subprocess for editor integration; holds the engine in memory and returns
-//!   render-ready responses.  It has no file format of its own — a session is
-//!   saved by `store`ing its proof into the `.ali`, and reopened with `resume`.
-//! - **`alifib web`** / **`alifib mcp`** (`web`): the same engine wrapped in
-//!   [`WebRepl`](web::WebRepl), driven over HTTP/WASM by the browser GUI or as
-//!   tools by an MCP client.  Sessions are in-memory only; durable output is a
-//!   `store`d `.ali` diagram.
-//!
-//! # CLI usage
-//!
-//! ```text
-//! alifib repl <file>    [--type <t>] [--source <s>] [--target <t>] [--emacs]
-//! alifib serve          [<file> --type <t> --source <s> [--target <t>]]
-//! alifib web            [<examples-dir>] [--bind <addr>]
-//! alifib mcp            [<examples-dir>]
-//! ```
+//! The CLI crate's terminal adapter evaluates lines in-process. The browser's
+//! HTTP and WASM adapters share [`rpc::Rpc`], the kernel's one JSON wire.
+//! All adapters use the same evaluator, session state, and transcript renderer.
 //!
 //! # Submodule overview
 //!
 //! | Submodule | Role |
 //! |-----------|------|
+//! | [`kernel`] | Shared line evaluator, revision stamps, and filesystem policy |
 //! | [`engine`] | [`RewriteEngine`](engine::RewriteEngine): in-memory session state, step/undo, resume, accessors |
-//! | [`repl`] | `run_repl` + command dispatch for `alifib repl` |
-//! | [`cli`] | Argument parsing and dispatch for the CLI subcommands |
-//! | [`daemon`] | JSON-lines request loop for `alifib serve` |
-//! | [`protocol`] | JSON request/response types used by the daemon |
-//! | [`web`] | shared browser-facing session API used by the web frontends |
-//! | [`display`] | [`Display`](display::Display): terminal output + the ANSI styler for [`RichText`](richtext::RichText) |
-//! | [`richtext`] | the single shared producer: `ResponseData` → role-tagged [`RichText`](richtext::RichText), styled per medium |
-//! | [`render`] | `render_step`: the bracketed match-display string builder used by [`protocol`] |
+//! | [`response`] | Session state, command answers, and display data builders |
+//! | [`rpc`] | One JSON call surface shared by HTTP and WASM |
+//! | [`command`] | Shared line grammar and typed commands |
+//! | [`fill`] | Hole-filling engines |
+//! | [`view`] | Diagram views of the current session, with lazy proof caching |
+//! | [`type_info`] | Module-addressed type descriptions and ordered thinness |
+//! | [`richtext`] | Shared role-tagged [`RichText`](richtext::RichText), styled per medium |
+//! | [`render`] | `render_step`: the bracketed match-display string builder used by [`response`] |
 //! | [`session`] | [`Session`](session::Session): the shared command state machine all front-ends drive |
 
-pub mod cli;
 pub mod command;
-pub mod daemon;
-pub mod display;
 pub mod engine;
 pub mod fill;
-pub mod protocol;
+pub mod kernel;
 pub mod render;
+pub mod response;
 pub mod richtext;
+pub mod rpc;
 pub mod session;
-#[cfg(feature = "cli")]
-pub mod repl;
-pub mod web;
+pub mod type_info;
+pub mod view;

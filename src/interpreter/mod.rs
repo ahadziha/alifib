@@ -17,4 +17,4 @@ mod types;
 pub use diagram::interpret_diagram;
 pub use eval::{Context, InterpResult, interpret_program};
 pub use global_store::GlobalStore;
-pub use load::{InterpretedFile, LoadResult};
+pub use load::{InterpretedFile, LoadFailure};

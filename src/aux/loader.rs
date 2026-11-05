@@ -8,27 +8,54 @@ use std::sync::Arc;
 use super::path;
 use crate::language::{self, Program, Error as LangError};
 
-type ReadFileFn = Arc<dyn Fn(&str) -> Result<String, LoadError> + Send + Sync>;
-
 #[derive(Debug, Clone)]
 pub enum LoadError {
     NotFound,
     IoError(String),
 }
 
-/// Resolves and loads alifib source files, including their transitive dependencies.
-///
-/// Holds the search paths used to locate module files by name and a pluggable
-/// file-reading function (for testing with in-memory file systems).  Construct
-/// with [`Loader::default`]; clone cheaply to create child loaders with
-/// adjusted search paths during recursive dependency resolution.
+/// Files held in memory, over the disk or over nothing.
+#[derive(Clone)]
+struct Files {
+    /// Held files by canonical name, shadowing the disk or standing alone.
+    held: Arc<HashMap<String, String>>,
+    over_disk: bool,
+}
+
+impl Files {
+    fn read(&self, path: &str) -> Result<(String, String), LoadError> {
+        let canonical = if self.over_disk {
+            path::canonicalize_existing(path).map_err(load_error)?
+        } else {
+            path.to_owned()
+        };
+        let source = match self.held.get(&canonical) {
+            Some(source) => source.clone(),
+            None if self.over_disk => std::fs::read_to_string(&canonical).map_err(load_error)?,
+            None => return Err(LoadError::NotFound),
+        };
+        Ok((canonical, source))
+    }
+
+    fn dir(&self, path: &str) -> String {
+        if self.over_disk { path::canonicalize(path) } else { path.to_owned() }
+    }
+}
+
+fn load_error(error: std::io::Error) -> LoadError {
+    if error.kind() == std::io::ErrorKind::NotFound {
+        LoadError::NotFound
+    } else {
+        LoadError::IoError(error.to_string())
+    }
+}
+
+/// Resolves and loads source files and their transitive dependencies.
+/// Clone cheaply to adjust search paths during dependency resolution.
 #[derive(Clone)]
 pub struct Loader {
     search_paths: Vec<String>,
-    read_file: ReadFileFn,
-    /// When `true`, [`read_file_at`] serves files directly from the in-memory
-    /// reader without any filesystem canonicalization.
-    is_virtual: bool,
+    files: Files,
 }
 
 pub struct LoadedFile {
@@ -51,16 +78,6 @@ pub enum LoadFileError {
 }
 
 impl Loader {
-    fn default_read(path: &str) -> Result<String, LoadError> {
-        std::fs::read_to_string(path).map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                LoadError::NotFound
-            } else {
-                LoadError::IoError(e.to_string())
-            }
-        })
-    }
-
     fn path_separator() -> char {
         if cfg!(windows) { ';' } else { ':' }
     }
@@ -79,55 +96,49 @@ impl Loader {
         }
     }
 
-    /// Build a loader with the standard search path: current working directory,
-    /// then any paths in the `ALIFIB_PATH` environment variable, then
-    /// `extra_search_paths`.  Duplicate paths are removed, preserving order.
-    pub fn default(extra_search_paths: Vec<String>) -> Self {
-        let cwd = path::canonicalize(&std::env::current_dir()
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_else(|_| ".".to_owned()));
-        let env_paths = Self::env_search_paths();
-        let combined: Vec<String> = std::iter::once(cwd)
-            .chain(env_paths)
-            .chain(extra_search_paths)
+    /// Search `dir`, then `ALIFIB_PATH`, then `extra_search_paths`.
+    /// Relative search paths are resolved against `dir`.
+    pub fn in_dir(dir: &str, extra_search_paths: Vec<String>) -> Self {
+        let files = Files { held: Arc::new(HashMap::new()), over_disk: true };
+        let dir = files.dir(dir);
+        let mut seen = HashSet::new();
+        let search_paths = std::iter::once(dir.clone())
+            .chain(Self::env_search_paths().into_iter().chain(extra_search_paths).map(|entry| {
+                std::path::Path::new(&dir).join(entry).to_string_lossy().into_owned()
+            }))
+            .map(|entry| files.dir(&entry))
+            .filter(|entry| seen.insert(entry.clone()))
             .collect();
+        Self { search_paths, files }
+    }
+
+    /// Like [`Self::in_dir`], with the current working directory as the base.
+    pub fn default(extra_search_paths: Vec<String>) -> Self {
+        let cwd = std::env::current_dir()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| ".".to_owned());
+        Self::in_dir(&cwd, extra_search_paths)
+    }
+
+    /// Hold files over nothing, inheriting the top level as a search path.
+    pub fn in_memory(files: HashMap<String, String>) -> Self {
         Self {
-            search_paths: path::normalize_search_paths(combined),
-            read_file: Arc::new(Self::default_read),
-            is_virtual: false,
+            search_paths: vec![String::new()],
+            files: Files { held: Arc::new(files), over_disk: false },
         }
     }
 
-    /// Like [`default`](Self::default) but serves the file at canonical path
-    /// `root` from the in-memory `source` instead of reading it from disk;
-    /// dependencies are still read from the filesystem.  `root` must be the
-    /// canonical path (it is still required to exist on disk, for canonicalization).
-    /// Used to re-evaluate an edited root source without writing it to disk.
-    pub fn default_with_root_source(extra_search_paths: Vec<String>, root: String, source: String) -> Self {
-        let base = Self::default(extra_search_paths);
-        let fallback = base.read_file.clone();
-        Self {
-            search_paths: base.search_paths,
-            is_virtual: false,
-            read_file: Arc::new(move |path: &str| {
-                if path == root { Ok(source.clone()) } else { fallback(path) }
-            }),
-        }
+    /// Hold `source` at its canonical `path`, shadowing any previous contents.
+    /// Over disk, the file must still exist for canonicalisation.
+    pub fn with_file(&self, path: &str, source: String) -> Self {
+        let mut loader = self.clone();
+        Arc::make_mut(&mut loader.files.held).insert(path.to_owned(), source);
+        loader
     }
 
-    /// Create a [`Loader`] that serves files from an in-memory map, bypassing
-    /// the real filesystem.  The key is the path passed to [`load`](Self::load);
-    /// the value is the source text.  Search paths are empty, so `#use` directives
-    /// in virtual files will fail with `ModuleNotFound`.
-    pub fn with_virtual_files(files: HashMap<String, String>) -> Self {
-        let files = Arc::new(files);
-        Self {
-            search_paths: vec![],
-            read_file: Arc::new(move |path: &str| {
-                files.get(path).cloned().ok_or(LoadError::NotFound)
-            }),
-            is_virtual: true,
-        }
+    /// Whether nothing lies beneath the held files.
+    pub fn is_in_memory(&self) -> bool {
+        !self.files.over_disk
     }
 
     /// Build a child loader whose search paths prepend `file_path`'s parent
@@ -141,12 +152,12 @@ impl Loader {
     ///
     /// Two modules in different directories that both include a module by the
     /// same name may therefore resolve to different files — the closest directory
-    /// wins.  Duplicate paths are removed by `normalize_search_paths`.
+    /// wins.  Duplicate paths are removed in order.
     fn with_parent_dir(&self, file_path: &str) -> Loader {
         let file = std::path::Path::new(file_path);
         let parent = file.parent()
             .and_then(|p| p.to_str())
-            .map(|p| if self.is_virtual { p.to_owned() } else { path::canonicalize(p) })
+            .map(str::to_owned)
             .unwrap_or_else(|| file_path.to_owned());
         let mut desired = vec![parent];
         if let Some(stem) = file.file_stem().and_then(|s| s.to_str()) {
@@ -154,44 +165,25 @@ impl Loader {
                 .map(|p| p.join(stem))
                 .and_then(|p| p.to_str().map(|s| s.to_owned()));
             if let Some(subdir) = subdir {
-                desired.push(if self.is_virtual { subdir } else { path::canonicalize(&subdir) });
+                desired.push(subdir);
             }
         }
         desired.extend(self.search_paths.iter().cloned());
-        let normalized = if self.is_virtual {
-            let mut seen = HashSet::new();
-            desired.into_iter().filter(|p| seen.insert(p.clone())).collect()
-        } else {
-            path::normalize_search_paths(desired)
-        };
+        let mut seen = HashSet::new();
+        let normalized = desired.into_iter()
+            .map(|p| self.files.dir(&p))
+            .filter(|p| seen.insert(p.clone())).collect();
         if normalized == self.search_paths {
             self.clone()
         } else {
-            Loader { search_paths: normalized, read_file: self.read_file.clone(), is_virtual: self.is_virtual }
+            Loader { search_paths: normalized, files: self.files.clone() }
         }
     }
 
-    /// Canonicalize `path` and read its contents, mapping errors to `LoadFileError`.
-    /// For virtual loaders ([`with_virtual_files`](Self::with_virtual_files)) the
-    /// canonicalization step is skipped and the path is used as-is.
+    /// Read a file by canonical name, mapping errors to `LoadFileError`.
     fn read_file_at(&self, path: &str) -> Result<(String, String), LoadFileError> {
-        if self.is_virtual {
-            let source = (self.read_file)(path)
-                .map_err(|cause| LoadFileError::Load { path: path.to_owned(), cause })?;
-            return Ok((path.to_owned(), source));
-        }
-        let canonical_path = path::canonicalize_existing(path)
-            .map_err(|e| LoadFileError::Load {
-                path: path.to_owned(),
-                cause: if e.kind() == std::io::ErrorKind::NotFound {
-                    LoadError::NotFound
-                } else {
-                    LoadError::IoError(e.to_string())
-                },
-            })?;
-        let source = (self.read_file)(&canonical_path)
-            .map_err(|cause| LoadFileError::Load { path: path.to_owned(), cause })?;
-        Ok((canonical_path, source))
+        self.files.read(path)
+            .map_err(|cause| LoadFileError::Load { path: path.to_owned(), cause })
     }
 
     /// Read and parse the root file only, without resolving any dependencies.
@@ -295,37 +287,13 @@ impl ModuleStore {
 
 fn find_file(loader: &Loader, module_name: &str) -> Result<(String, String), LoadFileError> {
     let filename = format!("{}.ali", module_name);
-    if loader.is_virtual {
-        for dir in &loader.search_paths {
-            let candidate = if dir.is_empty() {
-                filename.clone()
-            } else {
-                format!("{}/{}", dir, filename)
-            };
-            match (loader.read_file)(&candidate) {
-                Ok(contents) => return Ok((candidate, contents)),
-                Err(LoadError::NotFound) => continue,
-                Err(LoadError::IoError(reason)) => {
-                    return Err(LoadFileError::ModuleIoError { path: candidate, reason });
-                }
-            }
-        }
-        return Err(LoadFileError::ModuleNotFound {
-            module_name: module_name.to_owned(),
-        });
-    }
     for dir in &loader.search_paths {
-        let candidate = format!("{}/{}", dir, filename);
-        let canonical = match path::canonicalize_existing(&candidate) {
-            Ok(c) => c,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(e) => return Err(LoadFileError::ModuleIoError { path: candidate, reason: e.to_string() }),
-        };
-        match (loader.read_file)(&canonical) {
-            Ok(contents) => return Ok((canonical, contents)),
+        let candidate = if dir.is_empty() { filename.clone() } else { format!("{}/{}", dir, filename) };
+        match loader.files.read(&candidate) {
+            Ok(file) => return Ok(file),
             Err(LoadError::NotFound) => continue,
             Err(LoadError::IoError(reason)) => {
-                return Err(LoadFileError::ModuleIoError { path: canonical, reason });
+                return Err(LoadFileError::ModuleIoError { path: candidate, reason });
             }
         }
     }

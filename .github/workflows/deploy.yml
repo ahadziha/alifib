@@ -29,7 +29,9 @@ jobs:
       - name: Cache Rust build artefacts
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: "web/wasm -> target"
+          workspaces: |
+            . -> target
+            web/wasm -> target
 
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
@@ -39,22 +41,20 @@ jobs:
         with:
           node-version: 22
 
-      - name: Build frontend JS
-        run: cd web/frontend && npm ci && npm run build
-
       - name: Build WASM
         # --out-dir is relative to the crate dir, so ../frontend/pkg lands in web/frontend/pkg/
         run: wasm-pack build --target web --release web/wasm --out-dir ../frontend/pkg
 
+      - name: Bundle frontend JS and mirror examples
+        # Compiling alifib-cli runs its build script, which bundles
+        # web/frontend/dist/app.js with npm. static_examples then mirrors
+        # examples/ recursively with the server's scanner and index.json.
+        run: cargo run -p alifib-cli --example static_examples -- examples web/frontend/examples
+
       - name: Assemble dist/
-        # - web/frontend/pkg/ was produced above by wasm-pack
-        # - examples/ is mirrored recursively (preserving subdirectory
-        #   structure) via the shared build script, which also writes
-        #   index.json and fails the build on duplicate stems
-        run: |
-          mkdir -p dist
-          cp -r web/frontend/. dist/
-          python3 scripts/build_examples_manifest.py examples dist/examples
+        # Only the runtime pieces, staged as `just web-zip` stages them;
+        # a stub bundle from a failed frontend build is refused.
+        run: bash scripts/stage_web.sh dist
 
       - name: Upload Pages artefact
         uses: actions/upload-pages-artifact@v3

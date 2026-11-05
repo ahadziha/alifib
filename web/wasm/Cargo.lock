@@ -28,8 +28,6 @@ name = "alifib-wasm"
 version = "0.1.0"
 dependencies = [
  "alifib",
- "serde",
- "serde_json",
  "wasm-bindgen",
 ]
 

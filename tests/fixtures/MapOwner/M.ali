@@ -1,0 +1,5 @@
+@Type
+
+Arrow <<= { s, t, arr : s -> t },
+
+Ob <<= { inc0, inc1, incEdge : inc0 -> inc1 }

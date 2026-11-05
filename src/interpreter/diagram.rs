@@ -623,7 +623,6 @@ mod dotted_expr_tests {
             .to_string_lossy()
             .into_owned();
         let f = InterpretedFile::load(&Loader::default(vec![]), &path)
-            .ok()
             .expect("fixture should interpret");
         let store = Arc::clone(&f.state);
         let module = store.find_module(&f.path).expect("module");
@@ -714,7 +713,7 @@ mod dotted_expr_tests {
 mod run_auto_tests {
     use super::*;
     use crate::core::matching::{confirm_candidate, for_each_rule_candidate};
-    use crate::interactive::engine::{eval_diagram_expr, load_file_context, resolve_type};
+    use crate::interactive::engine::{eval_diagram_expr, resolve_type};
     use crate::output::render_diagram;
     use std::path::PathBuf;
 
@@ -754,7 +753,8 @@ mod run_auto_tests {
     fn run_auto_independent_of_numbering() {
         let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("tests/fixtures/Idem.ali").to_string_lossy().into_owned();
-        let (store, path, _) = load_file_context(&fixture).expect("load Idem");
+        let file = crate::interpreter::InterpretedFile::load(&crate::aux::loader::Loader::default(vec![]), &fixture).expect("load Idem");
+        let (store, path) = (file.state, file.path);
         let scope = resolve_type(&store, &path, "Idem").expect("Idem type");
         // Deliberately use one leftmost singleton step from id^4: the greedy
         // parallel route was not a numbering-sensitive proof witness.
